@@ -170,6 +170,7 @@ interface EventEditModalV2Props {
   onSave: (updatedEvent: Event) => void;
   onDelete?: (eventId: string) => void;
   hierarchicalTags: any[];
+  embedded?: boolean; // 🆕 嵌入模式：去掉遮罩层，用于标签页
   globalTimer?: {
     startTime: number;
     originalStartTime?: number;
@@ -196,6 +197,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   onSave,
   onDelete,
   hierarchicalTags,
+  embedded = false,
   globalTimer,
   onTimerAction,
 }) => {
@@ -2331,14 +2333,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     id: formData.id,
     title: formData.title?.substring(0, 50),
     tagsCount: formData.tags?.length,
-    eventlogLength: formData.eventlog?.length
+    eventlogLength: formData.eventlog?.length,
+    embedded
   });
 
-  return (
-    <div className="event-edit-modal-v2-overlay" onClick={onClose}>
+  // 🆕 嵌入模式：去掉遮罩层，直接渲染内容
+  if (embedded) {
+    return (
       <div 
-        className={`event-edit-modal-v2 ${isDetailView ? 'detail-view' : 'compact-view'}`}
-        onClick={(e) => e.stopPropagation()}
+        className={`event-edit-modal-v2 event-edit-modal-v2-embedded ${isDetailView ? 'detail-view' : 'compact-view'}`}
+        style={{ width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', borderRadius: 0 }}
       >
         <div className="modal-content">
           {/* 左侧：Event Overview */}

@@ -120,6 +120,16 @@ export const EventTabManager: React.FC<EventTabManagerProps> = ({
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
+  console.log('🔍 [EventTabManager] Render state:', {
+    tabsCount: tabs.length,
+    activeTabId,
+    activeTab: activeTab ? {
+      id: activeTab.id,
+      eventId: activeTab.event?.id,
+      eventTitle: activeTab.event?.title?.simpleTitle
+    } : null
+  });
+
   return (
     <div className="event-tab-manager">
       {/* Tab Header */}
@@ -176,6 +186,7 @@ export const EventTabManager: React.FC<EventTabManagerProps> = ({
           <EventEditModalV2
             eventId={activeTab.event.id}
             isOpen={true}
+            embedded={true}
             onClose={() => closeTab(activeTab.id)}
             onSave={(updatedEvent) => {
               updateEvent(activeTab.id, updatedEvent);
