@@ -173,6 +173,20 @@
   color: #374151;
 }
 
+/* 事件编辑器视图 */
+.timelog-event-editor {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.timelog-event-editor .event-edit-modal-v2-embedded {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
 /* ========================================
    日期显示区
    ======================================== */

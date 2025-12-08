@@ -100,6 +100,7 @@ const TimeLog: React.FC = () => {
   // 🆕 标签页管理状态
   const [showTabManager, setShowTabManager] = useState(false);
   const [tabManagerEvents, setTabManagerEvents] = useState<Event[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string>('timelog'); // 'timelog' 或事件ID
 
   // Handler: Open event in tab manager or separate window
   const handleOpenInTab = useCallback(async (event: Event) => {
@@ -1433,7 +1434,10 @@ const TimeLog: React.FC = () => {
             <div className="timelog-header-section timelog-header-with-tabs">
               <div className="timelog-tab-bar">
                 {/* 时光日志作为第一个tab */}
-                <div className="timelog-tab timelog-tab-active">
+                <div 
+                  className={`timelog-tab ${activeTabId === 'timelog' ? 'timelog-tab-active' : ''}`}
+                  onClick={() => setActiveTabId('timelog')}
+                >
                   <div className="timelog-gradient-bar"></div>
                   <h1 className="timelog-title">时光日志</h1>
                 </div>
@@ -1447,10 +1451,8 @@ const TimeLog: React.FC = () => {
                   return (
                     <div 
                       key={event.id} 
-                      className="timelog-tab"
-                      onClick={() => {
-                        // TODO: 切换到对应事件编辑视图
-                      }}
+                      className={`timelog-tab ${activeTabId === event.id ? 'timelog-tab-active' : ''}`}
+                      onClick={() => setActiveTabId(event.id)}
                     >
                       <span className="tab-title">{titleText}</span>
                       <button 
@@ -1458,8 +1460,14 @@ const TimeLog: React.FC = () => {
                         onClick={(e) => {
                           e.stopPropagation();
                           setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
+                          // 如果关闭的是当前激活标签，切换到时光日志
+                          if (activeTabId === event.id) {
+                            setActiveTabId('timelog');
+                          }
+                          // 如果只剩一个事件，关闭标签管理器
                           if (tabManagerEvents.length <= 1) {
                             setShowTabManager(false);
+                            setActiveTabId('timelog');
                           }
                         }}
                       >
@@ -1472,9 +1480,11 @@ const TimeLog: React.FC = () => {
             </div>
           )}
 
-          {/* Event 列表 */}
-          <div className="timelog-events-list" ref={timelineContainerRef}>
-          {loadingEvents ? (
+          {/* 内容区域：根据激活标签显示不同内容 */}
+          {activeTabId === 'timelog' ? (
+            /* 时光日志列表 */
+            <div className="timelog-events-list" ref={timelineContainerRef}>
+            {loadingEvents ? (
             <div className="timelog-empty">
               <p>加载中...</p>
             </div>
@@ -2372,7 +2382,52 @@ const TimeLog: React.FC = () => {
               }
             })
           )}
-          </div>
+            </div>
+          ) : (
+            /* 事件编辑器视图 */
+            <div className="timelog-event-editor">
+              {tabManagerEvents.map((event) => (
+                activeTabId === event.id && (
+                  <EventEditModalV2
+                    key={event.id}
+                    isOpen={true}
+                    eventId={event.id}
+                    embedded={true}
+                    onClose={() => {
+                      // 关闭编辑器，切换回时光日志
+                      setActiveTabId('timelog');
+                      setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
+                      if (tabManagerEvents.length <= 1) {
+                        setShowTabManager(false);
+                      }
+                    }}
+                    onSave={async () => {
+                      // 刷新事件列表
+                      const updatedEvents = await EventService.getEventsInRange(
+                        dateRange!.start,
+                        dateRange!.end
+                      );
+                      setAllEvents(updatedEvents);
+                    }}
+                    onDelete={async (eventId) => {
+                      // 删除事件后刷新列表并关闭编辑器
+                      await EventService.deleteEvent(eventId);
+                      const updatedEvents = await EventService.getEventsInRange(
+                        dateRange!.start,
+                        dateRange!.end
+                      );
+                      setAllEvents(updatedEvents);
+                      setActiveTabId('timelog');
+                      setTabManagerEvents(prev => prev.filter(e => e.id !== eventId));
+                      if (tabManagerEvents.length <= 1) {
+                        setShowTabManager(false);
+                      }
+                    }}
+                  />
+                )
+              ))}
+            </div>
+          )}
         </div>
 
       {/* 新固定玻璃图标栏（替换原右侧三个按钮） */}
@@ -2424,15 +2479,7 @@ const TimeLog: React.FC = () => {
         />
       )}
 
-      {/* Event Tab Manager - Chrome-style tabs */}
-      {showTabManager && (
-        <EventTabManager
-          initialTabs={tabManagerEvents.map(e => ({ id: e.id, event: e, isDirty: false }))}
-          onClose={() => setShowTabManager(false)}
-          availableTags={allTags}
-          availableCalendars={availableCalendars}
-        />
-      )}
+      {/* EventTabManager 已集成到 timelog-main-card 内部 */}
     </div>
   );
 };
