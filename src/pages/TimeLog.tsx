@@ -2340,7 +2340,7 @@ const TimeLog: React.FC = () => {
 
       {/* 新建事件模态框 */}
       <EventEditModalV2
-        event={newEventTemplate}
+        eventId={newEventTemplate?.id || null}
         isOpen={createModalOpen}
         onClose={() => {
           setCreateModalOpen(false);
@@ -2352,7 +2352,7 @@ const TimeLog: React.FC = () => {
       
       {/* 编辑事件模态框 */}
       <EventEditModalV2
-        event={editingEvent}
+        eventId={editingEvent?.id || null}
         isOpen={editModalOpen}
         onClose={() => {
           setEditModalOpen(false);
