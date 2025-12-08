@@ -96,23 +96,14 @@
 }
 
 .glass-btn-wrapper:hover .glass-icon-btn img {
+  /* 🎨 图标渐变效果：通过多层filter组合实现渐变色 */
   filter: brightness(0) saturate(100%) invert(42%) sepia(93%) saturate(1352%) hue-rotate(223deg) brightness(97%) contrast(101%);
-  /* 使用紫色作为基础色，hover时通过渐变蒙版实现渐变效果 */
 }
 
-/* 为SVG添加渐变蒙版效果 */
-.glass-btn-wrapper:hover .glass-icon-btn::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 75%);
-  border-radius: inherit;
-  mix-blend-mode: overlay;
-  opacity: 0.6;
-  pointer-events: none;
-}
+/* 移除按钮背景的渐变蒙版，只保留图标和文字渐变 */
 
 .glass-btn-wrapper:hover .glass-icon-label {
+  /* 🎨 文字渐变效果 */
   background: linear-gradient(135deg, #a855f7 0%, #3b82f6 75%);
   background-clip: text;
   -webkit-background-clip: text;

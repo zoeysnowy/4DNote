@@ -1439,7 +1439,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         }
       }
 
-      // 🔧 Step 11: 通知父组件（TimeCalendar 或 App.handleTimerEditSave）
+      // 🔧 Step 11: 同步 titleRef 与 formData.title（保存成功后）
+      // 🔥 关键：保存成功后，titleRef 必须与 formData.title 保持一致
+      // 原因：如果用户编辑标题后保存，formData.title 被更新（含 emoji），
+      //       但 titleRef 还是编辑时的值（不含 emoji），下次保存会出错
+      titleRef.current = formData.title;
+      console.log('✅ [handleSave] 同步 titleRef.current =', formData.title?.substring(0, 50));
+      
+      // 🔧 Step 12: 通知父组件（TimeCalendar 或 App.handleTimerEditSave）
       // onSave 回调会触发：
       // - TimeCalendar: handleSaveEventFromModal() → 关闭弹窗、清理状态
       // - App.tsx: handleTimerEditSave() → 启动计时器、创建 Timer 事件（已被 Step 7 拦截）
