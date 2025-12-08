@@ -2337,13 +2337,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     embedded
   });
 
-  // 🆕 嵌入模式：去掉遮罩层，直接渲染内容
-  if (embedded) {
-    return (
-      <div 
-        className={`event-edit-modal-v2 event-edit-modal-v2-embedded ${isDetailView ? 'detail-view' : 'compact-view'}`}
-        style={{ width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', borderRadius: 0 }}
-      >
+  // 📦 渲染主内容（embedded和modal模式共享）
+  const renderModalContent = () => (
         <div className="modal-content">
           {/* 左侧：Event Overview */}
               <div className="event-overview">
@@ -3713,28 +3708,28 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
               </div>
             )}
         </div>
+  );
+
+  // 🆕 嵌入模式：去掉遮罩层，直接渲染内容
+  if (embedded) {
+    return (
+      <div 
+        className={`event-edit-modal-v2 event-edit-modal-v2-embedded ${isDetailView ? 'detail-view' : 'compact-view'}`}
+        style={{ width: '100%', height: '100%', maxWidth: 'none', maxHeight: 'none', borderRadius: 0 }}
+      >
+        {renderModalContent()}
+      </div>
     );
   }
 
-  // 🖼️ 模态框模式：带遮罩层（内容与嵌入模式相同，只是外层包装不同）
-  // TODO: 重构以避免代码重复
-  const content = null; // 暂时为 null，因为内容已经在嵌入模式中完整实现
-  
-  // 由于嵌入模式已经包含完整内容，模态框模式暂时返回空包装
-  // 实际使用时，非嵌入模式应该走这里，但现在所有调用都应该用 embedded=false（默认）
-  console.error('⚠️ [EventEditModalV2] 模态框模式内容缺失！所有调用应使用 embedded=true 或修复此处');
-  
+  // 🖼️ 模态框模式：带遮罩层
   return (
     <div className="event-edit-modal-v2-overlay" onClick={onClose}>
       <div 
         className={`event-edit-modal-v2 ${isDetailView ? 'detail-view' : 'compact-view'}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-content">
-          <p style={{ padding: '20px', color: 'red' }}>
-            模态框模式内容缺失。请使用 embedded=true 或联系开发者修复此问题。
-          </p>
-        </div>
+        {renderModalContent()}
       </div>
     </div>
   );
