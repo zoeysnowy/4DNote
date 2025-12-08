@@ -397,28 +397,15 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
       activeElementTextContent: activeEl?.textContent?.substring(0, 50)
     });
     
-    // 🔧 检测到焦点重新回到自己（Slate 重渲染导致的 blur→focus 循环）
-    // activeElement 是 title-slate-editable 说明焦点马上会回到这里，不是真正的失焦
+    // 🔧 检测blur→refocus循环：只在焦点立即回到编辑器自身时跳过保存
+    // 这种情况只发生在Slate内部重渲染时，activeElement马上又是title-slate-editable
     if (activeEl?.className?.includes('title-slate-editable')) {
-      console.log('⚠️ [TitleSlate] 检测到 Slate 内部焦点循环（重渲染），跳过本次 blur');
+      console.log('⏭️ [TitleSlate] 检测到blur→refocus循环（焦点回到编辑器），跳过保存');
       return;
     }
     
-    // 🔧 如果 relatedTarget 为 undefined 且 activeElement 也不是 TitleSlate
-    // 说明焦点被某个不可聚焦的元素（如 DIV）抢走了，这是异常情况
-    if (!relatedTarget && !activeEl?.className?.includes('title-slate-editable')) {
-      console.warn('⚠️ [TitleSlate] 检测到焦点丢失到未知元素，跳过保存，避免丢失编辑状态');
-      return;
-    }
-    
-    // 如果 relatedTarget 为 undefined 但 activeElement 不是自己，说明被外部抢走焦点
-    if (!relatedTarget && !readOnly) {
-      console.log('⚠️ [TitleSlate] 检测到外部元素抢走焦点（同步等），正常保存');
-      // 继续执行保存逻辑，不尝试恢复焦点（用户体验更好）
-    }
-    
-    // 用户主动失焦（点击了其他元素），正常保存
-    console.log('👤 [TitleSlate] 用户主动失焦，保存变化');
+    // 所有其他情况都正常保存（包括焦点到BODY、到其他元素等）
+    console.log('💾 [TitleSlate] 正常失焦，执行保存');
     
     // 如果有待保存的变化，立即保存
     if (pendingChangesRef.current) {
