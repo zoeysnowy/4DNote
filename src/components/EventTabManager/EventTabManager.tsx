@@ -124,8 +124,9 @@ export const EventTabManager: React.FC<EventTabManagerProps> = ({
     <div className="event-tab-manager">
       {/* Tab Header */}
       <div className="tab-header-container">
-        <div className="tab-header">
-          {tabs.map(tab => (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 0 8px' }}>
+          <div className="tab-header" style={{ flex: 1, padding: '0 0 0 0' }}>
+            {tabs.map(tab => (
             <div
               key={tab.id}
               className={`chrome-tab ${activeTabId === tab.id ? 'chrome-tab-active' : 'chrome-tab-inactive'}`}
@@ -147,6 +148,25 @@ export const EventTabManager: React.FC<EventTabManagerProps> = ({
               </button>
             </div>
           ))}
+          </div>
+          {/* Global close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                fontSize: '24px',
+                color: '#666',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                marginLeft: '8px'
+              }}
+              title="关闭标签页管理器"
+            >
+              ×
+            </button>
+          )}
         </div>
       </div>
 

@@ -103,6 +103,9 @@ const TimeLog: React.FC = () => {
 
   // Handler: Open event in tab manager or separate window
   const handleOpenInTab = useCallback(async (event: Event) => {
+    console.log('🏷️ [TimeLog] handleOpenInTab called:', event.id);
+    console.log('🔍 [TimeLog] supportsMultiWindow:', supportsMultiWindow());
+    
     // Electron 环境下优先使用多窗口
     if (supportsMultiWindow()) {
       const success = await openEventInWindow(event.id, event);
@@ -114,12 +117,16 @@ const TimeLog: React.FC = () => {
     }
     
     // Web 环境或窗口打开失败，使用标签页管理器
+    console.log('📑 [TimeLog] Opening in tab manager');
     setTabManagerEvents(prev => {
       const exists = prev.find(e => e.id === event.id);
       if (exists) return prev;
-      return [...prev, event];
+      const newEvents = [...prev, event];
+      console.log('📑 [TimeLog] Tab manager events:', newEvents.length);
+      return newEvents;
     });
     setShowTabManager(true);
+    console.log('📑 [TimeLog] showTabManager set to true');
   }, []);
   
   // 动态滚动加载状态 - 支持双向无限滚动
@@ -2093,7 +2100,11 @@ const TimeLog: React.FC = () => {
                             <button 
                               className="ghost-menu-btn"
                               title="在标签页中打开"
-                              onClick={() => handleOpenInTab(event)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleOpenInTab(event);
+                              }}
                             >
                               <img src={TabIconSvg} alt="tab" style={{ width: '20px', height: '20px' }} />
                             </button>
