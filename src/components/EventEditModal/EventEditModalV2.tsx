@@ -2783,6 +2783,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     <UnifiedDateTimePicker
                       initialStart={formData.startTime || undefined}
                       initialEnd={formData.endTime || undefined}
+                      useTimeHub={true}
                       onApplied={handleTimeApplied}
                       onClose={() => setShowTimePicker(false)}
                     />
