@@ -2342,8 +2342,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         <>
           <div className="modal-content">
             {/* 左侧：Event Overview */}
-                <div className="event-overview">
-                {/* 上 Section - 事件标识区 */}
+            <div className="event-overview">
+              {/* 上 Section - 事件标识区 */}
                 <div className="section-identity">
                   {/* Emoji (大图标) */}
                   <div 
@@ -3628,6 +3628,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                 </div>
               )}
             </div>
+            {/* event-overview 结束 */}
           </div>
           {/* modal-content 结束 */}
 

@@ -1,0 +1,338 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","recharts":"https://esm.sh/recharts?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts';
+
+// 数据定义
+const DATA = [
+  { name: 'Work', value: 35, color: '#b8cce4' },    // 浅蓝
+  { name: 'Study', value: 25, color: '#7dd3ad' },   // 柔绿
+  { name: 'Fitness', value: 15, color: '#9ca8a9' }, // 灰
+  { name: 'Sleep', value: 20, color: '#fcdb7d' },   // 奶黄
+  { name: 'Read', value: 15, color: '#d98b68' },    // 砖红
+  { name: 'Relax', value: 10, color: '#b89cb9' },   // 紫
+];
+
+function RechartsDonut() {
+  // 用于图例交互的状态
+  const [activeIndex, setActiveIndex] = useState(null);
+
+  // 交互事件处理
+  const onPieEnter = (_, index) => {
+    setActiveIndex(index);
+  };
+  
+  const onPieLeave = () => {
+    setActiveIndex(null);
+  };
+
+  return (
+    <div className="flex flex-col items-center justify-center p-8 bg-[#fdfbf7] rounded-[40px] shadow-sm min-h-[500px] w-full max-w-md mx-auto border border-[#f0ebe0]">
+      
+      <div className="relative w-full h-[320px]">
+        {/* Recharts 容器 */}
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={DATA}
+              cx="50%"            // 圆心 X
+              cy="50%"            // 圆心 Y
+              innerRadius={85}    // 内圆半径 (控制环的厚度)
+              outerRadius={125}   // 外圆半径
+              cornerRadius={20}   // 【关键】圆角大小：设为 (outer-inner)/2 就能得到完美的半圆头
+              paddingAngle={6}    // 【关键】间隙角度：自动处理间隙，不会导致变形
+              dataKey="value"
+              startAngle={90}     // 从 12 点钟方向开始 (Recharts 默认 0 是 3 点钟)
+              endAngle={-270}     // 顺时针画一圈
+              stroke="none"       // 去掉默认的白色描边
+              onMouseEnter={onPieEnter}
+              onMouseLeave={onPieLeave}
+            >
+              {DATA.map((entry, index) => (
+                <Cell 
+                  key={`cell-${index}`} 
+                  fill={entry.color} 
+                  style={{
+                    transition: 'all 0.3s ease',
+                    filter: activeIndex === index ? 'brightness(1.05) drop-shadow(0 4px 6px rgba(0,0,0,0.1))' : 'none',
+                    transform: activeIndex === index ? 'scale(1.02)' : 'scale(1)',
+                    transformOrigin: 'center center',
+                    outline: 'none'
+                  }}
+                />
+              ))}
+            </Pie>
+          </PieChart>
+        </ResponsiveContainer>
+
+        {/* 中心文字覆盖层 */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 select-none">
+           <div className="flex items-baseline text-[#1c1917]">
+             <span className="text-4xl font-black tracking-tighter" style={{ fontFamily: 'Inter, sans-serif' }}>124</span>
+             <span className="text-xs font-bold text-[#a8a29e] ml-1 mr-2 transform translate-y-[-2px]">小时</span>
+             <span className="text-4xl font-black tracking-tighter" style={{ fontFamily: 'Inter, sans-serif' }}>59</span>
+             <span className="text-xs font-bold text-[#a8a29e] ml-1 transform translate-y-[-2px]">分钟</span>
+          </div>
+        </div>
+      </div>
+
+       {/* 底部图例 */}
+       <div className="flex flex-wrap gap-x-6 gap-y-3 justify-center px-8 mt-2">
+        {DATA.map((item, index) => (
+            <div 
+                key={index} 
+                className={`flex items-center gap-2 transition-opacity duration-200 cursor-default ${activeIndex !== null && activeIndex !== index ? 'opacity-30' : 'opacity-100'}`}
+                onMouseEnter={() => setActiveIndex(index)}
+                onMouseLeave={() => setActiveIndex(null)}
+            >
+                <div 
+                  className="w-2.5 h-2.5 rounded-full" 
+                  style={{ backgroundColor: item.color }} 
+                />
+                <span className="text-[10px] font-bold text-[#78716c] uppercase tracking-wider">{item.name}</span>
+            </div>
+        ))}
+      </div>
+
+    </div>
+  );
+}
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <RechartsDonut />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>
