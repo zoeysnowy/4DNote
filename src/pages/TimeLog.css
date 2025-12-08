@@ -70,6 +70,110 @@
 }
 
 /* ========================================
+   Chrome 风格标签栏
+   ======================================== */
+
+.timelog-header-with-tabs {
+  margin-bottom: 0;
+}
+
+.timelog-header-with-tabs .timelog-header-border {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.timelog-tab-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  border-bottom: 1px solid #E5E7EB;
+  padding: 0;
+  margin: 0;
+}
+
+.timelog-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: #F3F4F6;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s ease;
+  min-width: 120px;
+  max-width: 200px;
+}
+
+.timelog-tab:hover {
+  background: #E5E7EB;
+}
+
+.timelog-tab-active {
+  background: white;
+  border-bottom: 2px solid white;
+  margin-bottom: -1px;
+  cursor: default;
+}
+
+.timelog-tab-active:hover {
+  background: white;
+}
+
+.timelog-tab .timelog-gradient-bar {
+  width: 4px;
+  height: 20px;
+  border-radius: 2px;
+  background: linear-gradient(to right, #a855f7, #3b82f6);
+  flex-shrink: 0;
+}
+
+.timelog-tab .timelog-title {
+  font-size: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timelog-tab .tab-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+}
+
+.timelog-tab-active .tab-title {
+  color: #111827;
+  font-weight: 600;
+}
+
+.tab-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: transparent;
+  border: none;
+  color: #9CA3AF;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.tab-close:hover {
+  background: rgba(0, 0, 0, 0.1);
+  color: #374151;
+}
+
+/* ========================================
    日期显示区
    ======================================== */
 

@@ -1419,13 +1419,51 @@ const TimeLog: React.FC = () => {
 
       {/* 中间时光日志区 - 整个内容在一个白色背景卡片里 */}
       <div className="timelog-main-card">
-          {/* 时光日志标题区 */}
-          <div className="timelog-header-section">
-            <div className="timelog-header-border">
-              <div className="timelog-gradient-bar"></div>
-              <h1 className="timelog-title">时光日志</h1>
+          {/* 标题区：根据是否有tab显示不同样式 */}
+          {!showTabManager ? (
+            /* 无tab时：普通矩形卡片标题 */
+            <div className="timelog-header-section">
+              <div className="timelog-header-border">
+                <div className="timelog-gradient-bar"></div>
+                <h1 className="timelog-title">时光日志</h1>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* 有tab时：标签栏样式 */
+            <div className="timelog-header-section timelog-header-with-tabs">
+              <div className="timelog-tab-bar">
+                {/* 时光日志作为第一个tab */}
+                <div className="timelog-tab timelog-tab-active">
+                  <div className="timelog-gradient-bar"></div>
+                  <h1 className="timelog-title">时光日志</h1>
+                </div>
+                {/* 打开的事件tab */}
+                {tabManagerEvents.map((event) => (
+                  <div 
+                    key={event.id} 
+                    className="timelog-tab"
+                    onClick={() => {
+                      // TODO: 切换到对应事件编辑视图
+                    }}
+                  >
+                    <span className="tab-title">{event.title || '未命名事件'}</span>
+                    <button 
+                      className="tab-close"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
+                        if (tabManagerEvents.length <= 1) {
+                          setShowTabManager(false);
+                        }
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Event 列表 */}
           <div className="timelog-events-list" ref={timelineContainerRef}>
