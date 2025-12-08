@@ -1904,7 +1904,24 @@ const TimeLog: React.FC = () => {
                   
                   {/* 🆕 日历来源信息（右对齐） */}
                   <div className="time-calendar-source-wrapper">
-                    <span className="time-calendar-label">同步</span>
+                    {/* 同步模式图标（在日历选择器左侧） */}
+                    <div 
+                      className="time-sync-mode-icon"
+                      ref={(el) => { if (el) syncModePickerRefs.current.set(event.id, el); }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowSyncModePicker(showSyncModePicker === event.id ? null : event.id);
+                      }}
+                      title={(() => {
+                        const info = getSyncModeInfo(event.syncMode || 'receive-only');
+                        return info.name;
+                      })()}
+                    >
+                      {(() => {
+                        const info = getSyncModeInfo(event.syncMode || 'receive-only');
+                        return info.emoji;
+                      })()}
+                    </div>
                     <div 
                       className="time-calendar-source"
                       ref={(el) => { if (el) calendarPickerRefs.current.set(event.id, el); }}
@@ -2078,26 +2095,6 @@ const TimeLog: React.FC = () => {
                             </button>
                           </div>
                         )}
-                      </div>
-                      
-                      {/* 🆕 同步模式选择器（右侧，与"同步"标签垂直对齐） */}
-                      <div 
-                        className="title-sync-mode"
-                        ref={(el) => { if (el) syncModePickerRefs.current.set(event.id, el); }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setShowSyncModePicker(showSyncModePicker === event.id ? null : event.id);
-                        }}
-                      >
-                        {(() => {
-                          const info = getSyncModeInfo(event.syncMode || 'receive-only');
-                          return (
-                            <>
-                              <span className="sync-mode-emoji">{info.emoji}</span>
-                              <span className="sync-mode-name">{info.name}</span>
-                            </>
-                          );
-                        })()}
                       </div>
                       
                       {/* 🆕 同步模式选择器弹窗 */}

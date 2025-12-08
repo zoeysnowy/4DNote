@@ -496,80 +496,54 @@
 
 /* 🆕 时间行 - 日历来源信息（右对齐） */
 .time-calendar-source-wrapper {
-  display: grid;
-  grid-template-columns: auto auto;
+  display: flex;
   align-items: center;
-  gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
-  width: 160px; /* 固定总宽度 */
-}
-
-.time-calendar-label {
-  font-size: 14px;
-  color: #6b7280;
-  flex-shrink: 0;
-  padding: 0;
-  grid-column: 1;
 }
 
 .time-calendar-source {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 4px;
+  padding: 2px 8px;
   border-radius: 4px;
   font-size: 14px;
   cursor: pointer;
   transition: background-color 0.15s;
-  grid-column: 2;
-  width: 120px; /* 固定宽度 */
+  min-width: 100px;
+  max-width: 150px;
 }
 
 .time-calendar-source:hover {
   background-color: #f9fafb;
 }
 
-/* 🆕 标题行 - 同步模式选择器（右侧，与"同步"两个字左边缘对齐） */
+/* 🆕 标题行 - 同步模式选择器（仅显示图标） */
 .title-sync-mode {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   margin-left: auto;
-  padding: 0;
+  padding: 4px 8px;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.15s;
-  white-space: nowrap;
   flex-shrink: 0;
-  width: 160px; /* 与time-calendar-source-wrapper相同的固定总宽度 */
+  width: 32px;
+  height: 28px;
 }
 
 .title-sync-mode:hover {
-  background-color: #f9fafb;
+  background-color: #f3f4f6;
 }
 
 .title-sync-mode .sync-mode-emoji {
-  font-size: 14px !important;
+  font-size: 16px !important;
   line-height: 1;
   flex-shrink: 0;
   padding: 0;
   margin: 0;
-}
-
-.title-sync-mode .sync-mode-name {
-  font-size: 14px !important;
-  flex-shrink: 0;
-  padding: 0;
-  margin: 0;
-}
-
-.title-sync-mode .sync-mode-name {
-  color: #6b7280;
-  font-size: 11px;
-  max-width: 100px;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Row 3: Tags */
