@@ -5,62 +5,128 @@
  * 受 Gemini 的 "Vessels as Stacks" 启发
  */
 
-/* ========== Custom Event Node ========== */
-.custom-event-node {
+/* ========== Custom Event Node (参考 HTML 演示) ========== */
+.react-flow__node.custom-event-node {
   position: relative;
-  min-width: 200px;
+  min-width: 256px !important; /* 64 * 4 = 256px */
+  background: transparent !important;
 }
 
-.event-node-content {
+.react-flow__node .event-node-content {
   position: relative;
   z-index: 10;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  background: white;
-  border: 1.5px solid #e5e7eb;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  flex-direction: column;
+  padding: 16px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%) !important;
+  border: 2px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(255, 255, 255, 0.05);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(10px);
 }
 
-.event-node-content:hover {
-  border-color: #3b82f6;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+.react-flow__node .event-node-content:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2), 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
 
-.event-node-checkbox {
+/* 顶部头部区域 */
+.react-flow__node .event-node-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.react-flow__node .event-node-checkbox {
   width: 16px;
   height: 16px;
   cursor: pointer;
   flex-shrink: 0;
+  accent-color: #3b82f6;
 }
 
-.event-node-emoji {
-  font-size: 18px;
-  flex-shrink: 0;
+.react-flow__node .event-node-type-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  flex: 1;
 }
 
-.event-node-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #1f2937;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.react-flow__node .event-node-type-badge svg {
+  opacity: 0.6;
 }
 
-.event-node-link-indicator {
+.react-flow__node .event-node-link-badge {
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-left: auto;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: white;
   font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
+  font-weight: 700;
   flex-shrink: 0;
+}
+
+/* 标题区域 */
+.react-flow__node .event-node-title-area {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.react-flow__node .event-node-emoji {
+  font-size: 24px;
+  flex-shrink: 0;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.2));
+}
+
+.react-flow__node .event-node-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: white !important;
+  line-height: 1.4;
+  margin: 0;
+  flex: 1;
+}
+
+.react-flow__node .event-node-description {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+
+/* 进度条 */
+.react-flow__node .event-node-progress {
+  margin-top: 8px;
+}
+
+.react-flow__node .event-node-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.react-flow__node .event-node-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 100%);
+  border-radius: 999px;
+  transition: width 0.3s ease;
 }
 
 /* React Flow Handles */
@@ -84,49 +150,75 @@
   pointer-events: none; /* 收纳态不可点击 */
 }
 
-/* ========== Single Linked Card ========== */
+/* ========== Single Linked Card (参考 HTML 演示) ========== */
 .linked-card {
   position: absolute;
-  width: 192px;
-  min-height: 88px;
+  width: 192px; /* 48 * 4 = 192px */
+  min-height: 96px; /* 24 * 4 = 96px */
   padding: 12px;
-  background: rgba(239, 246, 255, 0.95);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  /* background 和 border 由内联样式控制（根据 tag 颜色生成） */
+  border-width: 1px;
+  border-style: solid;
   border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08),
+              0 1px 3px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
   transform-origin: bottom left;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .linked-card:hover {
-  background: rgba(219, 234, 254, 1);
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12),
+              0 4px 8px rgba(0, 0, 0, 0.08);
+  transform: scale(1.02) translateY(-2px);
   z-index: 100; /* 悬停时提到最前 */
 }
 
 .linked-card-header {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
   margin-bottom: 8px;
-  color: #3b82f6;
+}
+
+.linked-card-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  /* color 由内联样式控制 */
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   opacity: 0.7;
+}
+
+.linked-card-arrow {
+  /* color 由内联样式控制 */
+  opacity: 0.5;
+  transition: all 0.2s ease;
+}
+
+.linked-card:hover .linked-card-arrow {
+  opacity: 1;
+  transform: translateX(2px);
 }
 
 .linked-card-content {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  margin-bottom: 8px;
 }
 
 .linked-card-title {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-  color: #1e40af;
+  /* color 由内联样式控制 */
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -135,12 +227,31 @@
   overflow: hidden;
 }
 
-.linked-card-footer {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: #6b7280;
-  font-size: 11px;
+/* 底部装饰条（模拟 Notion 进度条） */
+.linked-card-progress {
+  width: 100%;
+  margin-top: auto;
+}
+
+.linked-card-progress-bar {
+  width: 100%;
+  height: 4px;
+  /* background 由内联样式控制 */
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.linked-card-progress-fill {
+  width: 66%; /* 默认 2/3 宽度，营造视觉平衡 */
+  height: 100%;
+  /* background 由内联样式控制 */
+  border-radius: 999px;
+  transition: width 0.3s ease;
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.1);
+}
+
+.linked-card:hover .linked-card-progress-fill {
+  width: 75%; /* 悬停时略微增长，添加互动感 */
 }
 
 /* ========== React Flow Canvas Styles ========== */

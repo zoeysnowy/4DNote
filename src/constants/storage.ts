@@ -1,4 +1,4 @@
-// ReMarkable 应用的 localStorage 键名常量
+// 4DNote 应用的 localStorage 键名常量
 export const STORAGE_KEYS = {
   // 应用设置
   SETTINGS: '4dnote-settings',
@@ -56,7 +56,7 @@ export class CacheManager {
     
     if (currentVersion !== STORAGE_VERSION.CURRENT) {
       
-      // 只清理旧的 meaningful- 前缀的缓存，不清理 remarkable- 缓存
+      // 只清理旧的 meaningful- 前缀的缓存
       const oldKeys = [
         'meaningful-settings',
         'meaningful-events', 
@@ -88,7 +88,7 @@ export class CacheManager {
     });
     
     // 不清除开发环境的持久化存储
-    // 保护开发环境的持久化存储键 remarkable-dev-persistent-*
+    // 保护开发环境的持久化存储键 4dnote-dev-persistent-*
     
     localStorage.removeItem(STORAGE_VERSION.KEY);
   }

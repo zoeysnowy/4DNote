@@ -5,7 +5,7 @@
 
 .attendee-display {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   margin-bottom: 8px;
   position: relative;
@@ -15,9 +15,7 @@
 .attendee-icon {
   width: 16px;
   height: 16px;
-  margin-top: 2px;
   flex-shrink: 0;
-  opacity: 0.6;
 }
 
 /* 输入容器 */
@@ -56,17 +54,19 @@
 /* 查看模式 - 带 Tippy 的文本显示 */
 .attendee-text-display {
   flex: 1;
+  display: flex;
+  align-items: center;
   font-size: 14px;
   line-height: 1.6;
-  color: #1a1a1a;
+  color: #6b7280;
   cursor: text;
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 2px 4px;
 }
 
 .attendee-text-display .placeholder-text {
-  color: #bbb;
+  color: #9ca3af;
+  line-height: 1.6;
 }
 
 .attendee-text-display .participant-name {

@@ -1,434 +1,343 @@
 /**
- * 🌲 EditableEventTree - 可编辑的事件树
- * 
- * 基于 Slate 编辑器的树形事件管理器
+ * 🌲 EditableEventTree - 树形事件编辑器
  * 
  * 功能：
- * - Tab / Shift+Tab: 调整层级（自动创建/更新 parentEventId/childEventIds）
- * - Enter: 创建同级事件
- * - Alt+Shift+↑/↓: 移动事件
- * - 双向数据绑定：编辑器 ↔ EventService
+ * - 树形折叠/展开结构，L 形连接线
+ * - 每行使用 Slate 编辑标题（单行模式）
+ * - 右侧 Link 按钮显示关联事件的堆叠卡片
+ * - Tab/Shift+Tab 调整层级
+ * - Enter 创建新事件
  * 
  * 架构：
- * - 刚性骨架：bullet list 的缩进层级 = parentEventId/childEventIds
- * - 实时同步：每次调整层级都更新数据库
+ * - 基于 parentEventId/childEventIds 构建树形结构
+ * - 每个节点独立的 Slate 编辑器实例
+ * - 递归渲染子节点
  */
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { createEditor, Descendant, Editor, Transforms, Element as SlateElement, Node, Path } from 'slate';
-import { Slate, Editable, withReact, ReactEditor } from 'slate-react';
+import { createEditor, Descendant } from 'slate';
+import { Slate, Editable, withReact } from 'slate-react';
 import { withHistory } from 'slate-history';
+import { ChevronRight, ChevronDown, Circle, Link as LinkIcon } from 'lucide-react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
+import { LinkedCard } from './LinkedCard';
+import Tippy from '@tippyjs/react';
+import 'tippy.js/dist/tippy.css';
 import './EditableEventTree.css';
 
 interface EditableEventTreeProps {
-  rootEventId: string;              // 根事件 ID
-  onEventClick?: (event: Event) => void;  // 点击事件回调
+  rootEventId: string;
+  onEventClick?: (event: Event) => void;
 }
 
-// Slate 节点类型
-interface EventTreeNode {
-  type: 'event-item';
-  eventId: string;
-  level: number;                    // 缩进层级 (0, 1, 2, ...)
-  children: Array<{ text: string }>;
+// 树节点数据结构
+interface TreeNode {
+  event: Event;
+  children: TreeNode[];
+  isOpen: boolean;
 }
+
+// 树节点组件
+const TreeNodeItem: React.FC<{
+  node: TreeNode;
+  isLast: boolean;
+  onEventClick?: (event: Event) => void;
+  onToggle: (eventId: string) => void;
+  onTitleChange: (eventId: string, title: string) => void;
+}> = ({ node, isLast, onEventClick, onToggle, onTitleChange }) => {
+  const [editor] = useState(() => withHistory(withReact(createEditor())));
+  const [linkedEvents, setLinkedEvents] = useState<Event[]>([]);
+  const hasChildren = node.children.length > 0;
+
+  // 初始化编辑器内容
+  const initialValue: Descendant[] = [
+    {
+      type: 'paragraph',
+      children: [{ text: node.event.title?.simpleTitle || '' }],
+    } as any,
+  ];
+
+  // 加载关联事件
+  useEffect(() => {
+    const loadLinkedEvents = async () => {
+      const result = await EventService.getLinkedEvents(node.event.id);
+      // getLinkedEvents 返回 { outgoing, incoming }，合并为一个数组
+      const allLinked = [...result.outgoing, ...result.incoming];
+      // 去重
+      const uniqueLinked = Array.from(new Map(allLinked.map(e => [e.id, e])).values());
+      setLinkedEvents(uniqueLinked);
+    };
+    loadLinkedEvents();
+  }, [node.event.id]);
+
+  const handleChange = (value: Descendant[]) => {
+    // 提取标题文本
+    const text = value.map((n: any) => 
+      n.children?.map((c: any) => c.text).join('') || ''
+    ).join('\n');
+    onTitleChange(node.event.id, text);
+  };
+
+  return (
+    <li className="tree-node-item">
+      {/* 垂直连接线 */}
+      {!isLast && <div className="vertical-line" />}
+      
+      {/* L 形弯曲线 */}
+      <div className={`connector-curve ${isLast ? 'connector-last' : ''}`} />
+
+      {/* 内容区域 */}
+      <div className="tree-node-content">
+        {/* 折叠/展开按钮 */}
+        <button
+          className="toggle-button"
+          onClick={() => onToggle(node.event.id)}
+        >
+          {hasChildren ? (
+            node.isOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+          ) : (
+            <Circle size={6} className="circle-dot" />
+          )}
+        </button>
+
+        {/* Slate 标题编辑器 */}
+        <div className="title-editor">
+          <Slate editor={editor} initialValue={initialValue} onChange={handleChange}>
+            <Editable
+              placeholder="输入事件标题..."
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  // TODO: 创建新事件
+                }
+              }}
+            />
+          </Slate>
+        </div>
+
+        {/* Link 按钮 - 使用 Tippy 定位堆叠卡片 */}
+        {linkedEvents.length > 0 && (
+          <Tippy
+            content={
+              <div className="linked-cards-stack">
+                {linkedEvents.map((linkedEvent, index) => (
+                  <LinkedCard
+                    key={linkedEvent.id}
+                    event={linkedEvent}
+                    index={index}
+                    isHovered={true}
+                    onClick={() => onEventClick?.(linkedEvent)}
+                  />
+                ))}
+              </div>
+            }
+            interactive={true}
+            placement="right-end"
+            theme="light-border"
+            animation="shift-away"
+            delay={[100, 0]}
+            arrow={false}
+            offset={[8, 0]}
+            maxWidth="none"
+            appendTo={() => document.body}
+            zIndex={9999}
+          >
+            <div className="link-button-container">
+              <button className="link-button">
+                <LinkIcon size={14} />
+                <span>{linkedEvents.length}</span>
+              </button>
+            </div>
+          </Tippy>
+        )}
+      </div>
+
+      {/* 递归渲染子节点 */}
+      {hasChildren && node.isOpen && (
+        <ul className="tree-children">
+          {node.children.map((child, index) => (
+            <TreeNodeItem
+              key={child.event.id}
+              node={child}
+              isLast={index === node.children.length - 1}
+              onEventClick={onEventClick}
+              onToggle={onToggle}
+              onTitleChange={onTitleChange}
+            />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+};
+
+// 统计树节点总数
+const countTreeNodes = (node: TreeNode): number => {
+  let count = 1; // 当前节点
+  node.children.forEach(child => {
+    count += countTreeNodes(child);
+  });
+  return count;
+};
 
 export const EditableEventTree: React.FC<EditableEventTreeProps> = ({
   rootEventId,
   onEventClick,
 }) => {
-  const [editor] = useState(() => withHistory(withReact(createEditor())));
-  const [initialValue, setInitialValue] = useState<Descendant[]>([
-    {
-      type: 'event-item',
-      eventId: rootEventId,
-      level: 0,
-      children: [{ text: '加载中...' }],
-    } as any,
-  ]);
+  const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 从 EventService 加载事件树
+  // 构建树形结构（递归加载所有层级）
+  const buildTree = useCallback(async (event: Event, depth: number = 0): Promise<TreeNode> => {
+    console.log(`📊 [EventTree] 构建节点 (深度${depth}):`, {
+      id: event.id.slice(-8),
+      title: event.title?.simpleTitle,
+      childEventIds: event.childEventIds,
+      childCount: event.childEventIds?.length || 0,
+      hasChildEventIds: !!event.childEventIds,
+      isArrayType: Array.isArray(event.childEventIds)
+    });
+
+    const children: TreeNode[] = [];
+    
+    if (event.childEventIds && event.childEventIds.length > 0) {
+      console.log(`🔄 [EventTree] 开始加载 ${event.childEventIds.length} 个子事件 (深度${depth})`);
+      
+      for (const childId of event.childEventIds) {
+        console.log(`  ↳ [EventTree] 加载子事件 (深度${depth + 1}):`, childId.slice(-8));
+        
+        const child = await EventService.getEventById(childId);
+        if (child && EventService.shouldShowInEventTree(child)) {
+          console.log(`  ✅ [EventTree] 子事件有效，递归加载 (深度${depth + 1}):`, {
+            id: childId.slice(-8),
+            title: child.title?.simpleTitle,
+            hasOwnChildren: !!child.childEventIds,
+            ownChildCount: child.childEventIds?.length || 0
+          });
+          
+          // 🔥 递归加载子事件的子事件（三级、四级等）
+          const childNode = await buildTree(child, depth + 1);
+          children.push(childNode);
+        } else if (child) {
+          console.log(`⏭️ [EventTree] 跳过系统事件 (深度${depth + 1}):`, child.id.slice(-8));
+        } else {
+          console.warn(`⚠️ [EventTree] 子事件不存在 (深度${depth + 1}):`, childId.slice(-8));
+        }
+      }
+    } else {
+      console.log(`📭 [EventTree] 无子事件 (深度${depth}):`, {
+        id: event.id.slice(-8),
+        childEventIds: event.childEventIds
+      });
+    }
+
+    console.log(`✅ [EventTree] 节点完成 (深度${depth}):`, {
+      id: event.id,
+      title: event.title?.simpleTitle,
+      loadedChildren: children.length
+    });
+
+    return {
+      event,
+      children,
+      isOpen: true, // 默认展开
+    };
+  }, []);
+
+  // 加载事件树
   const loadEventTree = useCallback(async () => {
     try {
-      console.log('🔍 [EditableEventTree] 开始加载事件树...', { rootEventId });
+      console.log('🌲 [EventTree] 开始加载事件树，根事件:', rootEventId);
       
       const rootEvent = await EventService.getEventById(rootEventId);
       if (!rootEvent) {
-        console.error('❌ [EditableEventTree] 根事件不存在:', rootEventId);
+        console.error('❌ [EventTree] 根事件不存在:', rootEventId);
         setIsLoading(false);
         return;
       }
 
-      console.log('✅ [EditableEventTree] 根事件加载成功:', {
+      console.log('✅ [EventTree] 根事件加载成功:', {
         id: rootEvent.id,
-        title: rootEvent.title,
-        childEventIds: rootEvent.childEventIds,
-        hasChildren: !!(rootEvent.childEventIds && rootEvent.childEventIds.length > 0)
+        title: rootEvent.title?.simpleTitle,
+        directChildren: rootEvent.childEventIds?.length || 0
       });
 
-      // 递归构建树形结构
-      const buildTree = async (event: Event, level: number): Promise<EventTreeNode[]> => {
-        const title = typeof event.title === 'string' 
-          ? event.title 
-          : (event.title?.simpleTitle || event.title?.colorTitle || event.title?.fullTitle || '无标题');
-
-        const node: EventTreeNode = {
-          type: 'event-item',
-          eventId: event.id,
-          level,
-          children: [{ text: title }],
-        };
-
-        const nodes: EventTreeNode[] = [node];
-
-        console.log(`📝 [EditableEventTree] 构建节点 level=${level}:`, {
-          id: event.id,
-          title,
-          childEventIds: event.childEventIds
-        });
-
-        // 递归加载子事件
-        if (event.childEventIds && event.childEventIds.length > 0) {
-          console.log(`🌲 [EditableEventTree] 加载 ${event.childEventIds.length} 个子事件...`);
-          
-          for (const childId of event.childEventIds) {
-            const child = await EventService.getEventById(childId);
-            
-            if (!child) {
-              console.warn(`⚠️ [EditableEventTree] 子事件不存在: ${childId}`);
-              continue;
-            }
-            
-            if (!EventService.shouldShowInEventTree(child)) {
-              console.log(`⏭️ [EditableEventTree] 跳过系统事件: ${childId}`);
-              continue;
-            }
-            
-            const childNodes = await buildTree(child, level + 1);
-            nodes.push(...childNodes);
-          }
-        }
-
-        return nodes;
-      };
-
-      const treeNodes = await buildTree(rootEvent, 0);
+      const tree = await buildTree(rootEvent);
+      const totalNodes = countTreeNodes(tree);
       
-      console.log('✅ [EditableEventTree] 树构建完成:', {
-        totalNodes: treeNodes.length,
-        structure: treeNodes.map(n => ({
-          id: n.eventId,
-          level: n.level,
-          title: n.children[0].text
-        }))
+      console.log('🎉 [EventTree] 事件树构建完成:', {
+        rootId: rootEvent.id,
+        totalNodes,
+        structure: JSON.stringify(tree, (key, value) => {
+          if (key === 'event') return { id: value.id, title: value.title?.simpleTitle };
+          return value;
+        }, 2)
       });
       
-      // 更新 Slate 编辑器内容
-      if (treeNodes.length > 0) {
-        editor.children = treeNodes as any;
-        editor.onChange();
-      }
-      
-      setInitialValue(treeNodes as any);
+      setTreeData(tree);
       setIsLoading(false);
     } catch (error) {
-      console.error('❌ [EditableEventTree] 加载事件树失败:', error);
+      console.error('❌ [EventTree] 加载事件树失败:', error);
       setIsLoading(false);
     }
-  }, [rootEventId, editor]);
+  }, [rootEventId, buildTree]);
 
   useEffect(() => {
     loadEventTree();
   }, [loadEventTree]);
 
-  // 创建新事件
-  const createNewEvent = useCallback(async (editor: Editor, currentPath: Path, level: number) => {
-    try {
-      // 查找父事件 ID
-      let parentEventId: string | null = null;
-      if (level > 0) {
-        for (let i = currentPath[0] - 1; i >= 0; i--) {
-          const [prevNode] = Editor.node(editor, [i]);
-          // @ts-ignore - 自定义 event-item 类型
-          if (SlateElement.isElement(prevNode) && prevNode.type === 'event-item') {
-            const prevLevel = (prevNode as any).level || 0;
-            if (prevLevel === level - 1) {
-              parentEventId = (prevNode as any).eventId;
-              break;
-            }
-          }
-        }
+  // 切换节点展开/折叠
+  const handleToggle = useCallback((eventId: string) => {
+    const toggleNode = (node: TreeNode): TreeNode => {
+      if (node.event.id === eventId) {
+        return { ...node, isOpen: !node.isOpen };
       }
-
-      // 创建新事件
-      const result = await EventService.createEvent({
-        title: { simpleTitle: '' },
-        parentEventId: parentEventId || undefined,
-        isTask: false,
-      } as any);
-
-      if (!result.success || !result.event) {
-        console.error('创建事件失败:', result.error);
-        return;
-      }
-
-      const newEvent = result.event;
-
-      // 更新父事件的 childEventIds
-      if (parentEventId) {
-        const parent = await EventService.getEventById(parentEventId);
-        if (parent) {
-          await EventService.updateEvent(parentEventId, {
-            childEventIds: [...(parent.childEventIds || []), newEvent.id],
-          });
-        }
-      }
-
-      // 插入新节点到编辑器
-      const newNode: EventTreeNode = {
-        type: 'event-item',
-        eventId: newEvent.id,
-        level,
-        children: [{ text: '' }],
+      return {
+        ...node,
+        children: node.children.map(toggleNode),
       };
+    };
 
-      Transforms.insertNodes(editor, newNode as any, {
-        at: [currentPath[0] + 1],
-      });
-
-      // 聚焦到新节点
-      Transforms.select(editor, {
-        anchor: { path: [currentPath[0] + 1, 0], offset: 0 },
-        focus: { path: [currentPath[0] + 1, 0], offset: 0 },
-      });
-
-      console.log('✅ 创建新事件:', newEvent.id);
-    } catch (error) {
-      console.error('❌ 创建新事件失败:', error);
+    if (treeData) {
+      setTreeData(toggleNode(treeData));
     }
-  }, [editor]);
+  }, [treeData]);
 
-  // 更新父子关系
-  const updateParentRelation = useCallback(async (editor: Editor, path: Path, newLevel: number) => {
-    const [node] = Editor.node(editor, path);
-    // @ts-ignore - 自定义 event-item 类型
-    if (!SlateElement.isElement(node) || node.type !== 'event-item') return;
-
-    const eventId = (node as any).eventId;
-    if (!eventId) return;
-
-    // 查找新的父事件（向上查找同级或上级）
-    let parentEventId: string | null = null;
-    
-    if (newLevel > 0) {
-      for (let i = path[0] - 1; i >= 0; i--) {
-        const [prevNode] = Editor.node(editor, [i]);
-        // @ts-ignore - 自定义 event-item 类型
-        if (SlateElement.isElement(prevNode) && prevNode.type === 'event-item') {
-          const prevLevel = (prevNode as any).level || 0;
-          if (prevLevel === newLevel - 1) {
-            parentEventId = (prevNode as any).eventId;
-            break;
-          } else if (prevLevel < newLevel - 1) {
-            break;
-          }
-        }
-      }
-    }
-
-    // 更新数据库
-    try {
-      const event = await EventService.getEventById(eventId);
-      if (event) {
-        const oldParentId = event.parentEventId;
-        
-        // 从旧父事件移除
-        if (oldParentId) {
-          const oldParent = await EventService.getEventById(oldParentId);
-          if (oldParent && oldParent.childEventIds) {
-            await EventService.updateEvent(oldParentId, {
-              childEventIds: oldParent.childEventIds.filter(id => id !== eventId),
-            });
-          }
-        }
-
-        // 添加到新父事件
-        if (parentEventId) {
-          const newParent = await EventService.getEventById(parentEventId);
-          if (newParent) {
-            const newChildIds = [...(newParent.childEventIds || []), eventId];
-            await EventService.updateEvent(parentEventId, {
-              childEventIds: newChildIds,
-            });
-          }
-        }
-
-        // 更新当前事件的 parentEventId
-        await EventService.updateEvent(eventId, {
-          parentEventId: parentEventId || undefined,
-        });
-
-        console.log('✅ 更新父子关系:', {
-          eventId,
-          oldParentId,
-          newParentId: parentEventId,
-          newLevel,
-        });
-      }
-    } catch (error) {
-      console.error('❌ 更新父子关系失败:', error);
-    }
-  }, [editor]);
-
-  // 处理键盘事件
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    if (event.key === 'Tab') {
-      event.preventDefault();
-
-      const { selection } = editor;
-      if (!selection) return;
-
-      const [node, path] = Editor.node(editor, selection);
-      // @ts-ignore - 自定义 event-item 类型
-      if (!SlateElement.isElement(node) || node.type !== 'event-item') return;
-      
-      const currentLevel = (node as any).level || 0;
-
-      if (event.shiftKey) {
-        // Shift+Tab: 减少缩进（提升层级）
-        if (currentLevel > 0) {
-          Transforms.setNodes(
-            editor,
-            { level: currentLevel - 1 } as any,
-            { at: path }
-          );
-          updateParentRelation(editor, path, currentLevel - 1);
-        }
-      } else {
-        // Tab: 增加缩进（降低层级）
-        Transforms.setNodes(
-          editor,
-          { level: currentLevel + 1 } as any,
-          { at: path }
-        );
-        updateParentRelation(editor, path, currentLevel + 1);
-      }
-    } else if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      
-      // Enter: 创建同级新事件
-      const { selection } = editor;
-      if (!selection) return;
-
-      const [node, path] = Editor.node(editor, selection);
-      // @ts-ignore - 自定义 event-item 类型
-      if (!SlateElement.isElement(node) || node.type !== 'event-item') return;
-
-      const currentLevel = (node as any).level || 0;
-      
-      // 创建新事件
-      createNewEvent(editor, path, currentLevel);
-    } else if (event.altKey && event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-      event.preventDefault();
-      
-      // Alt+Shift+↑/↓: 移动节点
-      const { selection } = editor;
-      if (!selection) return;
-
-      const [, path] = Editor.node(editor, selection);
-      
-      if (event.key === 'ArrowUp' && path[0] > 0) {
-        // 向上移动
-        Transforms.moveNodes(editor, {
-          at: path,
-          to: [path[0] - 1],
-        });
-      } else if (event.key === 'ArrowDown') {
-        // 向下移动
-        const nextPath = [path[0] + 1];
-        if (Editor.hasPath(editor, nextPath)) {
-          Transforms.moveNodes(editor, {
-            at: path,
-            to: [path[0] + 2],
-          });
-        }
-      }
-    }
-  }, [editor, createNewEvent, updateParentRelation]);
-
-  // 渲染事件节点
-  const renderElement = useCallback((props: any) => {
-    const { attributes, children, element } = props;
-
-    if (element.type === 'event-item') {
-      const level = element.level || 0;
-      const paddingLeft = level * 24; // 每层缩进 24px
-
-      return (
-        <div
-          {...attributes}
-          className="event-tree-item"
-          style={{ paddingLeft: `${paddingLeft}px` }}
-        >
-          {/* Bullet Point */}
-          <span className="event-bullet" contentEditable={false}>
-            •
-          </span>
-          
-          {/* 事件标题（可编辑） */}
-          <span className="event-title-editable">{children}</span>
-        </div>
-      );
-    }
-
-    return <div {...attributes}>{children}</div>;
+  // 更新标题（防抖）
+  const handleTitleChange = useCallback(async (eventId: string, title: string) => {
+    await EventService.updateEvent(eventId, {
+      title: { simpleTitle: title },
+    });
   }, []);
 
   if (isLoading) {
-    return <div style={{ padding: '20px', textAlign: 'center', color: '#9ca3af' }}>加载事件树中...</div>;
+    return (
+      <div className="editable-event-tree loading">
+        <p>加载事件树中...</p>
+      </div>
+    );
+  }
+
+  if (!treeData) {
+    return (
+      <div className="editable-event-tree error">
+        <p>未找到根事件</p>
+      </div>
+    );
   }
 
   return (
     <div className="editable-event-tree">
-      {/* 调试信息 */}
-      <div style={{ 
-        padding: '8px 12px', 
-        background: '#f0f9ff', 
-        borderRadius: '4px', 
-        marginBottom: '12px',
-        fontSize: '13px',
-        color: '#0369a1'
-      }}>
-        <strong>📊 当前树结构:</strong> {initialValue.length} 个节点
-        {initialValue.length > 0 && ` | 根节点: ${(initialValue[0] as any).eventId}`}
-      </div>
-
-      <Slate
-        editor={editor}
-        initialValue={initialValue}
-        onChange={(value) => {
-          // 实时保存标题变更
-          // TODO: 防抖优化
-          console.log('📝 Slate onChange:', value);
-        }}
-      >
-        <Editable
-          renderElement={renderElement}
-          onKeyDown={handleKeyDown}
-          placeholder="按 Enter 创建事件，Tab 调整层级..."
+      <ul className="tree-root">
+        <TreeNodeItem
+          node={treeData}
+          isLast={true}
+          onEventClick={onEventClick}
+          onToggle={handleToggle}
+          onTitleChange={handleTitleChange}
         />
-      </Slate>
-
-      {/* 快捷键提示 */}
-      <div className="keyboard-hints">
-        <span>Enter: 新建同级</span>
-        <span>Tab: 降级</span>
-        <span>Shift+Tab: 升级</span>
-        <span>Alt+Shift+↑↓: 移动</span>
-      </div>
+      </ul>
     </div>
   );
 };

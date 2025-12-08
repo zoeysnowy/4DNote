@@ -80,6 +80,12 @@ function App() {
         await storageManager.initialize();
         console.log('✅ [App] StorageManager initialized');
         
+        // 🔥 v3.1.0: 初始化 EventHistoryService（SQLite）
+        console.log('📚 [App] Initializing EventHistoryService...');
+        const { EventHistoryService } = await import('./services/EventHistoryService');
+        await EventHistoryService.initialize(storageManager);
+        console.log('✅ [App] EventHistoryService initialized');
+        
         // 🔄 数据迁移：localStorage → StorageManager
         const { needsMigration, migrateFromLocalStorage } = await import('./utils/dataMigration');
         const shouldMigrate = await needsMigration();
@@ -165,6 +171,27 @@ function App() {
             getFlatTags: () => TagService.getFlatTags()
           }
         };
+        
+        // 🧪 暴露测试所需的全局对象
+        console.log('🧪 [App] Exposing global objects for testing...');
+        import('./services/EventService').then(({ EventService }) => {
+          (window as any).EventService = EventService;
+        });
+        import('./services/EventHub').then(({ EventHub }) => {
+          (window as any).EventHub = EventHub;
+        });
+        import('./services/TimeHub').then(({ TimeHub }) => {
+          (window as any).TimeHub = TimeHub;
+        });
+        import('./services/ContactService').then(({ ContactService }) => {
+          (window as any).ContactService = ContactService;
+        });
+        import('./services/storage/StorageManager').then(({ storageManager }) => {
+          (window as any).storageManager = storageManager;
+          (window as any).StorageManager = storageManager; // 大写版本（兼容性）
+        });
+        (window as any).TagService = TagService; // 已经导入
+        (window as any).ActionBasedSyncManager = ActionBasedSyncManager; // 已经导入
       }
     };
 
@@ -214,6 +241,9 @@ function App() {
     console.log('🔍 [App] lastAuthState initializing:', isAuth);
     return isAuth;
   });
+  
+  // ✨ 防止重复创建 SyncManager（React 严格模式会导致 useEffect 执行两次）
+  const syncManagerCreationRef = useRef(false);
 
   // 🔧 调试：监控 syncManager 变化
   useEffect(() => {
@@ -522,6 +552,7 @@ function App() {
       }
       
       // ✅ 立即创建初始事件（syncStatus: 'local-only'，运行中不同步）
+      // 🔧 Timer 作为系统性子事件，应从 parentEvent.subEventConfig 继承配置
       const initialEvent: Event = {
         id: timerEventId,
         title: parentEvent?.title || { simpleTitle: '计时中的事件' },
@@ -529,8 +560,9 @@ function App() {
         startTime: formatTimeForStorage(startDate),
         endTime: formatTimeForStorage(startDate), // 结束时更新
         tags: parentEvent?.tags || tagIdArray,
-        calendarIds: parentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
-        syncMode: parentEvent?.syncMode,
+        // ✅ 系统性子事件：从 subEventConfig 继承（fallback 到父事件配置）
+        calendarIds: parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
+        syncMode: parentEvent?.subEventConfig?.syncMode || parentEvent?.syncMode,
         location: parentEvent?.location || '',
         description: parentEvent?.description || '计时中的事件',
         eventlog: parentEvent?.eventlog,
@@ -809,6 +841,7 @@ function App() {
       }
       
       // 🔧 复用同一个 eventId，更新状态为 pending 以触发同步
+      // 🔧 Timer 作为系统性子事件，应从 currentParentEvent.subEventConfig 继承配置
       const finalEvent: Event = {
         id: timerEventId, // ✅ 复用启动时创建的 ID
         title: currentParentEvent?.title || { simpleTitle: eventTitle }, // ✅ 继承父事件标题
@@ -816,8 +849,9 @@ function App() {
         startTime: formatTimeForStorage(startTime),
         endTime: formatTimeForStorage(new Date(startTime.getTime() + totalElapsed)),
         tags: currentParentEvent?.tags || globalTimer.tagIds || [],
-        calendarIds: currentParentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
-        syncMode: currentParentEvent?.syncMode,
+        // ✅ 系统性子事件：从 subEventConfig 继承（fallback 到父事件配置）
+        calendarIds: currentParentEvent?.subEventConfig?.calendarIds || currentParentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
+        syncMode: currentParentEvent?.subEventConfig?.syncMode || currentParentEvent?.syncMode,
         location: currentParentEvent?.location || existingEvent?.location || '',
         description: finalDescription,
         eventlog: currentParentEvent?.eventlog || existingEvent?.eventlog,
@@ -1453,33 +1487,48 @@ function App() {
     
     // 🔧 修复：无论状态是否变化，只要已登录且没有 syncManager，就初始化
     if (currentAuthState && !syncManager) {
+      // ✨ 防止 React 严格模式下重复创建
+      if (syncManagerCreationRef.current) {
+        console.log('⏭️ [App] SyncManager 正在创建中，跳过重复创建');
+        return;
+      }
+      
+      syncManagerCreationRef.current = true;
       AppLogger.log('🚀 用户已登录，初始化同步管理器...');
       
-      try {
-        console.log('🔍 [App] 开始创建 ActionBasedSyncManager...');
-        const newSyncManager = new ActionBasedSyncManager(microsoftService);
-        console.log('🔍 [App] ActionBasedSyncManager 创建成功:', newSyncManager);
-        console.log('🔍 [App] forceSync 方法:', typeof newSyncManager.forceSync);
-        
-        setSyncManager(newSyncManager);
-        
-        // 🔧 初始化 EventService（注入同步管理器）
-        EventService.initialize(newSyncManager);
-        
-        // 启动同步管理器（会延迟5秒后执行首次同步）
-        newSyncManager.start();
-        AppLogger.log('✅ 同步管理器初始化成功（首次同步延迟5秒）');
-        AppLogger.log('✅ EventService 初始化成功');
-        
-        // 暴露到全局用于调试
-        if (typeof window !== 'undefined') {
-          (window as any).syncManager = newSyncManager;
-          console.log('🔍 [App] syncManager 已暴露到 window.syncManager');
+      // 使用立即执行的异步函数（useEffect 不能直接是 async）
+      (async () => {
+        try {
+          console.log('🔍 [App] 开始创建 ActionBasedSyncManager...');
+          const newSyncManager = new ActionBasedSyncManager(microsoftService);
+          console.log('🔍 [App] ActionBasedSyncManager 创建成功:', newSyncManager);
+          console.log('🔍 [App] forceSync 方法:', typeof newSyncManager.forceSync);
+          
+          setSyncManager(newSyncManager);
+          
+          // 🔧 初始化 EventService（注入同步管理器）
+          EventService.initialize(newSyncManager);
+          
+          // 🧹 检查并清理历史记录（防止 localStorage 溢出）
+          const { EventHistoryService } = await import('./services/EventHistoryService');
+          EventHistoryService.checkAndCleanup();
+          
+          // 启动同步管理器（会延迟5秒后执行首次同步）
+          newSyncManager.start();
+          AppLogger.log('✅ 同步管理器初始化成功（首次同步延迟5秒）');
+          AppLogger.log('✅ EventService 初始化成功');
+          
+          // 暴露到全局用于调试
+          if (typeof window !== 'undefined') {
+            (window as any).syncManager = newSyncManager;
+            console.log('🔍 [App] syncManager 已暴露到 window.syncManager');
+          }
+        } catch (error) {
+          AppLogger.error('❌ 同步管理器初始化失败:', error);
+          console.error('❌ [App] 详细错误:', error);
+          syncManagerCreationRef.current = false; // 重置标志以便重试
         }
-      } catch (error) {
-        AppLogger.error('❌ 同步管理器初始化失败:', error);
-        console.error('❌ [App] 详细错误:', error);
-      }
+      })();
     } else if (!currentAuthState && syncManager) {
       // 用户登出，停止同步管理器
       AppLogger.log('⏸️ 用户已登出，停止同步管理器...');
@@ -1499,6 +1548,15 @@ function App() {
     if (currentAuthState !== lastAuthState) {
       setLastAuthState(currentAuthState);
     }
+    
+    // ✨ Cleanup: 组件卸载时停止 SyncManager
+    return () => {
+      if (syncManager && typeof syncManager.stop === 'function') {
+        console.log('🧹 [App] Cleaning up SyncManager on unmount');
+        syncManager.stop();
+      }
+      syncManagerCreationRef.current = false; // 重置标志
+    };
   }, [microsoftService, lastAuthState, syncManager]);  // 🔧 [HMR FIX] 添加 syncManager 依赖，确保 HMR 后自动重新初始化
 
   // 🔐 监听全局认证状态变化事件（登录成功后触发）

@@ -6,6 +6,11 @@
  * 2. 支持按时间范围、事件ID、操作类型查询历史
  * 3. 提供历史统计分析功能
  * 4. 自动清理过期历史记录
+ * 
+ * ⚠️ 存储架构变更（2025-12-06）：
+ * - 历史记录已从 localStorage 迁移到 IndexedDB
+ * - localStorage 仅用作 IndexedDB 不可用时的降级方案
+ * - 自动清理机制防止存储溢出
  */
 
 import { Event } from '../types';
@@ -19,14 +24,21 @@ import {
 import { STORAGE_KEYS } from '../constants/storage';
 import { logger } from '../utils/logger';
 import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
+import { StorageManager } from './storage/StorageManager';
 
 const historyLogger = logger.module('EventHistory');
 
-// 历史记录存储键
+// 历史记录存储键（降级方案 - 仅用于迁移）
 const HISTORY_STORAGE_KEY = '4dnote_event_history';
 
-// 默认保留历史记录的天数（90天）
+// 默认保留历史记录的天数（90天 - SQLite无配额限制）
 const DEFAULT_RETENTION_DAYS = 90;
+
+// 最大历史记录数（SQLite支持无限增长，仅用于性能优化）
+const MAX_HISTORY_COUNT = 50000;
+
+// 全局 StorageManager 实例
+let storageManager: StorageManager | null = null;
 
 // 字段显示名称映射
 const FIELD_DISPLAY_NAMES: Record<string, string> = {
@@ -53,6 +65,69 @@ const FIELD_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export class EventHistoryService {
+  /**
+   * 初始化 StorageManager（必须在使用前调用）
+   */
+  static async initialize(sm: StorageManager): Promise<void> {
+    storageManager = sm;
+    historyLogger.log('✅ EventHistoryService 已初始化');
+    
+    // 迁移 localStorage 数据到 SQLite（仅执行一次）
+    await this.migrateFromLocalStorage();
+  }
+
+  /**
+   * 迁移 localStorage 历史记录到 IndexedDB
+   */
+  private static async migrateFromLocalStorage(): Promise<void> {
+    try {
+      const localData = localStorage.getItem(HISTORY_STORAGE_KEY);
+      if (!localData) {
+        historyLogger.log('✅ 无需迁移（localStorage 无数据）');
+        return;
+      }
+
+      const logs: EventChangeLog[] = JSON.parse(localData);
+      if (logs.length === 0) {
+        historyLogger.log('✅ 无需迁移（localStorage 数据为空）');
+        localStorage.removeItem(HISTORY_STORAGE_KEY);
+        return;
+      }
+
+      historyLogger.log(`🔄 开始迁移 ${logs.length} 条历史记录到 IndexedDB...`);
+      
+      let migratedCount = 0;
+      for (const log of logs) {
+        try {
+          // 使用幂等方法，避免重复插入导致主键冲突
+          await storageManager!.createOrUpdateEventHistory({
+            id: log.id,
+            eventId: log.eventId,
+            operation: log.operation,
+            timestamp: log.timestamp,
+            source: log.source,
+            before: log.before,
+            after: log.after,
+            changes: log.changes,
+            userId: log.userId,
+            metadata: log.metadata
+          });
+          migratedCount++;
+        } catch (error) {
+          historyLogger.error('❌ 迁移单条记录失败:', log.id, error);
+        }
+      }
+
+      historyLogger.log(`✅ 迁移完成: ${migratedCount}/${logs.length} 条`);
+      
+      // 直接清除旧数据（已迁移到 IndexedDB，无需备份到 localStorage）
+      localStorage.removeItem(HISTORY_STORAGE_KEY);
+      historyLogger.log('✅ 已清除 localStorage 旧数据（已迁移到 IndexedDB）');
+    } catch (error) {
+      historyLogger.error('❌ 迁移失败:', error);
+    }
+  }
+
   /**
    * 记录事件创建
    * @param customTimestamp - 可选，指定创建时间（用于补录历史记录）
@@ -113,7 +188,6 @@ export class EventHistoryService {
     };
 
     this.saveLog(log);
-    historyLogger.log('✏️ [Update] 记录更新:', before.title, `(${changes.length}个字段)`);
     return log;
   }
 
@@ -154,43 +228,23 @@ export class EventHistoryService {
   }
 
   /**
-   * 查询历史记录
+   * 查询历史记录（异步，使用 SQLite）
    */
-  static queryHistory(options: HistoryQueryOptions = {}): EventChangeLog[] {
+  static async queryHistory(options: HistoryQueryOptions = {}): Promise<EventChangeLog[]> {
+    if (!storageManager) {
+      historyLogger.error('❌ StorageManager 未初始化');
+      return [];
+    }
+
     try {
-      let logs = this.getAllLogs();
-      const initialCount = logs.length;
-
-      // 按事件ID过滤
-      if (options.eventId) {
-        logs = logs.filter(log => log.eventId === options.eventId);
-      }
-
-      // 按操作类型过滤
-      if (options.operations && options.operations.length > 0) {
-        logs = logs.filter(log => options.operations!.includes(log.operation));
-      }
-
-      // 按时间范围过滤 - 使用 parseLocalTimeString 确保本地时间解析
-      if (options.startTime) {
-        const startMs = parseLocalTimeString(options.startTime).getTime();
-        logs = logs.filter(log => parseLocalTimeString(log.timestamp).getTime() >= startMs);
-      }
-      if (options.endTime) {
-        const endMs = parseLocalTimeString(options.endTime).getTime();
-        logs = logs.filter(log => parseLocalTimeString(log.timestamp).getTime() <= endMs);
-      }
-
-      // 按时间倒序排序（最新的在前）
-      logs.sort((a, b) => parseLocalTimeString(b.timestamp).getTime() - parseLocalTimeString(a.timestamp).getTime());
-
-      // 分页
-      if (options.offset !== undefined) {
-        logs = logs.slice(options.offset);
-      }
-      if (options.limit !== undefined) {
-        logs = logs.slice(0, options.limit);
-      }
+      const logs = await storageManager.queryEventHistory({
+        eventIds: options.eventId ? [options.eventId] : undefined,
+        operations: options.operations as any,
+        startTime: options.startTime,
+        endTime: options.endTime,
+        limit: options.limit,
+        offset: options.offset
+      });
 
       return logs;
     } catch (error) {
@@ -202,8 +256,8 @@ export class EventHistoryService {
   /**
    * 获取指定时间段的所有变更
    */
-  static getChangesByTimeRange(startTime: string, endTime: string): EventChangeLog[] {
-    const result = this.queryHistory({ startTime, endTime });
+  static async getChangesByTimeRange(startTime: string, endTime: string): Promise<EventChangeLog[]> {
+    const result = await this.queryHistory({ startTime, endTime });
     console.log('[EventHistoryService] 📊 getChangesByTimeRange:', {
       startTime,
       endTime,
@@ -220,8 +274,8 @@ export class EventHistoryService {
   /**
    * 获取单个事件的完整历史
    */
-  static getEventHistory(eventId: string): EventChangeLog[] {
-    return this.queryHistory({ eventId });
+  static async getEventHistory(eventId: string): Promise<EventChangeLog[]> {
+    return await this.queryHistory({ eventId });
   }
 
   /**
@@ -234,9 +288,9 @@ export class EventHistoryService {
    * 2. 过滤掉"在目标时间之后才创建"的事件
    * 3. 添加回"在目标时间之后才删除"的事件（它们在目标时间时还存在）
    */
-  static getExistingEventsAtTime(timestamp: string): Set<string> {
+  static async getExistingEventsAtTime(timestamp: string): Promise<Set<string>> {
     const targetTime = parseLocalTimeString(timestamp);
-    const allLogs = this.getAllLogs();
+    const allLogs = await this.queryHistory({});
     
     // 🔧 步骤1：从当前存在的事件开始
     const EventService = (window as any).EventService;
@@ -314,14 +368,14 @@ export class EventHistoryService {
    * 获取时间范围内的事件操作摘要（用于 Snapshot 功能）
    * @returns 包含 created/updated/completed/deleted 事件列表的对象
    */
-  static getEventOperationsSummary(startTime: string, endTime: string): {
+  static async getEventOperationsSummary(startTime: string, endTime: string): Promise<{
     created: EventChangeLog[];
     updated: EventChangeLog[];
     completed: EventChangeLog[];
     deleted: EventChangeLog[];
     missed: EventChangeLog[];
-  } {
-    const logs = this.queryHistory({ startTime, endTime });
+  }> {
+    const logs = await this.queryHistory({ startTime, endTime });
     
     const created = logs.filter(l => l.operation === 'create');
     const deleted = logs.filter(l => l.operation === 'delete');
@@ -365,12 +419,12 @@ export class EventHistoryService {
    * 批量获取事件在时间范围内的状态
    * @returns Map<eventId, EventChangeLog[]> 每个事件在该时间范围内的历史记录
    */
-  static getEventStatusesInRange(
+  static async getEventStatusesInRange(
     eventIds: string[], 
     startTime: string, 
     endTime: string
-  ): Map<string, EventChangeLog[]> {
-    const logs = this.queryHistory({ startTime, endTime });
+  ): Promise<Map<string, EventChangeLog[]>> {
+    const logs = await this.queryHistory({ startTime, endTime });
     const statusMap = new Map<string, EventChangeLog[]>();
     
     // 初始化所有事件的空数组
@@ -396,8 +450,8 @@ export class EventHistoryService {
   /**
    * 获取历史统计信息
    */
-  static getStatistics(startTime?: string, endTime?: string): HistoryStatistics {
-    const logs = this.queryHistory({ startTime, endTime });
+  static async getStatistics(startTime?: string, endTime?: string): Promise<HistoryStatistics> {
+    const logs = await this.queryHistory({ startTime, endTime });
 
     // 统计各类操作数量
     const stats: HistoryStatistics = {
@@ -440,24 +494,43 @@ export class EventHistoryService {
   }
 
   /**
+   * 检查并清理历史记录（应用启动时调用）
+   */
+  static async checkAndCleanup(): Promise<void> {
+    try {
+      const stats = await this.getStatistics();
+      
+      // Silent return if StorageManager not initialized yet
+      if (!stats) {
+        return;
+      }
+      
+      const count = stats.total || 0;
+      
+      historyLogger.log(`📊 历史记录统计：共 ${count} 条`);
+      
+      // 如果超过阈值，立即清理
+      if (count > MAX_HISTORY_COUNT) {
+        historyLogger.warn(`⚠️ 历史记录超限（${count}/${MAX_HISTORY_COUNT}），开始清理...`);
+        const deleted = await this.autoCleanup();
+        historyLogger.log(`✅ 清理完成：删除 ${deleted} 条过期记录`);
+      } else if (count > MAX_HISTORY_COUNT * 0.8) {
+        historyLogger.warn(`⚠️ 历史记录即将超限（${count}/${MAX_HISTORY_COUNT}），建议清理`);
+      }
+    } catch (error) {
+      historyLogger.error('❌ 检查历史记录失败:', error);
+    }
+  }
+
+  /**
    * 清理过期历史记录
    */
-  static cleanupOldLogs(retentionDays: number = DEFAULT_RETENTION_DAYS): number {
+  static async cleanupOldLogs(retentionDays: number = DEFAULT_RETENTION_DAYS): Promise<number> {
     try {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
-      const cutoffMs = cutoffDate.getTime();
-
-      const allLogs = this.getAllLogs();
-      const beforeCount = allLogs.length;
-
-      const filteredLogs = allLogs.filter(log => {
-        return parseLocalTimeString(log.timestamp).getTime() >= cutoffMs;
-      });
-
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(filteredLogs));
       
-      const removedCount = beforeCount - filteredLogs.length;
+      const removedCount = await this.autoCleanup();
       historyLogger.log(`🧹 清理完成: 删除了 ${removedCount} 条过期记录 (保留${retentionDays}天内)`);
       
       return removedCount;
@@ -470,16 +543,16 @@ export class EventHistoryService {
   /**
    * 导出历史记录为 JSON
    */
-  static exportToJSON(options: HistoryQueryOptions = {}): string {
-    const logs = this.queryHistory(options);
+  static async exportToJSON(options: HistoryQueryOptions = {}): Promise<string> {
+    const logs = await this.queryHistory(options);
     return JSON.stringify(logs, null, 2);
   }
 
   /**
    * 导出历史记录为 CSV
    */
-  static exportToCSV(options: HistoryQueryOptions = {}): string {
-    const logs = this.queryHistory(options);
+  static async exportToCSV(options: HistoryQueryOptions = {}): Promise<string> {
+    const logs = await this.queryHistory(options);
     
     // CSV 头部
     const headers = ['时间', '事件ID', '事件标题', '操作', '变更字段', '来源'];
@@ -523,46 +596,87 @@ export class EventHistoryService {
   }
 
   /**
-   * 保存日志到存储
+   * 保存日志到存储（使用 SQLite）
    */
   private static saveLog(log: EventChangeLog): void {
-    try {
-      const logs = this.getAllLogs();
-      logs.push(log);
-      
-      console.log('[EventHistoryService] 💾 saveLog:', {
-        operation: log.operation,
-        eventId: log.eventId?.slice(-10),
-        fullEventId: log.eventId,
-        timestamp: log.timestamp,
-        历史总数: logs.length
-      });
-      
-      // 如果记录太多，自动清理旧记录
-      if (logs.length > 10000) {
-        this.cleanupOldLogs();
-      } else {
-        localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(logs));
-      }
-    } catch (error: any) {
+    // 异步保存（不阻塞主流程）
+    this.saveLogToStorage(log).catch(error => {
       historyLogger.error('❌ 保存日志失败:', error);
-      // 重新抛出 QuotaExceededError，让上层处理
-      if (error.name === 'QuotaExceededError') {
-        throw error;
-      }
+    });
+  }
+
+  /**
+   * 保存日志到 SQLite（异步）
+   */
+  private static async saveLogToStorage(log: EventChangeLog): Promise<void> {
+    if (!storageManager) {
+      historyLogger.error('❌ StorageManager 未初始化');
+      return;
+    }
+
+    try {
+      await storageManager.createEventHistory({
+        id: log.id,
+        eventId: log.eventId,
+        operation: log.operation,
+        timestamp: log.timestamp,
+        source: log.source,
+        before: log.before,
+        after: log.after,
+        changes: log.changes,
+        userId: log.userId,
+        metadata: log.metadata
+      });
+    } catch (error) {
+      historyLogger.error('❌ saveLogToStorage 失败:', error);
+      throw error;
     }
   }
 
   /**
-   * 获取所有日志
+   * 自动清理历史记录（保留策略）
    */
-  private static getAllLogs(): EventChangeLog[] {
+  static async autoCleanup(): Promise<number> {
+    if (!storageManager) {
+      historyLogger.error('❌ StorageManager 未初始化');
+      return 0;
+    }
+
     try {
-      const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : [];
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - DEFAULT_RETENTION_DAYS);
+      
+      const deleted = await storageManager.cleanupEventHistory(
+        formatTimeForStorage(cutoffDate)
+      );
+
+      historyLogger.log(`✅ 清理完成: 删除 ${deleted} 条过期记录（保留 ${DEFAULT_RETENTION_DAYS} 天）`);
+      return deleted;
     } catch (error) {
-      historyLogger.error('❌ 读取历史失败:', error);
-      return [];
+      historyLogger.error('❌ 清理失败:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 获取历史统计信息
+   */
+  static async getStatistics(): Promise<{
+    total: number;
+    byOperation: Record<string, number>;
+    oldestTimestamp: string | null;
+    newestTimestamp: string | null;
+  } | null> {
+    if (!storageManager) {
+      // Silent return during initialization phase
+      return null;
+    }
+
+    try {
+      return await storageManager.getEventHistoryStats();
+    } catch (error) {
+      historyLogger.error('❌ 获取统计失败:', error);
+      return null;
     }
   }
 

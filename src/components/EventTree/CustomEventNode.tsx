@@ -81,51 +81,74 @@ export const CustomEventNode: React.FC<NodeProps<EventNodeData>> = ({ data }) =>
         className="event-node-content"
         onClick={handleNodeClick}
       >
-        {/* Checkbox（仅 Task 显示） */}
-        {data.event.isTask && (
-          <input
-            type="checkbox"
-            className="event-node-checkbox"
-            checked={data.event.isCompleted || false}
-            onChange={handleCheckboxChange}
-            onClick={(e) => e.stopPropagation()}
-          />
-        )}
-
-        {/* Emoji */}
-        {data.event.emoji && (
-          <span className="event-node-emoji">{data.event.emoji}</span>
-        )}
-
-        {/* 标题 */}
-        <span className="event-node-title">
-          {typeof data.event.title === 'string' ? data.event.title : (data.event.title?.simpleTitle || data.event.title?.colorTitle || data.event.title?.fullTitle || '无标题事件')}
-        </span>
-
-        {/* 链接指示器（收纳态显示数量） */}
-        {data.linkedEvents.length > 0 && (
-          <div
-            className="event-node-link-indicator"
-            style={{
-              opacity: isHovered ? 0 : 1,
-              transition: 'opacity 0.2s',
-            }}
-          >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M5 6.5L7 4.5M3.5 9L5.5 7M8.5 3L6.5 5" />
-              <circle cx="2.5" cy="9.5" r="1.5" />
-              <circle cx="9.5" cy="2.5" r="1.5" />
+        {/* 顶部：Checkbox + 类型标签 */}
+        <div className="event-node-header">
+          {data.event.isTask && (
+            <input
+              type="checkbox"
+              className="event-node-checkbox"
+              checked={data.event.isCompleted || false}
+              onChange={handleCheckboxChange}
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          <div className="event-node-type-badge">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M4 4h8M4 8h8M4 12h5" />
             </svg>
-            <span>{data.linkedEvents.length}</span>
+            <span>EVENT</span>
+          </div>
+          
+          {/* 链接指示器（收纳态显示数量） */}
+          {data.linkedEvents.length > 0 && (
+            <div
+              className="event-node-link-badge"
+              style={{
+                opacity: isHovered ? 0 : 1,
+                transition: 'opacity 0.3s',
+              }}
+            >
+              <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <path d="M5 6.5L7 4.5M3.5 9L5.5 7M8.5 3L6.5 5" />
+                <circle cx="2.5" cy="9.5" r="1.5" />
+                <circle cx="9.5" cy="2.5" r="1.5" />
+              </svg>
+              <span>{data.linkedEvents.length}</span>
+            </div>
+          )}
+        </div>
+
+        {/* 主标题区 */}
+        <div className="event-node-title-area">
+          {data.event.emoji && (
+            <span className="event-node-emoji">{data.event.emoji}</span>
+          )}
+          <h3 className="event-node-title">
+            {typeof data.event.title === 'string' ? data.event.title : (data.event.title?.simpleTitle || data.event.title?.colorTitle || data.event.title?.fullTitle || '无标题事件')}
+          </h3>
+        </div>
+
+        {/* 描述（可选） */}
+        {data.event.description && (
+          <p className="event-node-description">
+            {data.event.description.length > 60 
+              ? data.event.description.substring(0, 60) + '...' 
+              : data.event.description}
+          </p>
+        )}
+
+        {/* 进度条（Task 事件显示） */}
+        {data.event.isTask && data.event.childEventIds && data.event.childEventIds.length > 0 && (
+          <div className="event-node-progress">
+            <div className="event-node-progress-bar">
+              <div 
+                className="event-node-progress-fill"
+                style={{ width: `${(data.event.childEventIds.filter(id => {
+                  const child = data.linkedEvents.find(e => e.id === id);
+                  return child?.isCompleted;
+                }).length / data.event.childEventIds.length) * 100}%` }}
+              />
+            </div>
           </div>
         )}
       </div>

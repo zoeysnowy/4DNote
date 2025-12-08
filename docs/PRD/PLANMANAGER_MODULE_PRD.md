@@ -1,9 +1,9 @@
 # PlanManager 模块 PRD
 
 **模块路径**: `src/components/PlanManager.tsx`  
-**代码行数**: ~3077 lines  
-**架构版本**: v2.8 (Snapshot 可视化 + 侧边栏完整实现)  
-**最后更新**: 2025-11-30  
+**代码行数**: ~2992 lines  
+**架构版本**: v2.9 (EventTree 层级架构 + bulletLevel 计算优化)  
+**最后更新**: 2025-12-04  
 **编写框架**: Copilot PRD Reverse Engineering Framework v1.1  
 **Figma 设计稿**: [ReMarkable-0.1 - 1450w default](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646&m=dev)  
 **侧边栏设计稿**: [PlanManager Sidepanels](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646)
@@ -11,6 +11,84 @@
 ---
 
 ## 📋 版本历史
+
+### v2.10 (2025-12-06) - 父子关系自动维护 + EditableEventTree 完整实现 ✅
+
+**核心突破**:
+- 🔥 **父子关系自动维护**：`EventService.updateEvent()` 自动同步 `childEventIds`，无需手动维护
+- ✅ **Tab 键建立层级**：按 Tab 自动设置 `parentEventId` 并维护父事件的 `childEventIds`
+- ✅ **创建时设置关系**：临时 ID 事件创建时直接传入 `parentEventId`，避免二次更新
+- ✅ **EditableEventTree 递归加载**：完整递归加载所有层级子事件，支持无限深度
+- ✅ **独立 Slate 编辑器**：每个树节点独立 Slate 编辑器，实时保存标题
+- ✅ **双向链接悬浮卡片**：Link 按钮 Hover 显示堆叠的关联事件卡片
+
+**数据流架构**:
+```
+用户按 Tab 键
+  ↓
+1. 临时 ID: EventHub.createEvent({ parentEventId }) → 创建时直接设置
+2. 真实 ID: EventService.updateEvent({ parentEventId }) → 更新触发维护
+  ↓
+EventService 检测 parentEventId 变化
+  ↓
+自动从旧父事件移除 → 自动添加到新父事件的 childEventIds
+  ↓
+EventTree 刷新 → 递归加载完整树结构
+```
+
+**关键代码位置**:
+- `PlanSlate.tsx` L2675-2730: Tab 键处理器，创建/更新时设置 `parentEventId`
+- `PlanSlate.tsx` L2806-2826: 临时事件创建，直接传入 `parentEventId`
+- `EventService.ts` L790-850: `updateEvent()` 自动维护双向父子关系
+- `EditableEventTree.tsx` L175-243: `buildTree()` 递归加载所有层级
+- `EditableEventTree.tsx` L35-169: `TreeNodeItem` 组件，独立 Slate 编辑器
+
+**技术细节**:
+1. **即使 parentEventId 未变化也确保 childEventIds 包含**：解决重复 Tab 导致的数据不一致
+2. **临时 ID 直接创建关系**：避免创建后再更新的二次数据库写入
+3. **递归子事件加载**：`buildTree()` 深度优先递归，支持 3 级以上深度
+4. **防抖保存**：Slate onChange 防抖 500ms，避免频繁数据库写入
+5. **L 型连接线**：CSS 绝对定位实现树形视觉连接
+
+**修复问题**:
+- 🐛 修复 `executeShiftTabOutdent` 函数提升问题（调用前未定义）
+- 🐛 修复 EventEditModalV2 `parentEvent` 变量提升错误
+- 🐛 修复 `childEventIds` 为 `undefined` 导致子事件不显示问题
+- 🐛 修复 StorageManager 缓存失效导致 EventTree 加载旧数据
+
+**性能优化**:
+- ✅ 递归加载优化：只加载 `shouldShowInEventTree()` 为 true 的事件
+- ✅ 折叠状态缓存：未展开节点不渲染子树
+- ✅ 独立编辑器防抖：每个节点独立防抖，避免连锁更新
+
+**用户体验**:
+- ⚡ Tab 键即时生效：乐观更新 Slate 视觉层级（< 1ms）
+- 🌳 完整树结构：支持无限层级嵌套（测试通过 3 级）
+- ✏️ 节点内编辑：直接在树中编辑标题，无需打开模态框
+- 🎯 Link 悬浮卡片：Hover 查看关联事件，不占用主视图空间
+
+**相关 PRD**:
+- EventTree 模块：`docs/PRD/EVENTTREE_MODULE_PRD.md`
+- EventService 双向维护：`docs/PRD/EVENTSERVICE_MODULE_PRD.md`
+
+### v2.9 (2025-12-04) - EventTree 层级架构 + bulletLevel 动态计算 ✅
+
+**核心突破**:
+- 🔥 **bulletLevel → EventTree 架构转换**：从存储字段升级为 EventTree 关系推导
+- ✅ **Slate metadata 同步**：Tab 键同时更新 Slate metadata 和数据库，onChange 读取 metadata 保存
+- ✅ **数据安全性**：serialization 始终包含完整 EventTree 字段，防止断网/崩溃导致数据丢失
+- ✅ **bulletLevel 动态计算**：初始化时调用 `EventService.calculateAllBulletLevels()`，从 parentEventId 推导层级
+- ✅ **双向保存流程**：Tab 保存到数据库 + onChange 从 metadata 读取保存，确保数据一致性
+
+**关键代码位置**:
+- `PlanSlate.tsx` L2676-2710: Tab 键处理器，同时更新 Slate metadata 和数据库
+- `serialization.ts` L75-80: Event → Slate 转换，parentEventId/childEventIds 写入 metadata
+- `serialization.ts` L413-416: Slate → Event 转换，从 metadata 读取 EventTree 字段
+- `EventService.ts` L3276-3312: `calculateAllBulletLevels()` 批量计算逻辑
+
+**相关 PRD**:
+- EventTree 模块：`docs/PRD/EVENTTREE_MODULE_PRD.md`
+- PlanSlate 编辑器：`docs/PRD/SLATEEDITOR_PRD.md`
 
 ### v2.8 (2025-11-30) - 侧边栏完整实现 + Snapshot 可视化 ✅
 

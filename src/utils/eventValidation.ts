@@ -43,6 +43,14 @@ export function validateEventTime(event: Event): ValidationResult {
     return { valid: true, warnings };
   }
   
+  // 🎯 纯笔记类型（无时间、只有 eventlog）：允许无时间
+  // 判断条件：没有 startTime 和 endTime，但有 eventlog 内容
+  const isNoteWithoutTime = !event.startTime && !event.endTime && event.eventlog;
+  if (isNoteWithoutTime) {
+    warnings.push('Note without time - will not sync to calendar');
+    return { valid: true, warnings };
+  }
+  
   // Calendar 事件：时间必需
   if (!event.startTime || !event.endTime) {
     return {

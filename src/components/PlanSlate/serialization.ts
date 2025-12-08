@@ -47,7 +47,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       isCompleted: item.isCompleted,
       isTask: item.isTask,
       type: item.type,
-      checkType: item.checkType || 'once', // 🆕 签到类型（默认有checkbox）
+      checkType: item.checkType, // ✅ 不添加默认值，保持原样
       
       // ✅ v2.14: Checkbox 状态数组（用于 EventLinePrefix 计算 isCompleted）
       checked: item.checked || [],
@@ -72,6 +72,10 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       // ✅ Snapshot 模式：已删除标记（仅用于 Slate 显示，executeBatchUpdate 会过滤）
       _isDeleted: item._isDeleted,
       _deletedAt: item._deletedAt,
+      
+      // 🔥 EventTree 字段（用于 serialization 读取）
+      parentEventId: item.parentEventId,
+      childEventIds: item.childEventIds,
     } as any;
     
     // Title 行（始终创建，即使内容为空）
@@ -83,7 +87,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       type: 'event-line',
       eventId: item.eventId || item.id,
       lineId: item.id,
-      level: item.level || 0,
+      level: (item as any).bulletLevel ?? item.level ?? 0, // 🔥 优先使用 bulletLevel（从 EventTree 计算）
       mode: 'title',
       children: [
         {
@@ -382,6 +386,17 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
       // 🆕 v1.6: 从第一个遇到的节点中提取完整 metadata
       const metadata = node.metadata || {};
       
+      // 🔍 DEBUG: 检查 EventTree 字段
+      if (metadata.parentEventId || metadata.childEventIds) {
+        console.log('[Serialization] 🔍 Reading EventTree from metadata:', {
+          baseId: baseId.slice(-8),
+          parentEventId: metadata.parentEventId ? metadata.parentEventId.slice(-8) : metadata.parentEventId,
+          childEventIds: metadata.childEventIds,
+          hasMetadata: !!node.metadata,
+          metadataKeys: Object.keys(metadata)
+        });
+      }
+      
       items.set(baseId, {
         id: baseId,
         eventId: node.eventId,
@@ -405,10 +420,14 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         isCompleted: metadata.isCompleted || false,
         isTask: metadata.isTask ?? true,
         type: metadata.type || 'todo',
-        checkType: metadata.checkType || 'once', // 🆕 默认有checkbox
+        checkType: metadata.checkType, // ✅ 不添加默认值，保持原样
         
-        isPlan: metadata.isPlan ?? true,
-        isTimeCalendar: metadata.isTimeCalendar ?? false,
+        isPlan: metadata.isPlan, // ✅ 不添加默认值
+        isTimeCalendar: metadata.isTimeCalendar,
+        
+        // 🔥 EventTree 字段 - 从 metadata 读取（Tab 键更新的）
+        parentEventId: metadata.parentEventId,
+        childEventIds: metadata.childEventIds,
         
         calendarIds: metadata.calendarIds || [],
         todoListIds: metadata.todoListIds || [], // 🆕 To Do List IDs
@@ -435,6 +454,12 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
       // fullTitle 保存 Slate JSON（JSON.stringify），EventService 会自动生成 colorTitle 和 simpleTitle
       // 🔥 FIX: 只传 fullTitle，不要传 colorTitle/simpleTitle（即使是 undefined）
       //         这样 normalizeTitle 的场景1判断 (!colorTitle && !simpleTitle) 才能正确触发
+      
+      // 🔍 DEBUG: 检查 fragment 中的 tag 节点
+      if (fragment && fragment.some((n: any) => n.type === 'tag')) {
+        console.log('[Serialization] 保存包含 tag 的 fragment:', JSON.stringify(fragment, null, 2));
+      }
+      
       item.title = {
         fullTitle: fragment ? JSON.stringify(fragment) : '' // 只传 fullTitle
       };
@@ -789,6 +814,34 @@ function parseHtmlFragment(html: string): (TextNode | TagNode | DateMentionNode)
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const element = node as HTMLElement;
+      
+      // 处理自定义元素（tag、dateMention）
+      if (element.tagName === 'SPAN' && element.dataset.type === 'tag') {
+        fragment.push({
+          type: 'tag',
+          tagId: element.dataset.tagId || '',
+          tagName: element.dataset.tagName || element.textContent?.replace(/^#/, '') || '',
+          tagColor: element.dataset.tagColor,
+          tagEmoji: element.dataset.tagEmoji,
+          mentionOnly: element.dataset.mentionOnly === 'true',
+          children: [{ text: '' }],
+        });
+        return;
+      }
+      
+      if (element.tagName === 'SPAN' && element.dataset.type === 'dateMention') {
+        fragment.push({
+          type: 'dateMention',
+          startDate: element.dataset.startDate || '',
+          endDate: element.dataset.endDate,
+          eventId: element.dataset.eventId,
+          mentionOnly: element.dataset.mentionOnly === 'true',
+          children: [{ text: '' }],
+        });
+        return;
+      }
+      
+      // 处理格式标签
       const newFormats = { ...formats };
       
       if (element.tagName === 'STRONG' || element.tagName === 'B') {

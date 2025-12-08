@@ -175,7 +175,8 @@ export function insertDateMention(
 export function insertEventMention(
   editor: Editor,
   eventId: string,
-  eventTitle: string
+  eventTitle: string,
+  currentEventId?: string
 ): boolean {
   try {
     const eventMentionNode = {
@@ -188,6 +189,7 @@ export function insertEventMention(
     console.log('[insertEventMention] 创建 EventMention 节点', {
       eventId,
       eventTitle,
+      currentEventId,
       fullNode: eventMentionNode
     });
     
@@ -206,6 +208,22 @@ export function insertEventMention(
     
     // 插入空格
     Transforms.insertText(editor, ' ');
+    
+    // 🔥 创建双向链接（如果提供了 currentEventId）
+    if (currentEventId && currentEventId !== eventId) {
+      import('../../services/EventService').then(({ EventService }) => {
+        EventService.addLink(currentEventId, eventId).then(result => {
+          if (result.success) {
+            console.log('✅ [insertEventMention] 双向链接已创建:', {
+              from: currentEventId,
+              to: eventId
+            });
+          } else {
+            console.error('❌ [insertEventMention] 双向链接创建失败:', result.error);
+          }
+        });
+      });
+    }
     
     // 🔧 确保插入后编辑器保持焦点
     setTimeout(() => {

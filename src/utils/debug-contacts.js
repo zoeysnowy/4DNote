@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 联系人调试工具
  * 在浏览器控制台执行这些命令来诊断问题
  */
@@ -8,13 +8,13 @@ console.log('='.repeat(60));
 console.log('📊 检查联系人库');
 console.log('='.repeat(60));
 
-const contacts = JSON.parse(localStorage.getItem('remarkable-contacts') || '[]');
+const contacts = JSON.parse(localStorage.getItem('4dnote-contacts') || '[]');
 console.log('联系人总数:', contacts.length);
 console.table(contacts.map(c => ({
   姓名: c.name,
   邮箱: c.email || '(无)',
   公司: c.organization || '(无)',
-  来源: c.isOutlook ? 'Outlook' : c.isGoogle ? 'Google' : c.isiCloud ? 'iCloud' : c.isReMarkable ? 'ReMarkable' : '(未标记)'
+  来源: c.isOutlook ? 'Outlook' : c.isGoogle ? 'Google' : c.isiCloud ? 'iCloud' : c.is4DNote ? '4DNote' : '(未标记)'
 })));
 
 // === 2. 检查演示事件的参会人数据 ===
@@ -22,7 +22,7 @@ console.log('\n' + '='.repeat(60));
 console.log('🔍 检查演示事件数据');
 console.log('='.repeat(60));
 
-const events = JSON.parse(localStorage.getItem('remarkable-events') || '[]');
+const events = JSON.parse(localStorage.getItem('4dnote-events') || '[]');
 const demoEvent = events.find(e => e.title?.includes('产品') || e.id === 'event-1');
 
 if (demoEvent) {
@@ -92,7 +92,7 @@ if (typeof ContactService !== 'undefined') {
   console.log('✅ 已手动触发联系人提取');
   
   // 重新检查联系人库
-  const updatedContacts = JSON.parse(localStorage.getItem('remarkable-contacts') || '[]');
+  const updatedContacts = JSON.parse(localStorage.getItem('4dnote-contacts') || '[]');
   console.log('更新后联系人总数:', updatedContacts.length);
 } else {
   console.log('❌ ContactService 未定义，需要在实际页面中执行');

@@ -1,5 +1,5 @@
 {
-  "name": "remarkable-ai-proxy",
+  "name": "4dnote-ai-proxy",
   "version": "1.0.0",
   "description": "腾讯混元 API 代理服务器 - 解决浏览器 CORS 限制",
   "main": "proxy-server.js",

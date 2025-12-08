@@ -250,7 +250,7 @@ export class EventLogTimestampService {
     if (eventId) {
       const time = timestamp || new Date();
       this.lastEditTimestamp.set(eventId, time);
-      console.log('[TimestampService] 手动更新最后编辑时间:', eventId, time);
+      // console.log('[TimestampService] 手动更新最后编辑时间:', eventId, time);
     }
   }
 

@@ -16,11 +16,12 @@ import { storageManager } from './storage/StorageManager';
 import type { StorageEvent } from './storage/types';
 import { logger } from '../utils/logger';
 import { validateEventTime } from '../utils/eventValidation';
-import { determineSyncTarget, shouldSync } from '../utils/syncRouter';
+
 import { ContactService } from './ContactService';
 import { EventHistoryService } from './EventHistoryService'; // 🆕 事件历史记录
 import { jsonToSlateNodes, slateNodesToHtml } from '../components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '../utils/idGenerator'; // 🆕 UUID ID 生成
+import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 
 const eventLogger = logger.module('EventService');
 
@@ -39,6 +40,37 @@ const pendingLocalUpdates = new Map<string, { updateId: number; timestamp: numbe
 const tabId = `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
 export class EventService {
+  // 🚀 [CRITICAL PERFORMANCE FIX] Promise 去重机制 - 防止并发查询风暴
+  private static getAllEventsPromise: Promise<Event[]> | null = null;
+  
+  // 🚀 [PERFORMANCE] 范围查询缓存 - 避免重复 IndexedDB 查询
+  private static rangeQueryCache = new Map<string, { 
+    data: Event[]; 
+    timestamp: number;
+    startDate: string;
+    endDate: string;
+  }>();
+  private static readonly RANGE_CACHE_TTL = 5000; // 5秒缓存
+  
+  /**
+   * 🔧 [FIX] 确保 StorageManager 已初始化
+   * 防止竞争条件导致查询失败
+   */
+  private static async ensureStorageReady(): Promise<void> {
+    if (!storageManager.isInitialized()) {
+      eventLogger.log('⏳ [EventService] Waiting for StorageManager initialization...');
+      await storageManager.initialize();
+      eventLogger.log('✅ [EventService] StorageManager ready');
+    }
+  }
+  
+  /**
+   * 清空范围查询缓存（事件变更时调用）
+   */
+  private static clearRangeCache(): void {
+    this.rangeQueryCache.clear();
+  }
+
   /**
    * 初始化服务，注入同步管理器
    */
@@ -56,13 +88,11 @@ export class EventService {
         
         // 🚫 忽略自己发送的消息，避免循环
         if (senderId === tabId) {
-          eventLogger.log('🔄 [EventService] 忽略自己的广播消息', { eventId: data.eventId });
           return;
         }
         
         // ✅ 处理其他标签页的更新
         if (data.type === 'eventsUpdated') {
-          eventLogger.log('📡 [EventService] 收到其他标签页更新', { eventId: data.eventId, senderId });
           window.dispatchEvent(new CustomEvent('eventsUpdated', { 
             detail: { ...data, isFromOtherTab: true, senderId }
           }));
@@ -158,18 +188,84 @@ export class EventService {
    * 获取所有事�?
    * 🆕 v2.14.1: 自动规范化 title 字段，兼容旧数据
    * 🔥 v3.0.0: 迁移到 StorageManager（异步查询）
+   * 🚀 v3.1.0: Promise 去重机制 - 避免并发查询导致的 IndexedDB 死锁
    */
   static async getAllEvents(): Promise<Event[]> {
+    // 🔧 [CRITICAL FIX] 如果已有查询进行中，等待该查询完成
+    // 避免"惊群问题"：100+ 个并发调用同时触发全表查询，导致 IndexedDB 事务阻塞
+    if (this.getAllEventsPromise) {
+      // ✨ 静默重用 Promise（避免日志刷屏）
+      return this.getAllEventsPromise;
+    }
+    
+    // 开始新查询，保存 Promise 供其他调用等待
+    this.getAllEventsPromise = (async () => {
+      try {
+        // 🔧 [FIX] 确保存储已初始化
+        await this.ensureStorageReady();
+        
+        const result = await storageManager.queryEvents({ limit: 10000 });
+        
+        // ✅ v3.0: 过滤已软删除的事件
+        const activeEvents = result.items.filter(event => !event.deletedAt);
+        
+        // 🔧 自动规范化所有事件的 title 字段（处理旧数据中的 undefined）
+        const events = activeEvents.map(event => this.convertStorageEventToEvent(event));
+        
+        // ✨ 查询完成，清除 Promise（5秒后，避免同步过程中频繁查询）
+        setTimeout(() => {
+          this.getAllEventsPromise = null;
+        }, 5000);
+        
+        return events;
+      } catch (error) {
+        eventLogger.error('❌ [EventService] Failed to load events:', error);
+        this.getAllEventsPromise = null; // 查询失败，立即清除
+        return [];
+      }
+    })();
+    
+    return this.getAllEventsPromise;
+  }
+
+  /**
+   * 根据日期范围获取事件（TimeLog 优化）
+   * ✅ 符合 Storage Architecture：使用 StorageManager 的查询能力
+   * @param startDate ISO 格式的开始日期
+   * @param endDate ISO 格式的结束日期
+   */
+  static async getEventsByDateRange(startDate: string, endDate: string): Promise<Event[]> {
     try {
-      const result = await storageManager.queryEvents({ limit: 10000 });
+      // 🔧 [FIX] 确保存储已初始化
+      await this.ensureStorageReady();
       
-      // ✅ v3.0: 过滤已软删除的事件
+      const perfStart = performance.now();
+      
+      // ✅ 使用 StorageManager 的日期范围查询
+      const queryStart = performance.now();
+      // 🚀 [CRITICAL FIX] 使用 startDate/endDate（触发索引查询），而不是 startTime/endTime
+      const result = await storageManager.queryEvents({
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        limit: 10000
+      });
+      const queryDuration = performance.now() - queryStart;
+      
+      // 过滤已软删除的事件
+      const filterStart = performance.now();
       const activeEvents = result.items.filter(event => !event.deletedAt);
+      const filterDuration = performance.now() - filterStart;
       
-      // 🔧 自动规范化所有事件的 title 字段（处理旧数据中的 undefined）
-      return activeEvents.map(event => this.convertStorageEventToEvent(event));
+      const convertStart = performance.now();
+      const events = activeEvents.map(event => this.convertStorageEventToEvent(event));
+      const convertDuration = performance.now() - convertStart;
+      
+      const totalDuration = performance.now() - perfStart;
+      eventLogger.log(`⚡ [Performance] getEventsByDateRange: total=${totalDuration.toFixed(1)}ms (query=${queryDuration.toFixed(1)}ms, filter=${filterDuration.toFixed(1)}ms, convert=${convertDuration.toFixed(1)}ms) → ${events.length} events`);
+      
+      return events;
     } catch (error) {
-      eventLogger.error('❌ [EventService] Failed to load events:', error);
+      eventLogger.error('❌ [EventService] Failed to load events by date range:', error);
       return [];
     }
   }
@@ -181,6 +277,9 @@ export class EventService {
    */
   static async getEventById(eventId: string): Promise<Event | null> {
     try {
+      // 🔧 [FIX] 确保存储已初始化
+      await this.ensureStorageReady();
+      
       const result = await storageManager.queryEvents({
         filters: { eventIds: [eventId] },
         limit: 1
@@ -195,11 +294,32 @@ export class EventService {
                                (typeof storageEvent.eventlog === 'object' && storageEvent.eventlog.slateJson === '[]');
       
       // 规范化 title 和 eventlog（传递 description 作为 fallback）
+      const normalizedTitle = this.normalizeTitle(storageEvent.title);
+      
+      // 🔍 调试日志：检查 title 规范化结果
+      if (!normalizedTitle.simpleTitle && !normalizedTitle.fullTitle) {
+        console.warn('[EventService] 空标题事件:', {
+          id: eventId.slice(-8),
+          originalTitle: storageEvent.title,
+          normalizedTitle,
+          description: storageEvent.description?.substring(0, 50)
+        });
+      }
+      
       const normalizedEvent = {
         ...storageEvent,
-        title: this.normalizeTitle(storageEvent.title),
+        title: normalizedTitle,
         eventlog: this.normalizeEventLog(storageEvent.eventlog, storageEvent.description)
       };
+      
+      // 🔍 调试：验证 syncMode 是否从数据库正确读取
+      if (eventId.startsWith('outlook-')) {
+        console.log('🔍 [EventService] getEventById Outlook 事件:', {
+          eventId: eventId.slice(-8),
+          'storageEvent.syncMode': storageEvent.syncMode,
+          'normalizedEvent.syncMode': normalizedEvent.syncMode
+        });
+      }
       
       // 🔧 如果 eventlog 被修复了（从空变成有内容），尝试更新回 StorageManager
       if (needsEventLogFix && normalizedEvent.eventlog.slateJson !== '[]') {
@@ -222,6 +342,117 @@ export class EventService {
   }
 
   /**
+   * 获取适合在 TimeLog 时间轴显示的事件
+   * 过滤逻辑：
+   * 1. 排除附属事件（Timer/TimeLog/OutsideApp）
+   * 2. 排除没有时间信息的 Task 事件
+   * 3. 包含有时间的 Plan 事件和 Task 事件
+   */
+  static async getTimelineEvents(startDate?: string | Date, endDate?: string | Date): Promise<Event[]> {
+    try {
+      // 🔧 [FIX] 确保存储已初始化
+      await this.ensureStorageReady();
+      
+      const t0 = performance.now();
+      
+      // 获取所有事件或指定范围的事件
+      let events: Event[];
+      const queryStart = performance.now();
+      if (startDate && endDate) {
+        events = await this.getEventsByRange(startDate, endDate);
+      } else {
+        events = await this.getAllEvents();
+      }
+      const queryDuration = performance.now() - queryStart;
+      
+      // 过滤逻辑
+      const filterStart = performance.now();
+      const timelineEvents = events.filter(event => {
+        // 1. 排除附属事件（系统生成的事件）
+        if (event.isTimer === true || 
+            event.isTimeLog === true || 
+            event.isOutsideApp === true) {
+          // eventLogger.log('🔽 [EventService] 过滤附属事件:', {
+          //   id: event.id,
+          //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
+          //   isTimer: event.isTimer,
+          //   isTimeLog: event.isTimeLog,
+          //   isOutsideApp: event.isOutsideApp
+          // });
+          return false;
+        }
+        
+        // 2. 排除 Plan 页面事件（isPlan=true）无时间的情况
+        if (event.isPlan === true) {
+          const hasTime = (event.startTime && event.startTime !== '') || 
+                         (event.endTime && event.endTime !== '') ||
+                         (event.checkTime && event.checkTime !== '');
+          
+          if (!hasTime) {
+            // eventLogger.log('🔽 [EventService] 过滤无时间的 Plan 事件:', {
+            //   id: event.id,
+            //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
+            //   isPlan: event.isPlan,
+            //   isTask: event.isTask,
+            //   startTime: event.startTime,
+            //   endTime: event.endTime,
+            //   checkTime: event.checkTime
+            // });
+            return false;
+          }
+        }
+        
+        // 3. Task 事件必须有时间才显示
+        if (event.isTask === true) {
+          const hasTime = (event.startTime && event.startTime !== '') || 
+                         (event.endTime && event.endTime !== '') ||
+                         (event.checkTime && event.checkTime !== '');
+          
+          if (!hasTime) {
+            // eventLogger.log('🔽 [EventService] 过滤无时间的 Task 事件:', {
+            //   id: event.id,
+            //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
+            //   isPlan: event.isPlan,
+            //   isTask: event.isTask,
+            //   startTime: event.startTime,
+            //   endTime: event.endTime,
+            //   checkTime: event.checkTime
+            // });
+            return false;
+          }
+        }
+        
+        // 4. 显示的事件日志（已禁用以减少日志输出）
+        // eventLogger.log('✅ [EventService] 显示事件:', {
+        //   id: event.id,
+        //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
+        //   isPlan: event.isPlan,
+        //   isTask: event.isTask,
+        //   isTimer: event.isTimer,
+        //   isTimeLog: event.isTimeLog,
+        //   isOutsideApp: event.isOutsideApp,
+        //   startTime: event.startTime,
+        //   endTime: event.endTime
+        // });
+        
+        return true;
+      });
+      const filterDuration = performance.now() - filterStart;
+      
+      const totalDuration = performance.now() - t0;
+      eventLogger.log(`⚡ [Performance] getTimelineEvents: total=${totalDuration.toFixed(1)}ms (query=${queryDuration.toFixed(1)}ms, filter=${filterDuration.toFixed(1)}ms) → ${timelineEvents.length}/${events.length} events`, {
+        range: startDate && endDate ? `${formatTimeForStorage(new Date(startDate))} ~ ${formatTimeForStorage(new Date(endDate))}` : 'all',
+        filtered: events.length - timelineEvents.length
+      });
+      
+      return timelineEvents;
+    } catch (error) {
+      eventLogger.error('❌ [EventService] Failed to get timeline events:', error);
+      return [];
+    }
+  }
+
+  /**
    * 按日期范围获取事件（性能优化：只加载视图需要的事件）
    * @param startDate - 范围起始日期（YYYY-MM-DD 或 Date 对象）
    * @param endDate - 范围结束日期（YYYY-MM-DD 或 Date 对象）
@@ -231,57 +462,53 @@ export class EventService {
    */
   static async getEventsByRange(startDate: string | Date, endDate: string | Date): Promise<Event[]> {
     try {
+      // 🔧 [FIX] 确保存储已初始化
+      await this.ensureStorageReady();
+      
       const t0 = performance.now();
       
       // 转换为时间戳（方便比较）
       const rangeStart = formatTimeForStorage(new Date(startDate));
       const rangeEnd = formatTimeForStorage(new Date(endDate));
       
-      // 使用 StorageManager 智能查询（在 SQLite 中会自动使用索引）
+      // 🚀 [PERFORMANCE] 检查缓存
+      const cacheKey = `${rangeStart}|${rangeEnd}`;
+      const cached = this.rangeQueryCache.get(cacheKey);
+      const now = Date.now();
+      
+      if (cached && (now - cached.timestamp) < this.RANGE_CACHE_TTL) {
+        eventLogger.log(`⚡ [EventService] getEventsByRange (cached): ${cached.data.length} events in ${(performance.now() - t0).toFixed(2)}ms`, {
+          range: `${rangeStart} ~ ${rangeEnd}`,
+          age: `${(now - cached.timestamp)}ms`
+        });
+        return cached.data;
+      }
+      
+      // 🚀 [PERFORMANCE] 使用 StorageManager 索引查询（IndexedDB startTime 索引已过滤时间范围）
       const result = await storageManager.queryEvents({
-        filters: {
-          // 注：这里的过滤逻辑需要在 StorageManager 中支持
-          // 暂时先查询所有，然后前端过滤
-        },
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        filters: {},
         limit: 10000
       });
       
-      // 前端过滤时间范围（后续可以将此逻辑下放到 SQLite 查询）
-      const rangeStartMs = new Date(startDate).getTime();
-      const rangeEndMs = new Date(endDate).getTime();
+      const events = result.items.map(e => this.convertStorageEventToEvent(e));
       
-      const filteredEvents = result.items.filter(event => {
-        // Task 类型（无时间）总是显示
-        if (event.isTask && (!event.startTime || !event.endTime)) {
-          return true;
-        }
-        
-        const effectiveStartTime = event.startTime || event.createdAt;
-        const effectiveEndTime = event.endTime || event.createdAt;
-        
-        if (!effectiveStartTime || !effectiveEndTime) {
-          return false;
-        }
-        
-        // AllDay 事件
-        if (event.isAllDay) {
-          const eventDate = new Date(effectiveStartTime).setHours(0, 0, 0, 0);
-          return eventDate >= rangeStartMs && eventDate <= rangeEndMs;
-        }
-        
-        // 普通事件
-        const eventStart = new Date(effectiveStartTime).getTime();
-        const eventEnd = new Date(effectiveEndTime).getTime();
-        return (eventStart <= rangeEndMs && eventEnd >= rangeStartMs);
+      // 缓存结果
+      this.rangeQueryCache.set(cacheKey, {
+        data: events,
+        timestamp: now,
+        startDate: rangeStart,
+        endDate: rangeEnd
       });
       
       const t1 = performance.now();
-      eventLogger.log(`🔍 [EventService] getEventsByRange: ${filteredEvents.length}/${result.items.length} events in ${(t1 - t0).toFixed(2)}ms`, {
-        range: `${startDate} ~ ${endDate}`,
-        reduction: `${((1 - filteredEvents.length / result.items.length) * 100).toFixed(1)}%`
+      eventLogger.log(`🔍 [EventService] getEventsByRange: ${result.items.length}/${result.items.length} events in ${(t1 - t0).toFixed(2)}ms`, {
+        range: `${rangeStart} ~ ${rangeEnd}`,
+        reduction: '0.0%'
       });
       
-      return filteredEvents.map(e => this.convertStorageEventToEvent(e));
+      return events;
     } catch (error) {
       eventLogger.error('❌ [EventService] Failed to load events by range:', error);
       return [];
@@ -401,7 +628,6 @@ export class EventService {
       // ✨ 自动提取并保存联系人
       if (finalEvent.organizer || finalEvent.attendees) {
         ContactService.extractAndAddFromEvent(finalEvent.organizer, finalEvent.attendees);
-        eventLogger.log('👥 [EventService] Auto-extracted contacts from event');
       }
       
       // 获取统计信息用于日志
@@ -446,35 +672,24 @@ export class EventService {
         isLocalUpdate: source === 'user-edit'
       });
 
-      // 同步到Outlook（如果不跳过且有同步管理器）
+      // 同步到Outlook/To Do（如果不跳过且有同步管理器）
       if (!skipSync && syncManagerInstance && finalEvent.syncStatus !== 'local-only') {
-        // ✅ v1.8: 检查同步路由
-        const syncRoute = determineSyncTarget(finalEvent);
-        
-        if (syncRoute.target === 'none') {
-          eventLogger.log(`⏭️ [EventService] Skipping sync: ${syncRoute.reason}`);
-        } else {
-          try {
-            console.log('[EventService.createEvent] ✅ 触发同步:', {
-              eventId: finalEvent.id,
-              title: finalEvent.title?.simpleTitle?.substring(0, 30) || '',
-              syncStatus: finalEvent.syncStatus,
-              syncTarget: syncRoute.target,
-              syncReason: syncRoute.reason,
-              calendarIds: (finalEvent as any).calendarIds,
-              tags: finalEvent.tags
-            });
-            await syncManagerInstance.recordLocalAction('create', 'event', finalEvent.id, finalEvent);
-            eventLogger.log('🔄 [EventService] Event synced to Outlook');
-          } catch (syncError) {
-            eventLogger.error('❌ [EventService] Sync failed (non-blocking):', syncError);
-            // 同步失败不影响事件创建成功
-          }
+        try {
+          console.log('[EventService.createEvent] ✅ 触发同步:', {
+            eventId: finalEvent.id,
+            title: finalEvent.title?.simpleTitle?.substring(0, 30) || '',
+            syncStatus: finalEvent.syncStatus,
+            calendarIds: (finalEvent as any).calendarIds,
+            tags: finalEvent.tags
+          });
+          await syncManagerInstance.recordLocalAction('create', 'event', finalEvent.id, finalEvent);
+          eventLogger.log('🔄 [EventService] Event synced to Outlook');
+        } catch (syncError) {
+          eventLogger.error('❌ [EventService] Sync failed (non-blocking):', syncError);
+          // 同步失败不影响事件创建成功
         }
       } else {
-        if (skipSync) {
-          eventLogger.log('⏭️ [EventService] Sync skipped (skipSync=true)');
-        } else if (finalEvent.syncStatus === 'local-only') {
+        if (!skipSync && finalEvent.syncStatus !== 'local-only') {
           console.log('[EventService.createEvent] ⏭️ 跳过同步 (syncStatus=local-only):', {
             eventId: finalEvent.id,
             title: finalEvent.title?.simpleTitle?.substring(0, 30) || '',
@@ -485,6 +700,9 @@ export class EventService {
           eventLogger.warn('⚠️ [EventService] Sync manager not initialized');
         }
       }
+
+      // 🚀 [PERFORMANCE] 清空范围查询缓存
+      this.clearRangeCache();
 
       return { success: true, event: finalEvent };
     } catch (error) {
@@ -545,16 +763,12 @@ export class EventService {
         );
         
         (updatesWithSync as any).title = normalizedTitle;
-        
-        console.log('[EventService] title 更新（v2.14）:', {
-          eventId,
-          'update.fullTitle': !!titleUpdate?.fullTitle,
-          'update.colorTitle': !!titleUpdate?.colorTitle,
-          'update.simpleTitle': !!titleUpdate?.simpleTitle,
-          'normalized.fullTitle': !!normalizedTitle.fullTitle,
-          'normalized.colorTitle': !!normalizedTitle.colorTitle,
-          'normalized.simpleTitle': !!normalizedTitle.simpleTitle
-        });
+      }
+      
+      // 🗺️ Location 字段规范化（支持 string 和 LocationObject）
+      if ((updates as any).location !== undefined) {
+        const normalizedLocation = this.normalizeLocation((updates as any).location);
+        (updatesWithSync as any).location = normalizedLocation;
       }
       
       // ========== EventLog 和 Description 双向同步 ==========
@@ -565,17 +779,14 @@ export class EventService {
         const normalizedEventLog = this.normalizeEventLog((updates as any).eventlog);
         (updatesWithSync as any).eventlog = normalizedEventLog;
         
-        // 同步到 description
-        if (updatesWithSync.description === undefined) {
-          updatesWithSync.description = normalizedEventLog.plainText || '';
+        // ✅ 修复：同步到 description（使用 plainText 或 html）
+        if (updates.description === undefined) {
+          updatesWithSync.description = normalizedEventLog.plainText || normalizedEventLog.html || '';
+          console.log('[EventService] ✅ 自动从 eventlog 同步 description:', {
+            eventId: eventId.slice(-8),
+            descriptionLength: updatesWithSync.description.length
+          });
         }
-        
-        console.log('[EventService] eventlog 更新 → 规范化并同步到 description:', {
-          eventId,
-          hasSlateJson: !!normalizedEventLog.slateJson,
-          hasHtml: !!normalizedEventLog.html,
-          hasPlainText: !!normalizedEventLog.plainText
-        });
       }
       
       // 场景2: description 有变化但 eventlog 没变 → 从 description 生成 eventlog
@@ -754,30 +965,35 @@ export class EventService {
       };
 
       // 🆕 检测 parentEventId 变化，同步更新双向关联
-      if (filteredUpdates.parentEventId !== undefined && 
-          filteredUpdates.parentEventId !== originalEvent.parentEventId) {
+      // 🔧 修复：即使 parentEventId 没有变化，也要确保父事件的 childEventIds 包含当前事件
+      if (filteredUpdates.parentEventId !== undefined) {
+        const parentHasChanged = filteredUpdates.parentEventId !== originalEvent.parentEventId;
         
-        // 从旧父事件移除
-        if (originalEvent.parentEventId) {
-          const oldParent = await this.getEventById(originalEvent.parentEventId);
-          if (oldParent && oldParent.childEventIds) {
-            await this.updateEvent(
-              oldParent.id,
-              {
-                childEventIds: oldParent.childEventIds.filter(cid => cid !== eventId)
-              },
-              true // skipSync
-            );
-            
-            eventLogger.log('🔗 [EventService] 已从旧父事件移除子事件:', {
-              oldParentId: originalEvent.parentEventId,
-              childId: eventId,
-              remainingChildren: oldParent.childEventIds.length - 1
-            });
+        if (parentHasChanged) {
+          eventLogger.log('🔗 [EventService] Detected parentEventId change, syncing bi-directional links');
+        
+          // 从旧父事件移除
+          if (originalEvent.parentEventId) {
+            const oldParent = await this.getEventById(originalEvent.parentEventId);
+            if (oldParent && oldParent.childEventIds) {
+              await this.updateEvent(
+                oldParent.id,
+                {
+                  childEventIds: oldParent.childEventIds.filter(cid => cid !== eventId)
+                },
+                true // skipSync
+              );
+              
+              eventLogger.log('🔗 [EventService] 已从旧父事件移除子事件:', {
+                oldParentId: originalEvent.parentEventId,
+                childId: eventId,
+                remainingChildren: oldParent.childEventIds.length - 1
+              });
+            }
           }
         }
         
-        // 添加到新父事件
+        // 🔧 无论是否变化，都要确保父事件的 childEventIds 包含当前事件
         if (filteredUpdates.parentEventId) {
           const newParent = await this.getEventById(filteredUpdates.parentEventId);
           if (newParent) {
@@ -795,7 +1011,13 @@ export class EventService {
               eventLogger.log('🔗 [EventService] 已添加子事件到新父事件:', {
                 newParentId: filteredUpdates.parentEventId,
                 childId: eventId,
-                totalChildren: childIds.length + 1
+                totalChildren: childIds.length + 1,
+                reason: parentHasChanged ? 'parentEventId changed' : 'ensuring consistency'
+              });
+            } else {
+              eventLogger.log('✅ [EventService] 父事件已包含子事件，跳过:', {
+                parentId: filteredUpdates.parentEventId.slice(-8),
+                childId: eventId.slice(-8)
               });
             }
           } else {
@@ -806,8 +1028,17 @@ export class EventService {
 
       // 更新到 StorageManager（双写到 IndexedDB + SQLite）
       const storageEvent = this.convertEventToStorageEvent(updatedEvent);
+      
+      // 🔍 调试：验证 syncMode 是否包含在 updatedEvent 中
+      console.log('🔍 [EventService] updateEvent 保存前验证:', {
+        eventId: eventId.slice(-8),
+        '原始syncMode': originalEvent.syncMode,
+        '更新syncMode': filteredUpdates.syncMode,
+        '最终syncMode': updatedEvent.syncMode,
+        'storageEvent.syncMode': storageEvent.syncMode
+      });
+      
       await storageManager.updateEvent(eventId, storageEvent);
-      eventLogger.log('💾 [EventService] Event updated in StorageManager');
       
       // 🆕 保存 EventLog 版本历史（如果 eventlog 有变更）
       if (filteredUpdates.eventlog && originalEvent.eventlog) {
@@ -821,21 +1052,6 @@ export class EventService {
           oldEventLog
         ).catch((error: any) => {
           eventLogger.warn('⚠️ [EventService] Failed to save EventLog version:', error);
-        });
-        
-        eventLogger.log('📚 [EventService] EventLog version saved');
-      }
-      
-      // 🐛 Bulletpoint 调试：检查保存的 eventlog
-      if (updatedEvent.eventlog) {
-        const eventlogStr = typeof updatedEvent.eventlog === 'object' 
-          ? updatedEvent.eventlog.html || updatedEvent.eventlog.plainText || JSON.stringify(updatedEvent.eventlog)
-          : String(updatedEvent.eventlog);
-        console.log('[EventService Bullet Debug] 保存的 eventlog:', {
-          eventId: updatedEvent.id?.slice(-8),
-          eventlogType: typeof updatedEvent.eventlog,
-          hasBulletAttr: eventlogStr.includes('data-bullet="true"'),
-          preview: eventlogStr.substring(0, 200)
         });
       }
       
@@ -858,17 +1074,8 @@ export class EventService {
       // ✨ 自动提取并保存联系人（如果 organizer 或 attendees 有更新）
       if (updates.organizer !== undefined || updates.attendees !== undefined) {
         ContactService.extractAndAddFromEvent(updatedEvent.organizer, updatedEvent.attendees);
-        eventLogger.log('👥 [EventService] Auto-extracted contacts from updated event');
       }
       
-      eventLogger.log('✅ [EventService] 更新成功:', {
-        eventId: updatedEvent.id,
-        title: updatedEvent.title,
-        startTime: updatedEvent.startTime,
-        endTime: updatedEvent.endTime,
-        isAllDay: updatedEvent.isAllDay
-      });
-
       // 🆕 生成更新ID和跟踪本地更新
       const updateId = ++updateSequence;
       const originComponent = options?.originComponent || 'Unknown';
@@ -900,47 +1107,19 @@ export class EventService {
       });
 
       // 同步到Outlook
-      console.log('🔍 [EventService] Sync condition check:', {
-        eventId,
-        skipSync,
-        hasSyncManager: !!syncManagerInstance,
-        syncStatus: updatedEvent.syncStatus,
-        willEnterSyncBlock: !skipSync && !!syncManagerInstance && updatedEvent.syncStatus !== 'local-only'
-      });
-      
       if (!skipSync && syncManagerInstance && updatedEvent.syncStatus !== 'local-only') {
-        // ✅ v1.8: 检查同步路由
-        const syncRoute = determineSyncTarget(updatedEvent);
-        
-        console.log('🔍 [EventService] Sync route check:', {
-          eventId,
-          syncMode: updatedEvent.syncMode,
-          syncTarget: syncRoute.target,
-          syncReason: syncRoute.reason,
-          willSync: syncRoute.target !== 'none'
-        });
-        
-        if (syncRoute.target === 'none') {
-          eventLogger.log(`⏭️ [EventService] Skipping sync: ${syncRoute.reason}`);
-        } else {
-          try {
-            eventLogger.log('🔍 [DEBUG-TIMER] 即将调用 recordLocalAction (update)');
-            eventLogger.log('🔍 [DEBUG-TIMER] syncTarget:', syncRoute.target);
-            eventLogger.log('🔍 [DEBUG-TIMER] updatedEvent.syncStatus:', updatedEvent.syncStatus);
-            eventLogger.log('🔍 [DEBUG-TIMER] originalEvent.syncStatus:', originalEvent.syncStatus);
-            await syncManagerInstance.recordLocalAction('update', 'event', eventId, updatedEvent, originalEvent);
-            eventLogger.log('🔄 [EventService] Event update synced to Outlook');
-          } catch (syncError) {
-            eventLogger.error('❌ [EventService] Sync failed (non-blocking):', syncError);
-          }
-        }
-      } else {
-        if (skipSync) {
-          eventLogger.log('⏭️ [EventService] Sync skipped (skipSync=true)');
-        } else if (updatedEvent.syncStatus === 'local-only') {
-          eventLogger.log('⏭️ [EventService] Sync skipped (syncStatus=local-only)');
+        try {
+          eventLogger.log('🔍 [DEBUG-TIMER] 即将调用 recordLocalAction (update)');
+          await syncManagerInstance.recordLocalAction('update', 'event', eventId, updatedEvent, originalEvent);
+          eventLogger.log('🔄 [EventService] Event update synced');
+        } catch (syncError) {
+          eventLogger.error('❌ [EventService] Sync failed (non-blocking):', syncError);
         }
       }
+      // Sync skipped or not needed
+
+      // 🚀 [PERFORMANCE] 清空范围查询缓存
+      this.clearRangeCache();
 
       return { success: true, event: updatedEvent };
     } catch (error) {
@@ -973,10 +1152,12 @@ export class EventService {
       // 2. 多设备同步时不会丢失数据
       // 3. 可定期清理旧数据（30天后）
       const now = formatTimeForStorage(new Date());
+      // 🔧 [FIX] 软删除时必须 skipSync=true，避免触发 UPDATE action
+      // 因为后面会显式调用 recordLocalAction('delete')
       await this.updateEvent(eventId, {
         deletedAt: now,
         updatedAt: now,
-      }, skipSync);
+      }, true);
       
       eventLogger.log('✅ [EventService] Event soft-deleted:', {
         eventId,
@@ -998,13 +1179,11 @@ export class EventService {
         } catch (syncError) {
           eventLogger.error('�?[EventService] Sync failed (non-blocking):', syncError);
         }
-      } else {
-        if (skipSync) {
-          eventLogger.log('⏭️ [EventService] Sync skipped (skipSync=true)');
-        } else if (deletedEvent.syncStatus === 'local-only') {
-          eventLogger.log('⏭️ [EventService] Sync skipped (syncStatus=local-only)');
-        }
       }
+      // Sync skipped or not needed
+
+      // 🚀 [PERFORMANCE] 清空范围查询缓存
+      this.clearRangeCache();
 
       return { success: true };
     } catch (error) {
@@ -1341,9 +1520,10 @@ export class EventService {
       const storageEvents = normalizedEvents.map(e => this.convertEventToStorageEvent(e));
       const batchResult = await storageManager.batchCreateEvents(storageEvents);
       
-      // 记录历史
+      // 记录历史（使用 event.createdAt 作为时间戳）
       batchResult.success.forEach(event => {
-        EventHistoryService.logCreate(event as any as Event, 'batch-import');
+        const createdAtTime = event.createdAt ? parseLocalTimeString(event.createdAt) : new Date();
+        EventHistoryService.logCreate(event as any as Event, 'batch-import', createdAtTime);
       });
       
       const errors = batchResult.failed.map(f => `${f.item.id}: ${f.error.message}`);
@@ -1373,6 +1553,17 @@ export class EventService {
         timestamp: Date.now()
       };
       
+      // 0. 🔧 通知 EventHub（用于 IndexMap 同步）
+      if (detail.event) {
+        if (detail.deleted) {
+          EventHub.notify('event-deleted', detail.event);
+        } else if (detail.isUpdate) {
+          EventHub.notify('event-updated', detail.event);
+        } else {
+          EventHub.notify('event-created', detail.event);
+        }
+      }
+      
       // 1. 触发当前标签页的事件
       window.dispatchEvent(new CustomEvent('eventsUpdated', {
         detail: eventDetail
@@ -1388,13 +1579,10 @@ export class EventService {
             ...detail,
             timestamp: Date.now()
           });
-          eventLogger.log('📡 [EventService] Broadcasted to other tabs:', eventId);
         } catch (broadcastError) {
           eventLogger.warn('⚠️ [EventService] Failed to broadcast:', broadcastError);
         }
       }
-      
-      eventLogger.log('🔔 [EventService] Dispatched eventsUpdated event:', eventId);
     } catch (error) {
       eventLogger.error('❌ [EventService] Failed to dispatch event:', error);
     }
@@ -1467,77 +1655,196 @@ export class EventService {
   // ==================== 标题三层架构转换工具 (v2.14) ====================
 
   /**
-   * Slate JSON → HTML（移除 Slate 元素节点，保留格式）
-   * @param fullTitle - Slate JSON 字符串
-   * @returns HTML 字符串（保留颜色、加粗等样式）
+   * Slate JSON → Slate JSON（移除 Slate 元素节点，保留文本和格式）+ 提取格式映射
+   * @param fullTitle - 完整 Slate JSON 字符串
+   * @returns { colorTitle, formatMap } - 简化的 Slate JSON 字符串 + 格式映射
    */
-  private static fullTitleToColorTitle(fullTitle: string): string {
-    if (!fullTitle) return '';
+  private static fullTitleToColorTitle(fullTitle: string): { colorTitle: string; formatMap: import('../types').TextFormatSegment[] } {
+    if (!fullTitle) return { colorTitle: '', formatMap: [] };
     
     try {
       const nodes = JSON.parse(fullTitle);
-      if (!Array.isArray(nodes)) return '';
+      if (!Array.isArray(nodes)) return { colorTitle: '', formatMap: [] };
       
-      // 遍历节点，提取文本和格式，排除 tag/dateMention 等元素
-      const extractTextWithFormat = (node: any): string => {
-        if (node.type === 'tag' || node.type === 'dateMention') {
-          // 跳过 Slate 元素节点
-          return '';
+      // 递归处理节点，移除 tag/dateMention 元素，保留文本和格式
+      const processNode = (node: any): any => {
+        // 跳过元素节点
+        if (node.type === 'tag' || node.type === 'dateMention' || node.type === 'event-mention') {
+          return null;
         }
         
+        // 段落节点：递归处理子节点
         if (node.type === 'paragraph') {
-          const content = node.children
-            ?.map((child: any) => extractTextWithFormat(child))
-            .filter((text: string) => text)
-            .join('');
-          return content ? `<p>${content}</p>` : '';
+          const children = node.children
+            ?.map((child: any) => processNode(child))
+            .filter((child: any) => child !== null);
+          
+          // 如果没有有效子节点，返回空文本节点
+          if (!children || children.length === 0) {
+            return { type: 'paragraph', children: [{ text: '' }] };
+          }
+          
+          return { type: 'paragraph', children };
         }
         
-        // 文本节点：保留格式
+        // 文本节点：保留所有格式属性
         if (node.text !== undefined) {
-          let text = node.text;
-          if (!text) return '';
+          const textNode: any = { text: node.text };
           
-          // 应用样式
-          if (node.bold) text = `<strong>${text}</strong>`;
-          if (node.italic) text = `<em>${text}</em>`;
-          if (node.underline) text = `<u>${text}</u>`;
-          if (node.strikethrough) text = `<del>${text}</del>`;
+          // 保留所有格式
+          if (node.bold) textNode.bold = true;
+          if (node.italic) textNode.italic = true;
+          if (node.underline) textNode.underline = true;
+          if (node.strikethrough) textNode.strikethrough = true;
+          if (node.code) textNode.code = true;
+          if (node.color) textNode.color = node.color;
+          if (node.backgroundColor) textNode.backgroundColor = node.backgroundColor;
           
-          // 应用颜色
-          if (node.color) text = `<span style="color: ${node.color}">${text}</span>`;
-          if (node.backgroundColor) text = `<span style="background-color: ${node.backgroundColor}">${text}</span>`;
-          
-          return text;
+          return textNode;
         }
         
-        return '';
+        return null;
       };
       
-      return nodes.map(extractTextWithFormat).filter(html => html).join('');
+      const processedNodes = nodes
+        .map(processNode)
+        .filter(node => node !== null);
+      
+      const colorTitle = JSON.stringify(processedNodes.length > 0 ? processedNodes : [{ type: 'paragraph', children: [{ text: '' }] }]);
+      
+      // ✅ 提取 formatMap：记录所有有格式的文本片段
+      let formatMap: import('../types').TextFormatSegment[] = [];
+      try {
+        const extractFormats = (node: any) => {
+          if (node.text !== undefined && node.text.trim() !== '') {
+            // 检查是否有任何格式
+            const hasFormat = node.bold || node.italic || node.underline || node.strikethrough || 
+                             node.code || node.color || node.backgroundColor;
+            
+            if (hasFormat) {
+              const format: any = {};
+              if (node.bold) format.bold = true;
+              if (node.italic) format.italic = true;
+              if (node.underline) format.underline = true;
+              if (node.strikethrough) format.strikethrough = true;
+              if (node.code) format.code = true;
+              if (node.color) format.color = node.color;
+              if (node.backgroundColor) format.backgroundColor = node.backgroundColor;
+              
+              formatMap.push({ text: node.text, format });
+            }
+          }
+          if (node.children) {
+            node.children.forEach(extractFormats);
+          }
+        };
+        processedNodes.forEach(extractFormats);
+      } catch (formatError) {
+        // 🛡️ 容错：formatMap 提取失败不影响主流程
+        console.warn('[EventService] formatMap 提取失败，跳过格式记忆:', formatError);
+        formatMap = [];
+      }
+      
+      return { colorTitle, formatMap };
     } catch (error) {
       console.warn('[EventService] fullTitleToColorTitle 解析失败:', error);
-      return '';
+      return { 
+        colorTitle: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
+        formatMap: []
+      };
     }
   }
 
   /**
-   * HTML → 纯文本
-   * @param colorTitle - HTML 字符串
+   * Slate JSON → 纯文本
+   * @param colorTitle - Slate JSON 字符串
    * @returns 纯文本
    */
   private static colorTitleToSimpleTitle(colorTitle: string): string {
-    return this.stripHtml(colorTitle);
+    try {
+      if (!colorTitle) return '';
+      
+      const nodes = JSON.parse(colorTitle);
+      if (!Array.isArray(nodes)) return '';
+      
+      // 递归提取所有文本节点
+      const extractText = (node: any): string => {
+        if (node.text !== undefined) {
+          return node.text;
+        }
+        if (node.children) {
+          return node.children.map(extractText).join('');
+        }
+        return '';
+      };
+      
+      return nodes.map(extractText).join('\n').trim();
+    } catch (error) {
+      console.warn('[EventService] colorTitleToSimpleTitle 解析失败，尝试作为纯文本:', error);
+      return this.stripHtml(colorTitle); // 降级处理：如果是旧的 HTML 格式
+    }
   }
 
   /**
-   * 纯文本 → Slate JSON
+   * 纯文本 → Slate JSON（智能恢复格式）
    * @param simpleTitle - 纯文本
+   * @param formatMap - 可选的格式映射（用于恢复格式）
    * @returns Slate JSON 字符串
    */
-  private static simpleTitleToFullTitle(simpleTitle: string): string {
+  private static simpleTitleToFullTitle(simpleTitle: string, formatMap?: import('../types').TextFormatSegment[]): string {
     if (!simpleTitle) return JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
     
+    // ✅ 如果有 formatMap，尝试应用格式
+    if (formatMap && formatMap.length > 0) {
+      try {
+        const children: any[] = [];
+        let remainingText = simpleTitle;
+        
+        // 按照 formatMap 中的顺序匹配文本
+        for (const segment of formatMap) {
+          // 🛡️ 验证 segment 结构
+          if (!segment || !segment.text || !segment.format) {
+            console.warn('[EventService] 无效的 formatMap segment，跳过:', segment);
+            continue;
+          }
+          
+          const index = remainingText.indexOf(segment.text);
+          
+          if (index !== -1) {
+            // 如果之前有未匹配的文本，添加为普通文本
+            if (index > 0) {
+              const plainText = remainingText.substring(0, index);
+              if (plainText) {
+                children.push({ text: plainText });
+              }
+            }
+            
+            // 添加带格式的文本
+            children.push({
+              text: segment.text,
+              ...segment.format
+            });
+            
+            remainingText = remainingText.substring(index + segment.text.length);
+          }
+        }
+        
+        // 添加剩余的普通文本
+        if (remainingText) {
+          children.push({ text: remainingText });
+        }
+        
+        // 如果成功应用了格式，返回格式化的 Slate JSON
+        if (children.length > 0) {
+          return JSON.stringify([{ type: 'paragraph', children }]);
+        }
+      } catch (formatError) {
+        // 🛡️ 容错：formatMap 应用失败不影响主流程
+        console.warn('[EventService] formatMap 应用失败，降级为纯文本:', formatError);
+      }
+    }
+    
+    // 降级：没有 formatMap 或应用失败，返回普通文本
     return JSON.stringify([
       {
         type: 'paragraph',
@@ -1572,6 +1879,23 @@ export class EventService {
     
     // 🔧 场景 0: 兼容旧格式 - 字符串 title（来自 Timer、Outlook 同步等）
     if (typeof titleInput === 'string') {
+      // ✅ 检测是否为 Slate JSON 字符串
+      try {
+        const parsed = JSON.parse(titleInput);
+        // 如果解析成功且是数组（Slate Document），说明是 colorTitle（来自 EventEditModalV2）
+        if (Array.isArray(parsed)) {
+          console.log('🔍 [normalizeTitle] 检测到 Slate JSON colorTitle，进行处理');
+          return {
+            colorTitle: titleInput,
+            simpleTitle: this.colorTitleToSimpleTitle(titleInput),
+            fullTitle: this.simpleTitleToFullTitle(this.colorTitleToSimpleTitle(titleInput))
+          };
+        }
+      } catch {
+        // 解析失败，说明是纯文本
+      }
+      
+      // 纯文本处理
       return {
         simpleTitle: titleInput,
         colorTitle: titleInput,
@@ -1602,8 +1926,10 @@ export class EventService {
     // 场景 1: 只有 fullTitle → 降级生成 colorTitle 和 simpleTitle
     if (fullTitle && !colorTitle && !simpleTitle) {
       result.fullTitle = fullTitle;
-      result.colorTitle = this.fullTitleToColorTitle(fullTitle);
+      const { colorTitle: ct, formatMap } = this.fullTitleToColorTitle(fullTitle);
+      result.colorTitle = ct;
       result.simpleTitle = this.colorTitleToSimpleTitle(result.colorTitle);
+      result.formatMap = formatMap; // ✅ 保存 formatMap
     }
     
     // 场景 2: 只有 colorTitle → 升级生成 fullTitle，降级生成 simpleTitle
@@ -1611,15 +1937,38 @@ export class EventService {
       result.colorTitle = colorTitle;
       result.simpleTitle = this.colorTitleToSimpleTitle(colorTitle);
       // 简化升级：colorTitle 无法完美转换为 Slate JSON，使用纯文本升级
-      result.fullTitle = this.simpleTitleToFullTitle(result.simpleTitle);
+      // ✅ 尝试使用保存的 formatMap
+      result.fullTitle = this.simpleTitleToFullTitle(result.simpleTitle, (titleInput as any).formatMap);
+      result.formatMap = (titleInput as any).formatMap; // 保留 formatMap
     }
     
     // 场景 3: 只有 simpleTitle → 升级生成 colorTitle 和 fullTitle
     // 🔧 修复：使用 === undefined 严格判断，避免空字符串被误判
+    // ✅ 检测 simpleTitle 是否为 Slate JSON（防止重复包装）
     else if (simpleTitle && colorTitle === undefined && fullTitle === undefined) {
-      result.simpleTitle = simpleTitle;
-      result.colorTitle = simpleTitle; // 纯文本直接赋值（无格式）
-      result.fullTitle = this.simpleTitleToFullTitle(simpleTitle);
+      try {
+        const parsed = JSON.parse(simpleTitle);
+        // 如果 simpleTitle 已经是 Slate JSON，说明数据错误，进行修复
+        if (Array.isArray(parsed)) {
+          console.warn('⚠️ [normalizeTitle] simpleTitle 包含 Slate JSON，进行修复（作为 colorTitle 处理）');
+          result.colorTitle = simpleTitle; // 已经是 Slate JSON，作为 colorTitle
+          result.simpleTitle = this.colorTitleToSimpleTitle(simpleTitle);
+          result.fullTitle = this.simpleTitleToFullTitle(result.simpleTitle);
+        } else {
+          // 不是数组，说明是其他 JSON 对象（如旧版格式），当作纯文本处理
+          result.simpleTitle = simpleTitle;
+          result.colorTitle = simpleTitle;
+          result.fullTitle = this.simpleTitleToFullTitle(simpleTitle, (titleInput as any).formatMap);
+          result.formatMap = (titleInput as any).formatMap;
+        }
+      } catch {
+        // 解析失败，说明是纯文本
+        result.simpleTitle = simpleTitle;
+        result.colorTitle = simpleTitle; // 纯文本直接赋值（无格式）
+        // ✅ 尝试使用保存的 formatMap
+        result.fullTitle = this.simpleTitleToFullTitle(simpleTitle, (titleInput as any).formatMap);
+        result.formatMap = (titleInput as any).formatMap; // 保留 formatMap
+      }
     }
     
     // 场景 4: 多个字段都有 → 保持原样，填充缺失字段
@@ -1633,8 +1982,10 @@ export class EventService {
     if (tags !== undefined && result.fullTitle) {
       result.fullTitle = this.syncTagsToFullTitle(result.fullTitle, tags, originalTags);
       // 同步后需要重新生成 colorTitle 和 simpleTitle
-      result.colorTitle = this.fullTitleToColorTitle(result.fullTitle);
+      const { colorTitle: ct, formatMap } = this.fullTitleToColorTitle(result.fullTitle);
+      result.colorTitle = ct;
       result.simpleTitle = this.colorTitleToSimpleTitle(result.colorTitle);
+      result.formatMap = formatMap; // ✅ 更新 formatMap
     }
     
     return result;
@@ -1721,6 +2072,35 @@ export class EventService {
   }
 
   /**
+   * 🗺️ 标准化 location 字段
+   * 将字符串或 LocationObject 统一转换为 LocationObject
+   * 
+   * @param locationInput - 支持 2 种格式：
+   *   1. LocationObject（内部格式）→ 直接返回
+   *   2. string（Outlook 同步）→ 转换为 LocationObject
+   * @returns LocationObject | undefined
+   */
+  private static normalizeLocation(
+    locationInput: string | import('../types').LocationObject | undefined
+  ): import('../types').LocationObject | undefined {
+    if (!locationInput) return undefined;
+    
+    // 场景 1: 已经是 LocationObject → 直接返回
+    if (typeof locationInput === 'object' && 'displayName' in locationInput) {
+      return locationInput;
+    }
+    
+    // 场景 2: 字符串 → 转换为 LocationObject
+    if (typeof locationInput === 'string') {
+      return {
+        displayName: locationInput
+      };
+    }
+    
+    return undefined;
+  }
+
+  /**
    * 标准化 eventlog 字段
    * 将各种格式的 eventlog 输入统一转换为 EventLog 对象
    * 
@@ -1747,14 +2127,11 @@ export class EventService {
       
       // 🔧 检查 eventlog 是否为空（slateJson 是空数组）
       if (eventLog.slateJson === '[]' && fallbackDescription && fallbackDescription.trim()) {
-        console.log('[EventService] ⚠️ eventlog.slateJson 为空数组，从 fallbackDescription 生成');
         return this.convertSlateJsonToEventLog(JSON.stringify([{
           type: 'paragraph',
           children: [{ text: fallbackDescription }]
         }]));
       }
-      
-      console.log('[EventService] eventlog 已是标准对象');
       
       // 🔍 检查是否需要将单个 paragraph 拆分成 timestamp-divider 结构
       // （用于修复从 Outlook 同步回来的旧事件）
@@ -1770,7 +2147,8 @@ export class EventService {
             slateNodes[0].children?.[0]?.text) {
           
           const text = slateNodes[0].children[0].text;
-          const timestampPattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
+          // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
+          const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
           const matches = [...text.matchAll(timestampPattern)];
           
           if (matches.length > 0) {
@@ -1810,7 +2188,6 @@ export class EventService {
     // 情况2: undefined 或 null - 尝试从 fallbackDescription 生成
     if (eventlogInput === undefined || eventlogInput === null) {
       if (fallbackDescription && fallbackDescription.trim()) {
-        console.log('[EventService] eventlog 为空，从 fallbackDescription 生成:', fallbackDescription.substring(0, 50));
         return this.convertSlateJsonToEventLog(JSON.stringify([{
           type: 'paragraph',
           children: [{ text: fallbackDescription }]
@@ -1831,14 +2208,35 @@ export class EventService {
       
       // Slate JSON 字符串（以 [ 开头）
       if (trimmed.startsWith('[')) {
-        console.log('[EventService] 检测到 Slate JSON 字符串');
         return this.convertSlateJsonToEventLog(eventlogInput);
       }
       
       // HTML 字符串（包含标签）
       if (trimmed.startsWith('<') || trimmed.includes('<p>') || trimmed.includes('<div>')) {
-        console.log('[EventService] 检测到 HTML 字符串，进行反向识别');
-        // 使用反向识别将 HTML 转换为 Slate JSON
+        console.log('[EventService] 检测到 HTML 格式，先提取文本检查时间戳');
+        
+        // 🔧 先从 HTML 中提取纯文本
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = eventlogInput;
+        
+        // 优先从 <body> 提取，如果没有则从整个内容提取
+        const bodyElement = tempDiv.querySelector('body');
+        const textContent = (bodyElement || tempDiv).textContent || '';
+        
+        // 🔍 检查提取的文本是否包含时间戳分隔符
+        // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
+        const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
+        const matches = [...textContent.matchAll(timestampPattern)];
+        
+        if (matches.length > 0) {
+          // 发现时间戳，按时间戳分割内容
+          console.log('[EventService] HTML 中发现', matches.length, '个时间戳，按时间分割内容');
+          const slateNodes = this.parseTextWithTimestamps(textContent);
+          const slateJson = JSON.stringify(slateNodes);
+          return this.convertSlateJsonToEventLog(slateJson);
+        }
+        
+        // 没有时间戳，使用反向识别将 HTML 转换为 Slate JSON
         const slateJson = this.htmlToSlateJsonWithRecognition(eventlogInput);
         return this.convertSlateJsonToEventLog(slateJson);
       }
@@ -1846,8 +2244,9 @@ export class EventService {
       // 纯文本字符串 - 检查是否包含时间戳分隔符
       console.log('[EventService] 检测到纯文本，检查是否包含时间戳');
       
-      // 🔍 尝试识别 YYYY-MM-DD HH:mm:ss 格式的时间戳（用于 Outlook 同步回来的文本）
-      const timestampPattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
+      // 🔍 尝试识别时间戳格式：YYYY-MM-DD HH:mm:ss 或 YYYY/MM/DD HH:mm:ss
+      // 用于 Outlook 同步回来的文本或用户粘贴的内容
+      const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
       const matches = [...eventlogInput.matchAll(timestampPattern)];
       
       if (matches.length > 0) {
@@ -1937,6 +2336,9 @@ export class EventService {
     // 🔥 Title 规范化（支持字符串或对象输入 + tags 同步）
     const normalizedTitle = this.normalizeTitle(event.title, event.tags);
     
+    // 🗺️ Location 规范化（支持 string 和 LocationObject）
+    const normalizedLocation = this.normalizeLocation(event.location);
+    
     // 🔥 EventLog 规范化（优先从 eventlog，回退到 description）
     const normalizedEventLog = this.normalizeEventLog(
       event.eventlog, 
@@ -1968,7 +2370,7 @@ export class EventService {
       // 协作字段
       organizer: event.organizer,
       attendees: event.attendees || [],
-      location: event.location || '',
+      location: normalizedLocation,
       
       // 来源标识
       fourDNoteSource: event.fourDNoteSource,
@@ -2037,9 +2439,12 @@ export class EventService {
     // 按行分割
     const lines = text.split('\n');
     
-    // 时间戳正则（独立成行，可能带有 "| Xmin later" 等后缀）
-    // 匹配: "2025-11-27 01:05:22" 或 "2025-11-27 01:36:23 | 31min later"
-    const timestampPattern = /^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})(\s*\|.*)?$/;
+    // 时间戳正则（独立成行，可能带有"| Xmin later"等后缀）
+    // 支持格式：
+    // - "2025-11-27 01:05:22" （连字符）
+    // - "2025/11/27 01:05:22" （斜杠）
+    // - 带相对时间："2025-11-27 01:36:23 | 31min later"
+    const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})(\s*\|.*)?$/;
     
     let currentParagraphLines: string[] = [];
     
@@ -2062,11 +2467,13 @@ export class EventService {
         }
         
         // 2. 添加 timestamp-divider 节点
-        const timeStr = match[1]; // 保持原格式：YYYY-MM-DD HH:mm:ss
+        const timeStr = match[1]; // 提取时间戳字符串
+        // 🔧 规范化为统一格式：YYYY-MM-DD HH:mm:ss（连字符 + 空格）
+        const normalizedTimeStr = timeStr.replace(/\//g, '-'); // 斜杠转连字符
         
         slateNodes.push({
           type: 'timestamp-divider',
-          timestamp: timeStr, // 不转换，保持空格分隔符
+          timestamp: normalizedTimeStr, // 统一格式：YYYY-MM-DD HH:mm:ss
           children: [{ text: '' }]
         });
         
@@ -2146,10 +2553,14 @@ export class EventService {
       const tempDiv = document.createElement('div');
       tempDiv.innerHTML = html;
       
+      // 🔧 优先从 <body> 元素提取内容（处理完整 HTML 文档）
+      const bodyElement = tempDiv.querySelector('body');
+      const contentElement = bodyElement || tempDiv;
+      
       const slateNodes: any[] = [];
       
       // 遍历 HTML 节点并转换
-      this.parseHtmlNode(tempDiv, slateNodes);
+      this.parseHtmlNode(contentElement, slateNodes);
       
       // 确保至少有一个段落
       if (slateNodes.length === 0) {
@@ -2190,28 +2601,63 @@ export class EventService {
       
       // 2. 块级元素：段落、列表等
       if (element.tagName === 'P' || element.tagName === 'DIV') {
-        const paragraphChildren: any[] = [];
-        element.childNodes.forEach(child => {
-          this.parseHtmlNode(child, paragraphChildren);
-        });
+        // 🔧 检查是否包含 <br> 标签，如果有则按 <br> 分割成多个段落
+        const hasBr = Array.from(element.childNodes).some(
+          child => child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName === 'BR'
+        );
         
-        if (paragraphChildren.length > 0) {
-          // 🆕 保留 bullet 属性（Bulletpoint 功能）
-          const bullet = element.getAttribute('data-bullet') === 'true';
-          const bulletLevel = element.getAttribute('data-bullet-level');
+        if (hasBr) {
+          // 按 <br> 分割成多个段落
+          let currentParagraphChildren: any[] = [];
           
-          const paragraphNode: any = {
-            type: 'paragraph',
-            children: paragraphChildren
-          };
+          element.childNodes.forEach(child => {
+            if (child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName === 'BR') {
+              // 遇到 <br>，结束当前段落
+              if (currentParagraphChildren.length > 0) {
+                slateNodes.push({
+                  type: 'paragraph',
+                  children: currentParagraphChildren
+                });
+                currentParagraphChildren = [];
+              }
+            } else {
+              // 添加到当前段落
+              this.parseHtmlNode(child, currentParagraphChildren);
+            }
+          });
           
-          if (bullet && bulletLevel !== null) {
-            paragraphNode.bullet = true;
-            paragraphNode.bulletLevel = parseInt(bulletLevel, 10);
-            console.log('[EventService.parseHtmlNode] ✅ 保留 Bullet 属性:', { bullet, bulletLevel });
+          // 处理最后一个段落
+          if (currentParagraphChildren.length > 0) {
+            slateNodes.push({
+              type: 'paragraph',
+              children: currentParagraphChildren
+            });
           }
+        } else {
+          // 没有 <br>，正常处理
+          const paragraphChildren: any[] = [];
+          element.childNodes.forEach(child => {
+            this.parseHtmlNode(child, paragraphChildren);
+          });
           
-          slateNodes.push(paragraphNode);
+          if (paragraphChildren.length > 0) {
+            // 🆕 保留 bullet 属性（Bulletpoint 功能）
+            const bullet = element.getAttribute('data-bullet') === 'true';
+            const bulletLevel = element.getAttribute('data-bullet-level');
+            
+            const paragraphNode: any = {
+              type: 'paragraph',
+              children: paragraphChildren
+            };
+            
+            if (bullet && bulletLevel !== null) {
+              paragraphNode.bullet = true;
+              paragraphNode.bulletLevel = parseInt(bulletLevel, 10);
+              console.log('[EventService.parseHtmlNode] ✅ 保留 Bullet 属性:', { bullet, bulletLevel });
+            }
+            
+            slateNodes.push(paragraphNode);
+          }
         }
         return;
       }
@@ -2908,7 +3354,7 @@ export class EventService {
   static async backfillEventHistoryFromTimestamps(eventId: string, eventlog: any): Promise<number> {
     try {
       // 检查是否已有创建记录
-      const existingLogs = EventHistoryService.queryHistory({
+      const existingLogs = await EventHistoryService.queryHistory({
         eventId,
         operations: ['create'],
         limit: 1
@@ -3061,8 +3507,6 @@ export class EventService {
    */
   static async createEventFromRemoteSync(event: Event): Promise<Event> {
     try {
-      eventLogger.log('🌐 [EventService] Creating event from remote sync:', event.id);
-
       // ⚠️ 注意：event 已经过 convertRemoteEventToLocal 中的 normalizeEvent 处理
       // 但如果 eventlog 为空或是空数组，需要从 description 重新生成
       let finalEventLog = event.eventlog;
@@ -3091,20 +3535,21 @@ export class EventService {
         const storageEvent = this.convertEventToStorageEvent(finalEvent);
         await storageManager.updateEvent(event.id, storageEvent);
       } else {
-        // 创建新事件（双写到 IndexedDB + SQLite）
-        const storageEvent = this.convertEventToStorageEvent(finalEvent);
-        await storageManager.createEvent(storageEvent);
-      }
-      
-      // 🆕 记录到事件历史（使用 outlook-sync 作为来源）
-      const historyLog = EventHistoryService.logCreate(finalEvent, 'outlook-sync');
-      
-      // 🔍 验证历史记录是否真的保存成功
-      const verifyLog = EventHistoryService.queryHistory({
+      // 创建新事件（双写到 IndexedDB + SQLite）
+      const storageEvent = this.convertEventToStorageEvent(finalEvent);
+      await storageManager.createEvent(storageEvent);
+    }
+    
+    // 🆕 记录到事件历史（使用 outlook-sync 作为来源）
+    // ✅ 使用 event.createdAt 作为历史记录的时间戳（而非当前时间）
+    const createdAtTime = finalEvent.createdAt ? parseLocalTimeString(finalEvent.createdAt) : new Date();
+    const historyLog = EventHistoryService.logCreate(finalEvent, 'outlook-sync', createdAtTime);      // 🔍 验证历史记录是否真的保存成功
+      const verifyLogs = await EventHistoryService.queryHistory({
         eventId: finalEvent.id,
         operations: ['create'],
         limit: 1
-      })[0];
+      });
+      const verifyLog = verifyLogs[0];
       
       // 获取统计信息
       const stats = await storageManager.getStats();
@@ -3219,6 +3664,82 @@ export class EventService {
   static async getUserSubTasks(parentId: string): Promise<Event[]> {
     const children = await this.getChildEvents(parentId);
     return children.filter(e => this.isUserSubEvent(e));
+  }
+
+  /**
+   * 计算事件的 bulletLevel（基于 EventTree 层级）
+   * @param event - 目标事件
+   * @param eventMap - 事件 Map（用于快速查找父事件）
+   * @param visited - 已访问的事件 ID（防止循环引用）
+   * @returns bulletLevel 层级（0=根事件, 1=一级子, 2=二级子...）
+   */
+  static calculateBulletLevel(
+    event: Event, 
+    eventMap: Map<string, Event>,
+    visited: Set<string> = new Set()
+  ): number {
+    // 防止循环引用
+    if (visited.has(event.id!)) {
+      eventLogger.error('🔄 [EventService] Circular reference detected in EventTree:', event.id);
+      return 0;
+    }
+    
+    // 根事件（无父事件）
+    if (!event.parentEventId) return 0;
+    
+    const parent = eventMap.get(event.parentEventId);
+    if (!parent) {
+      eventLogger.warn('⚠️ [EventService] Parent not found:', event.parentEventId, 'for event:', event.id);
+      return 0; // 父事件不存在，降级为根事件
+    }
+    
+    // 递归计算父事件的层级
+    visited.add(event.id!);
+    return this.calculateBulletLevel(parent, eventMap, visited) + 1;
+  }
+
+  /**
+   * 批量计算所有事件的 bulletLevel
+   * @param events - 事件列表
+   * @returns Map<eventId, bulletLevel>
+   */
+  static calculateAllBulletLevels(events: Event[]): Map<string, number> {
+    const eventMap = new Map(events.map(e => [e.id!, e]));
+    const levels = new Map<string, number>();
+    
+    // 🔍 DEBUG: 检查 eventMap 是否包含 parentEventId
+    console.log('[EventService] 🔍 calculateAllBulletLevels input:', {
+      eventsCount: events.length,
+      eventsWithParent: events.filter(e => e.parentEventId).length,
+      sampleEvents: events.slice(0, 3).map(e => ({
+        id: e.id?.slice(-8),
+        parentEventId: e.parentEventId?.slice(-8),
+        title: e.title?.simpleTitle?.slice(0, 20)
+      }))
+    });
+    
+    events.forEach(event => {
+      if (!event.id) return;
+      
+      // 为每个事件单独创建 visited Set（避免互相干扰）
+      const visited = new Set<string>();
+      const level = this.calculateBulletLevel(event, eventMap, visited);
+      
+      // 🔍 DEBUG: 记录每个事件的计算结果
+      if (event.parentEventId) {
+        console.log('[EventService] 🔍 Calculated level:', {
+          eventId: event.id.slice(-8),
+          parentEventId: event.parentEventId.slice(-8),
+          calculatedLevel: level,
+          parentExists: eventMap.has(event.parentEventId)
+        });
+      }
+      
+      levels.set(event.id, level);
+    });
+    
+    eventLogger.log('📊 [EventService] Calculated bullet levels for', events.length, 'events');
+    return levels;
   }
 
   /**

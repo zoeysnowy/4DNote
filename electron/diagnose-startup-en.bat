@@ -2,12 +2,12 @@
 setlocal enabledelayedexpansion
 
 REM ========================================
-REM ReMarkable Startup Performance Diagnostics
+REM 4DNote Startup Performance Diagnostics
 REM ========================================
 
 echo.
 echo ============================================
-echo   ReMarkable Startup Diagnostics
+echo   4DNote Startup Diagnostics
 echo ============================================
 echo.
 

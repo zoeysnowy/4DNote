@@ -23,6 +23,8 @@ import type {
   StorageStats
 } from './types';
 
+import { SyncStatus } from './types';
+
 import StorageManagerVersionExt from './StorageManagerVersionExt';
 import type { EventLog } from '../../types';
 
@@ -117,10 +119,15 @@ export class StorageManager {
   private sqliteService: any = null;
   private fileSystemService: any = null;
   
-  // LRU 缓存
+  // LRU 缓存 (🎯 Issue #001: 暴露给测试验证)
   private eventCache: LRUCache<StorageEvent>;
   private contactCache: LRUCache<Contact>;
   private tagCache: LRUCache<Tag>;
+  
+  // 缓存访问器（用于测试验证）
+  public get cache() {
+    return this.eventCache;
+  }
   
   // 初始化状态
   private initialized = false;
@@ -174,18 +181,27 @@ export class StorageManager {
       
       // 初始化 SQLite（仅在 Electron 环境）
       // ⚠️ 注意：在 Web 环境中不导入 SQLiteService，因为 better-sqlite3 是 Node.js 原生模块
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
+      const hasElectronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      console.log('[StorageManager] 🔍 Electron check:', {
+        hasWindow: typeof window !== 'undefined',
+        hasElectronAPI,
+        electronAPIKeys: hasElectronAPI ? Object.keys((window as any).electronAPI) : []
+      });
+      
+      if (hasElectronAPI) {
         try {
+          console.log('[StorageManager] 🔄 Loading SQLiteService...');
           const { sqliteService } = await import(/* @vite-ignore */ './SQLiteService');
           this.sqliteService = sqliteService;
+          console.log('[StorageManager] 🔄 Initializing SQLite...');
           await this.sqliteService.initialize();
-          console.log('[StorageManager] ✅ SQLite enabled (Electron)');
+          console.log('[StorageManager] ✅ SQLite enabled (Electron) - queries will be 5-10x faster!');
         } catch (error) {
-          console.warn('[StorageManager] ⚠️  SQLite initialization failed:', error);
+          console.error('[StorageManager] ❌ SQLite initialization failed:', error);
           this.sqliteService = null;
         }
       } else {
-        console.log('[StorageManager] ℹ️  SQLite skipped (Web only)');
+        console.log('[StorageManager] ℹ️  SQLite skipped (not in Electron environment)');
         this.sqliteService = null;
       }
 
@@ -204,42 +220,74 @@ export class StorageManager {
   }
 
   /**
-   * 查询事件（智能分层查询）
+   * 检查是否已初始化
+   */
+  isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  /**
+   * 查询事件（智能分层查询 + LRU 缓存优化）
    * 
    * 策略：
-   * - 优先从 IndexedDB 查询（快速访问最近 30 天数据）
-   * - 如果在 Electron 环境且需要历史数据，使用 SQLite
+   * - 🎯 优先从 LRU 缓存读取（单 ID 查询）
+   * - 降级到 SQLite/IndexedDB 查询
    * - 结果自动缓存到内存
    */
   async queryEvents(options: QueryOptions = {}): Promise<QueryResult<StorageEvent>> {
+    const perfStart = performance.now();
     await this.ensureInitialized();
-
-    console.log('[StorageManager] Querying events:', options);
+    const initDuration = performance.now() - perfStart;
 
     try {
+      // 🎯 优化 #1: 单 ID 查询时先检查缓存
+      if (options.filters?.eventIds && options.filters.eventIds.length === 1) {
+        const eventId = options.filters.eventIds[0];
+        const cached = this.eventCache.get(eventId);
+        
+        if (cached) {
+          return {
+            items: [cached],
+            total: 1,
+            hasMore: false,
+            offset: 0
+          };
+        }
+      }
+
       // 1. 优先使用 SQLite（如果可用）- 性能更好，支持复杂查询
       if (this.sqliteService) {
+        const queryStart = performance.now();
         const result = await this.sqliteService.queryEvents(options);
+        const queryDuration = performance.now() - queryStart;
         
-        // 将查询结果缓存到内存
+        // 将查询结果缓存到内存（批量，无逐个日志）
         result.items.forEach((event: StorageEvent) => {
           this.eventCache.set(event.id, event);
         });
         
-        console.log('[StorageManager] ✅ Query complete (SQLite):', result.items.length, 'events');
+        // Only log slow queries (>500ms) or large result sets (>100 events)
+        if (queryDuration > 500 || result.items.length > 100) {
+          console.log(`[StorageManager] ✅ Query complete (SQLite): ${result.items.length} events in ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms)`);
+        }
         return result;
       }
 
       // 2. 降级到 IndexedDB（Web 环境）
       if (this.indexedDBService) {
+        const queryStart = performance.now();
         const result = await this.indexedDBService.queryEvents(options);
+        const queryDuration = performance.now() - queryStart;
         
-        // 缓存结果
+        // 缓存结果（批量，无逐个日志）
         result.items.forEach((event: StorageEvent) => {
           this.eventCache.set(event.id, event);
         });
         
-        console.log('[StorageManager] ✅ Query complete (IndexedDB):', result.items.length, 'events');
+        // ✨ 只记录非常慢的查询（>1000ms）以减少噪音
+        if (queryDuration > 1000) {
+          console.log(`[StorageManager] ⚠️ Very slow query: ${result.items.length} events in ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms)`);
+        }
         return result;
       }
 
@@ -286,7 +334,14 @@ export class StorageManager {
   async updateEvent(id: string, updates: Partial<StorageEvent>): Promise<StorageEvent> {
     await this.ensureInitialized();
 
-    console.log('[StorageManager] Updating event:', id);
+    // 🔍 调试：验证 syncMode 是否传递到 StorageManager
+    console.log('🔍 [StorageManager] updateEvent 接收到的 updates:', {
+      eventId: id.slice(-8),
+      'updates.syncMode': updates.syncMode,
+      'updates.calendarIds': updates.calendarIds,
+      'syncMode 类型': typeof updates.syncMode,
+      'calendarIds 类型': Array.isArray(updates.calendarIds) ? 'array' : typeof updates.calendarIds,
+    });
 
     try {
       // 1. 双写到 IndexedDB 和 SQLite
@@ -305,13 +360,13 @@ export class StorageManager {
         this.eventCache.set(id, updatedEvent);
       }
 
-      // 3. 获取最新数据
+      // 3. 获取最新数据并验证 EventTree 字段
       const updatedEvent = await this.indexedDBService.getEvent(id);
       if (!updatedEvent) {
         throw new Error(`Event not found: ${id}`);
       }
 
-      console.log('[StorageManager] ✅ Event updated:', id);
+      // EventTree fields saved
       return updatedEvent;
     } catch (error) {
       console.error('[StorageManager] ❌ Failed to update event:', error);
@@ -320,15 +375,49 @@ export class StorageManager {
   }
 
   /**
-   * 删除事件（双写：IndexedDB + SQLite）
+   * 删除事件（软删除：设置 deletedAt 时间戳）
+   * 
+   * 🎯 Issue #002: 软删除策略
+   * - 设置 deletedAt 字段而不是物理删除
+   * - 数据可在 30 天内恢复
+   * - 查询时自动过滤已删除事件（除非明确指定 includeDeleted）
    */
   async deleteEvent(id: string): Promise<void> {
     await this.ensureInitialized();
 
-    console.log('[StorageManager] Deleting event:', id);
+    console.log('[StorageManager] Soft deleting event:', id);
 
     try {
-      // 双写删除
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      
+      // 软删除：设置 deletedAt 字段
+      await this.updateEvent(id, { deletedAt: now } as Partial<StorageEvent>);
+
+      // 从缓存移除（已删除事件不应被缓存）
+      this.eventCache.delete(id);
+
+      console.log('[StorageManager] ✅ Event soft deleted:', id, 'deletedAt:', now);
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to soft delete event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 永久删除事件（物理删除，不可恢复）
+   * 
+   * ⚠️  仅在以下情况使用：
+   * - 清理 30 天前的已删除事件
+   * - 用户明确选择"永久删除"
+   * - 数据迁移/清理任务
+   */
+  async hardDeleteEvent(id: string): Promise<void> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Hard deleting event (permanent):', id);
+
+    try {
+      // 物理删除
       await this.indexedDBService.deleteEvent(id);
       
       if (this.sqliteService) {
@@ -338,9 +427,61 @@ export class StorageManager {
       // 从缓存移除
       this.eventCache.delete(id);
 
-      console.log('[StorageManager] ✅ Event deleted:', id);
+      console.log('[StorageManager] ✅ Event permanently deleted:', id);
     } catch (error) {
-      console.error('[StorageManager] ❌ Failed to delete event:', error);
+      console.error('[StorageManager] ❌ Failed to hard delete event:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 批量硬删除事件（永久删除，不可恢复）
+   * 使用单次事务，比多次调用 hardDeleteEvent 快得多
+   */
+  async batchHardDeleteEvents(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    
+    await this.ensureInitialized();
+
+    console.log(`[StorageManager] Batch hard deleting ${ids.length} events...`);
+
+    try {
+      // 批量物理删除
+      await this.indexedDBService.batchDeleteEvents(ids);
+      
+      if (this.sqliteService) {
+        // SQLite 也需要批量删除
+        await Promise.all(ids.map(id => this.sqliteService!.deleteEvent(id)));
+      }
+
+      // 从缓存批量移除
+      ids.forEach(id => this.eventCache.delete(id));
+
+      console.log(`[StorageManager] ✅ Batch deleted ${ids.length} events permanently`);
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to batch hard delete events:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 恢复已删除的事件
+   * 
+   * 将 deletedAt 设置为 null，使事件重新可见
+   */
+  async restoreEvent(id: string): Promise<StorageEvent> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Restoring event:', id);
+
+    try {
+      // 移除 deletedAt 字段
+      const restored = await this.updateEvent(id, { deletedAt: null } as Partial<StorageEvent>);
+      
+      console.log('[StorageManager] ✅ Event restored:', id);
+      return restored;
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to restore event:', error);
       throw error;
     }
   }
@@ -596,7 +737,6 @@ export class StorageManager {
    */
   async createTag(tag: import('./types').StorageTag): Promise<import('./types').StorageTag> {
     await this.ensureInitialized();
-    console.log('[StorageManager] Creating tag:', tag.id);
 
     // 双写：IndexedDB + SQLite
     // 注意：IndexedDB 暂不支持 Tag，先只写 SQLite
@@ -607,7 +747,6 @@ export class StorageManager {
     // 写入缓存
     this.tagCache.set(tag.id, tag as any);
 
-    console.log('[StorageManager] ✅ Tag created:', tag.id);
     return tag;
   }
 
@@ -641,7 +780,8 @@ export class StorageManager {
     await this.ensureInitialized();
     console.log('[StorageManager] Soft-deleting tag:', id);
 
-    const now = new Date().toISOString();
+    // 🔧 [TIMESPEC] 使用 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
     // 软删除：设置 deletedAt
     await this.updateTag(id, {
@@ -740,6 +880,213 @@ export class StorageManager {
     return { success, failed };
   }
 
+  // ==================== Contact 操作 ====================
+
+  /**
+   * 查询联系人（智能分层查询）
+   * 
+   * 策略：
+   * - 优先从 SQLite 查询（Electron 环境，支持复杂查询）
+   * - 降级到 IndexedDB（Web 环境）
+   * - 结果自动缓存到内存
+   */
+  async queryContacts(options: QueryOptions = {}): Promise<QueryResult<Contact>> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Querying contacts:', options);
+
+    try {
+      // 1. 优先使用 SQLite
+      if (this.sqliteService) {
+        const result = await this.sqliteService.queryContacts(options);
+        
+        // 缓存结果
+        result.items.forEach((contact: Contact) => {
+          this.contactCache.set(contact.id, contact);
+        });
+        
+        console.log('[StorageManager] ✅ Query complete (SQLite):', result.items.length, 'contacts');
+        return result;
+      }
+
+      // 2. 降级到 IndexedDB
+      if (this.indexedDBService) {
+        const result = await this.indexedDBService.queryContacts(options);
+        
+        result.items.forEach((contact: Contact) => {
+          this.contactCache.set(contact.id, contact);
+        });
+        
+        console.log('[StorageManager] ✅ Query complete (IndexedDB):', result.items.length, 'contacts');
+        return result;
+      }
+
+      // 3. 都不可用，返回空结果
+      console.warn('[StorageManager] ⚠️  No storage service available');
+      return { items: [], total: 0, hasMore: false };
+    } catch (error) {
+      console.error('[StorageManager] ❌ Query contacts failed:', error);
+      return { items: [], total: 0, hasMore: false };
+    }
+  }
+
+  /**
+   * 创建联系人（双写：IndexedDB + SQLite）
+   */
+  async createContact(contact: Contact): Promise<void> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Creating contact:', contact.id);
+
+    const errors: any[] = [];
+
+    try {
+      // 1. 写入 IndexedDB
+      if (this.indexedDBService) {
+        try {
+          await this.indexedDBService.createContact(contact);
+          console.log('[StorageManager] ✅ Contact created in IndexedDB');
+        } catch (error) {
+          console.error('[StorageManager] ❌ IndexedDB write failed:', error);
+          errors.push({ service: 'IndexedDB', error });
+        }
+      }
+
+      // 2. 写入 SQLite（如果可用）
+      if (this.sqliteService) {
+        try {
+          await this.sqliteService.createContact(contact);
+          console.log('[StorageManager] ✅ Contact created in SQLite');
+        } catch (error) {
+          console.error('[StorageManager] ❌ SQLite write failed:', error);
+          errors.push({ service: 'SQLite', error });
+        }
+      }
+
+      // 3. 更新缓存
+      this.contactCache.set(contact.id, contact);
+
+      // 如果所有存储都失败，抛出错误
+      if (errors.length > 0 && errors.length === 2) {
+        throw new Error(`All storage services failed: ${JSON.stringify(errors)}`);
+      }
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to create contact:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 更新联系人（双写：IndexedDB + SQLite）
+   */
+  async updateContact(contact: Contact): Promise<void> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Updating contact:', contact.id);
+
+    const errors: any[] = [];
+
+    try {
+      // 1. 更新 IndexedDB
+      if (this.indexedDBService) {
+        try {
+          await this.indexedDBService.updateContact(contact);
+          console.log('[StorageManager] ✅ Contact updated in IndexedDB');
+        } catch (error) {
+          console.error('[StorageManager] ❌ IndexedDB update failed:', error);
+          errors.push({ service: 'IndexedDB', error });
+        }
+      }
+
+      // 2. 更新 SQLite
+      if (this.sqliteService) {
+        try {
+          await this.sqliteService.updateContact(contact);
+          console.log('[StorageManager] ✅ Contact updated in SQLite');
+        } catch (error) {
+          console.error('[StorageManager] ❌ SQLite update failed:', error);
+          errors.push({ service: 'SQLite', error });
+        }
+      }
+
+      // 3. 更新缓存
+      this.contactCache.set(contact.id, contact);
+
+      if (errors.length > 0 && errors.length === 2) {
+        throw new Error(`All storage services failed: ${JSON.stringify(errors)}`);
+      }
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to update contact:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 删除联系人（软删除）
+   */
+  async deleteContact(id: string): Promise<void> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Soft-deleting contact:', id);
+
+    try {
+      // 获取现有联系人
+      const result = await this.queryContacts({
+        filters: { contactIds: [id] },
+        limit: 1
+      });
+
+      if (result.items.length === 0) {
+        throw new Error(`Contact not found: ${id}`);
+      }
+
+      const contact = result.items[0];
+      // 🔧 [TIMESPEC] 使用 TimeSpec 格式
+      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const deletedContact = {
+        ...contact,
+        deletedAt: now,
+        updatedAt: now
+      };
+
+      // 标记为已删除（双写）
+      await this.updateContact(deletedContact);
+
+      // 从缓存移除
+      this.contactCache.delete(id);
+
+      console.log('[StorageManager] ✅ Contact soft-deleted');
+    } catch (error) {
+      console.error('[StorageManager] ❌ Failed to delete contact:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 批量创建联系人
+   */
+  async batchCreateContacts(contacts: Contact[]): Promise<{ successful: number; failed: number }> {
+    await this.ensureInitialized();
+
+    console.log('[StorageManager] Batch creating contacts:', contacts.length);
+
+    let successful = 0;
+    let failed = 0;
+
+    for (const contact of contacts) {
+      try {
+        await this.createContact(contact);
+        successful++;
+      } catch (error) {
+        console.error('[StorageManager] Failed to create contact:', contact.id, error);
+        failed++;
+      }
+    }
+
+    console.log('[StorageManager] ✅ Batch create complete:', { successful, failed });
+    return { successful, failed };
+  }
+
   /**
    * 清理缓存
    */
@@ -748,6 +1095,247 @@ export class StorageManager {
     this.contactCache.clear();
     this.tagCache.clear();
     console.log('[StorageManager] Cache cleared');
+  }
+
+  // ==================== Event History Methods ====================
+
+  /**
+   * 创建事件历史记录
+   */
+  async createEventHistory(log: {
+    id: string;
+    eventId: string;
+    operation: 'create' | 'update' | 'delete' | 'checkin' | 'uncheck';
+    timestamp: string;
+    source: string;
+    before?: any;
+    after?: any;
+    changes?: any;
+    userId?: string;
+    metadata?: any;
+  }): Promise<void> {
+    await this.ensureInitialized();
+
+    // 优先使用 IndexedDB（Web + Electron 通用）
+    await this.indexedDBService.createEventHistory(log);
+
+    // SQLite 作为备份层（仅 Electron）
+    if (this.sqliteService) {
+      try {
+        await this.sqliteService.createEventHistory(log);
+      } catch (error) {
+        console.warn('[StorageManager] SQLite backup failed:', error);
+      }
+    }
+  }
+
+  /**
+   * 创建或更新事件历史记录（幂等操作，用于迁移）
+   */
+  async createOrUpdateEventHistory(log: {
+    id: string;
+    eventId: string;
+    operation: 'create' | 'update' | 'delete' | 'checkin' | 'uncheck';
+    timestamp: string;
+    source: string;
+    before?: any;
+    after?: any;
+    changes?: any;
+    userId?: string;
+    metadata?: any;
+  }): Promise<void> {
+    await this.ensureInitialized();
+
+    // 优先使用 IndexedDB（Web + Electron 通用）
+    await this.indexedDBService.createOrUpdateEventHistory(log);
+
+    // SQLite 作为备份层（仅 Electron）
+    if (this.sqliteService) {
+      try {
+        // SQLite 也需要幂等操作
+        await this.sqliteService.createEventHistory(log);
+      } catch (error) {
+        console.warn('[StorageManager] SQLite backup failed (ignored):', error);
+      }
+    }
+  }
+
+  /**
+   * 查询事件历史记录
+   */
+  async queryEventHistory(options: {
+    eventIds?: string[];
+    operations?: string[];
+    startTime?: string;
+    endTime?: string;
+    source?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<any[]> {
+    await this.ensureInitialized();
+
+    // 优先从 IndexedDB 查询（Web + Electron 通用）
+    return await this.indexedDBService.queryEventHistory(options);
+  }
+
+  /**
+   * 清理旧的事件历史记录
+   */
+  async cleanupEventHistory(olderThan: string): Promise<number> {
+    await this.ensureInitialized();
+
+    // 从 IndexedDB 清理
+    const deleted = await this.indexedDBService.cleanupEventHistory(olderThan);
+
+    // 同步清理 SQLite（如果可用）
+    if (this.sqliteService) {
+      try {
+        await this.sqliteService.cleanupEventHistory(olderThan);
+      } catch (error) {
+        console.warn('[StorageManager] SQLite cleanup failed:', error);
+      }
+    }
+
+    return deleted;
+  }
+
+  /**
+   * 获取事件历史统计信息
+   */
+  async getEventHistoryStats(): Promise<{
+    total: number;
+    byOperation: Record<string, number>;
+    oldestTimestamp: string | null;
+    newestTimestamp: string | null;
+  }> {
+    await this.ensureInitialized();
+
+    // 从 IndexedDB 获取统计
+    return await this.indexedDBService.getEventHistoryStats();
+  }
+
+  // ==================== Sync Queue 管理方法 ====================
+
+  /**
+   * 获取所有同步队列项
+   */
+  async getSyncQueue(): Promise<SyncQueueItem[]> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.getSyncQueue();
+  }
+
+  /**
+   * 创建同步队列项
+   */
+  async createSyncAction(item: SyncQueueItem): Promise<void> {
+    await this.ensureInitialized();
+    console.log('[StorageManager] Creating sync action:', item.id);
+    await this.indexedDBService.addToSyncQueue(item);
+  }
+
+  /**
+   * 批量创建同步队列项
+   */
+  async createSyncActions(items: SyncQueueItem[]): Promise<void> {
+    await this.ensureInitialized();
+    // Only log large batches to reduce noise
+    if (items.length > 100) {
+      console.log('[StorageManager] Creating sync actions:', items.length);
+    }
+    for (const item of items) {
+      await this.indexedDBService.addToSyncQueue(item);
+    }
+  }
+
+  /**
+   * 查询同步队列项
+   */
+  async querySyncActions(filter?: {
+    status?: SyncQueueItem['status'];
+    entityType?: 'event' | 'contact' | 'tag' | 'eventlog';
+    accountId?: string;
+  }): Promise<SyncQueueItem[]> {
+    await this.ensureInitialized();
+    
+    const allItems = await this.indexedDBService.getSyncQueue();
+    
+    if (!filter) {
+      return allItems;
+    }
+
+    return allItems.filter(item => {
+      if (filter.status && item.status !== filter.status) return false;
+      if (filter.entityType && item.entityType !== filter.entityType) return false;
+      if (filter.accountId && item.accountId !== filter.accountId) return false;
+      return true;
+    });
+  }
+
+  /**
+   * 更新同步队列项
+   */
+  async updateSyncAction(id: string, updates: Partial<SyncQueueItem>): Promise<void> {
+    await this.ensureInitialized();
+    console.log('[StorageManager] Updating sync action:', id);
+    
+    const allItems = await this.indexedDBService.getSyncQueue();
+    const item = allItems.find(i => i.id === id);
+    
+    if (!item) {
+      throw new Error(`Sync action not found: ${id}`);
+    }
+
+    const updatedItem = {
+      ...item,
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+
+    await this.indexedDBService.addToSyncQueue(updatedItem);
+  }
+
+  /**
+   * 删除同步队列项
+   */
+  async deleteSyncAction(id: string): Promise<void> {
+    await this.ensureInitialized();
+    console.log('[StorageManager] Deleting sync action:', id);
+    await this.indexedDBService.removeFromSyncQueue(id);
+  }
+
+  /**
+   * 批量删除同步队列项
+   */
+  async deleteSyncActions(ids: string[]): Promise<void> {
+    await this.ensureInitialized();
+    console.log('[StorageManager] Deleting sync actions:', ids.length);
+    for (const id of ids) {
+      await this.indexedDBService.removeFromSyncQueue(id);
+    }
+  }
+
+  /**
+   * 清理已完成的同步队列项
+   */
+  async cleanupCompletedSyncActions(olderThan?: string): Promise<number> {
+    await this.ensureInitialized();
+    
+    const allItems = await this.indexedDBService.getSyncQueue();
+    // 🔧 [TIMESPEC] 使用 TimeSpec 格式
+    const defaultCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const cutoffDate = olderThan || (defaultCutoff.toISOString().replace('T', ' ').substring(0, 19)); // 7天前
+    
+    const itemsToDelete = allItems.filter(item => 
+      item.status === SyncStatus.Synced && 
+      item.updatedAt < cutoffDate
+    );
+
+    for (const item of itemsToDelete) {
+      await this.indexedDBService.removeFromSyncQueue(item.id);
+    }
+
+    console.log(`[StorageManager] Cleaned up ${itemsToDelete.length} completed sync actions`);
+    return itemsToDelete.length;
   }
 
   /**

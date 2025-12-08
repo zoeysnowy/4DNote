@@ -1,19 +1,29 @@
 # EventEditModal v2 产品需求文档 (PRD)
 
-> **版本**: v2.15.6  
+> **版本**: v2.17.0  
 > **创建时间**: 2025-11-06  
-> **最后更新**: 2025-12-01  
+> **最后更新**: 2025-12-06  
 > **Figma 设计稿**: [EventEditModal v2 设计稿](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=201-630&m=dev)  
 > **基于**: EventEditModal v1 + Figma 设计稿  
-> **依赖模块**: EventHub, TimeHub, SlateEditor, HeadlessFloatingToolbar, Timer Module  
+> **依赖模块**: EventHub, TimeHub, SlateEditor, HeadlessFloatingToolbar, Timer Module, EventTree  
 > **关联文档**: 
 > - [EventEditModal v1 PRD](./EVENTEDITMODAL_MODULE_PRD.md)
 > - [Timer 模块 PRD](./TIMER_MODULE_PRD.md)
 > - [TimeCalendar 模块 PRD](./TIMECALENDAR_MODULE_PRD.md)
 > - [TIME_ARCHITECTURE.md](../TIME_ARCHITECTURE.md)
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
+> - [EVENTTREE_MODULE_PRD.md](./EVENTTREE_MODULE_PRD.md)
 
-> **🔥 v2.15.6 最新更新** (2025-12-01):
+> **🔥 v2.17.0 最新更新** (2025-12-06):
+> - ✅ **EventTree 集成 - @ 触发双向链接**: 在 EventLog 中输入 @ 自动创建事件之间的双向链接
+>   - **@ 触发机制**: 输入 @ 字符自动弹出 UnifiedMentionMenu 搜索事件
+>   - **EventMention 节点**: Slate 编辑器中渲染蓝色背景的 @事件标题
+>   - **自动双向链接**: 选择事件后自动调用 EventService.addLink() 创建 linkedEventIds 和 backlinks
+>   - **关联区域统计**: 实时显示"关联：X个事件"，点击展开查看 EventTreeViewer
+>   - **智能搜索**: 支持按标题/标签搜索，Top Hit 优先显示最近访问的事件
+>   - **键盘导航**: ↑↓ 选择事件，Enter 确认，Esc 关闭菜单
+> 
+> **🔥 v2.15.6 历史更新** (2025-12-01):
 > - ✅ **标题输入框流畅输入体验优化**: 完全解决输入法期间的换行和闪烁问题
 >   - **IME 期间无宽度限制**: 输入法启动时设置 `width: max-content`，让文字自由扩展到 240px
 >   - **输入法完成后精确调整**: 输入法结束时立即计算并应用精确宽度，支持自动换行（最多3行）
@@ -121,10 +131,10 @@
 
 ## 📊 功能实现状态总览
 
-> **最后更新**: 2025-11-24  
-> **完成度**: 75% (15/20 核心功能已完成)
+> **最后更新**: 2025-12-06  
+> **完成度**: 77% (16/21 核心功能已完成)
 
-### ✅ 已完成功能（15 项）
+### ✅ 已完成功能（16 项）
 
 | 功能模块 | 所在区域 | 组件/文件 | 完成时间 |
 |---------|---------|----------|----------|
@@ -144,6 +154,7 @@
 | **FloatingBar 插入功能** | 右侧 - Event Log | HeadlessFloatingToolbar + insertTag/Emoji/DateMention | 2025-11-24 |
 | **文本格式与颜色** | 右侧 - Event Log | TextColorPicker + BackgroundColorPicker + 快捷键 | 2025-11-24 |
 | **实际进展数据集成** | 左侧 - 下 Section | 动态渲染 Timer 子事件 + 总时长汇总 + 空状态提示 | 2025-11-27 |
+| **EventTree 关联显示与编辑** | 右侧 - Event Log | EventTree 关联区域 + EventTreeViewer | 2025-12-06 |
 
 ### ⚠️ 部分实现功能（2 项）
 
@@ -162,16 +173,17 @@
 ### 📈 开发进度
 
 ```
-总体进度: ████████████████░░░░ 80%
+总体进度: █████████████████░░░ 85%
 
 左侧 Event Overview: ██████████████████░░ 90%
   ├─ 上 Section (事件标识):       ████████████████████ 100%
   ├─ 中 Section (计划安排):       ████████████████████ 100%
   └─ 下 Section (实际进展):       ████████████████████ 100% ✅ v2.16.0
 
-右侧 Event Log:      ██████████████░░░░░░  70%
+右侧 Event Log:      ████████████████░░░░  80%
   ├─ 标签区域:                    ████████░░░░░░░░░░░░  40%
   ├─ Plan 提示:                   ████████████████████ 100%
+  ├─ 关联区域 (EventTree):        ████████████████████ 100% ✅ v2.17.0
   ├─ 时间戳分隔线:                ████████████████████ 100%
   ├─ Slate 编辑区:                ██████████████░░░░░░  70%
   ├─ FloatingBar 集成:            ████████████████████ 100%
@@ -7315,7 +7327,22 @@ function getRecentCompletionStats(): { count: number; daysAgo: number } {
 
 ---
 
-### 【关联区域】（条件显示）
+### 【关联区域】（条件显示） ✅ **已完成 v2.17.0**
+
+**实现状态**: ✅ 已完成（EventTree 关联显示 + 数据同步）
+
+**已实现功能**:
+- ✅ 关联事件统计显示（上级/下级/关联）
+- ✅ 点击展开查看 EventTreeViewer（Figma 可视化工具）
+- ✅ EventTree 数据字段完整支持（childEventIds, linkedEventIds, backlinks）
+- ✅ formData 三个同步点全部包含 EventTree 字段
+- ✅ PlanManager 转换函数保留 EventTree 字段
+- ✅ 实时统计更新（创建/删除子事件自动刷新）
+
+**核心组件**:
+- `EventEditModalV2.tsx` (L127-160: MockEvent interface, L3080-3120: 关联区域渲染)
+- `EventTreeViewer.tsx` - Figma 集成的事件树可视化组件
+- `PlanManager.tsx` (L2074-2130: convertPlanItemToEvent 转换函数)
 
 **显示条件**:
 ```typescript
@@ -7394,7 +7421,194 @@ function shouldShowInEventTree(event: Event): boolean {
 
 ---
 
-#### 5.2 双向链接（Bidirectional Links）- 堆叠卡片设计
+#### 5.2 关联区域显示（EventEditModal 实现）✅ **已完成**
+
+**显示位置**: 右侧 Event Log 区域 - Slate 编辑器上方
+
+**UI 结构**:
+```tsx
+{/* 关联区域 */}
+{shouldShowRelatedSection(formData) && (
+  <div className="event-relations">
+    {/* 上级任务 */}
+    {formData.parentEventId && (
+      <div className="relation-item">
+        🔗 上级：
+        <span 
+          className="relation-link"
+          onClick={() => openEventModal(formData.parentEventId)}
+        >
+          {getParentEventTitle(formData.parentEventId)}
+        </span>
+      </div>
+    )}
+    
+    {/* 下级任务 */}
+    {formData.childEventIds && formData.childEventIds.length > 0 && (
+      <div className="relation-item">
+        下级：
+        <span 
+          className="relation-count"
+          onClick={() => setShowEventTreeViewer(true)}
+        >
+          {formData.childEventIds.length}个
+        </span>
+      </div>
+    )}
+    
+    {/* 关联事件 */}
+    {(formData.linkedEventIds?.length > 0 || formData.backlinks?.length > 0) && (
+      <div className="relation-item">
+        关联：
+        <span 
+          className="relation-count"
+          onClick={() => setShowEventTreeViewer(true)}
+        >
+          {(formData.linkedEventIds?.length || 0) + (formData.backlinks?.length || 0)}个事件
+        </span>
+      </div>
+    )}
+  </div>
+)}
+```
+
+**CSS 样式**:
+```css
+.event-relations {
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.relation-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.relation-item:last-child {
+  margin-bottom: 0;
+}
+
+.relation-link,
+.relation-count {
+  color: #3b82f6;
+  cursor: pointer;
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.relation-link:hover,
+.relation-count:hover {
+  color: #2563eb;
+}
+```
+
+**交互逻辑**:
+```typescript
+// 点击上级任务 → 打开父事件 Modal
+const openEventModal = (eventId: string) => {
+  const parentEvent = EventService.getEventById(eventId);
+  if (parentEvent) {
+    // 触发全局 Modal 打开事件
+    EventHub.emit('open-event-modal', parentEvent);
+  }
+};
+
+// 点击下级/关联 → 打开 EventTreeViewer
+const [showEventTreeViewer, setShowEventTreeViewer] = useState(false);
+
+<EventTreeViewer
+  isOpen={showEventTreeViewer}
+  onClose={() => setShowEventTreeViewer(false)}
+  rootEventId={event.id}
+  initialView="tree" // 树形视图
+/>
+```
+
+**数据同步保证**（关键修复）:
+
+**问题**：之前 formData.childEventIds 在 Modal 打开时被 useEffect 覆盖为 undefined
+
+**解决方案**：确保三个 formData 同步点都包含 EventTree 字段
+
+```typescript
+// ✅ 同步点 1: useState 初始化（L260-290）
+const [formData, setFormData] = useState<MockEvent>({
+  // ... 其他字段
+  childEventIds: (event as any).childEventIds || [],
+  linkedEventIds: (event as any).linkedEventIds || [],
+  backlinks: (event as any).backlinks || [],
+});
+
+// ✅ 同步点 2: 第一个 useEffect - event prop 变化（L400-465）
+useEffect(() => {
+  if (event) {
+    setFormData({
+      // ... 其他字段
+      childEventIds: (event as any).childEventIds || [],
+      linkedEventIds: (event as any).linkedEventIds || [],
+      backlinks: (event as any).backlinks || [],
+    });
+  }
+}, [event?.id]);
+
+// ✅ 同步点 3: 第二个 useEffect - Modal 打开（L1340-1420）
+useEffect(() => {
+  if (event && isOpen) {
+    setFormData({
+      // ... 其他字段
+      parentEventId: event.parentEventId || null,
+      // 🔗 EventTree 关系字段
+      childEventIds: (event as any).childEventIds || [],
+      linkedEventIds: (event as any).linkedEventIds || [],
+      backlinks: (event as any).backlinks || [],
+      startTime: event.startTime || null,
+      // ... 其他字段
+    });
+  }
+}, [event?.id, event?.title?.colorTitle, isOpen]);
+```
+
+**PlanManager 转换函数修复**（L2074-2130）:
+
+```typescript
+function convertPlanItemToEvent(item: PlanItem, section: PlanSection): Event {
+  return {
+    // ... 基础字段
+    
+    // 🔗 EventTree 关系字段（保留原始数据）
+    childEventIds: (item as any).childEventIds,
+    linkedEventIds: (item as any).linkedEventIds,
+    backlinks: (item as any).backlinks,
+    
+    // ... 其他字段
+  };
+}
+```
+
+**测试验证**:
+
+✅ **验证步骤**:
+1. 在 PlanManager 创建父事件，添加 2 个子事件
+2. 打开父事件的 EventEditModal
+3. 检查 Console 日志：
+   ```javascript
+   🔍🔍🔍 [关联信息检查] formData 当前状态: {
+     步骤3_formData.childEventIds: ['event-child-1', 'event-child-2'],
+     步骤4_formData.childEventIds类型: 'object',
+     步骤5_formData.childEventIds是数组吗: true
+   }
+   ```
+4. 关联区域正确显示："下级：2个"
+
+---
+
+#### 5.3 双向链接（Bidirectional Links）- 堆叠卡片设计
 
 **🎯 设计理念：Vessels as Stacks**
 
@@ -8875,10 +9089,54 @@ const [slateItems, setSlateItems] = useState<PlanItem[]>(() => {
 
 ## 数据字段扩展
 
+### MockEvent 接口（v2.17.0 更新）
+
+**文件位置**: `EventEditModalV2.tsx` L127-160
+
+EventEditModal v2 使用 `MockEvent` 接口作为内部 formData 类型，该接口扩展了 Event 接口并添加了 EventTree 支持：
+
 ```typescript
-import { PlanSlateEditor } from '@/components/PlanSlateEditor/PlanSlateEditor';
-import { parseExternalHtml } from '@/components/PlanSlateEditor/serialization';
-import { slateNodesToRichHtml } from '@/components/PlanSlateEditor/serialization';
+interface MockEvent {
+  id?: string;
+  title: string | EventTitle;
+  description?: string;
+  tags: string[];
+  isTask: boolean;
+  isTimer: boolean;
+  startTime?: string | null;
+  endTime?: string | null;
+  allDay?: boolean;
+  
+  // 🔗 EventTree 关系字段（v2.17.0 新增）
+  parentEventId?: string | null;
+  childEventIds?: string[];
+  linkedEventIds?: string[];
+  backlinks?: string[];
+  
+  // 计划安排字段
+  attendees?: Contact[];
+  location?: string;
+  calendarIds?: string[];
+  syncMode?: SyncMode;
+  
+  // 其他字段...
+}
+```
+
+**关键更新 v2.17.0**:
+- ✅ 添加 `childEventIds?: string[]` - 子事件 ID 列表
+- ✅ 添加 `linkedEventIds?: string[]` - 双向链接 ID 列表
+- ✅ 添加 `backlinks?: string[]` - 反向链接（自动计算）
+- ✅ 保留 `parentEventId?: string | null` - 父事件 ID
+
+**向后兼容性**:
+- 所有 EventTree 字段为可选（`?`），不影响现有事件
+- 读取时使用 `(event as any).childEventIds || []` 兼容旧数据
+- 保存时只写入非空数组，避免数据库污染
+
+**数据同步保证**:
+
+```typescript
 
 // 🆕 合并父事件 + 所有 Timer 子事件的日志
 const [slateItems, setSlateItems] = useState<PlanItem[]>(() => {
@@ -10294,6 +10552,285 @@ sequenceDiagram
 
 ---
 
-**最后更新**: 2025-11-26  
+## 🔗 v2.17.0 EventTree 集成详细实现 (2025-12-06)
+
+### 核心功能：@ 触发双向链接
+
+**设计理念**：像 Notion/Obsidian 一样，通过 @ 符号快速创建事件之间的链接关系，自动维护双向引用（linkedEventIds ← → backlinks）。
+
+### 实现架构
+
+#### 1. ModalSlate 集成 @ 监听
+
+**代码位置**: `src/components/ModalSlate/ModalSlate.tsx`
+
+**关键状态管理** (L418-425):
+```typescript
+// @ Mention Menu 状态
+const [mentionMenu, setMentionMenu] = useState<{
+  visible: boolean;
+  query: string;
+  position: { x: number; y: number };
+  atSignRange: Range | null; // 存储 @ 符号的位置
+} | null>(null);
+```
+
+**@ 监听逻辑** (L963-999):
+```typescript
+const checkForMentionTrigger = useCallback(() => {
+  const { selection } = editor;
+  if (!selection || !Range.isCollapsed(selection)) return;
+
+  const [start] = Range.edges(selection);
+  const wordBefore = Editor.before(editor, start, { unit: 'word' });
+  const before = wordBefore && Editor.before(editor, wordBefore);
+  const beforeRange = before && Editor.range(editor, before, start);
+  const beforeText = beforeRange && Editor.string(editor, beforeRange);
+  const beforeMatch = beforeText && beforeText.match(/@(\w*)$/);
+
+  if (beforeMatch) {
+    const [, query] = beforeMatch;
+    
+    // 计算菜单位置
+    const domSelection = window.getSelection();
+    const domRange = domSelection?.getRangeAt(0);
+    const rect = domRange?.getBoundingClientRect();
+    
+    if (rect) {
+      setMentionMenu({
+        visible: true,
+        query: query || '',
+        position: { x: rect.left, y: rect.bottom + 5 },
+        atSignRange: beforeRange
+      });
+    }
+  } else {
+    setMentionMenu(null);
+  }
+}, [editor]);
+```
+
+**触发时机**:
+- onKeyDown @ 字符输入 (L1007-1013)
+- onChange 内容变化检测 (L932)
+
+#### 2. EventMention 节点类型
+
+**代码位置**: `src/components/SlateCore/types.ts` (L62-69)
+
+```typescript
+/**
+ * EventMention - 事件提及元素 (双向链接)
+ */
+export interface EventMentionNode {
+  type: 'eventMention';
+  eventId: string;        // 目标事件 ID
+  eventTitle: string;     // 事件标题（缓存，用于显示）
+  eventEmoji?: string;    // 事件 emoji（缓存）
+  children: [{ text: '' }];
+}
+```
+
+#### 3. EventMentionElement 渲染
+
+**代码位置**: `src/components/SlateCore/elements/EventMentionElement.tsx`
+
+**样式设计**:
+- 蓝色背景 (#E3F2FD)
+- 圆角边框 (4px)
+- 悬停加深 (#BBDEFB)
+- 可点击跳转（未来功能）
+
+**渲染逻辑**:
+```typescript
+<span
+  contentEditable={false}
+  onClick={handleClick}
+  className="event-mention"
+  style={{
+    display: 'inline-block',
+    padding: '2px 6px',
+    margin: '0 2px',
+    backgroundColor: '#E3F2FD',
+    color: '#1976D2',
+    borderRadius: '4px',
+    cursor: 'pointer',
+  }}
+>
+  @{element.eventTitle}
+  {children}
+</span>
+```
+
+#### 4. UnifiedMentionMenu 集成
+
+**代码位置**: `src/components/UnifiedMentionMenu.tsx` (L40-52)
+
+**自动双向链接创建** (L43-46):
+```typescript
+const handleItemClick = useCallback(async (item: MentionItem) => {
+  // 🔗 如果选择的是事件，且当前有编辑的事件，自动创建双向链接
+  if (item.type === 'event' && currentEventId && item.id !== currentEventId) {
+    await unifiedSearchIndex.createBidirectionalLink(currentEventId, item.id);
+  }
+  
+  onSelect(item);
+  unifiedSearchIndex.recordAccess(item.id, item.type);
+}, [onSelect, currentEventId]);
+```
+
+**搜索服务调用链**:
+```
+UnifiedMentionMenu.handleItemClick()
+  ↓
+UnifiedSearchIndex.createBidirectionalLink()
+  ↓
+EventService.addLink(fromId, toId)
+  ↓
+更新 fromEvent.linkedEventIds = [...existing, toId]
+  ↓
+EventService.rebuildBacklinks(toId)
+  ↓
+更新 toEvent.backlinks = [所有链接到它的事件]
+```
+
+#### 5. handleMentionSelect 插入节点
+
+**代码位置**: `src/components/ModalSlate/ModalSlate.tsx` (L1066-1094)
+
+```typescript
+const handleMentionSelect = useCallback(async (item: MentionItem) => {
+  if (!mentionMenu || !mentionMenu.atSignRange) return;
+  
+  // 只处理事件类型的 mention
+  if (item.type === 'event') {
+    // 删除 @ 和查询文本
+    Transforms.delete(editor, { at: mentionMenu.atSignRange });
+    
+    // 插入 EventMention 节点
+    const eventMention: EventMentionNode = {
+      type: 'eventMention',
+      eventId: item.id,
+      eventTitle: item.title,
+      eventEmoji: item.emoji,
+      children: [{ text: '' }]
+    };
+    
+    Transforms.insertNodes(editor, eventMention);
+    
+    // 移动光标到 mention 后面
+    Transforms.move(editor);
+  }
+  
+  // 关闭菜单
+  setMentionMenu(null);
+}, [editor, mentionMenu]);
+```
+
+#### 6. EventEditModalV2 关联区域显示
+
+**代码位置**: `src/components/EventEditModal/EventEditModalV2.tsx` (L3100-3125)
+
+**统计逻辑**:
+```typescript
+const linkedCount = 
+  ((formData as any).linkedEventIds?.length || 0) + 
+  ((formData as any).backlinks?.length || 0);
+
+if (linkedCount > 0) {
+  parts.push(`关联：${linkedCount}个事件`);
+}
+```
+
+**formData 初始化** (L269-271 & L358-360):
+```typescript
+// 编辑现有事件
+childEventIds: (event as any).childEventIds || [],
+linkedEventIds: (event as any).linkedEventIds || [],
+backlinks: (event as any).backlinks || [],
+
+// 新建事件
+childEventIds: [],
+linkedEventIds: [],
+backlinks: [],
+```
+
+### 数据流完整链路
+
+```
+用户输入 @
+  ↓
+checkForMentionTrigger() 检测到 @ 符号
+  ↓
+setMentionMenu({ visible: true, query, position, atSignRange })
+  ↓
+<UnifiedMentionMenu> 显示搜索结果
+  ↓
+用户选择事件 → handleItemClick(item)
+  ↓
+createBidirectionalLink(currentEventId, item.id)
+  ↓
+EventService.addLink()
+  ├─ 更新 fromEvent.linkedEventIds
+  └─ rebuildBacklinks(toEventId)
+      └─ 更新 toEvent.backlinks
+  ↓
+handleMentionSelect() 插入 EventMention 节点
+  ↓
+ModalSlate 自动保存 eventlog (2秒防抖)
+  ↓
+EventEditModalV2.handleSave()
+  ↓
+EventHub.updateFields(eventId, { eventlog, ... })
+  ↓
+关联区域统计更新 → "关联：2个事件"
+```
+
+### 关键技术点
+
+1. **@ 触发检测**: 使用正则表达式 `/@(\w*)$/` 匹配光标前的文本
+2. **Range 管理**: 保存 `atSignRange` 用于后续删除 @ 和查询文本
+3. **Slate Void 元素**: EventMention 设置为 void + inline，确保正确的光标行为
+4. **自动空格**: normalizeNode 确保 EventMention 后面始终有空格
+5. **双向链接**: linkedEventIds 存储主动链接，backlinks 由系统自动计算
+6. **增量更新**: 使用 EventHub.updateFields() 只更新变化的字段
+
+### 使用示例
+
+**场景 1：关联相关事件**
+```
+用户在"项目A总结"事件的 EventLog 中输入：
+"参考 @项目A需求文档 和 @项目A技术方案 的内容"
+
+结果：
+- "项目A总结" 的 linkedEventIds = ['doc-id-1', 'doc-id-2']
+- "项目A需求文档" 的 backlinks = ['summary-id']
+- "项目A技术方案" 的 backlinks = ['summary-id']
+- 关联区域显示 "关联：2个事件"
+```
+
+**场景 2：会议记录引用**
+```
+用户在"周会 2025-12-06"事件中输入：
+"讨论了 @Q4 OKR Review 和 @年终总结报告 的准备工作"
+
+结果：
+- 周会事件自动关联到两个文档
+- 文档的 backlinks 自动包含周会事件
+- EventTreeViewer 可以展开查看完整关系网络
+```
+
+### 未来优化方向
+
+1. **悬浮预览**: 鼠标悬停 EventMention 显示事件详情卡片
+2. **点击跳转**: 点击 EventMention 直接打开目标事件的 EditModal
+3. **智能推荐**: 根据上下文自动推荐相关事件
+4. **批量链接**: 支持拖拽多个事件创建批量链接
+5. **关系可视化**: EventTreeViewer 的堆叠卡片动画效果
+6. **删除同步**: 删除 EventMention 节点时自动调用 removeLink()
+
+---
+
+**最后更新**: 2025-12-06  
 **维护者**: 4DNote Team
 

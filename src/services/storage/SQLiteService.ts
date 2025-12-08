@@ -48,7 +48,7 @@ export class SQLiteService {
   // 延迟初始?DB_PATH（避免在模块加载时访?process.env?
   private get dbPath(): string {
     return process.env.NODE_ENV === 'production' 
-      ? './database/remarkable.db' 
+      ? './database/4dnote.db' 
       : './database/4dnote-dev.db';
   }
 
@@ -406,8 +406,44 @@ export class SQLiteService {
       );
     `);
 
+    // 13. Event History 表（事件操作审计日志）
+    await this.db.exec(`
+      CREATE TABLE IF NOT EXISTS event_history (
+        id TEXT PRIMARY KEY NOT NULL,
+        event_id TEXT NOT NULL,
+        operation TEXT NOT NULL CHECK(operation IN ('create', 'update', 'delete', 'checkin', 'uncheck')),
+        timestamp TEXT NOT NULL,
+        source TEXT NOT NULL,
+        before_json TEXT,
+        after_json TEXT,
+        changes_json TEXT,
+        user_id TEXT,
+        metadata_json TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE
+      );
+    `);
 
-    console.log('?All tables created');
+    // 创建索引：按 event_id 查询
+    await this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_event_history_event_id 
+      ON event_history(event_id);
+    `);
+
+    // 创建索引：按时间范围查询
+    await this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_event_history_timestamp 
+      ON event_history(timestamp);
+    `);
+
+    // 创建索引：按操作类型查询
+    await this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_event_history_operation 
+      ON event_history(operation);
+    `);
+
+
+    console.log('✅ All tables created');
   }
 
   /**
@@ -946,7 +982,7 @@ export class SQLiteService {
   async queryEvents(options: QueryOptions = {}): Promise<QueryResult<StorageEvent>> {
     if (!this.db) throw new Error('Database not initialized');
 
-    const { filters = {}, sort, offset = 0, limit = 50 } = options;
+    const { filters = {}, sort, offset = 0, limit = 50, startDate, endDate } = options;
     
     let query = 'SELECT * FROM events WHERE deleted_at IS NULL';
     const params: any[] = [];
@@ -957,14 +993,17 @@ export class SQLiteService {
       params.push(...filters.eventIds);
     }
 
-    // 时间范围过滤
-    if (filters.startTime) {
+    // 🚀 [PERFORMANCE FIX] 使用 startDate/endDate 从 QueryOptions（兼容 filters.startTime/endTime）
+    const effectiveStartTime = startDate ? this.formatDateForStorage(startDate) : filters.startTime;
+    const effectiveEndTime = endDate ? this.formatDateForStorage(endDate) : filters.endTime;
+    
+    if (effectiveStartTime) {
       query += ' AND start_time >= ?';
-      params.push(filters.startTime);
+      params.push(effectiveStartTime);
     }
-    if (filters.endTime) {
+    if (effectiveEndTime) {
       query += ' AND end_time <= ?';
-      params.push(filters.endTime);
+      params.push(effectiveEndTime);
     }
 
     // 账户过滤
@@ -1005,13 +1044,14 @@ export class SQLiteService {
       countParams.push(...filters.eventIds);
     }
     
-    if (filters.startTime) {
+    // 🚀 [PERFORMANCE FIX] 使用相同的时间范围过滤逻辑
+    if (effectiveStartTime) {
       countQuery += ' AND start_time >= ?';
-      countParams.push(filters.startTime);
+      countParams.push(effectiveStartTime);
     }
-    if (filters.endTime) {
+    if (effectiveEndTime) {
       countQuery += ' AND end_time <= ?';
-      countParams.push(filters.endTime);
+      countParams.push(effectiveEndTime);
     }
     if (filters.accountIds && filters.accountIds.length > 0) {
       countQuery += ` AND source_account_id IN (${filters.accountIds.map(() => '?').join(',')})`;
@@ -1222,6 +1262,19 @@ export class SQLiteService {
    */
   private camelToSnake(str: string): string {
     return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+  }
+
+  /**
+   * 🚀 [PERFORMANCE] 格式化 Date 对象为 TimeSpec 字符串（YYYY-MM-DD HH:mm:ss）
+   */
+  private formatDateForStorage(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
   /**
@@ -1632,6 +1685,327 @@ export class SQLiteService {
       })),
       total,
       hasMore: offset + rowsArray.length < total,
+    };
+  }
+
+  // ==================== Contact 操作 ====================
+
+  /**
+   * 查询联系人
+   */
+  async queryContacts(options: QueryOptions = {}): Promise<QueryResult<Contact>> {
+    if (!this.db) throw new Error('SQLite not initialized');
+
+    const limit = options.limit || 1000;
+    const offset = options.offset || 0;
+    const whereClauses: string[] = ['deleted_at IS NULL'];
+    const values: any[] = [];
+
+    // 应用过滤条件
+    if (options.filters) {
+      const { contactIds, emails, sources, searchText } = options.filters;
+
+      if (contactIds && contactIds.length > 0) {
+        const placeholders = contactIds.map(() => '?').join(',');
+        whereClauses.push(`id IN (${placeholders})`);
+        values.push(...contactIds);
+      }
+
+      if (emails && emails.length > 0) {
+        const placeholders = emails.map(() => '?').join(',');
+        whereClauses.push(`email IN (${placeholders})`);
+        values.push(...emails);
+      }
+
+      if (sources && sources.length > 0) {
+        const placeholders = sources.map(() => '?').join(',');
+        whereClauses.push(`source IN (${placeholders})`);
+        values.push(...sources);
+      }
+
+      if (searchText) {
+        whereClauses.push(`(name LIKE ? OR email LIKE ? OR phone LIKE ?)`);
+        const search = `%${searchText}%`;
+        values.push(search, search, search);
+      }
+    }
+
+    const whereSQL = whereClauses.join(' AND ');
+
+    // 查询数据
+    const stmt = this.db.prepare(`
+      SELECT * FROM contacts 
+      WHERE ${whereSQL}
+      ORDER BY updated_at DESC
+      LIMIT ? OFFSET ?
+    `);
+
+    const rows: any[] = stmt.all(...values, limit, offset);
+
+    // 查询总数
+    const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM contacts WHERE ${whereSQL}`);
+    const countRow: any = countStmt.get(...values);
+    const total = countRow.count;
+
+    const rowsArray = Array.isArray(rows) ? rows : [];
+
+    return {
+      items: rowsArray.map(row => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        avatar: row.avatar,
+        source: row.source,
+        sourceId: row.source_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        deletedAt: row.deleted_at,
+        // 解析 metadata JSON
+        ...(row.metadata ? JSON.parse(row.metadata) : {})
+      })),
+      total,
+      hasMore: offset + rowsArray.length < total,
+    };
+  }
+
+  /**
+   * 创建联系人
+   */
+  async createContact(contact: Contact): Promise<void> {
+    if (!this.db) throw new Error('SQLite not initialized');
+
+    const stmt = this.db.prepare(`
+      INSERT INTO contacts (
+        id, name, email, phone, avatar, source, source_id,
+        created_at, updated_at, metadata
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    stmt.run(
+      contact.id,
+      contact.name,
+      contact.email,
+      contact.phone || null,
+      contact.avatar || null,
+      contact.source || 'local',
+      contact.sourceId || null,
+      contact.createdAt,
+      contact.updatedAt,
+      JSON.stringify({
+        company: contact.company,
+        notes: contact.notes,
+        avatarUrl: contact.avatarUrl,
+        organization: contact.organization,
+        position: contact.position
+      })
+    );
+  }
+
+  /**
+   * 更新联系人
+   */
+  async updateContact(contact: Contact): Promise<void> {
+    if (!this.db) throw new Error('SQLite not initialized');
+
+    const stmt = this.db.prepare(`
+      UPDATE contacts SET
+        name = ?, email = ?, phone = ?, avatar = ?,
+        source = ?, source_id = ?, updated_at = ?,
+        deleted_at = ?, metadata = ?
+      WHERE id = ?
+    `);
+
+    stmt.run(
+      contact.name,
+      contact.email,
+      contact.phone || null,
+      contact.avatar || null,
+      contact.source || 'local',
+      contact.sourceId || null,
+      contact.updatedAt,
+      contact.deletedAt || null,
+      JSON.stringify({
+        company: contact.company,
+        notes: contact.notes,
+        avatarUrl: contact.avatarUrl,
+        organization: contact.organization,
+        position: contact.position
+      }),
+      contact.id
+    );
+  }
+
+  /**
+   * 删除联系人（物理删除，软删除通过 updateContact 设置 deletedAt）
+   */
+  async deleteContact(id: string): Promise<void> {
+    if (!this.db) throw new Error('SQLite not initialized');
+
+    const stmt = this.db.prepare('DELETE FROM contacts WHERE id = ?');
+    stmt.run(id);
+  }
+
+  // ==================== Event History CRUD ====================
+
+  /**
+   * 创建事件历史记录
+   */
+  async createEventHistory(log: {
+    id: string;
+    eventId: string;
+    operation: 'create' | 'update' | 'delete' | 'checkin' | 'uncheck';
+    timestamp: string;
+    source: string;
+    before?: any;
+    after?: any;
+    changes?: any;
+    userId?: string;
+    metadata?: any;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      INSERT INTO event_history (
+        id, event_id, operation, timestamp, source,
+        before_json, after_json, changes_json,
+        user_id, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    await stmt.run(
+      log.id,
+      log.eventId,
+      log.operation,
+      log.timestamp,
+      log.source,
+      log.before ? JSON.stringify(log.before) : null,
+      log.after ? JSON.stringify(log.after) : null,
+      log.changes ? JSON.stringify(log.changes) : null,
+      log.userId || null,
+      log.metadata ? JSON.stringify(log.metadata) : null,
+      new Date().toISOString()
+    );
+  }
+
+  /**
+   * 查询事件历史记录
+   */
+  async queryEventHistory(options: {
+    eventIds?: string[];
+    operations?: string[];
+    startTime?: string;
+    endTime?: string;
+    source?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<any[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const { eventIds, operations, startTime, endTime, source, limit = 1000, offset = 0 } = options;
+
+    let query = 'SELECT * FROM event_history WHERE 1=1';
+    const params: any[] = [];
+
+    if (eventIds && eventIds.length > 0) {
+      query += ` AND event_id IN (${eventIds.map(() => '?').join(',')})`;
+      params.push(...eventIds);
+    }
+
+    if (operations && operations.length > 0) {
+      query += ` AND operation IN (${operations.map(() => '?').join(',')})`;
+      params.push(...operations);
+    }
+
+    if (startTime) {
+      query += ' AND timestamp >= ?';
+      params.push(startTime);
+    }
+
+    if (endTime) {
+      query += ' AND timestamp <= ?';
+      params.push(endTime);
+    }
+
+    if (source) {
+      query += ' AND source = ?';
+      params.push(source);
+    }
+
+    query += ' ORDER BY timestamp DESC LIMIT ? OFFSET ?';
+    params.push(limit, offset);
+
+    const stmt = this.db.prepare(query);
+    const rows = await stmt.all(...params) as any[];
+
+    return rows.map(row => ({
+      id: row.id,
+      eventId: row.event_id,
+      operation: row.operation,
+      timestamp: row.timestamp,
+      source: row.source,
+      before: row.before_json ? JSON.parse(row.before_json) : undefined,
+      after: row.after_json ? JSON.parse(row.after_json) : undefined,
+      changes: row.changes_json ? JSON.parse(row.changes_json) : undefined,
+      userId: row.user_id,
+      metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined,
+      createdAt: row.created_at
+    }));
+  }
+
+  /**
+   * 删除旧的历史记录（保留策略）
+   */
+  async cleanupEventHistory(olderThan: string): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      DELETE FROM event_history WHERE timestamp < ?
+    `);
+
+    const result = await stmt.run(olderThan);
+    return result.changes || 0;
+  }
+
+  /**
+   * 获取历史记录统计
+   */
+  async getEventHistoryStats(): Promise<{
+    total: number;
+    byOperation: Record<string, number>;
+    oldestTimestamp: string | null;
+    newestTimestamp: string | null;
+  }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    // 总数
+    const totalStmt = this.db.prepare('SELECT COUNT(*) as total FROM event_history');
+    const totalRow = await totalStmt.get() as any;
+
+    // 按操作类型统计
+    const byOpStmt = this.db.prepare(`
+      SELECT operation, COUNT(*) as count 
+      FROM event_history 
+      GROUP BY operation
+    `);
+    const byOpRows = await byOpStmt.all() as any[];
+    const byOperation: Record<string, number> = {};
+    byOpRows.forEach(row => {
+      byOperation[row.operation] = row.count;
+    });
+
+    // 最早和最晚时间
+    const rangeStmt = this.db.prepare(`
+      SELECT MIN(timestamp) as oldest, MAX(timestamp) as newest 
+      FROM event_history
+    `);
+    const rangeRow = await rangeStmt.get() as any;
+
+    return {
+      total: totalRow.total,
+      byOperation,
+      oldestTimestamp: rangeRow.oldest,
+      newestTimestamp: rangeRow.newest
     };
   }
 

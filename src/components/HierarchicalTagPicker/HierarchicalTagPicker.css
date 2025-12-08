@@ -12,7 +12,7 @@
 .selected-tags-with-search {
   min-height: 36px;
   padding: 4px 8px;
-  border: 1px solid #d1d5db;
+  border: none;
   border-radius: 6px;
   display: flex;
   flex-wrap: wrap;
@@ -24,12 +24,11 @@
 }
 
 .selected-tags-with-search:hover {
-  border-color: #9ca3af;
+  /* No border */
 }
 
 .selected-tags-with-search:focus-within {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  /* No border */
 }
 
 /* 标签chip */
@@ -87,9 +86,9 @@
   right: 0;
   max-height: 320px;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: none;
   border-radius: 8px;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   z-index: 1000;
   display: flex;
   flex-direction: column;
@@ -212,7 +211,7 @@
   min-width: 320px;
   max-width: 400px;
   background: white;
-  border: 1px solid #e5e7eb;
+  border: none;
   border-radius: 8px;
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
   overflow: hidden;
@@ -226,23 +225,22 @@
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: none;
   background: #f9fafb;
 }
 
 .tag-search-input {
   flex: 1;
   padding: 6px 12px;
-  border: 1px solid #d1d5db;
+  border: none;
   border-radius: 6px;
   font-size: 14px;
   outline: none;
-  transition: border-color 0.2s;
+  background: white;
 }
 
 .tag-search-input:focus {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  /* No border */
 }
 
 .popup-actions {
@@ -255,7 +253,7 @@
   font-size: 12px;
   color: #6b7280;
   background: white;
-  border: 1px solid #d1d5db;
+  border: none;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s;
@@ -264,8 +262,7 @@
 
 .popup-actions button:hover {
   color: #374151;
-  border-color: #9ca3af;
-  background: #f9fafb;
+  background: #f3f4f6;
 }
 
 .popup-close-btn {
@@ -286,7 +283,7 @@
 /* 已选标签区域 */
 .selected-tags-section {
   padding: 12px 16px;
-  border-bottom: 1px solid #e5e7eb;
+  border-bottom: none;
   background: #fefce8;
 }
 
@@ -311,7 +308,7 @@
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  border: 1px solid;
+  border: none;
   background: white;
   white-space: nowrap;
 }
@@ -338,24 +335,14 @@
   padding: 8px 0;
 }
 
-/* 滚动条样式 */
+/* 隐藏滚动条但保留滚动功能 */
 .tag-dropdown-list::-webkit-scrollbar,
 .popup-tag-list::-webkit-scrollbar {
-  width: 8px;
+  display: none;
 }
 
-.tag-dropdown-list::-webkit-scrollbar-track,
-.popup-tag-list::-webkit-scrollbar-track {
-  background: #f9fafb;
-}
-
-.tag-dropdown-list::-webkit-scrollbar-thumb,
-.popup-tag-list::-webkit-scrollbar-thumb {
-  background: #d1d5db;
-  border-radius: 4px;
-}
-
-.tag-dropdown-list::-webkit-scrollbar-thumb:hover,
-.popup-tag-list::-webkit-scrollbar-thumb:hover {
-  background: #9ca3af;
+.tag-dropdown-list,
+.popup-tag-list {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
 }

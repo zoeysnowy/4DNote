@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo   ReMarkable Electron 完整启动
+echo   4DNote Electron 完整启动
 echo ========================================
 echo.
 

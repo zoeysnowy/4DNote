@@ -1,0 +1,102 @@
+/* ========================================
+   CompressedDateRange - 压缩日期范围样式
+   横向显示空白日期，节省纵向空间
+   ======================================== */
+
+.compressed-date-range {
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.compressed-month-group {
+  margin-bottom: 12px;
+}
+
+/* 日期网格 */
+.compressed-dates-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  align-items: center;
+}
+
+/* 周分隔线 - 在周日和周一之间 */
+.week-separator {
+  width: 1px;
+  height: 16px;
+  background: #D1D5DB;
+  margin: 0 4px;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+/* 单个日期单元格 */
+.compressed-date-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 36px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.compressed-date-cell:hover {
+  background: #F3F4F6;
+}
+
+.compressed-date-cell.is-today {
+  background: #EEF2FF;
+  border: 1px solid #3B82F6;
+}
+
+.compressed-date-cell.is-today .date-day {
+  color: #3B82F6;
+  font-weight: 700;
+}
+
+/* 星期几 */
+.date-weekday {
+  font-size: 9px;
+  font-weight: 500;
+  color: #9CA3AF;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+/* 日期数字 */
+.date-day {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  line-height: 1;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .compressed-date-cell {
+    width: 28px;
+    height: 32px;
+  }
+
+  .date-weekday {
+    font-size: 8px;
+  }
+
+  .date-day {
+    font-size: 12px;
+  }
+
+  .compressed-month {
+    font-size: 18px;
+  }
+}

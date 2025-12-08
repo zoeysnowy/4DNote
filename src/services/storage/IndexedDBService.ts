@@ -35,7 +35,7 @@ import type {
 } from './types';
 
 const DB_NAME = '4DNoteDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // v2: Added event_history store
 
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
@@ -151,6 +151,16 @@ export class IndexedDBService {
         if (!db.objectStoreNames.contains('metadata')) {
           const metadataStore = db.createObjectStore('metadata', { keyPath: 'key' });
           console.log('[IndexedDBService] Created metadata store');
+        }
+
+        // 9. Event History Store (v2)
+        if (!db.objectStoreNames.contains('event_history')) {
+          const historyStore = db.createObjectStore('event_history', { keyPath: 'id' });
+          historyStore.createIndex('eventId', 'eventId', { unique: false });
+          historyStore.createIndex('operation', 'operation', { unique: false });
+          historyStore.createIndex('timestamp', 'timestamp', { unique: false });
+          historyStore.createIndex('source', 'source', { unique: false });
+          console.log('[IndexedDBService] Created event_history store');
         }
 
         console.log('[IndexedDBService] ✅ Schema upgrade complete');
@@ -300,17 +310,72 @@ export class IndexedDBService {
   }
 
   async queryEvents(options: QueryOptions): Promise<QueryResult<StorageEvent>> {
-    let events = await this.query<StorageEvent>('events');
+    const perfStart = performance.now();
+    let events: StorageEvent[];
 
-    // 筛选：时间范围
+    // 🚀 优化：优先使用索引查询
     if (options.startDate || options.endDate) {
-      events = events.filter(event => {
-        if (!event.startTime) return false;
-        const eventDate = new Date(event.startTime);
-        if (options.startDate && eventDate < options.startDate) return false;
-        if (options.endDate && eventDate > options.endDate) return false;
-        return true;
-      });
+      // 使用 startTime 索引查询时间范围
+      const initStart = performance.now();
+      await this.initialize();
+      const initDuration = performance.now() - initStart;
+      
+      const queryStart = performance.now();
+      
+      // 🔧 [FIX] 构建时间范围查询 - 支持 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
+      // TimeSpec 格式按字符串排序也是正确的时间顺序
+      const formatForIndex = (date: Date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        const seconds = String(date.getSeconds()).padStart(2, '0');
+        return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      };
+      
+      const range = options.startDate && options.endDate
+        ? IDBKeyRange.bound(formatForIndex(options.startDate), formatForIndex(options.endDate))
+        : options.startDate
+        ? IDBKeyRange.lowerBound(formatForIndex(options.startDate))
+        : options.endDate
+        ? IDBKeyRange.upperBound(formatForIndex(options.endDate))
+        : null;
+      
+      // 🚀 [PERFORMANCE FIX] 使用 getAll() 替代游标遍历（快 5-10 倍）
+      // getAll() 会在 C++ 层批量读取，比 JS 层的 cursor.continue() 快得多
+      const allEvents = await this.query<StorageEvent>('events', 'startTime', range || undefined);
+      
+      // 🔧 过滤软删除的事件（内存中过滤很快）
+      events = allEvents.filter(event => !event.deletedAt);
+      
+      const queryDuration = performance.now() - queryStart;
+      // Only log slow queries to reduce noise
+      if (queryDuration > 100) {
+        console.log(`[IndexedDB] ⚡ Index getAll() query took ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms) → ${events.length} events`);
+      }
+    } else {
+      // 🚀 [PERFORMANCE FIX] 无时间范围过滤，使用 getAll() 全表读取
+      // getAll() 比游标遍历快 5-10 倍（批量读取 vs 逐个读取）
+      const queryStart = performance.now();
+      await this.initialize();
+      const allEvents = await this.query<StorageEvent>('events');
+      
+      // 🔧 过滤软删除的事件
+      events = allEvents.filter(event => !event.deletedAt);
+      
+      const queryDuration = performance.now() - queryStart;
+      // ✨ 只记录慢查询（>200ms）以减少噪音
+      if (queryDuration > 200) {
+        console.log(`[IndexedDB] ⚡ Slow query took ${queryDuration.toFixed(1)}ms → ${events.length} events`);
+      }
+    }
+
+    // 筛选：事件 ID 列表（精确匹配）
+    if (options.filters?.eventIds && options.filters.eventIds.length > 0) {
+      events = events.filter(event => 
+        options.filters!.eventIds!.includes(event.id)
+      );
     }
 
     // 筛选：账号
@@ -354,12 +419,45 @@ export class IndexedDBService {
     if (!existingEvent) {
       throw new Error(`Event not found: ${id}`);
     }
-    const updatedEvent = { ...existingEvent, ...updates, updatedAt: new Date().toISOString() };
+    // 🔧 [TIMESPEC] 使用 formatTimeForStorage 确保 TimeSpec 格式
+    const formatTimeForStorage = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    };
+    const updatedEvent = { ...existingEvent, ...updates, updatedAt: formatTimeForStorage(new Date()) };
     return this.put('events', updatedEvent);
   }
 
   async deleteEvent(id: string): Promise<void> {
     return this.delete('events', id);
+  }
+
+  async batchDeleteEvents(ids: string[]): Promise<void> {
+    if (ids.length === 0) return;
+    
+    await this.initialize();
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('events', 'readwrite');
+      const store = transaction.objectStore('events');
+
+      for (const id of ids) {
+        store.delete(id);
+      }
+
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   }
 
   async batchCreateEvents(events: StorageEvent[]): Promise<void> {
@@ -394,15 +492,107 @@ export class IndexedDBService {
     return this.put('tags', tag);
   }
 
-  // Contacts
-  async getAllContacts(): Promise<Contact[]> {
-    return this.query<Contact>('contacts');
+  // ==================== Contact 操作 ====================
+
+  /**
+   * 查询联系人
+   */
+  async queryContacts(options: QueryOptions = {}): Promise<QueryResult<Contact>> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('contacts', 'readonly');
+      const store = transaction.objectStore('contacts');
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        let contacts = request.result as Contact[];
+
+        // 过滤已删除的联系人
+        contacts = contacts.filter(c => !c.deletedAt);
+
+        // 应用过滤条件
+        if (options.filters) {
+          const { contactIds, emails, sources, searchText } = options.filters;
+
+          if (contactIds && contactIds.length > 0) {
+            contacts = contacts.filter(c => contactIds.includes(c.id));
+          }
+
+          if (emails && emails.length > 0) {
+            contacts = contacts.filter(c => emails.includes(c.email));
+          }
+
+          if (sources && sources.length > 0) {
+            contacts = contacts.filter(c => sources.includes(c.source || 'local'));
+          }
+
+          if (searchText) {
+            const search = searchText.toLowerCase();
+            contacts = contacts.filter(c =>
+              c.name.toLowerCase().includes(search) ||
+              c.email.toLowerCase().includes(search) ||
+              (c.phone && c.phone.includes(search))
+            );
+          }
+        }
+
+        // 排序
+        contacts.sort((a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+        );
+
+        // 分页
+        const offset = options.offset || 0;
+        const limit = options.limit || 1000;
+        const paginatedContacts = contacts.slice(offset, offset + limit);
+
+        resolve({
+          items: paginatedContacts,
+          total: contacts.length,
+          hasMore: offset + limit < contacts.length
+        });
+      };
+
+      request.onerror = () => reject(request.error);
+    });
   }
 
+  /**
+   * 创建联系人
+   */
   async createContact(contact: Contact): Promise<void> {
     return this.put('contacts', contact);
   }
 
+  /**
+   * 更新联系人
+   */
+  async updateContact(contact: Contact): Promise<void> {
+    return this.put('contacts', contact);
+  }
+
+  /**
+   * 删除联系人（通过 ID）
+   */
+  async deleteContact(id: string): Promise<void> {
+    return this.delete('contacts', id);
+  }
+
+  /**
+   * 获取所有联系人（旧接口，兼容性保留）
+   */
+  async getAllContacts(): Promise<Contact[]> {
+    return this.query<Contact>('contacts');
+  }
+
+  // ==================== SyncQueue 操作 ====================
+  
   // SyncQueue
   async getSyncQueue(): Promise<SyncQueueItem[]> {
     return this.query<SyncQueueItem>('syncQueue');
@@ -532,6 +722,219 @@ export class IndexedDBService {
       this.initPromise = null;
       console.log('[IndexedDBService] Database closed');
     }
+  }
+
+  // ==================== Event History Methods ====================
+
+  /**
+   * 创建事件历史记录（如果已存在则报错）
+   */
+  async createEventHistory(log: {
+    id: string;
+    eventId: string;
+    operation: 'create' | 'update' | 'delete' | 'checkin' | 'uncheck';
+    timestamp: string;
+    source: string;
+    before?: any;
+    after?: any;
+    changes?: any;
+    userId?: string;
+    metadata?: any;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readwrite');
+      const store = transaction.objectStore('event_history');
+      
+      const request = store.add({
+        ...log,
+        createdAt: new Date().toISOString()
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 创建或更新事件历史记录（幂等操作，用于迁移）
+   */
+  async createOrUpdateEventHistory(log: {
+    id: string;
+    eventId: string;
+    operation: 'create' | 'update' | 'delete' | 'checkin' | 'uncheck';
+    timestamp: string;
+    source: string;
+    before?: any;
+    after?: any;
+    changes?: any;
+    userId?: string;
+    metadata?: any;
+  }): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readwrite');
+      const store = transaction.objectStore('event_history');
+      
+      // 使用 put（而非 add）：如果主键存在则更新，不存在则创建
+      const request = store.put({
+        ...log,
+        createdAt: new Date().toISOString()
+      });
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 查询事件历史记录
+   */
+  async queryEventHistory(options: {
+    eventIds?: string[];
+    operations?: string[];
+    startTime?: string;
+    endTime?: string;
+    source?: string;
+    limit?: number;
+    offset?: number;
+  } = {}): Promise<any[]> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readonly');
+      const store = transaction.objectStore('event_history');
+      
+      let request: IDBRequest;
+
+      // 如果有 eventIds 过滤，使用索引
+      if (options.eventIds && options.eventIds.length === 1) {
+        const index = store.index('eventId');
+        request = index.getAll(options.eventIds[0]);
+      } else {
+        // 否则获取所有记录
+        request = store.getAll();
+      }
+
+      request.onsuccess = () => {
+        let results = request.result || [];
+
+        // 应用过滤条件
+        if (options.eventIds && options.eventIds.length > 1) {
+          const eventIdSet = new Set(options.eventIds);
+          results = results.filter(log => eventIdSet.has(log.eventId));
+        }
+
+        if (options.operations && options.operations.length > 0) {
+          const opSet = new Set(options.operations);
+          results = results.filter(log => opSet.has(log.operation));
+        }
+
+        if (options.startTime) {
+          results = results.filter(log => log.timestamp >= options.startTime!);
+        }
+
+        if (options.endTime) {
+          results = results.filter(log => log.timestamp <= options.endTime!);
+        }
+
+        if (options.source) {
+          results = results.filter(log => log.source === options.source);
+        }
+
+        // 按时间倒序排序
+        results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+
+        // 分页
+        const offset = options.offset || 0;
+        const limit = options.limit || 1000;
+        results = results.slice(offset, offset + limit);
+
+        resolve(results);
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 删除旧的历史记录
+   */
+  async cleanupEventHistory(olderThan: string): Promise<number> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readwrite');
+      const store = transaction.objectStore('event_history');
+      const index = store.index('timestamp');
+      
+      const range = IDBKeyRange.upperBound(olderThan, true);
+      const request = index.openCursor(range);
+      let deletedCount = 0;
+
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (cursor) {
+          cursor.delete();
+          deletedCount++;
+          cursor.continue();
+        } else {
+          resolve(deletedCount);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 获取历史统计信息
+   */
+  async getEventHistoryStats(): Promise<{
+    total: number;
+    byOperation: Record<string, number>;
+    oldestTimestamp: string | null;
+    newestTimestamp: string | null;
+  }> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readonly');
+      const store = transaction.objectStore('event_history');
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const logs = request.result || [];
+        
+        const byOperation: Record<string, number> = {};
+        let oldestTimestamp: string | null = null;
+        let newestTimestamp: string | null = null;
+
+        logs.forEach(log => {
+          // 按操作类型统计
+          byOperation[log.operation] = (byOperation[log.operation] || 0) + 1;
+
+          // 更新时间范围
+          if (!oldestTimestamp || log.timestamp < oldestTimestamp) {
+            oldestTimestamp = log.timestamp;
+          }
+          if (!newestTimestamp || log.timestamp > newestTimestamp) {
+            newestTimestamp = log.timestamp;
+          }
+        });
+
+        resolve({
+          total: logs.length,
+          byOperation,
+          oldestTimestamp,
+          newestTimestamp
+        });
+      };
+
+      request.onerror = () => reject(request.error);
+    });
   }
 
   /**

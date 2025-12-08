@@ -116,7 +116,15 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
         nodeTypes={nodeTypes}
         fitView
         attributionPosition="bottom-left"
+        style={{ background: '#f8fafc' }}
       >
+        {/* 网格背景（浅色点阵） */}
+        <Background 
+          variant={BackgroundVariant.Dots} 
+          gap={20} 
+          size={1.5}
+          color="#cbd5e1"
+        />
         {/* 缩放/平移控制器 */}
         <Controls />
       </ReactFlow>

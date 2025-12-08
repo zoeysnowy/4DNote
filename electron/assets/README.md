@@ -1,4 +1,4 @@
-# ReMarkable Desktop Icons
+# 4DNote Desktop Icons
 
 This directory contains the application icons for different platforms:
 
@@ -20,4 +20,4 @@ This directory contains the application icons for different platforms:
 - **macOS (.icns)**: Multiple sizes (16, 32, 128, 256, 512 pixels)
 - **Linux (.png)**: 512x512 pixels
 
-The icon should represent the ReMarkable brand and be clearly visible at small sizes.
+The icon should represent the 4DNote brand and be clearly visible at small sizes.

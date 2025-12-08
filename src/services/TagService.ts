@@ -47,6 +47,7 @@ class TagServiceClass {
   private flatTags: FlatTag[] = [];
   private listeners: ((tags: HierarchicalTag[]) => void)[] = [];
   private initialized = false;
+  private initializingPromise: Promise<void> | null = null;
 
   // 初始化标签系统
   async initialize(): Promise<void> {
@@ -54,7 +55,14 @@ class TagServiceClass {
       return;
     }
 
-    console.log('🏷️ [TagService] Initializing with StorageManager...');
+    // 🔧 [FIX] 如果正在初始化，返回现有的 Promise（避免重复初始化）
+    if (this.initializingPromise) {
+      console.log('🏷️ [TagService] Initialization in progress, waiting...');
+      return this.initializingPromise;
+    }
+
+    this.initializingPromise = (async () => {
+      console.log('🏷️ [TagService] Initializing with StorageManager...');
     
     try {
       // ✅ v3.0: 从 StorageManager 加载标签
@@ -95,7 +103,12 @@ class TagServiceClass {
       await this.createDefaultTags();
       this.initialized = true;
       this.notifyListeners();
+    } finally {
+      this.initializingPromise = null;
     }
+    })();
+
+    return this.initializingPromise;
   }
 
   // 创建默认标签结构
@@ -145,7 +158,7 @@ class TagServiceClass {
     this.flatTags = this.flattenTags(defaultTags);
     await this.saveTags();
     
-    console.log('✅ [TagService] Created default tags with UUID IDs');
+    console.log(`✅ [TagService] Created ${this.flatTags.length} default tags`);
   }
 
   // 保存标签到 StorageManager
@@ -189,7 +202,7 @@ class TagServiceClass {
         }
       }
       
-      console.log(`✅ [TagService] Saved ${flatTags.length} tags`);
+      // 静默保存，只在首次创建时显示
     } catch (error) {
       console.error('❌ [TagService] Failed to save tags:', error);
     }

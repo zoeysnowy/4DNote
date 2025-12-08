@@ -40,7 +40,8 @@ import type {
   TimestampDividerElement as TimestampDividerType,
   TextNode,
   TagNode,
-  DateMentionNode
+  DateMentionNode,
+  EventMentionNode
 } from '../SlateCore/types';
 
 import {
@@ -69,10 +70,15 @@ import {
 // 共享元素组件
 import { TagElementComponent } from '../SlateCore/elements/TagElement';
 import DateMentionElement from '../SlateCore/elements/DateMentionElement';
+import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
 import { TimestampDividerElement } from '../SlateCore/elements/TimestampDividerElement';
 
+// UnifiedMentionMenu
+import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
+import { MentionItem } from '../../services/search/UnifiedSearchIndex';
+
 // 类型兼容
-type CustomElement = ParagraphNode | TagNode | DateMentionNode | TimestampDividerType;
+type CustomElement = ParagraphNode | TagNode | DateMentionNode | EventMentionNode | TimestampDividerType;
 type CustomText = TextNode;
 
 // 导入 EventHistoryService 获取创建时间
@@ -165,21 +171,21 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
     // 配置 inline 元素
     editorInstance.isInline = element => {
       const e = element as any;
-      return (e.type === 'tag' || e.type === 'dateMention') ? true : isInline(element);
+      return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'eventMention') ? true : isInline(element);
     };
     
     // 配置 void 元素
     editorInstance.isVoid = element => {
       const e = element as any;
-      return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'timestamp-divider') ? true : isVoid(element);
+      return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'eventMention' || e.type === 'timestamp-divider') ? true : isVoid(element);
     };
     
     // 🔥 normalizeNode 确保 void inline 元素后面总有空格
     editorInstance.normalizeNode = entry => {
       const [node, path] = entry;
       
-      // 检查 tag 或 dateMention 元素
-      if (SlateElement.isElement(node) && ('type' in node) && (node.type === 'tag' || node.type === 'dateMention')) {
+      // 检查 tag/dateMention/eventMention 元素
+      if (SlateElement.isElement(node) && ('type' in node) && (node.type === 'tag' || node.type === 'dateMention' || node.type === 'eventMention')) {
         // 获取父节点和当前节点在父节点中的索引
         const parentPath = path.slice(0, -1);
         const parent = SlateNode.get(editorInstance, parentPath);
@@ -247,7 +253,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
     // 应用 History 插件
     editorInstance = withHistory(editorInstance);
     
-    console.log('[ModalSlate] 创建编辑器实例（已配置 isInline, isVoid, normalizeNode）');
+    // console.log('[ModalSlate] 创建编辑器实例（已配置 isInline, isVoid, normalizeNode）');
     return editorInstance;
   }, []);
   
@@ -293,8 +299,23 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   // 暴露 editor 实例和方法给父组件
   useImperativeHandle(ref, () => ({
     editor,
-    applyTextFormat
-  }), [editor, applyTextFormat]);
+    applyTextFormat,
+    insertTimestampAndFocus: () => {
+      if (!enableTimestamp || !parentEventId || !timestampServiceRef.current) {
+        return;
+      }
+
+      // 触发插入 timestamp（会自动调用 triggerTimestamp）
+      setPendingTimestamp(true);
+      
+      // 延迟聚焦到编辑器
+      setTimeout(() => {
+        ReactEditor.focus(editor);
+        // 移动光标到末尾
+        Transforms.select(editor, Editor.end(editor, []));
+      }, 100);
+    }
+  }), [editor, applyTextFormat, enableTimestamp, parentEventId]);
   
   // 记录已添加 timestamp 的 content (必须在 initialValue 之前定义)
   const timestampAddedForContentRef = useRef<string | null>(null);
@@ -302,7 +323,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   // 将 Slate JSON 字符串转换为 Slate nodes（使用 SlateCore）
   const initialValue = useMemo(() => {
     let nodes = slateJsonToNodes(content);
-    console.log('[ModalSlate] 解析内容为节点:', { content, nodes });
+    // console.log('[ModalSlate] 解析内容为节点:', { content, nodes });
     
     // 如果启用 timestamp 且这个 content 还没添加过 timestamp
     if (enableTimestamp && parentEventId && timestampAddedForContentRef.current !== content) {
@@ -317,11 +338,39 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
       
       if (hasActualContent && !hasTimestamp) {
         // 从 EventHistoryService 获取创建时间
-        const createLog = EventHistoryService.queryHistory({
+        let createLog = EventHistoryService.queryHistory({
           eventId: parentEventId,
           operations: ['create'],
           limit: 1
         })[0];
+        
+        // 🔧 如果没有创建日志，使用 event.createdAt 或 event.updatedAt 作为 fallback
+        if (!createLog) {
+          const event = EventService.getEventById(parentEventId);
+          if (event) {
+            if (event.createdAt) {
+              createLog = {
+                id: 'fallback-' + parentEventId,
+                eventId: parentEventId,
+                operation: 'create',
+                timestamp: event.createdAt,
+                source: 'fallback-createdAt',
+                changes: []
+              } as any;
+              console.log('[ModalSlate initialValue] 使用 event.createdAt fallback:', event.createdAt);
+            } else if (event.updatedAt) {
+              createLog = {
+                id: 'fallback-' + parentEventId,
+                eventId: parentEventId,
+                operation: 'create',
+                timestamp: event.updatedAt,
+                source: 'fallback-updatedAt',
+                changes: []
+              } as any;
+              console.log('[ModalSlate initialValue] 使用 event.updatedAt fallback:', event.updatedAt);
+            }
+          }
+        }
         
         if (createLog) {
           const createTime = new Date(createLog.timestamp);
@@ -407,11 +456,19 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   const [pendingTimestamp, setPendingTimestamp] = useState<boolean>(false);
   const contentLoadedRef = useRef<boolean>(false);
   
+  // @ Mention Menu 状态
+  const [mentionMenu, setMentionMenu] = useState<{
+    visible: boolean;
+    query: string;
+    position: { x: number; y: number };
+    atSignRange: Range | null; // 存储 @ 符号的位置
+  } | null>(null);
+  
   // 初始化 timestamp 服务
   useEffect(() => {
     if (enableTimestamp && parentEventId) {
       timestampServiceRef.current = new EventLogTimestampService();
-      console.log('[ModalSlate] 初始化 EventLogTimestampService');
+      // console.log('[ModalSlate] 初始化 EventLogTimestampService');
       
       // 如果内容中已有 timestamp，提取最后一个并设置为 lastEditTime
       const timestamps = editor.children.filter((node: any) => node.type === 'timestamp-divider') as any[];
@@ -419,7 +476,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         const lastTimestamp = timestamps[timestamps.length - 1];
         const lastTime = new Date(lastTimestamp.timestamp);
         timestampServiceRef.current.updateLastEditTime(parentEventId, lastTime);
-        console.log('[ModalSlate] 从内容中恢复 lastEditTime:', lastTime);
+        // console.log('[ModalSlate] 从内容中恢复 lastEditTime:', lastTime);
       }
     }
   }, [enableTimestamp, parentEventId, editor]);
@@ -457,7 +514,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
       
       // 如果有内容但没有 timestamp，插入初始 timestamp（不插入 preline，由 renderElement 动态绘制）
       if (hasActualContent && !hasTimestamp) {
-        console.log('[ModalSlate] 有内容但无 timestamp，插入初始 timestamp');
+        // console.log('[ModalSlate] 有内容但无 timestamp，插入初始 timestamp');
         
         // 从 EventHistoryService 获取创建时间
         const createLogs = EventHistoryService.queryHistory({
@@ -466,18 +523,18 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           limit: 1
         });
         
-        console.log('[ModalSlate] 查询创建日志:', {
-          eventId: parentEventId,
-          foundLogs: createLogs.length,
-          allHistoryCount: EventHistoryService.queryHistory({}).length,
-          firstLog: createLogs[0]
-        });
+        // console.log('[ModalSlate] 查询创建日志:', {
+        //   eventId: parentEventId,
+        //   foundLogs: createLogs.length,
+        //   allHistoryCount: EventHistoryService.queryHistory({}).length,
+        //   firstLog: createLogs[0]
+        // });
         
         let createLog = createLogs[0];
         
         // 🔧 如果没有创建日志，尝试从 eventlog 的 timestamp 节点补录
         if (!createLog) {
-          console.log('[ModalSlate] 未找到创建日志，尝试从 timestamp 节点补录');
+          // console.log('[ModalSlate] 未找到创建日志，尝试从 timestamp 节点补录');
           const event = EventService.getEventById(parentEventId);
           if (event && event.eventlog) {
             const backfilledCount = EventService.backfillEventHistoryFromTimestamps(
@@ -548,12 +605,12 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           
           console.log('[ModalSlate] 初始 timestamp 插入完成');
         } else {
-          console.warn('[ModalSlate] 未找到创建日志，跳过初始 timestamp 插入');
+          // console.warn('[ModalSlate] 未找到创建日志，跳过初始 timestamp 插入');
         }
       }
       // 如果找到现有 timestamp，更新 timestampService 的最后编辑时间
       else if (lastTimestamp) {
-        console.log('[ModalSlate] 从内容中提取到最后 timestamp:', lastTimestamp);
+        // console.log('[ModalSlate] 从内容中提取到最后 timestamp:', lastTimestamp);
         timestampServiceRef.current.updateLastEditTime(parentEventId, lastTimestamp);
       }
       
@@ -616,35 +673,39 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
             const path = ReactEditor.findPath(editor, element);
             if (!path) return false;
             
-            // 向上查找最近的 timestamp
+            // 🔧 向上查找最近的 timestamp（必须是紧邻的，中间不能有其他非 paragraph 节点）
             let hasTimestamp = false;
+            let timestampIndex = -1;
+            
             for (let i = path[0] - 1; i >= 0; i--) {
               const node = editor.children[i] as any;
               if (node.type === 'timestamp-divider') {
                 hasTimestamp = true;
+                timestampIndex = i;
+                break;
+              }
+              // 如果遇到非 paragraph 且非 timestamp 的节点，停止查找
+              if (node.type !== 'paragraph') {
                 break;
               }
             }
             
             if (!hasTimestamp) return false;
             
+            // 🔧 检查 timestamp 和当前段落之间是否只有 paragraph 节点（确保连续性）
+            for (let i = timestampIndex + 1; i < path[0]; i++) {
+              const node = editor.children[i] as any;
+              if (node.type !== 'paragraph') {
+                return false; // 中间有其他类型节点，不属于这个 timestamp 组
+              }
+            }
+            
             // 如果有内容，显示 preline
             const hasContent = (element as any).children?.some((child: any) => child.text?.trim());
             if (hasContent) return true;
             
-            // 空段落：检查是否是当前 timestamp 组中的段落
-            // 向上查找，如果遇到 timestamp 之前都是 paragraph，说明属于这个 timestamp 组
-            for (let i = path[0] - 1; i >= 0; i--) {
-              const node = editor.children[i] as any;
-              if (node.type === 'timestamp-divider') {
-                return true; // 找到了 timestamp，这是它下面的段落
-              }
-              if (node.type !== 'paragraph') {
-                break; // 遇到其他类型节点，停止
-              }
-            }
-            
-            return false;
+            // 空段落：只有当它紧跟在 timestamp 之后（或中间只有空 paragraph）时才显示 preline
+            return true;
           } catch {
             return false;
           }
@@ -731,6 +792,9 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
       case 'date-mention':
         return <DateMentionElement {...props} />;
         
+      case 'eventMention':
+        return <EventMentionElement {...props} element={props.element as any} />;
+        
       case 'timestamp-divider':
         return <TimestampDividerElement {...props} />;
         
@@ -772,6 +836,40 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
    */
   const handleFocus = useCallback(() => {
     if (enableTimestamp && timestampServiceRef.current && parentEventId) {
+      // 🔧 检查光标是否在已有 timestamp 的段落组中
+      const { selection } = editor;
+      if (selection) {
+        try {
+          const [paraMatch] = Editor.nodes(editor, {
+            at: selection,
+            match: (n: any) => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'paragraph',
+          });
+          
+          if (paraMatch) {
+            const [, path] = paraMatch;
+            // 向上查找是否有 timestamp
+            let hasTimestampAbove = false;
+            for (let i = path[0] - 1; i >= 0; i--) {
+              const node = editor.children[i] as any;
+              if (node.type === 'timestamp-divider') {
+                hasTimestampAbove = true;
+                break;
+              }
+              if (node.type !== 'paragraph') {
+                break; // 遇到其他类型节点，停止
+              }
+            }
+            
+            if (hasTimestampAbove) {
+              console.log('[ModalSlate] 光标在已有 timestamp 的段落组中，不插入新 timestamp');
+              return;
+            }
+          }
+        } catch (error) {
+          console.error('[ModalSlate] 检查 timestamp 段落组失败:', error);
+        }
+      }
+      
       // 检查是否需要插入新的 timestamp（基于 5 分钟间隔）
       const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
         contextId: parentEventId,
@@ -859,10 +957,63 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   }, [pendingTimestamp, editor, flushPendingChanges]);
 
   /**
+   * 处理 @ 监听和 Mention Menu 交互
+   */
+  const checkForMentionTrigger = useCallback(() => {
+    const { selection } = editor;
+    if (!selection || !Range.isCollapsed(selection)) {
+      return;
+    }
+
+    const [start] = Range.edges(selection);
+    const wordBefore = Editor.before(editor, start, { unit: 'word' });
+    const before = wordBefore && Editor.before(editor, wordBefore);
+    const beforeRange = before && Editor.range(editor, before, start);
+    const beforeText = beforeRange && Editor.string(editor, beforeRange);
+    const beforeMatch = beforeText && beforeText.match(/@(\w*)$/);
+
+    if (beforeMatch) {
+      const [, query] = beforeMatch;
+      
+      // 计算菜单位置
+      const domSelection = window.getSelection();
+      const domRange = domSelection?.getRangeAt(0);
+      const rect = domRange?.getBoundingClientRect();
+      
+      if (rect) {
+        setMentionMenu({
+          visible: true,
+          query: query || '',
+          position: { x: rect.left, y: rect.bottom + 5 },
+          atSignRange: beforeRange
+        });
+      }
+    } else {
+      setMentionMenu(null);
+    }
+  }, [editor]);
+
+  /**
    * 处理编辑器内容变化
    */
+  // 用于追踪 timestamp 数量变化，触发重新渲染
+  const [, forceUpdate] = useState({});
+  const timestampCountRef = useRef(0);
+
   const handleChange = useCallback((newValue: Descendant[]) => {
     console.log('[ModalSlate] 内容变化:', newValue);
+    
+    // 🔍 检测 timestamp 数量变化（可能是删除或添加）
+    const currentTimestampCount = newValue.filter((node: any) => node.type === 'timestamp-divider').length;
+    if (currentTimestampCount !== timestampCountRef.current) {
+      console.log('[ModalSlate] 🔄 Timestamp 数量变化:', timestampCountRef.current, '→', currentTimestampCount);
+      timestampCountRef.current = currentTimestampCount;
+      // 强制重新渲染所有段落（更新 preline 状态）
+      forceUpdate({});
+    }
+    
+    // 🔍 检测 @ 符号以显示 Mention Menu
+    checkForMentionTrigger();
     
     // 如果有等待的 timestamp，检查用户是否真正输入了内容
     if (pendingTimestamp) {
@@ -908,7 +1059,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         console.log('[ModalSlate] 自动保存 Slate JSON:', newContent.slice(0, 100) + '...');
       }
     }, 2000);
-  }, [pendingTimestamp, onChange, enableTimestamp, parentEventId]);
+  }, [pendingTimestamp, onChange, enableTimestamp, parentEventId, checkForMentionTrigger]);
   
   /**
    * 向上移动当前段落（使用 SlateCore）
@@ -949,13 +1100,21 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
       });
     }
   }, [editor]);
-  
+
   /**
    * 处理键盘事件
    */
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
     // IME 组字中，不处理快捷键
     if (event.nativeEvent?.isComposing) return;
+    
+    // 🔍 监听 @ 字符输入
+    if (event.key === '@') {
+      // 延迟检测，等待 @ 插入到编辑器
+      setTimeout(() => {
+        checkForMentionTrigger();
+      }, 0);
+    }
     
     // 🎯 空格键触发 Bullet 自动检测
     if (event.key === ' ') {
@@ -970,6 +1129,48 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           applyBulletAutoConvert(editor, trigger);
         } else {
           console.log('[ModalSlate] ❌ 未检测到触发字符');
+        }
+      }, 0);
+    }
+    
+    // 🆕 Enter 键：检查是否需要插入 timestamp
+    if (event.key === 'Enter' && !event.shiftKey && enableTimestamp && timestampServiceRef.current && parentEventId) {
+      // 延迟检查，等待新段落创建后
+      setTimeout(() => {
+        const shouldInsert = timestampServiceRef.current!.shouldInsertTimestamp({
+          contextId: parentEventId,
+          eventId: parentEventId
+        });
+        
+        if (shouldInsert) {
+          console.log('[ModalSlate] 回车后插入 timestamp（距上次编辑 ≥ 5 分钟）');
+          
+          // 保存当前光标位置
+          const { selection } = editor;
+          if (!selection) return;
+          
+          // 创建 timestamp 节点
+          const timestampNode = timestampServiceRef.current!.createTimestampDivider(parentEventId);
+          
+          // 在当前段落之前插入 timestamp
+          try {
+            const [paraMatch] = Editor.nodes(editor, {
+              at: selection,
+              match: (n: any) => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'paragraph',
+            });
+            
+            if (paraMatch) {
+              const [, path] = paraMatch;
+              Editor.withoutNormalizing(editor, () => {
+                Transforms.insertNodes(editor, timestampNode as any, { at: [path[0]] });
+              });
+              
+              // 更新最后编辑时间
+              timestampServiceRef.current!.updateLastEditTime(parentEventId);
+            }
+          } catch (error) {
+            console.error('[ModalSlate] 插入 timestamp 失败:', error);
+          }
         }
       }, 0);
     }
@@ -1078,7 +1279,46 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
       }
       return;
     }
-  }, [editor, moveParagraphUp, moveParagraphDown]);
+  }, [editor, moveParagraphUp, moveParagraphDown, checkForMentionTrigger, enableTimestamp, parentEventId]);
+  
+  /**
+   * 处理 Mention 选择
+   */
+  const handleMentionSelect = useCallback(async (item: MentionItem) => {
+    if (!mentionMenu || !mentionMenu.atSignRange) return;
+    
+    // 只处理事件类型的 mention
+    if (item.type === 'event') {
+      // 删除 @ 和查询文本
+      Transforms.delete(editor, { at: mentionMenu.atSignRange });
+      
+      // 插入 EventMention 节点
+      const eventMention: EventMentionNode = {
+        type: 'eventMention',
+        eventId: item.id,
+        eventTitle: item.title,
+        eventEmoji: item.emoji,
+        children: [{ text: '' }]
+      };
+      
+      Transforms.insertNodes(editor, eventMention);
+      
+      // 移动光标到 mention 后面
+      Transforms.move(editor);
+      
+      console.log('[ModalSlate] 插入 EventMention:', { eventId: item.id, title: item.title });
+    }
+    
+    // 关闭菜单
+    setMentionMenu(null);
+  }, [editor, mentionMenu]);
+  
+  /**
+   * 处理 Mention Menu 关闭
+   */
+  const handleMentionClose = useCallback(() => {
+    setMentionMenu(null);
+  }, []);
   
   /**
    * 处理复制 - 生成多格式剪贴板数据
@@ -1234,6 +1474,18 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           />
         )} */}
       </Slate>
+      
+      {/* UnifiedMentionMenu */}
+      {mentionMenu && mentionMenu.visible && (
+        <UnifiedMentionMenu
+          query={mentionMenu.query}
+          onSelect={handleMentionSelect}
+          onClose={handleMentionClose}
+          context="editor"
+          position={mentionMenu.position}
+          currentEventId={parentEventId}
+        />
+      )}
     </div>
   );
 });

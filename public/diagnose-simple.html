@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IndexedDB 快速诊断</title>
+  <style>
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #1e293b;
+      color: #e2e8f0;
+    }
+    h1 { color: #60a5fa; margin-bottom: 30px; }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    button:hover { background: #2563eb; }
+    #output {
+      background: #0f172a;
+      padding: 20px;
+      border-radius: 8px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      line-height: 1.6;
+      min-height: 400px;
+    }
+    .success { color: #34d399; }
+    .error { color: #f87171; }
+    .warn { color: #fbbf24; }
+    .info { color: #60a5fa; }
+  </style>
+</head>
+<body>
+  <h1>🔍 IndexedDB 快速诊断工具</h1>
+  <div>
+    <button onclick="runQuickDiagnosis()">🚀 运行诊断</button>
+    <button onclick="clearOutput()">🗑️ 清空</button>
+  </div>
+  <div id="output">等待诊断开始...</div>
+
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(message, type = 'info') {
+      const span = document.createElement('span');
+      span.className = type;
+      span.textContent = message + '\n';
+      output.appendChild(span);
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    function clearOutput() {
+      output.innerHTML = '';
+    }
+
+    async function runQuickDiagnosis() {
+      clearOutput();
+      log('🔍 开始 IndexedDB 性能诊断...\n', 'info');
+      
+      try {
+        const DB_NAME = '4DNoteDB';
+        const DB_VERSION = 2;
+        
+        // Step 1: 打开数据库
+        log('📂 正在打开数据库...', 'info');
+        const openStart = performance.now();
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const openTime = performance.now() - openStart;
+        log(`✅ 数据库打开成功 (${openTime.toFixed(1)}ms)\n`, 'success');
+        
+        // Step 2: 检查存储结构
+        const stores = Array.from(db.objectStoreNames);
+        log(`📊 发现 ${stores.length} 个表: ${stores.join(', ')}\n`, 'info');
+        
+        if (!stores.includes('events')) {
+          log('❌ 错误：events 表不存在！', 'error');
+          db.close();
+          return;
+        }
+        
+        // Step 3: 测试查询性能
+        log('⚡ 测试查询性能...\n', 'info');
+        
+        const tx = db.transaction('events', 'readonly');
+        const store = tx.objectStore('events');
+        
+        // Test 3.1: Count
+        log('Test 1: 统计记录数...', 'info');
+        const countStart = performance.now();
+        const count = await new Promise((resolve, reject) => {
+          const request = store.count();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        const countTime = performance.now() - countStart;
+        log(`  ✅ 总记录数: ${count} (${countTime.toFixed(1)}ms)\n`, 'success');
+        
+        // Test 3.2: 全表查询（关键测试！）
+        log('Test 2: 全表查询测试（这是关键！）...', 'warn');
+        log('  ⏳ 正常情况应该 <500ms，如果超过 10 秒说明数据库已损坏\n', 'warn');
+        
+        const fullStart = performance.now();
+        const allEvents = await new Promise((resolve, reject) => {
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+          
+          // 30秒超时
+          setTimeout(() => reject(new Error('查询超时 (30秒)')), 30000);
+        });
+        const fullTime = performance.now() - fullStart;
+        
+        log(`  ✅ 查询完成: ${allEvents.length} 条记录\n`, 'success');
+        log(`  ⏱️  查询耗时: ${fullTime.toFixed(1)}ms\n`, fullTime > 10000 ? 'error' : fullTime > 1000 ? 'warn' : 'success');
+        
+        // 性能评估
+        log('📊 性能评估:\n', 'info');
+        if (fullTime > 10000) {
+          log('  ❌ 严重警告: 查询耗时超过 10 秒！', 'error');
+          log(`     实际耗时: ${(fullTime / 1000).toFixed(1)} 秒`, 'error');
+          log(`     性能降级: ${(fullTime / 500).toFixed(0)}x 倍\n`, 'error');
+          log('  💡 建议操作:', 'warn');
+          log('     1. 立即导出数据备份', 'warn');
+          log('     2. 删除旧数据库', 'warn');
+          log('     3. 重建数据库', 'warn');
+          log('     4. 导入数据恢复\n', 'warn');
+        } else if (fullTime > 1000) {
+          log('  ⚠️  警告: 查询性能下降', 'warn');
+          log(`     实际耗时: ${fullTime.toFixed(0)}ms`, 'warn');
+          log(`     性能降级: ${(fullTime / 500).toFixed(1)}x 倍\n`, 'warn');
+          log('  💡 建议操作:', 'warn');
+          log('     1. 清理软删除的事件', 'warn');
+          log('     2. 考虑重建数据库\n', 'warn');
+        } else {
+          log('  ✅ 性能正常！查询速度在预期范围内\n', 'success');
+        }
+        
+        // Step 4: 数据质量检查
+        log('🔍 数据质量分析...\n', 'info');
+        
+        const deletedCount = allEvents.filter(e => e.deletedAt).length;
+        const deletedRatio = (deletedCount / allEvents.length * 100).toFixed(1);
+        
+        log(`  - 总事件数: ${allEvents.length}`, 'info');
+        log(`  - 已删除事件: ${deletedCount} (${deletedRatio}%)`, deletedCount > allEvents.length * 0.3 ? 'warn' : 'info');
+        
+        if (deletedCount > allEvents.length * 0.3) {
+          log(`  ⚠️  软删除事件占比过高！建议清理\n`, 'warn');
+        }
+        
+        // 计算平均大小
+        const sampleSize = Math.min(100, allEvents.length);
+        const samples = allEvents.slice(0, sampleSize);
+        let totalSize = 0;
+        samples.forEach(event => {
+          totalSize += JSON.stringify(event).length;
+        });
+        const avgSize = totalSize / sampleSize;
+        const estimatedTotal = (avgSize * allEvents.length / 1024 / 1024).toFixed(2);
+        
+        log(`  - 平均事件大小: ${avgSize.toFixed(0)} 字节`, 'info');
+        log(`  - 估计总大小: ${estimatedTotal} MB\n`, 'info');
+        
+        // Step 5: 存储配额
+        if (navigator.storage && navigator.storage.estimate) {
+          log('💾 存储配额检查...\n', 'info');
+          const estimate = await navigator.storage.estimate();
+          const usedMB = (estimate.usage / 1024 / 1024).toFixed(2);
+          const quotaMB = (estimate.quota / 1024 / 1024).toFixed(2);
+          const usagePercent = (estimate.usage / estimate.quota * 100).toFixed(1);
+          
+          log(`  - 已使用: ${usedMB} MB`, 'info');
+          log(`  - 总配额: ${quotaMB} MB`, 'info');
+          log(`  - 使用率: ${usagePercent}%\n`, usagePercent > 80 ? 'warn' : 'info');
+        }
+        
+        // 总结
+        log('='.repeat(60), 'info');
+        log('📋 诊断总结\n', 'info');
+        
+        if (fullTime > 10000) {
+          log('❌ 数据库严重损坏，必须重建！\n', 'error');
+          log('操作步骤:', 'warn');
+          log('1. 在控制台运行以下命令导出数据:', 'warn');
+          log('   const script = document.createElement("script");', 'info');
+          log('   script.src = "../scripts/rebuild-indexeddb.js";', 'info');
+          log('   document.head.appendChild(script);', 'info');
+          log('   // 然后运行:', 'info');
+          log('   await rebuildTool.rebuild();', 'info');
+        } else if (fullTime > 1000) {
+          log('⚠️  数据库性能下降，建议优化', 'warn');
+        } else {
+          log('✅ 数据库状态良好！', 'success');
+        }
+        
+        db.close();
+        log('\n✅ 诊断完成', 'success');
+        
+      } catch (error) {
+        log(`\n❌ 诊断失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,12 +1,156 @@
 # 统一时间架构# Unified Time Architecture
 
-**最后更新**: 2025-11-06
+**最后更新**: 2025-12-07
 
-> **重要更新**: PlanManager 迁移到 PlanSlate 后，优化了时间管理逻辑：
-> 1. 只有有时间字段的事件才同步到 Calendar
-> 2. FloatingBar onTimeApplied 简化，PlanSlate 自动保存内容
+> **重要更新**: 
+> 1. PlanManager 迁移到 PlanSlate 后，优化了时间管理逻辑
+> 2. **TimeSpec 存储格式标准化**（2025-12-07）：统一使用 `YYYY-MM-DD HH:mm:ss` 格式
+> 3. **修复 IndexedDB 索引查询 bug**：参数命名不一致导致全表扫描
 
 本文档说明应用中的统一时间模型和集成策略。核心目标：**任何组件修改一个事件的时间时,所有关联组件自动同步更新，同时保留用户的原始意图（如"下周"）**。This document outlines the unified time model and integration strategy used across the app. The goal is: any component that changes one event's time immediately updates all others consistently, while preserving the original user intent (e.g., "下周").
+
+---
+
+## 🔑 TimeSpec 存储格式（2025-12-07 标准化）
+
+### 核心原则
+
+**唯一标准格式**：`YYYY-MM-DD HH:mm:ss`（空格分隔，24小时制）
+
+```typescript
+// ✅ 正确格式示例
+"2025-12-07 14:30:00"  // 标准格式
+"2025-12-07 00:00:00"  // 全天事件开始（午夜）
+"2025-12-08 00:00:00"  // 全天事件结束（次日午夜）
+
+// ❌ 错误格式（已废弃）
+"2025-12-07T14:30:00.000Z"  // ISO 8601（仅用于 API 传输）
+"2025-12-07T14:30:00"       // ISO 8601 简化（不使用）
+```
+
+### 格式转换工具
+
+**位置**：`src/utils/timeUtils.ts`
+
+```typescript
+// 存储时：任意格式 → TimeSpec 格式
+function formatTimeForStorage(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// 读取时：TimeSpec 格式 → Date 对象
+function parseLocalTimeString(timeStr: string): Date {
+  // 支持空格和 T 分隔符
+  const normalized = timeStr.replace('T', ' ').substring(0, 19);
+  const [datePart, timePart] = normalized.split(' ');
+  const [year, month, day] = datePart.split('-').map(Number);
+  const [hours, minutes, seconds] = timePart.split(':').map(Number);
+  return new Date(year, month - 1, day, hours, minutes, seconds);
+}
+```
+
+### 关键优势
+
+1. **字符串排序正确**：
+   ```
+   "2025-12-06 23:59:59" < "2025-12-07 00:00:00"  // ✅ 正确
+   ```
+
+2. **IndexedDB 索引兼容**：
+   - `IDBKeyRange.bound(start, end)` 可直接使用字符串
+   - 字典序 = 时间序
+
+3. **跨时区一致**：
+   - 本地时间，不受时区影响
+   - 避免 ISO 8601 的 UTC 转换问题
+
+4. **人类可读**：
+   - 日志和调试友好
+   - 数据库导出可直接查看
+
+### 存储层实现（2025-12-07 修复）
+
+**问题根源**：存储层混用 ISO 8601 和 TimeSpec 格式
+
+```typescript
+// ❌ 错误实现（已修复）
+class IndexedDBService {
+  async updateEvent(id: string, updates: Partial<Event>): Promise<void> {
+    const updatedEvent = { 
+      ...existingEvent, 
+      ...updates, 
+      updatedAt: new Date().toISOString()  // ❌ ISO 格式
+    };
+    return this.put('events', updatedEvent);
+  }
+}
+
+// ✅ 正确实现
+class IndexedDBService {
+  async updateEvent(id: string, updates: Partial<Event>): Promise<void> {
+    const formatTimeForStorage = (date: Date): string => {
+      // ... TimeSpec 格式化逻辑
+    };
+    const updatedEvent = { 
+      ...existingEvent, 
+      ...updates, 
+      updatedAt: formatTimeForStorage(new Date())  // ✅ TimeSpec 格式
+    };
+    return this.put('events', updatedEvent);
+  }
+}
+```
+
+**修复范围**：
+- ✅ `IndexedDBService.updateEvent` - updatedAt 字段
+- ✅ `StorageManager.deleteTag` - deletedAt, updatedAt
+- ✅ `StorageManager.deleteContact` - deletedAt, updatedAt  
+- ✅ `StorageManager.cleanupOldDeletedEvents` - cutoffDate
+- ✅ `ActionBasedSyncManager.safeFormatDateTime` - 所有 Outlook 时间转换
+
+### Outlook 同步规范
+
+**全天事件特殊处理**：
+
+```typescript
+// Outlook API 要求：全天事件必须是午夜时间
+if (event.isAllDay) {
+  // ✅ 正确：强制规范化为午夜（无论原始时间是什么）
+  if (!startDateTime || !endDateTime) {
+    // 场景1：时间为空，生成默认午夜时间
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    startDateTime = formatTimeForStorage(today);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    endDateTime = formatTimeForStorage(tomorrow);
+  } else {
+    // 场景2：时间存在，强制规范化为午夜（保留日期部分）
+    const startDate = new Date(startDateTime);
+    startDate.setHours(0, 0, 0, 0);
+    startDateTime = formatTimeForStorage(startDate);
+    
+    const endDate = new Date(endDateTime);
+    endDate.setHours(0, 0, 0, 0);
+    endDate.setDate(endDate.getDate() + 1);  // 全天事件跨越到次日午夜
+    endDateTime = formatTimeForStorage(endDate);
+  }
+}
+
+// 发送给 Outlook API 时，转换为 ISO 8601 格式
+outlookEventData.start = {
+  dateTime: this.formatTimeForOutlook(new Date(startDateTime)),  // ISO 8601
+  timeZone: 'Asia/Shanghai'
+};
+```
+
+---
 
 
 

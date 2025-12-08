@@ -1,0 +1,132 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* 
+     核心黑魔法：Chrome 风格圆角
+     原理：利用 box-shadow 填充圆角外部的空隙
+  */
+  .chrome-tab {
+    position: relative;
+    border-top-left-radius: 8px;
+    border-top-right-radius: 8px;
+    z-index: 1; /* 确保激活的 tab 在最上层 */
+  }
+
+  /* 左下角的反向圆角 */
+  .chrome-tab::before {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: -8px; /* 宽度等于圆角大小 */
+    width: 8px;
+    height: 8px;
+    border-bottom-right-radius: 8px;
+    /* 这里是关键：用 shadow 模拟背景色 */
+    box-shadow: 4px 0 0 0 #fff; 
+    z-index: 2;
+  }
+  
+  /* 右下角的反向圆角 */
+  .chrome-tab::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    right: -8px;
+    width: 8px;
+    height: 8px;
+    border-bottom-left-radius: 8px;
+    box-shadow: -4px 0 0 0 #fff;
+    z-index: 2;
+  }
+
+  /* 非激活状态的 Tab (灰色背景) */
+  .chrome-tab-inactive {
+    background-color: #f1f5f9; /* slate-100 */
+    color: #64748b;
+  }
+  .chrome-tab-inactive::before { box-shadow: 4px 0 0 0 #f1f5f9; }
+  .chrome-tab-inactive::after { box-shadow: -4px 0 0 0 #f1f5f9; }
+
+  /* 悬停效果 */
+  .chrome-tab-inactive:hover {
+    background-color: #e2e8f0; /* slate-200 */
+  }
+  .chrome-tab-inactive:hover::before { box-shadow: 4px 0 0 0 #e2e8f0; }
+  .chrome-tab-inactive:hover::after { box-shadow: -4px 0 0 0 #e2e8f0; }
+
+  /* 激活状态的 Tab (白色背景) */
+  .chrome-tab-active {
+    background-color: #fff;
+    color: #0f172a;
+    font-weight: 500;
+  }
+  .chrome-tab-active::before { box-shadow: 4px 0 0 0 #fff; }
+  .chrome-tab-active::after { box-shadow: -4px 0 0 0 #fff; }
+
+</style>
+</head>
+<body class="bg-slate-200 p-10 flex justify-center items-center min-h-screen">
+
+  <!-- 模拟 GoldenLayout 的头部容器 -->
+  <div class="w-[500px] flex flex-col shadow-xl rounded-xl overflow-hidden">
+    
+    <!-- Tab Header Area -->
+    <div class="flex items-end bg-slate-100 px-2 pt-2 h-10 gap-1 overflow-x-auto">
+      
+      <!-- Active Tab -->
+      <div class="chrome-tab chrome-tab-active px-4 py-2 flex items-center gap-2 cursor-default text-sm min-w-[120px]">
+        <span class="text-blue-500">❖</span>
+        <span>ReMarkable.tsx</span>
+        <button class="ml-auto text-slate-400 hover:text-red-500">×</button>
+      </div>
+
+      <!-- Inactive Tab -->
+      <div class="chrome-tab chrome-tab-inactive px-4 py-2 flex items-center gap-2 cursor-pointer text-sm min-w-[120px]">
+        <span class="text-orange-400">#</span>
+        <span>DailyLog.md</span>
+        <button class="ml-auto opacity-0 hover:opacity-100 text-slate-400 hover:text-red-500 transition-opacity">×</button>
+      </div>
+
+       <!-- Inactive Tab -->
+      <div class="chrome-tab chrome-tab-inactive px-4 py-2 flex items-center gap-2 cursor-pointer text-sm min-w-[120px]">
+        <span class="text-green-500">JS</span>
+        <span>Utils.js</span>
+      </div>
+
+    </div>
+
+    <!-- Content Area -->
+    <div class="bg-white h-64 p-6 text-slate-600">
+      编辑器内容区域...
+    </div>
+  </div>
+
+<script>window.parent.postMessage({ action: "ready" }, "*"); 
+ 
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+</script></body>
+</html>

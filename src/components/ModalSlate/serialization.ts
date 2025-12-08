@@ -79,7 +79,6 @@ export function jsonToSlateNodes(slateJson: string | any[] | undefined): Descend
         return node;
       });
       
-      console.log('[ModalSlate] 解析 JSON 成功，节点数量:', validatedNodes.length);
       return validatedNodes as Descendant[];
     }
     

@@ -200,7 +200,7 @@ export interface EventLog {
 /**
  * 联系人平台来源
  */
-export type ContactSource = 'remarkable' | 'outlook' | 'google' | 'icloud';
+export type ContactSource = '4dnote' | 'outlook' | 'google' | 'icloud';
 
 /**
  * 参会人类型
@@ -285,20 +285,43 @@ export interface Contact {
 }
 
 /**
+ * 富文本格式映射：用于记忆文本片段的格式
+ * 场景：用户在 Outlook 编辑后，纯文本可以恢复之前的格式
+ */
+export interface TextFormatSegment {
+  /** 文本片段 */
+  text: string;
+  /** 格式属性 */
+  format: {
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    strikethrough?: boolean;
+    code?: boolean;
+    color?: string;
+    backgroundColor?: string;
+  };
+}
+
+/**
  * 标题三层架构 (v2.14)
- * - fullTitle: Slate JSON 格式（PlanSlate 专用，包含标签/元素）
- * - colorTitle: HTML 格式（UpcomingPanel/EditModal/Timer，保留颜色/格式）
+ * - fullTitle: Slate JSON 格式（完整，包含标签/元素）
+ * - colorTitle: Slate JSON 格式（简化，移除 tag/dateMention 元素，保留文本格式）
  * - simpleTitle: 纯文本（TimeCalendar/Outlook 同步）
+ * - formatMap: 富文本格式映射（用于恢复格式）
  */
 export interface EventTitle {
   /** Slate JSON 格式 - 包含完整元素信息（标签、DateMention 等） */
   fullTitle?: string;
   
-  /** HTML 格式 - 保留颜色、加粗等样式，但移除 Slate 元素节点 */
+  /** Slate JSON 格式 - 移除元素节点，仅保留文本和格式（bold/color 等） */
   colorTitle?: string;
   
   /** 纯文本 - 用于搜索、同步、简单显示 */
   simpleTitle?: string;
+  
+  /** 富文本格式映射 - 用于从纯文本恢复格式 */
+  formatMap?: TextFormatSegment[];
 }
 
 export interface Event {
@@ -313,7 +336,7 @@ export interface Event {
   startTime?: string;   // 开始时间（'YYYY-MM-DD HH:mm:ss' 格式 或 undefined）
   endTime?: string;     // 结束时间（'YYYY-MM-DD HH:mm:ss' 格式 或 undefined）
   isAllDay?: boolean;   // 是否全天事件（undefined 表示未设置）
-  location?: string;
+  location?: string | LocationObject;  // 🔧 双格式支持：string（外部/Outlook）或 LocationObject（内部/地图API）
   organizer?: Contact;  // 🔧 修改：使用统一的 Contact 接口
   attendees?: Contact[]; // 🔧 修改：使用统一的 Contact 接口
   reminder?: number;
@@ -324,6 +347,7 @@ export interface Event {
     calendarIds?: string[];  // 子事件默认日历配置（父事件专用，用于创建子事件时继承）
     syncMode?: string;       // 子事件默认同步模式
   };
+  hasCustomSyncConfig?: boolean; // 🆕 标记用户是否手动修改过同步配置（用于手动子事件继承逻辑）
   todoListIds?: string[]; // 🆕 To Do List 分组支持（用于任务同步到 To Do）
   source?: 'local' | 'outlook' | 'google' | 'icloud'; // 🆕 事件来源
   syncStatus?: SyncStatusType; // 🔧 unified: 'pending' 表示所有待同步状态（新建或更新）

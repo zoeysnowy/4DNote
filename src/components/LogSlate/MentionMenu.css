@@ -1,0 +1,55 @@
+.mention-menu {
+  position: absolute;
+  z-index: 1000;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  margin-top: 4px;
+  max-height: 300px;
+  overflow-y: auto;
+  min-width: 200px;
+}
+
+.mention-menu-empty {
+  padding: 12px 16px;
+  color: #9CA3AF;
+  font-size: 13px;
+  text-align: center;
+}
+
+.mention-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.mention-menu-item:hover,
+.mention-menu-item.selected {
+  background-color: #F3F4F6;
+}
+
+.mention-item-emoji {
+  font-size: 16px;
+}
+
+.mention-item-color {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mention-item-name {
+  flex: 1;
+  font-size: 14px;
+  color: #374151;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

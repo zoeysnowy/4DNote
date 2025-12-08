@@ -8,7 +8,7 @@
  * @version 1.0.0
  */
 
-import type { EventObject } from '@toast-ui/calendar';
+import type { EventObject } from '../lib/tui.calendar/apps/calendar';
 import { Event } from '../types';
 import { EventHub } from '../services/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
@@ -302,7 +302,30 @@ export function convertToCalendarEvent(
   const isCurrentlyRunningTimer = runningTimerEventId !== null && event.id === runningTimerEventId;
   
   // 🔧 修复：保持已有的"[专注中]"前缀，或为当前运行的timer添加前缀
-  let displayTitle: string = event.title?.simpleTitle || ''; // 🔧 确保 displayTitle 是字符串类型
+  let displayTitle: string = '';
+  
+  // ✅ 提取标题：simpleTitle 可能是纯文本或 Slate JSON，需要智能解析
+  const simpleTitle = event.title?.simpleTitle || '';
+  if (simpleTitle) {
+    try {
+      // 尝试解析为 JSON（v2.14+ 新格式：simpleTitle 存储的是 Slate JSON）
+      const nodes = JSON.parse(simpleTitle);
+      if (Array.isArray(nodes)) {
+        // 递归提取文本内容
+        const extractText = (node: any): string => {
+          if (node.text !== undefined) return node.text;
+          if (node.children) return node.children.map(extractText).join('');
+          return '';
+        };
+        displayTitle = nodes.map(extractText).join('\n').trim();
+      } else {
+        displayTitle = simpleTitle; // 不是数组，作为纯文本使用
+      }
+    } catch {
+      // 不是 JSON（旧格式或纯文本），直接使用
+      displayTitle = simpleTitle;
+    }
+  }
   
   // 🆕 v1.2: 如果既没有标题也没有标签，使用 eventlog 内容作为 fallback
   if (!displayTitle && (!event.tags || event.tags.length === 0)) {

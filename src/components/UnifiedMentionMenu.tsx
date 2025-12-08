@@ -265,7 +265,13 @@ const MentionItemView: React.FC<{
         }
       }}
     >
-      <span className="mention-icon">{item.icon}</span>
+      <span className="mention-icon">
+        {item.icon?.endsWith('.svg') ? (
+          <img src={item.icon} alt="" style={{ width: '20px', height: '20px' }} />
+        ) : (
+          item.icon
+        )}
+      </span>
       <div className="mention-content">
         <div className="mention-title">{item.title}</div>
         {item.subtitle && <div className="mention-subtitle">{item.subtitle}</div>}

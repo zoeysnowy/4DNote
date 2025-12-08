@@ -36,10 +36,7 @@ class TimeHubImpl {
     if (this.inited) return;
     this.inited = true;
 
-    // Bootstrap by touching the events store so local cache is warm
-    try {
-      EventService.getAllEvents();
-    } catch {}
+    // 🔧 Cache warming removed - EventService uses Promise deduplication now
 
     // Keep cache in sync with global event updates
     window.addEventListener('eventsUpdated', (e: any) => {

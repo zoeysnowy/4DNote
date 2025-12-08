@@ -1,0 +1,240 @@
+/* src/components/TimeLog/TimeGap.css */
+
+/* === Tippy 浮窗位置过渡禁用 === */
+/* 强制禁止 Tippy 的位置变换动画，确保瞬间定位 */
+.tippy-box[data-theme~="time-gap-menu"] {
+  transition-property: opacity, transform !important;
+  transition-duration: 0s !important;
+}
+
+/* === 时间间隙容器 === */
+.time-gap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin: 0; /* 移除间距，让虚线紧贴上方的实线 */
+}
+
+.time-gap.hovered {
+  background-color: rgba(59, 130, 246, 0.05); /* 浅蓝色背景 */
+}
+
+/* 时间轴线附近的hover触发区域（扩大到足够宽，方便选择时间点） */
+.time-gap-axis-trigger {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 200px; /* 大幅扩大到200px，让用户可以在宽阔区域内移动选择时间 */
+  cursor: pointer;
+  z-index: 10; /* 确保在 content 上方 */
+}
+
+/* 小间隙样式 */
+.time-gap.small {
+  height: 32px !important;
+}
+
+/* === 左侧时间轴线（Zipper）=== */
+.time-gap-axis {
+  position: absolute;
+  left: 20px; /* 与事件卡片左侧图标对齐 (40px width / 2) */
+  height: 100%;
+  width: 2px;
+  border-left: 2px dashed #CBD5E1; /* 虚线：默认状态 */
+  opacity: 0.6;
+  transition: all 0.2s ease;
+  transform: translateX(-1px); /* Center the 2px border */
+}
+
+.time-gap-axis.active {
+  border-left-style: solid;
+  border-left-color: #3B82F6; /* 蓝色：Hover 状态 */
+  opacity: 1;
+}
+
+/* === 中间内容区域 === */
+.time-gap-content {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  margin-left: 40px; /* 从虚线右侧开始，不遮挡 trigger 区域 */
+  z-index: 1; /* 降低层级，让 trigger 区域在上方 */
+}
+
+/* === 默认状态：时间间隔文字 === */
+.time-gap-duration {
+  font-size: 12px;
+  color: #9CA3AF;
+  background: white;
+  padding: 4px 12px;
+  border-radius: 12px;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.time-gap.hovered .time-gap-duration {
+  opacity: 0;
+  transform: translateY(-5px);
+  pointer-events: none;
+}
+
+/* === Hover 状态：添加按钮 === */
+.time-gap-add-btn {
+  opacity: 0;
+  pointer-events: none;
+  padding: 6px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  color: white;
+  background: linear-gradient(to right, #a855f7, #3b82f6); /* 紫蓝渐变 */
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  transform: scale(0.9);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); /* ease-out-expo */
+}
+
+.time-gap.hovered .time-gap-add-btn {
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+}
+
+.time-gap-add-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+}
+
+.time-gap-add-btn:active {
+  transform: scale(0.98);
+}
+
+/* 小间隙的按钮样式 */
+.time-gap.small .time-gap-add-btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  font-size: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* === Hover 时的时间提示 === */
+.time-gap-tooltip {
+  position: absolute;
+  top: 50%;
+  right: 20px;
+  transform: translateY(-50%);
+  font-size: 11px;
+  color: #6B7280;
+  background: white;
+  padding: 4px 8px;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: fade-in 0.2s ease;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-50%) translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
+  }
+}
+
+/* === 光标跟随的浮动菜单 (Tippy) === */
+.time-gap-floating-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  
+  width: 120px;
+  padding: 8px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+  z-index: 100; /* 确保在 sticky header 上方 (header z-index: 10-11) */
+}
+
+/* Tippy 容器也需要高 z-index */
+.tippy-box[data-theme~="time-gap-menu"] {
+  z-index: 100;
+}
+
+/* 浮动菜单按钮 */
+.floating-menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  background: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.floating-menu-btn:hover {
+  transform: translateX(2px);
+}
+
+.floating-menu-btn .btn-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.floating-menu-btn .btn-text {
+  font-size: 13px;
+  flex: 1;
+}
+
+/* 不同操作的主题色 */
+.floating-menu-btn.note:hover {
+  background: #F5F3FF;
+  color: #8B5CF6;
+}
+
+.floating-menu-btn.event:hover {
+  background: #EFF6FF;
+  color: #3B82F6;
+}
+
+.floating-menu-btn.attachment:hover {
+  background: #ECFDF5;
+  color: #10B981;
+}
+
+.floating-menu-btn:active {
+  transform: translateX(1px);
+}
+
+/* 浮动菜单时间显示（顶部） */
+.floating-menu-time {
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #6B7280;
+  background: #F9FAFB;
+  border-radius: 4px;
+  text-align: center;
+}

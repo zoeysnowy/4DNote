@@ -36,9 +36,9 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
   const isPlaceholder = (element.metadata as any)?.isPlaceholder || element.eventId === '__placeholder__';
   const isDeleted = (element.metadata as any)?._isDeleted || eventStatus === 'deleted';
   
-  const paddingLeft = isEventlogMode
-    ? `${(element.level + 1) * 24}px`
-    : `${element.level * 24}px`;
+  // 🔧 缩进计算：标题行和 eventlog 行使用相同的 paddingLeft
+  // eventlog 通过占位元素来补偿标题行的前缀宽度
+  const paddingLeft = `${element.level * 24}px`;
   
   // 🆕 处理 placeholder 点击
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -75,11 +75,23 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
         pointerEvents: isDeleted ? 'none' : 'auto',  // ✅ 禁止交互
       }}
     >
-      {/* 前缀装饰 (Checkbox、Emoji 等) - Eventlog 模式不显示 */}
+      {/* 前缀装饰 (Checkbox、Emoji 等) */}
       {!isEventlogMode && onSave && (
         <div className="event-line-prefix" contentEditable={false}>
           <EventLinePrefix element={element} onSave={onSave} eventStatus={eventStatus} />
         </div>
+      )}
+      
+      {/* Eventlog 模式：添加占位符，与标题行的前缀等宽 */}
+      {isEventlogMode && (
+        <div 
+          className="event-line-prefix-spacer" 
+          contentEditable={false}
+          style={{
+            width: '28px', // checkbox(16px) + marginRight(4px) + gap(8px)
+            flexShrink: 0,
+          }}
+        />
       )}
       
       {/* 内容区域 - Placeholder 行显示为灰色但可点击 */}

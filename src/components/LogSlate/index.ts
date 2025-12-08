@@ -1,0 +1,1 @@
+export { LogSlate } from './LogSlate';

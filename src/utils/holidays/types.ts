@@ -34,7 +34,7 @@ export type SyncStatusType = 'pending' | 'synced' | 'error' | 'local-only' | 'co
 /**
  * 联系人平台来源
  */
-export type ContactSource = 'remarkable' | 'outlook' | 'google' | 'icloud';
+export type ContactSource = '4dnote' | 'outlook' | 'google' | 'icloud';
 
 /**
  * 参会人类型

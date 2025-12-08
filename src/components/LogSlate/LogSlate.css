@@ -1,0 +1,119 @@
+.log-slate-wrapper {
+  width: 100%;
+}
+
+.log-slate-editable {
+  outline: none;
+  min-height: 24px;
+}
+
+/* 标题模式 */
+.title-mode .log-slate-editable {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+/* 正文模式 */
+.eventlog-mode .log-slate-editable {
+  font-size: 13px;
+  line-height: 1.6;
+  min-height: 60px;
+}
+
+/* Placeholder 样式 */
+.log-slate-editable [data-slate-placeholder] {
+  color: #9CA3AF;
+  opacity: 1;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 标签样式 */
+.log-slate-editable .tag-element {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background-color: #E5E7EB;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* 日期引用样式 */
+.log-slate-editable .date-mention {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 0 2px;
+  border-radius: 3px;
+  background-color: #DBEAFE;
+  color: #1E40AF;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 事件引用样式 */
+.log-slate-editable .event-mention {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 0 2px;
+  border-radius: 3px;
+  background-color: #FEF3C7;
+  color: #92400E;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 时间戳分隔线样式 */
+.log-slate-editable .timestamp-divider {
+  display: flex;
+  align-items: center;
+  margin: 12px 0;
+  color: #9CA3AF;
+  font-size: 12px;
+  user-select: none;
+}
+
+.log-slate-editable .timestamp-divider::before,
+.log-slate-editable .timestamp-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background-color: #E5E7EB;
+  margin: 0 8px;
+}
+
+/* 提及和标签菜单 */
+.mention-menu,
+.hashtag-menu {
+  position: absolute;
+  z-index: 1000;
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 8px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.mention-menu p,
+.hashtag-menu p {
+  margin: 0;
+  padding: 8px;
+  font-size: 13px;
+  color: #6B7280;
+}
+
+/* 只读模式样式 */
+.log-slate-wrapper[readonly] .log-slate-editable {
+  background-color: transparent;
+  cursor: default;
+}
+
+.log-slate-wrapper[readonly] .log-slate-editable:focus {
+  background-color: transparent;
+}

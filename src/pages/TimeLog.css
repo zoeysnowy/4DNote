@@ -96,6 +96,121 @@
   overflow-x: hidden;
   padding-right: 0; /* Reduced from 10px */
   padding-left: 0; /* Reduced from 10px */
+  position: relative;
+}
+
+/* 移除全局连续preline - 改为每个段落（月份/日期）有自己的独立preline */
+
+/* ========================================
+   压缩日期段样式
+   ======================================== */
+
+.timeline-compressed-segment {
+  position: relative;
+  padding: 0 0 0 34px; /* 左侧留出时间轴空间 */
+  margin: 0 0 16px 0;
+  display: flex;
+  flex: 1;
+}
+
+/* ========================================
+   月份标题样式 (Sticky - 在时间轴左侧)
+   ======================================== */
+
+.timeline-month-header {
+  position: sticky;
+  top: 0;
+  z-index: 11;
+  display: flex;
+  align-items: flex-start;
+  padding: 0;
+  margin: 16px 0 0 0; /* 上方16px，下方无margin（紧贴compressed日期） */
+  padding-bottom: 0; /* 移除下方padding */
+  padding-left: 0;
+  position: relative;
+}
+
+/* 月份段落的独立preline */
+.timeline-month-header::before {
+  content: '';
+  position: absolute;
+  left: 15px;
+  top: 0;
+  bottom: -8px; /* 延伸到compressed日期范围底部 */
+  width: 2px;
+  background: #E5E7EB;
+  z-index: 1;
+}
+
+.timeline-month-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  min-width: 40px;
+  padding-right: 8px;
+  flex-shrink: 0;
+  position: relative;
+  background: white;
+  z-index: 2;
+}
+
+.month-year {
+  font-size: 11px;
+  font-weight: 400;
+  color: #9CA3AF;
+  line-height: 1.2;
+}
+
+.month-number {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1F2937;
+  line-height: 1.2;
+  text-align: center;
+  min-width: 32px;
+}
+
+/* ========================================
+   日期分组样式
+   ======================================== */
+
+.timeline-date-group {
+  margin-bottom: 0;
+  position: relative;
+}
+
+/* 移除日期段落的统一preline - 改为每个event显示自己的preline段 */
+
+.timeline-date-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: white;
+  padding: 16px 0 0 0;
+  margin: 0 0 8px 0;
+}
+
+.timeline-date-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1F2937;
+  margin: 0;
+  padding-left: 8px;
+}
+
+/* 单独1天空白的短preline样式 */
+.empty-day-preline {
+  display: flex;
+  justify-content: flex-start;
+  padding-left: 0;
+  margin: 12px 0;
+}
+
+.empty-day-line {
+  width: 2px;
+  height: 40px; /* 短preline高度 */
+  background: #E5E7EB;
+  margin-left: 19px; /* 与事件preline对齐 */
 }
 
 /* ========================================
@@ -105,7 +220,7 @@
 .timeline-event-wrapper {
   display: flex;
   flex-direction: column;
-  padding: 12px 0; /* Reduced from 16px 0 */
+  padding: 12px 0 0 0; /* 移除底部padding，只保留顶部12px */
   position: relative;
 }
 
@@ -157,16 +272,10 @@
   left: 50%;
   top: 0;
   bottom: 0;
-  width: 2px; /* Event timeline 宽度：2px */
+  width: 2px;
   background: #E5E7EB;
   transform: translateX(-50%);
-  /* 动态高度：自动根据 event-body-row 的内容高度延伸 */
-  transition: height 0.3s ease; /* 平滑过渡动画 */
-}
-
-/* 最后一个事件的时间轴也完整显示 */
-.timeline-event-wrapper:last-child .timeline-line {
-  bottom: 0;
+  z-index: 1;
 }
 
 .event-details-col {
@@ -174,7 +283,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-bottom: 8px; /* 底部留白，确保时间轴延伸到最后一行内容底部 */
+  padding-bottom: 0; /* 移除底部留白，让preline紧贴内容 */
 }
 
 /* 通用行样式 */
@@ -195,6 +304,7 @@
 
 /* Row 1: Time Info & Status */
 .event-time-row {
+  position: relative;
   margin-bottom: 8px;
   color: #4B5563;
   font-size: 14px;
@@ -213,12 +323,25 @@
   height: 16px;
 }
 
+.time-range-display {
+  display: flex;
+  align-items: center;
+  white-space: nowrap;
+  min-width: max-content;
+}
+
 .time-text {
   font-size: 14px;
   font-weight: 500;
   color: #374151;
   font-family: 'Inter', 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  /* 移除固定宽度，让文本自然宽度显示 */
+  white-space: nowrap;
+}
+
+.time-text.single-time {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1F2937;
 }
 
 /* ========================================
@@ -320,6 +443,7 @@
 
 /* Row 2: Title & Source */
 .event-title-row {
+  position: relative;
   margin-bottom: 4px;
   align-items: center;
   gap: 4px; /* 🔧 Add gap for spacing between emoji and title */
@@ -336,16 +460,116 @@
   font-size: 16px;
   font-weight: 600;
   color: #1F2937;
-  margin-right: 16px;
+  margin-right: 0;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
 }
 
-.event-source-info {
+.event-title-editing {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1F2937;
+  margin-right: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+}
+
+.meta-text-editing {
+  font-size: 14px;
+  color: #1F2937;
+  border: none;
+  outline: none;
+  background: transparent;
+  flex: 1;
+  padding: 0;
+  min-height: 20px;
+}
+
+/* contentEditable placeholder support */
+.meta-text-editing:empty:before {
+  content: attr(data-placeholder);
+  color: #9ca3af;
+}
+
+/* 🆕 时间行 - 日历来源信息（右对齐） */
+.time-calendar-source-wrapper {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
+  flex-shrink: 0;
+  width: 160px; /* 固定总宽度 */
+}
+
+.time-calendar-label {
+  font-size: 14px;
+  color: #6b7280;
+  flex-shrink: 0;
+  padding: 0;
+  grid-column: 1;
+}
+
+.time-calendar-source {
   display: flex;
   align-items: center;
-  font-size: 12px;
-  color: #6B7280;
-  gap: 8px;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  grid-column: 2;
+  width: 120px; /* 固定宽度 */
+}
+
+.time-calendar-source:hover {
+  background-color: #f9fafb;
+}
+
+/* 🆕 标题行 - 同步模式选择器（右侧，与"同步"两个字左边缘对齐） */
+.title-sync-mode {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  padding: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  width: 160px; /* 与time-calendar-source-wrapper相同的固定总宽度 */
+}
+
+.title-sync-mode:hover {
+  background-color: #f9fafb;
+}
+
+.title-sync-mode .sync-mode-emoji {
+  font-size: 14px !important;
+  line-height: 1;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.title-sync-mode .sync-mode-name {
+  font-size: 14px !important;
+  flex-shrink: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.title-sync-mode .sync-mode-name {
+  color: #6b7280;
+  font-size: 11px;
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Row 3: Tags */
@@ -354,6 +578,10 @@
   gap: 12px;
   align-items: center;
   display: flex;
+}
+
+.event-tags-row .row-icon {
+  margin-right: 0;
 }
 
 .tag-item {
@@ -400,6 +628,27 @@
 .tag-item:nth-child(3n+2) { color: #3b82f6; } /* Blue */
 .tag-item:nth-child(3n+3) { color: #10b981; } /* Green */
 
+/* Meta Icon Bar - 仅图标行（悬浮显示） */
+.event-meta-icon-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+  min-height: 20px;
+}
+
+.meta-icon {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+
+.meta-icon:hover {
+  opacity: 1;
+}
+
 /* Row 4 & 5: Meta (Attendees, Location) */
 .event-meta-row {
   margin-bottom: 4px;
@@ -412,6 +661,27 @@
   width: 16px;
   height: 16px;
   margin-right: 8px;
+}
+
+/* 悬浮显示行：默认隐藏整行（无内容时） */
+.event-meta-hover-row {
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+/* 悬浮在事件卡片时显示所有悬浮行 */
+.timeline-event-wrapper:hover .event-meta-hover-row {
+  opacity: 1;
+}
+
+/* 编辑状态时保持显示（keep-hover 类） */
+.event-meta-hover-row.keep-hover {
+  opacity: 1;
+}
+
+/* 当有 keep-hover 类时，保持父元素的其他悬浮元素也显示 */
+.timeline-event-wrapper:has(.keep-hover) .event-meta-hover-row {
+  opacity: 1;
 }
 
 /* Row 6: Log Content - 参考 EventEditModal V2 的 timestamp 和 preline 设计 */
@@ -480,3 +750,133 @@
 .action-button:hover img {
   opacity: 1;
 }
+
+/* ========================================
+   Ghost Menu Styles
+   ======================================== */
+
+/* Time display wrapper for ghost menu */
+.time-display-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+  min-width: max-content;
+  padding: 2px 6px;
+  border-radius: 8px;
+  margin: -2px -6px;
+  transition: background 0.15s ease;
+}
+
+.time-display-wrapper:hover {
+  background: #FAFAFA;
+}
+
+/* Ghost menu base styles */
+.ghost-menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  border-radius: 0;
+  z-index: 10;
+  transition: opacity 0.15s ease;
+}
+
+/* Time ghost menu positioning */
+.time-ghost-menu {
+  position: relative;
+  left: auto;
+  margin-left: 8px;
+  top: auto;
+  transform: none;
+}
+
+/* Title ghost menu positioning */
+.title-ghost-menu {
+  position: relative;
+  left: auto;
+  margin-left: 8px;
+  top: auto;
+  transform: none;
+  white-space: nowrap;
+}
+
+/* Ghost menu button styles */
+.ghost-menu-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  padding: 4px;
+}
+
+.ghost-menu-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.ghost-menu-btn img {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
+}
+
+.ghost-menu-btn img[alt="favorite"] {
+  width: 20px;
+  height: 20px;
+}
+
+/* 计时器按钮保持原始渐变色 */
+.ghost-menu-btn img[alt="timer start"] {
+  filter: none;
+}
+
+.ghost-menu-btn:hover img {
+  filter: brightness(0) saturate(100%) invert(27%) sepia(8%) saturate(1041%) hue-rotate(182deg) brightness(95%) contrast(89%);
+}
+
+.ghost-menu-btn:hover img[alt="timer start"] {
+  filter: none;
+  opacity: 0.9;
+}
+
+.ghost-menu-btn span {
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+.ghost-menu-btn:hover span {
+  opacity: 1;
+}
+
+/* Title right menu wrapper */
+.title-right-menu-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  margin-left: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  margin: -2px 0 -2px 4px;
+  transition: background 0.15s ease;
+  line-height: 1;
+}
+
+.title-right-menu-wrapper:hover {
+  background: #FAFAFA;
+}
+
+/* Title right icon */
+.title-right-icon {
+  transition: opacity 0.15s ease;
+}
+

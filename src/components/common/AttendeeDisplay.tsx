@@ -66,96 +66,103 @@ export const AttendeeDisplay: React.FC<AttendeeDisplayProps> = ({
   useEffect(() => {
     if (initializedFromPropsRef.current) return; // 已初始化过，跳过
     
-    const newParticipants: Contact[] = [];
-    
-    // 辅助函数：通过多种方式查找联系人
-    const findContactInService = (contact: Contact): Contact | null => {
-      const allContacts = ContactService.getAllContacts();
+    // 🔧 修复：getAllContacts() 是异步方法，必须 await
+    const initializeParticipants = async () => {
+      const newParticipants: Contact[] = [];
       
-      // 1. 优先通过 ID 精确匹配
-      if (contact.id) {
-        const foundById = allContacts.find(c => c.id === contact.id);
-        if (foundById) return foundById;
-      }
+      // 辅助函数：通过多种方式查找联系人（异步）
+      const findContactInService = async (contact: Contact): Promise<Contact | null> => {
+        const allContacts = await ContactService.getAllContacts();
+        
+        // 1. 优先通过 ID 精确匹配
+        if (contact.id) {
+          const foundById = allContacts.find(c => c.id === contact.id);
+          if (foundById) return foundById;
+        }
+        
+        // 2. 通过邮箱匹配（如果有邮箱）
+        if (contact.email) {
+          const foundByEmail = allContacts.find(c => 
+            c.email?.toLowerCase() === contact.email?.toLowerCase()
+          );
+          if (foundByEmail) return foundByEmail;
+        }
+        
+        // 3. 通过姓名 + 组织匹配（避免同名不同人）
+        if (contact.name && contact.organization) {
+          const foundByNameOrg = allContacts.find(c => 
+            c.name === contact.name && c.organization === contact.organization
+          );
+          if (foundByNameOrg) return foundByNameOrg;
+        }
+        
+        // 4. 仅通过姓名匹配（最后的手段，可能不准确）
+        if (contact.name) {
+          const foundByName = allContacts.find(c => c.name === contact.name);
+          if (foundByName) return foundByName;
+        }
+        
+        return null;
+      };
       
-      // 2. 通过邮箱匹配（如果有邮箱）
-      if (contact.email) {
-        const foundByEmail = allContacts.find(c => 
-          c.email?.toLowerCase() === contact.email?.toLowerCase()
-        );
-        if (foundByEmail) return foundByEmail;
-      }
-      
-      // 3. 通过姓名 + 组织匹配（避免同名不同人）
-      if (contact.name && contact.organization) {
-        const foundByNameOrg = allContacts.find(c => 
-          c.name === contact.name && c.organization === contact.organization
-        );
-        if (foundByNameOrg) return foundByNameOrg;
-      }
-      
-      // 4. 仅通过姓名匹配（最后的手段，可能不准确）
-      if (contact.name) {
-        const foundByName = allContacts.find(c => c.name === contact.name);
-        if (foundByName) return foundByName;
-      }
-      
-      return null;
-    };
-    
-    // 1. 添加发起人
-    if (event.organizer) {
-      const fullOrganizer = findContactInService(event.organizer) || event.organizer;
-      if (fullOrganizer !== event.organizer) {
-        console.log('[AttendeeDisplay] ✅ 找到发起人完整数据:', { 
-          name: fullOrganizer.name, 
-          matchedBy: fullOrganizer.email ? 'email' : 'name'
-        });
-      }
-      newParticipants.push(fullOrganizer);
-    } else if (event.attendees?.some(a => a.email)) {
-      // 用户自己创建的事件，有邮箱的参会人 → 发起人 = 用户自己
-      newParticipants.push({
-        id: 'current-user',
-        name: '我',
-        email: currentUserEmail,
-        is4DNote: true,
-      });
-    }
-    
-    // 2. 添加参会人
-    if (event.attendees) {
-      const fullAttendees = event.attendees.map(attendee => {
-        const fullContact = findContactInService(attendee) || attendee;
-        if (fullContact !== attendee) {
-          console.log('[AttendeeDisplay] ✅ 找到参会人完整数据:', { 
-            name: fullContact.name,
-            hasPhone: !!fullContact.phone,
-            matchedBy: fullContact.email ? 'email' : 'name'
+      // 1. 添加发起人
+      if (event.organizer) {
+        const fullOrganizer = await findContactInService(event.organizer) || event.organizer;
+        if (fullOrganizer !== event.organizer) {
+          console.log('[AttendeeDisplay] ✅ 找到发起人完整数据:', { 
+            name: fullOrganizer.name, 
+            matchedBy: fullOrganizer.email ? 'email' : 'name'
           });
         }
-        return fullContact;
+        newParticipants.push(fullOrganizer);
+      } else if (event.attendees?.some(a => a.email)) {
+        // 用户自己创建的事件，有邮箱的参会人 → 发起人 = 用户自己
+        newParticipants.push({
+          id: 'current-user',
+          name: '我',
+          email: currentUserEmail,
+          is4DNote: true,
+        });
+      }
+      
+      // 2. 添加参会人
+      if (event.attendees) {
+        const fullAttendees = await Promise.all(
+          event.attendees.map(async (attendee) => {
+            const fullContact = await findContactInService(attendee) || attendee;
+            if (fullContact !== attendee) {
+              console.log('[AttendeeDisplay] ✅ 找到参会人完整数据:', { 
+                name: fullContact.name,
+                hasPhone: !!fullContact.phone,
+                matchedBy: fullContact.email ? 'email' : 'name'
+              });
+            }
+            return fullContact;
+          })
+        );
+        newParticipants.push(...fullAttendees);
+      }
+      
+      console.log('[AttendeeDisplay] 📋 初始化参会人列表（已获取完整数据）:', {
+        count: newParticipants.length,
+        participants: newParticipants.map(p => ({ 
+          name: p.name, 
+          id: p.id,
+          hasPhone: !!p.phone, 
+          hasOrganization: !!p.organization 
+        }))
       });
-      newParticipants.push(...fullAttendees);
-    }
+      
+      setParticipants(newParticipants);
+      
+      // 初始化可编辑文本
+      const text = newParticipants.map(p => p.name).join('; ');
+      setEditableText(text);
+      
+      initializedFromPropsRef.current = true; // 标记已初始化
+    };
     
-    console.log('[AttendeeDisplay] 📋 初始化参会人列表（已获取完整数据）:', {
-      count: newParticipants.length,
-      participants: newParticipants.map(p => ({ 
-        name: p.name, 
-        id: p.id,
-        hasPhone: !!p.phone, 
-        hasOrganization: !!p.organization 
-      }))
-    });
-    
-    setParticipants(newParticipants);
-    
-    // 初始化可编辑文本
-    const text = newParticipants.map(p => p.name).join('; ');
-    setEditableText(text);
-    
-    initializedFromPropsRef.current = true; // 标记已初始化
+    initializeParticipants();
   }, []); // 空依赖，只在挂载时运行一次
 
   // 监控 participants 状态变化

@@ -1,8 +1,8 @@
 # Slate 编辑器系统 - 统一产品需求文档 (PRD)
 
-> **版本**: v3.0  
-> **最后更新**: 2025-11-29  
-> **架构**: SlateCore + ModalSlate + PlanSlate  
+> **版本**: v3.1  
+> **最后更新**: 2025-12-04  
+> **架构**: SlateCore + ModalSlate + PlanSlate (EventTree 集成)  
 > **设计理念**: 共享核心、专注场景、高度可复用  
 
 ---
@@ -410,10 +410,22 @@ interface EventLineNode {
   type: 'event-line';
   eventId?: string;
   lineId: string;
-  level: number;                        // 缩进层级
+  level: number;                        // 🔥 视觉缩进层级（从 bulletLevel 计算得出）
   mode: 'title' | 'eventlog';          // 双模式
   children: ParagraphNode[];
-  metadata?: EventMetadata;             // 完整元数据
+  metadata?: EventMetadata;             // 🆕 完整元数据（包含 parentEventId/childEventIds）
+}
+
+// 🆕 v3.1: EventMetadata 包含 EventTree 字段
+interface EventMetadata {
+  // 时间字段
+  startTime?: string;
+  endTime?: string;
+  // ...其他业务字段
+  
+  // 🔥 EventTree 层级字段（v3.1 新增）
+  parentEventId?: string;              // 父事件 ID（单一父节点）
+  childEventIds?: string[];            // 子事件 ID 列表（多个子节点）
 }
 ```
 
@@ -430,17 +442,36 @@ interface EventLineNode {
 - 紧凑行高（20px）
 - 额外缩进一级
 
-### 4.4 数据流
+### 4.4 数据流（v3.1 EventTree 集成）
 
 ```
+【初始化加载】
 PlanManager (Event[])
-    ↓ planItemsToSlateNodes
-Slate State (EventLineNode[])
-    ↓ onChange
-    ↓ slateNodesToPlanItems
-PlanManager (updatedItems)
+    ↓ EventService.calculateAllBulletLevels() → bulletLevel
+    ↓ planItemsToSlateNodes (level = item.bulletLevel)
+Slate State (EventLineNode[] with metadata.parentEventId)
+
+【Tab 键操作】
+User presses Tab
+    ↓ 
+Slate metadata 立即更新: { parentEventId: 'xxx' }  ⚡ 乐观更新
     ↓
-EventService.updateEvent() (批量)
+EventService.updateEvent({ parentEventId: 'xxx' })  📡 后台持久化
+
+【用户输入】
+User types text
+    ↓ onChange (300ms 防抖)
+    ↓ slateNodesToPlanItems (读取 metadata.parentEventId)
+PlanManager (updatedItems with parentEventId)  ✅ 完整数据
+    ↓
+EventHub.updateFields() → 保存到数据库
+
+【页面刷新】
+Database (Event[] with parentEventId)
+    ↓ EventService.calculateAllBulletLevels()
+    ↓ bulletLevel 动态计算
+    ↓ planItemsToSlateNodes (level = bulletLevel)
+Slate 渲染缩进  ✅ 层级正确
 ```
 
 ### 4.5 API
@@ -459,15 +490,21 @@ interface PlanSlateEditorProps {
 
 ### 4.6 快捷键
 
-| 快捷键 | 功能 | 适用模式 |
-|--------|------|----------|
-| `Enter` | 创建新事件/段落 | Title/Eventlog |
-| `Shift+Enter` | 切换到eventlog模式 | Title |
-| `Shift+Tab` | 转换为title行 | Eventlog |
-| `Shift+Alt+↑` | 段落上移（双模式） | Title/Eventlog |
-| `Shift+Alt+↓` | 段落下移（双模式） | Title/Eventlog |
-| `Tab` | 增加缩进 | Title/Eventlog |
-| `Backspace` | 删除行/合并 | Title/Eventlog |
+| 快捷键 | 功能 | 适用模式 | v3.1 增强 |
+|--------|------|----------|----------|
+| `Enter` | 创建新事件/段落 | Title/Eventlog | - |
+| `Shift+Enter` | 切换到eventlog模式 | Title | - |
+| `Shift+Tab` | 转换为title行/减少缩进 | Eventlog/Title | 🆕 更新 parentEventId |
+| `Shift+Alt+↑` | 段落上移（双模式） | Title/Eventlog | - |
+| `Shift+Alt+↓` | 段落下移（双模式） | Title/Eventlog | - |
+| `Tab` | 增加缩进 | Title/Eventlog | 🔥 同步 metadata + 数据库 |
+| `Backspace` | 删除行/合并 | Title/Eventlog | - |
+
+**🆕 v3.1 Tab 键增强功能**:
+- ⚡ **乐观更新**: 立即更新 Slate metadata (`parentEventId`)，视觉缩进即时生效（< 1ms）
+- 📡 **后台持久化**: 异步调用 `EventService.updateEvent()` 保存到数据库
+- 🔗 **双向同步**: 自动更新父事件的 `childEventIds` 列表（EventTree 双向关联）
+- 🛡️ **数据安全**: metadata 作为缓存，即使断网也能在下次 onChange 时恢复
 
 ---
 
@@ -676,9 +713,298 @@ export function insertLinkMention(editor: Editor, url: string, title?: string): 
 
 ---
 
-## 8. 实施路线图
+## 8. 编辑状态管理与保存机制
 
-### 8.1 已完成 ✅
+### 8.1 通用编辑状态管理
+
+所有 Slate 编辑器都使用统一的状态管理模式来处理输入、缓存和保存：
+
+#### 核心状态 Refs
+
+```typescript
+// 编辑状态追踪
+const pendingValueRef = useRef<string | null>(null);  // 缓存待保存的 Slate JSON
+const isEditingRef = useRef(false);                   // 标记是否正在编辑
+const lastValueRef = useRef<string>('');              // 记录上次的外部 value
+```
+
+#### 核心原则
+
+1. **输入时只缓存，不触发保存** - 避免频繁触发父组件重新渲染，防止输入卡顿
+2. **失焦时立即保存** - 用户失焦时将缓存内容保存到数据库
+3. **编辑时跳过外部同步** - 防止外部更新重置编辑器状态，导致光标丢失
+
+### 8.2 保存模式对比
+
+| 保存模式 | 适用组件 | 触发时机 | 优点 | 缺点 |
+|---------|---------|---------|------|------|
+| **失焦保存** | LogSlate, TitleSlate | 失焦时 | 输入流畅，无卡顿 | 未失焦前不保存 |
+| **自动保存** | ModalSlate | 输入后 2 秒 | 自动保存，防数据丢失 | 可能有轻微延迟 |
+| **混合模式** | PlanSlate | 自动保存 + 失焦 | 兼顾两者优点 | 逻辑较复杂 |
+
+### 8.3 各编辑器实现详情
+
+#### 8.3.1 LogSlate - 失焦保存模式 ✅
+
+**使用场景**: TimeLog 页面的标题编辑
+
+**实现逻辑**:
+```typescript
+// 1. 输入时：只缓存，不调用 onChange
+const handleChange = useCallback((newValue: Descendant[]) => {
+  const isAstChange = editor.operations.some(op => op.type !== 'set_selection');
+  
+  if (isAstChange) {
+    isEditingRef.current = true;
+    const json = JSON.stringify(newValue);
+    pendingValueRef.current = json;  // 只缓存
+  }
+}, [editor]);
+
+// 2. 失焦时：调用 onChange 保存
+<Editable
+  onBlur={() => {
+    if (pendingValueRef.current !== null) {
+      onChange(pendingValueRef.current);  // 保存
+      pendingValueRef.current = null;
+    }
+    isEditingRef.current = false;
+    onBlur?.();
+  }}
+/>
+
+// 3. 外部同步时：编辑中跳过
+useEffect(() => {
+  if (isEditingRef.current) {
+    return;  // 跳过外部同步
+  }
+  // 同步外部 value 到编辑器
+}, [value]);
+```
+
+**数据流**:
+```
+用户输入 → handleChange → pendingValueRef 缓存
+       ↓
+   点击其他地方
+       ↓
+    onBlur 触发
+       ↓
+  onChange(pendingValueRef)
+       ↓
+  TimeLog.onChange 收到数据
+       ↓
+  缓存到 pendingTitleChanges
+       ↓
+  TimeLog.onBlur 触发
+       ↓
+  handleTitleSave(eventId, slateJson)
+       ↓
+  EventHub.updateFields(eventId, { title: {...} })
+       ↓
+  EventService.updateEvent → 数据库保存
+```
+
+**关键特性**:
+- ✅ 输入流畅，无卡顿
+- ✅ 失焦立即保存
+- ✅ 编辑时不受外部更新影响
+- ✅ 防止光标丢失
+
+#### 8.3.2 TitleSlate - 失焦保存模式 ✅
+
+**使用场景**: EventEditModal 的标题编辑
+
+**实现逻辑**: 与 LogSlate 完全相同
+
+**数据流**:
+```
+用户输入 → handleChange → pendingValueRef 缓存
+       ↓
+   失焦触发
+       ↓
+  onChange(slateJson)
+       ↓
+  EventEditModal.onChange 收到数据
+       ↓
+  提取 fragment 并保存到 formData.title
+```
+
+#### 8.3.3 PlanSlate - 混合模式 ⚠️
+
+**使用场景**: PlanManager 的事件列表编辑
+
+**实现逻辑**:
+```typescript
+// 1. 输入时：缓存 + 2秒自动保存
+const handleEditorChange = useCallback((newValue: Descendant[]) => {
+  pendingChangesRef.current = newValue;  // 缓存
+  
+  // 清除旧定时器
+  if (autoSaveTimerRef.current) {
+    clearTimeout(autoSaveTimerRef.current);
+  }
+  
+  // 设置 2 秒后自动保存
+  autoSaveTimerRef.current = setTimeout(() => {
+    const planItems = slateNodesToPlanItems(pendingChangesRef.current);
+    onChange(planItems);  // 自动保存
+  }, 2000);
+}, [onChange]);
+
+// 2. 失焦时：立即保存
+<Editable
+  onBlur={() => {
+    flushPendingChanges();  // 立即保存
+  }}
+/>
+```
+
+**特殊之处**:
+- ✅ 双模式：自动保存（2秒）+ 失焦保存
+- ✅ 复杂数据转换：Slate nodes → PlanItems → EventHub
+- ✅ 特殊跳过逻辑：`skipNextOnChangeRef` 用于外部同步
+- ✅ @ 提及特殊处理：输入 @ 时暂停自动保存
+
+**为什么不用纯失焦保存**:
+1. 多事件编辑，用户可能长时间不失焦
+2. 需要实时同步到 PlanManager 状态
+3. @ 提及需要特殊处理（暂停自动保存）
+
+#### 8.3.4 ModalSlate - 自动保存模式 ⚠️
+
+**使用场景**: EventEditModal 的 eventlog 编辑
+
+**实现逻辑**:
+```typescript
+// 输入时：2秒后自动保存
+const handleChange = useCallback((newValue: Descendant[]) => {
+  if (autoSaveTimerRef.current) {
+    clearTimeout(autoSaveTimerRef.current);
+  }
+  
+  autoSaveTimerRef.current = setTimeout(() => {
+    const newContent = slateNodesToJsonCore(newValue);
+    onChange(newContent);  // 2秒后保存
+  }, 2000);
+}, [onChange]);
+
+// 失焦时：主要用于清理空 timestamp
+const handleBlur = useCallback(() => {
+  // 清理空 timestamp 逻辑
+}, []);
+```
+
+**为什么用自动保存**:
+1. 内容编辑可能较长，需要自动保存防止数据丢失
+2. 有 timestamp 自动插入功能，需要实时更新
+3. 失焦主要用于清理空 timestamp，而非保存
+
+### 8.4 可提取到 SlateCore 的部分
+
+#### 可提取 ✅
+
+1. **基础状态管理 Hook**
+```typescript
+// useSlateEditorState - 基础状态管理
+export function useSlateEditorState() {
+  const pendingValueRef = useRef<string | null>(null);
+  const isEditingRef = useRef(false);
+  const lastValueRef = useRef<string>('');
+  
+  return { pendingValueRef, isEditingRef, lastValueRef };
+}
+```
+
+2. **外部同步 Hook**
+```typescript
+// useSlateExternalSync - 外部同步逻辑
+export function useSlateExternalSync(
+  editor: Editor,
+  value: string,
+  isEditingRef: React.MutableRefObject<boolean>,
+  lastValueRef: React.MutableRefObject<string>,
+  parseValue: (val: string) => Descendant[]
+) {
+  // 编辑中跳过同步
+  // value 变化时同步到编辑器
+}
+```
+
+3. **编辑器插件**
+```typescript
+// withAlwaysContent - 确保编辑器非空
+export function withAlwaysContent(editor: Editor) {
+  // 自动插入空段落
+}
+```
+
+#### 不可提取 ❌
+
+1. **EventHub 保存逻辑** - 不同页面有不同的保存需求
+2. **数据转换逻辑** - 不同场景需要不同的数据格式
+3. **缓存管理** - 不同页面管理多个实例的方式不同
+4. **业务校验逻辑** - 空标题检测、normalizeTitle 等业务逻辑
+
+### 8.5 数据持久化链路
+
+#### TimeLog 标题保存链路
+```
+LogSlate (失焦)
+    ↓ onChange(slateJson)
+TimeLog.onChange (缓存 pendingTitleChanges)
+    ↓ onBlur
+TimeLog.handleTitleSave
+    ↓ 提取 simpleTitle + fullTitle
+EventHub.updateFields(eventId, { title: {...} })
+    ↓
+EventService.updateEvent
+    ↓ normalizeTitle (生成 colorTitle)
+StorageManager (数据库保存)
+    ↓
+EventHub.eventsUpdated (触发更新事件)
+    ↓
+TimeLog 监听器 (增量更新 UI)
+```
+
+#### PlanManager 保存链路
+```
+PlanSlate (自动保存/失焦)
+    ↓ onChange(planItems)
+PlanManager.debouncedOnChange
+    ↓ 300ms 防抖
+PlanManager.executeBatchUpdate
+    ↓ 批处理：过滤、变化检测
+EventHub.updateFields / createEvent
+    ↓
+EventService.updateEvent / createEvent
+    ↓
+StorageManager (数据库保存)
+    ↓
+EventHub.eventsUpdated (触发更新事件)
+```
+
+### 8.6 架构建议
+
+#### 当前策略
+- **LogSlate / TitleSlate**: 继续使用失焦保存 ✅
+- **PlanSlate**: 保持混合模式（特殊需求）⚠️
+- **ModalSlate**: 保持自动保存（内容编辑场景）⚠️
+
+#### 未来优化
+1. **提取通用 Hooks** (P2)
+   - 基础状态管理
+   - 外部同步逻辑
+   
+2. **统一保存模式** (P3)
+   - 考虑将 ModalSlate 改为失焦保存
+   - 评估对用户体验的影响
+
+---
+
+## 9. 实施路线图
+
+### 9.1 已完成 ✅
 
 1. **SlateCore 共享层** (100%)
    - 操作工具、服务类、序列化工具、元素组件
@@ -690,7 +1016,14 @@ export function insertLinkMention(editor: Editor, url: string, title?: string): 
    - 元素组件和服务使用 SlateCore
    - EventLine 特有逻辑保留
 
-### 8.2 待完成 ⏳
+4. **LogSlate 失焦保存** (100%)
+   - 实现失焦保存模式
+   - 解决输入卡顿问题
+   
+5. **TitleSlate 失焦保存** (100%)
+   - 统一与 LogSlate 的保存逻辑
+
+### 9.2 待完成 ⏳
 
 1. **重命名工作** (P0)
    - ModalSlate → ModalSlate
@@ -704,29 +1037,44 @@ export function insertLinkMention(editor: Editor, url: string, title?: string): 
 3. **TimeLog 模块** (P1)
    - 使用 ModalSlate 构建时间轴页面
 
+4. **提取通用 Hooks** (P2)
+   - useSlateEditorState
+   - useSlateExternalSync
+   - useSlateBlurSave / useSlateAutoSave
+
 ---
 
-## 9. 总结
+## 10. 总结
 
-### 9.1 架构收益
+### 10.1 架构收益
 
 - **代码复用**: 70%+ 核心功能共享
 - **维护成本**: 降低 50%
 - **开发效率**: 新编辑器搭建时间减少 80%
 - **一致性**: 所有编辑器行为统一
 - **扩展性**: 未来功能实现一次，全局生效
+- **性能优化**: 失焦保存模式解决输入卡顿问题（5秒延迟 → 即时响应）
 
-### 9.2 关键设计原则
+### 10.2 关键设计原则
 
 - ✅ **单一职责**: 每个模块只做一件事
 - ✅ **开闭原则**: 对扩展开放，对修改封闭
 - ✅ **依赖倒置**: 专用编辑器依赖 SlateCore 抽象
 - ✅ **最小惊讶**: API 设计直观，命名清晰
 - ✅ **渐进式重构**: 不破坏现有功能
+- ✅ **编辑状态管理**: 统一的输入缓存和保存机制
+
+### 10.3 关键成就
+
+1. **SlateCore 共享层** - 统一核心功能，代码量减少 19.5%
+2. **失焦保存模式** - 解决 LogSlate/TitleSlate 输入卡顿问题
+3. **保存模式分类** - 明确失焦保存、自动保存、混合模式的使用场景
+4. **数据持久化链路** - 完整的从编辑器到数据库的保存流程
+5. **编辑器对比分析** - 清晰对比 5 个 Slate 编辑器的特性和保存策略
 
 ---
 
-**文档版本**: v3.1  
-**最后更新**: 2025-12-01  
+**文档版本**: v3.2  
+**最后更新**: 2025-12-04  
 **作者**: GitHub Copilot  
-**状态**: ✅ 架构已实现，Bullet v2.0 全面集成  
+**状态**: ✅ 架构已实现，失焦保存模式已完成，文档已更新  

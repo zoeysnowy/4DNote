@@ -308,6 +308,11 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // 🆕 本地临时状态：管理尚未保存到EventService的空行（graytext点击创建的）
   const [pendingEmptyItems, setPendingEmptyItems] = useState<Map<string, Event>>(new Map());
   
+  // 🔍 调试工具：实时同步 items 到 window 对象
+  useEffect(() => {
+    (window as any).__PLAN_EVENTS__ = items;
+  }, [items]);
+  
   // 当前选中的标签（用于 FloatingToolbar）
   const [currentSelectedTags, setCurrentSelectedTags] = useState<string[]>([]);
   // 使用 ref 追踪最新的选中标签，避免闭包问题
@@ -432,11 +437,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     const loadInitialData = async () => {
       console.log('[PlanManager] 开始异步加载初始数据...');
       
-      if (initialItemsRef.current) {
-        console.log('[PlanManager] 使用缓存的初始数据:', initialItemsRef.current.length);
-        setItems(initialItemsRef.current);
-        return;
-      }
+      // 🔧 FIX: 不使用缓存，每次都重新加载并计算 bulletLevel
+      // （因为 EventTree 关系可能已更新，缓存的 bulletLevel 可能过期）
+      console.log('[PlanManager] 清空缓存，强制重新加载数据（确保 bulletLevel 最新）');
+      initialItemsRef.current = null;
       
       try {
         // 从 EventService 异步加载所有事件
@@ -549,9 +553,48 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         
         console.log('[PlanManager] 初始化 - 过滤后的 Plan 事件:', filtered.length);
         
+        // 🔍 调试：检查 parentEventId 和 bulletLevel
+        console.log('[PlanManager] 🔍 EventTree 数据检查（计算前）:', {
+          总数: filtered.length,
+          有parentEventId的事件: filtered.filter(e => e.parentEventId).length,
+          有childEventIds的事件: filtered.filter(e => e.childEventIds && e.childEventIds.length > 0).length,
+          有bulletLevel的事件: filtered.filter(e => e.bulletLevel !== undefined).length,
+          示例数据: filtered.slice(0, 5).map(e => ({
+            id: e.id.slice(-8),
+            title: typeof e.title === 'string' ? e.title.slice(0, 20) : e.title?.simpleTitle?.slice(0, 20) || '',
+            hasParentEventId: 'parentEventId' in e,
+            parentEventIdValue: e.parentEventId ? e.parentEventId.slice(-8) : 'undefined',
+            hasChildEventIds: 'childEventIds' in e,
+            childEventIdsValue: e.childEventIds,
+            bulletLevel: e.bulletLevel,
+            allKeys: Object.keys(e).filter(k => k.includes('Event') || k.includes('child') || k.includes('parent'))
+          }))
+        });
+        
+        // 🎯 关键修复：初始化时也要计算 bulletLevel（从 EventTree 关系推导）
+        const bulletLevels = EventService.calculateAllBulletLevels(filtered);
+        
+        console.log('[PlanManager] 🔍 计算后的 bulletLevel:', {
+          计算结果数量: bulletLevels.size,
+          计算结果: Array.from(bulletLevels.entries()).slice(0, 5).map(([id, level]) => ({
+            id: id.slice(-8),
+            level
+          }))
+        });
+        
+        // 将计算出的 bulletLevel 附加到事件对象上
+        const eventsWithLevels = filtered.map(event => ({
+          ...event,
+          bulletLevel: bulletLevels.get(event.id!) || 0
+        })) as Event[];
+        
         // 缓存并设置
-        initialItemsRef.current = filtered;
-        setItems(filtered);
+        initialItemsRef.current = eventsWithLevels;
+        setItems(eventsWithLevels);
+        
+        // 🔍 调试工具：将事件列表暴露到 window 对象
+        (window as any).__PLAN_EVENTS__ = eventsWithLevels;
+        console.log('💡 调试提示：使用 window.__PLAN_EVENTS__ 查看当前事件列表');
       } catch (error) {
         console.error('[PlanManager] 加载初始数据失败:', error);
         setItems([]);
@@ -578,26 +621,188 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     };
   }, []);
   
-  // ✅ 监听 eventsUpdated，增量更新 items（带循环防护）
+  // ✅ 监听 eventsUpdated，增量更新 items（带循环防护 + BulletLevel 计算）
   useEffect(() => {
+    /**
+     * 增量更新单个事件及其受影响的关联事件
+     * 🎯 BulletLevel → EventTree 集成：计算并更新 bulletLevel
+     */
+    /**
+     * 🎯 共享过滤函数：判断事件是否应该显示在 PlanManager
+     */
+    const shouldShowEvent = (event: Event | null | undefined): boolean => {
+      if (!event) return false;
+      
+      const now = new Date();
+      
+      // 步骤 1: 并集条件
+      const matchesInclusionCriteria = 
+        event.isPlan === true || 
+        (event.checkType && event.checkType !== 'none') ||
+        event.isTimeCalendar === true;
+      
+      if (!matchesInclusionCriteria) return false;
+      
+      // 步骤 2: 排除系统事件
+      if (EventService.isSubordinateEvent(event)) return false;
+      
+      // 步骤 2.5: 过滤空白事件
+      const titleObj = event.title;
+      const hasTitle = event.content || 
+                      (typeof titleObj === 'string' ? titleObj : 
+                       (titleObj && (titleObj.simpleTitle || titleObj.fullTitle || titleObj.colorTitle)));
+      
+      const eventlogField = (event as any).eventlog;
+      let hasEventlog = false;
+      if (eventlogField) {
+        if (typeof eventlogField === 'string') {
+          hasEventlog = eventlogField.trim().length > 0;
+        } else if (typeof eventlogField === 'object' && eventlogField !== null) {
+          hasEventlog = (eventlogField.slateJson || eventlogField.html || eventlogField.plainText || '').trim().length > 0;
+        }
+      }
+      if (!hasTitle && !hasEventlog) return false;
+      
+      // 步骤 3: 过期/完成事件处理
+      const isExpired = isEventExpired(event, now);
+      if (event.isTimeCalendar && isExpired) {
+        const isTaskLike = event.isPlan === true || (event.checkType && event.checkType !== 'none');
+        if (!isTaskLike) return false;
+      }
+      
+      // 3.2 已完成任务：过0点后自动隐藏
+      if (event.checkType && event.checkType !== 'none') {
+        const lastChecked = event.checked?.[event.checked.length - 1];
+        const lastUnchecked = event.unchecked?.[event.unchecked.length - 1];
+        const isCompleted = lastChecked && (!lastUnchecked || lastChecked > lastUnchecked);
+        if (isCompleted && lastChecked) {
+          const completedTime = new Date(lastChecked);
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          if (completedTime < today) return false;
+        }
+      }
+      
+      return true;
+    };
+
+    const incrementalUpdateEvent = async (eventId: string) => {
+      console.log('[PlanManager] 🎯 Incremental update:', eventId.slice(-8));
+      
+      // 1. 获取更新后的事件
+      const updatedEvent = await EventService.getEventById(eventId);
+      if (!updatedEvent) {
+        setItems(prev => prev.filter(item => item.id !== eventId));
+        console.log('[PlanManager] ❌ Event deleted:', eventId.slice(-8));
+        return;
+      }
+      
+      // 1.5. 🎯 应用过滤逻辑（防止不符合条件的事件进入）
+      if (!shouldShowEvent(updatedEvent)) {
+        setItems(prev => prev.filter(item => item.id !== eventId));
+        console.log('[PlanManager] 🚫 Event filtered out:', eventId.slice(-8), {
+          isPlan: updatedEvent.isPlan,
+          checkType: updatedEvent.checkType,
+          isTimeCalendar: updatedEvent.isTimeCalendar
+        });
+        return;
+      }
+      
+      // 2. 计算受影响的事件范围
+      const affectedEventIds = new Set<string>([eventId]);
+      
+      // 2.1 父事件（childEventIds 可能变化）
+      if (updatedEvent.parentEventId) {
+        affectedEventIds.add(updatedEvent.parentEventId);
+      }
+      
+      // 2.2 子事件（bulletLevel 需要重新计算）
+      if (updatedEvent.childEventIds?.length) {
+        updatedEvent.childEventIds.forEach(id => affectedEventIds.add(id));
+      }
+      
+      console.log('[PlanManager] 📊 Affected events:', {
+        count: affectedEventIds.size,
+        ids: Array.from(affectedEventIds).map(id => id.slice(-8))
+      });
+      
+      // 3. 批量获取受影响的事件
+      const affectedEvents = await Promise.all(
+        Array.from(affectedEventIds).map(id => EventService.getEventById(id))
+      );
+      // 3.5 过滤掉 null 和不符合显示条件的事件
+      const validEvents = affectedEvents
+        .filter((e): e is Event => e !== null)
+        .filter(e => shouldShowEvent(e));
+      
+      console.log('[PlanManager] 📊 Filtered events:', {
+        total: affectedEvents.length,
+        valid: validEvents.length,
+        filtered: affectedEvents.length - validEvents.length
+      });
+      
+      // 4. 🎯 计算这些事件的 bulletLevel（从 EventTree 关系推导）
+      const bulletLevels = EventService.calculateAllBulletLevels(validEvents);
+      
+      console.log('[PlanManager] 📊 Calculated bulletLevels:', {
+        eventLevels: Object.fromEntries(
+          Array.from(bulletLevels.entries()).map(([id, level]) => [id.slice(-8), level])
+        )
+      });
+      
+      // 5. 增量更新 items 数组
+      setItems(prev => {
+        const newItems = [...prev];
+        const eventMap = new Map(newItems.map((item, index) => [item.id!, index]));
+        
+        validEvents.forEach(event => {
+          const bulletLevel = bulletLevels.get(event.id!) || 0;
+          
+          // ⚠️ 注意：bulletLevel 只用于前端显示，不持久化到数据库
+          // Event 类型没有 bulletLevel 字段，这里临时添加用于 PlanSlate 渲染
+          const eventWithLevel = { ...event, bulletLevel } as Event & { bulletLevel?: number };
+          
+          const existingIndex = eventMap.get(event.id!);
+          if (existingIndex !== undefined) {
+            // 更新现有事件
+            newItems[existingIndex] = eventWithLevel;
+          } else {
+            // 新增事件（不太可能，但做防护）
+            newItems.push(eventWithLevel);
+          }
+        });
+        
+        return newItems;
+      });
+      
+      console.log('[PlanManager] ✅ Incremental update complete:', {
+        updatedEvents: affectedEventIds.size,
+        eventIds: Array.from(affectedEventIds).map(id => id.slice(-8))
+      });
+    };
+    
     const handleEventUpdated = async (e: CustomEvent) => {
       const { eventId, isDeleted, isNewEvent, updateId, isLocalUpdate, originComponent, source } = e.detail || {};
       
       // 🚫 循环更新防护：跳过本组件发出的更新
       if (isLocalUpdate && originComponent === 'PlanManager') {
-        console.log('🔄 [PlanManager] 跳过本地更新，避免循环', { eventId: eventId?.slice(-10), source });
+        console.log('🔄 [PlanManager] ⏭️ Skip own update (optimistic update already applied):', eventId?.slice(-10));
         return;
       }
       
       // 🚫 双重检查：询问EventService确认
       if (updateId && EventService.isLocalUpdate(eventId, updateId)) {
-        console.log('🔄 [PlanManager] EventService确认为本地更新，跳过', { eventId: eventId?.slice(-10) });
+        console.log('🔄 [PlanManager] ⏭️ EventService confirmed local update, skip:', eventId?.slice(-10));
         return;
       }
       
-      // TODO: 需要异步处理这些过滤逻辑
-      // 暂时跳过提前过滤，直接处理事件更新
-      console.log('📡 [PlanManager] Plan 事件外部更新，执行同步', { eventId: eventId?.slice(-10), source, originComponent });
+      console.log('[PlanManager] 📡 External update received:', { 
+        eventId: eventId?.slice(-10), 
+        source, 
+        originComponent,
+        isDeleted,
+        isNewEvent
+      });
       
       // 🧹 清除该事件的状态缓存
       eventStatusCacheRef.current.delete(eventId);
@@ -606,42 +811,19 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (isDeleted) {
         // 增量删除
         setItems(prev => prev.filter(event => event.id !== eventId));
-        setSnapshotVersion(v => v + 1); // 强制更新 snapshot
+        setSnapshotVersion(v => v + 1);
+        console.log('[PlanManager] 🗑️ Event deleted:', eventId?.slice(-10));
       } else if (isNewEvent) {
-        // 增量添加
-        const newEvent = await EventService.getEventById(eventId);
-        console.log('[PlanManager] 新建事件检查:', {
-          eventId: eventId?.slice(-10),
-          找到事件: !!newEvent,
-          isPlan: newEvent?.isPlan,
-          parentEventId: newEvent?.parentEventId,
-          isTimeCalendar: newEvent?.isTimeCalendar,
-          endTime: newEvent?.endTime,
-          满足条件: newEvent && newEvent.isPlan && !newEvent.parentEventId
-        });
-        
-        if (newEvent && newEvent.isPlan && !newEvent.parentEventId) {
-          const now = new Date();
-          // 检查是否应该显示
-          if (!newEvent.isTimeCalendar || (newEvent.endTime && now < new Date(newEvent.endTime))) {
-            console.log('[PlanManager] ✅ 添加新事件到列表:', eventId?.slice(-10));
-            setItems(prev => [...prev, newEvent]);
-          } else {
-            console.log('[PlanManager] ❌ 新事件不满足显示条件 (TimeCalendar已过期)');
-          }
-        } else {
-          console.log('[PlanManager] ❌ 新事件不满足基本条件');
-        }
-        setSnapshotVersion(v => v + 1); // 强制更新 snapshot
+        // 增量添加（使用增量更新逻辑）
+        await incrementalUpdateEvent(eventId);
+        setSnapshotVersion(v => v + 1);
+      } else if (eventId) {
+        // 🎯 增量更新（核心改进）
+        await incrementalUpdateEvent(eventId);
+        setSnapshotVersion(v => v + 1);
       } else {
-        // 增量更新
-        const updatedEvent = await EventService.getEventById(eventId);
-        if (updatedEvent) {
-          setItems(prev => {
-            return prev.map((e: Event) => e.id === eventId ? updatedEvent : e);
-          });
-        }
-        setSnapshotVersion(v => v + 1); // 强制更新 snapshot
+        // 没有 eventId，可能是批量操作，全量刷新
+        console.warn('[PlanManager] ⚠️ No eventId in update event, may need full reload');
       }
     };
     
@@ -1099,10 +1281,36 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         
         // ✅ 使用 EventHub 保存
         try {
-          const existingItem = itemsMap[item.id];
+          // 🔧 FIX: 规范化 ID 查找（itemsMap 的 key 可能是完整 ID 或短 ID）
+          // 尝试完整 ID，如果找不到则尝试短 ID（最后 8 位）
+          let existingItem = itemsMap[item.id];
+          if (!existingItem && item.id.startsWith('event_')) {
+            const shortId = item.id.slice(-8);
+            existingItem = Object.values(itemsMap).find(e => e.id.endsWith(shortId));
+          }
+          
           if (!existingItem) {
+            console.log('[PlanManager] 🆕 Creating new event:', item.id.slice(-8));
             await EventHub.createEvent(item);
           } else {
+            // 🔍 DEBUG: Check what existingItem actually has
+            console.log('[PlanManager] 🔍 existingItem EventTree fields:', {
+              id: existingItem.id.slice(-8),
+              hasParentEventId: 'parentEventId' in existingItem,
+              parentEventIdValue: (existingItem as any).parentEventId,
+              hasChildEventIds: 'childEventIds' in existingItem,
+              childEventIdsValue: (existingItem as any).childEventIds,
+              keys: Object.keys(existingItem).filter(k => k.includes('Event') || k.includes('child') || k.includes('parent'))
+            });
+            
+            // ✅ FIX: serialization 现在包含 EventTree 字段（从 Slate metadata 读取）
+            // Tab 键同时更新 metadata 和数据库，onChange 读取 metadata 并保存
+            console.log('[PlanManager] ♻️ Updating with EventTree from serialization:', {
+              id: item.id.slice(-8),
+              parentEventId: (item as any).parentEventId,
+              childEventIds: (item as any).childEventIds
+            });
+            
             await EventHub.updateFields(item.id, item, { source: 'PlanManager' });
           }
         } catch (error) {
@@ -1337,43 +1545,46 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // 将 Event[] 转换为 FreeFormLine<Event>[]
   // ✅ 重构: 直接准备 Event[] 给 PlanSlate，移除 FreeFormLine 中间层
   // 🆕 Snapshot 模式：添加已删除的事件
-  const editorItems = useMemo(() => {
-    let allItems = filteredItems;
-    
-    // 🚨 诊断：检查 filteredItems 是否包含 ghost 事件
-    const ghostsInFiltered = filteredItems.filter((item: any) => item._isDeleted);
-    if (ghostsInFiltered.length > 0) {
-      console.error('[PlanManager] 🚨 filteredItems 中发现', ghostsInFiltered.length, '个 ghost 事件！', 
-        ghostsInFiltered.map((item: any) => ({
-          id: item.id?.slice(-8),
-          title: item.title?.simpleTitle?.substring(0, 20) || item.content?.substring(0, 20),
-          _isDeleted: item._isDeleted,
-          _deletedAt: item._deletedAt ? new Date(item._deletedAt).toLocaleString() : 'N/A'
-        }))
-      );
-    }
-    
-    // ✅ Snapshot 模式：最简单的逻辑
-    // 1. startDateTime 时刻存在的所有事件（基准状态）
-    // 2. startDateTime 到 endDateTime 期间的所有操作（显示变化）
-    if (dateRange) {
-      const startTime = formatTimeForStorage(dateRange.start);
-      const endTime = formatTimeForStorage(dateRange.end);
+  const [editorItems, setEditorItems] = useState<Event[]>([]);
+  
+  useEffect(() => {
+    const computeEditorItems = async () => {
+      let allItems = filteredItems;
       
-      // 1️⃣ 获取起点时刻的所有事件
-      const existingAtStart = EventHistoryService.getExistingEventsAtTime(startTime);
-      console.log('[PlanManager] 📊 Snapshot 时间范围:', {
-        起点: new Date(startTime).toLocaleString(),
-        终点: new Date(endTime).toLocaleString(),
-        起点存在事件数: existingAtStart.size
-      });
+      // 🚨 诊断：检查 filteredItems 是否包含 ghost 事件
+      const ghostsInFiltered = filteredItems.filter((item: any) => item._isDeleted);
+      if (ghostsInFiltered.length > 0) {
+        console.error('[PlanManager] 🚨 filteredItems 中发现', ghostsInFiltered.length, '个 ghost 事件！', 
+          ghostsInFiltered.map((item: any) => ({
+            id: item.id?.slice(-8),
+            title: item.title?.simpleTitle?.substring(0, 20) || item.content?.substring(0, 20),
+            _isDeleted: item._isDeleted,
+            _deletedAt: item._deletedAt ? new Date(item._deletedAt).toLocaleString() : 'N/A'
+          }))
+        );
+      }
       
-      // 3️⃣ 查询时间范围内的所有操作
-      const operations = EventHistoryService.queryHistory({
-        startTime,
-        endTime
-      });
-      console.log('[PlanManager] 📝 时间范围内操作:', operations.length, '条');
+      // ✅ Snapshot 模式：最简单的逻辑
+      // 1. startDateTime 时刻存在的所有事件（基准状态）
+      // 2. startDateTime 到 endDateTime 期间的所有操作（显示变化）
+      if (dateRange) {
+        const startTime = formatTimeForStorage(dateRange.start);
+        const endTime = formatTimeForStorage(dateRange.end);
+        
+        // 1️⃣ 获取起点时刻的所有事件
+        const existingAtStart = await EventHistoryService.getExistingEventsAtTime(startTime);
+        console.log('[PlanManager] 📊 Snapshot 时间范围:', {
+          起点: new Date(startTime).toLocaleString(),
+          终点: new Date(endTime).toLocaleString(),
+          起点存在事件数: existingAtStart.size
+        });
+        
+        // 3️⃣ 查询时间范围内的所有操作
+        const operations = await EventHistoryService.queryHistory({
+          startTime,
+          endTime
+        });
+        console.log('[PlanManager] 📝 时间范围内操作:', operations.length, '条');
       
       // 4️⃣ 查找范围内创建的事件
       const createdInRange = new Set(
@@ -1529,19 +1740,25 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         return pa - pb;
       });
     
-    // 🚨 DIAGNOSIS: 检测 editorItems 异常
-    if (result.length === 0 && items.length > 0) {
-      console.error('🔴 [诊断] editorItems 为空但 items 有数据！', {
-        items数量: items.length,
-        pendingEmptyItems数量: pendingEmptyItems.size,
-        allItems数量: allItems.length,
-        过滤后数量: result.length,
-        items示例: items.slice(0, 3).map(i => ({ id: i.id, title: i.title?.simpleTitle?.substring(0, 20) || '' }))
-      });
-    }
+      // 🚨 DIAGNOSIS: 检测 editorItems 异常
+      if (result.length === 0 && items.length > 0) {
+        console.error('🔴 [诊断] editorItems 为空但 items 有数据！', {
+          items数量: items.length,
+          pendingEmptyItems数量: pendingEmptyItems.size,
+          allItems数量: allItems.length,
+          过滤后数量: result.length,
+          items示例: items.slice(0, 3).map(i => ({ id: i.id, title: i.title?.simpleTitle?.substring(0, 20) || '' }))
+        });
+      }
+      
+      setEditorItems(result);
+    };
     
-    return result;
-  }, [filteredItems, dateRange, hiddenTags]);
+    computeEditorItems().catch(error => {
+      console.error('[PlanManager] ❌ computeEditorItems failed:', error);
+      setEditorItems(filteredItems);
+    });
+  }, [filteredItems, dateRange, hiddenTags, items, pendingEmptyItems]);
 
   // 🆕 状态配置映射函数
   const getStatusConfig = useCallback((status?: string) => {
@@ -1993,8 +2210,11 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // 🆕 保留日历同步配置（Plan vs Actual）
       planSyncConfig: item.planSyncConfig,
       actualSyncConfig: item.actualSyncConfig,
-      // 🆕 保留父子事件关系
+      // 🆕 保留父子事件关系 + EventTree 关系字段
       parentEventId: item.parentEventId,
+      childEventIds: (item as any).childEventIds,
+      linkedEventIds: (item as any).linkedEventIds,
+      backlinks: (item as any).backlinks,
       // timerLogs: item.timerLogs, // TODO: timerLogs 不在 Event 类型中
     } as Event;
   };

@@ -318,9 +318,22 @@ interface Event {
 - `calendarIds/syncMode`: 父事件自己的同步配置（计划安排）
 - `subEventConfig`: 子事件配置模板（实际进展），用于批量更新和新建继承
 
+**子事件配置继承规则**:
+
+1. **系统性子事件**（Timer、外部应用自动生成）:
+   - ✅ **严格继承** `parentEvent.subEventConfig`
+   - ✅ **用户可以修改**：但 EventEditModal 中修改的是父事件的 `subEventConfig`（非子事件自己的配置）
+   - 📌 原因：自动生成的子事件应始终跟随父事件配置，批量更新时同步
+
+2. **手动子事件**（用户在 PlanManager/TimeCalendar 手动创建）:
+   - ✅ **默认继承** `parentEvent.subEventConfig`（创建时）
+   - ✅ **可独立修改**：EventEditModal 修改的是子事件自己的 `calendarIds/syncMode`
+   - 📌 原因：用户创建的子事件可能需要不同的同步策略
+
 **子事件（ChildEvent/Timer）**:
 - `calendarIds/syncMode`: 子事件自己的同步配置（实际进展）
-- 创建时继承父事件的 `subEventConfig`
+- 创建时从父事件的 `subEventConfig` 继承（而非直接从父事件的 `calendarIds/syncMode`）
+- 是否持续跟随父事件取决于子事件类型（系统性 vs 手动）
 
 #### 2.1 syncMode 同步控制（✅ v2.15.1 已实现）
 
@@ -342,8 +355,30 @@ interface Event {
 - 子模式：编辑 `parentEvent.calendarIds/syncMode`（计划字段同步到父）
 
 **下区（实际进展）**:
-- 父模式：编辑 `subEventConfig` + 批量更新现有子事件
-- 子模式：编辑 `mainEvent.calendarIds/syncMode`（子事件自己的配置）
+- 父模式：编辑 `subEventConfig` + 批量更新现有**系统性子事件**（`isTimer=true`）
+- 子模式（系统性）：编辑 `parentEvent.subEventConfig`（修改父事件配置，触发批量更新）
+- 子模式（手动）：编辑 `mainEvent.calendarIds/syncMode`（子事件自己的配置）
+
+> **⚠️ 批量更新策略（已实现 ✅）**:
+> - **系统子事件**（isTimer/isTimeLog/isOutsideApp）：始终批量更新
+> - **手动子事件** + 已自定义配置（`hasCustomSyncConfig=true`）：跳过更新，保持独立
+> - **手动子事件** + 默认继承（`hasCustomSyncConfig=false/undefined`）：批量更新配置
+> 
+> **💡 EditModal 修改逻辑（已实现 ✅）**:
+> 
+> **1. 系统性子事件**（isTimer/isTimeLog/isOutsideApp）：
+> - **读取**: 显示父事件的 `subEventConfig.calendarIds/syncMode`
+> - **保存**: 修改父事件的 `subEventConfig`，并批量同步到所有系统性子事件
+> - **实现**: EventEditModalV2.tsx 行 444-460 (初始化)，行 627-652 (syncMode)，行 968-1010 (保存逻辑)
+> 
+> **2. 手动子事件**（PlanManager/TimeCalendar 创建）：
+> - **创建时**: 从 `parent.subEventConfig` 继承配置（`hasCustomSyncConfig=undefined`）
+> - **读取**: 显示子事件自己的 `calendarIds/syncMode`（如为空则从 `parent.subEventConfig` 读取）
+> - **保存**: 修改子事件自己的配置，设置 `hasCustomSyncConfig=true`
+> - **父事件更新时**:
+>   - `hasCustomSyncConfig=true`: 保持独立，不更新
+>   - `hasCustomSyncConfig=false/undefined`: 跟随父事件更新
+> - **实现**: EventEditModalV2.tsx 同一逻辑分支 + 行 1040-1070 (批量更新区分)
 
 #### 4. 核心优势
 
@@ -2792,8 +2827,8 @@ interface Event {
  * 自动转换支持：EventService.normalizeTitle() 自动填充缺失层级
  */
 interface EventTitle {
-  fullTitle?: string;    // Slate JSON 富文本（包含标签、@人员、格式）
-  colorTitle?: string;   // HTML 富文本（包含颜色、加粗，但不含元素节点）
+  fullTitle?: string;    // Slate JSON 富文本（完整版，包含标签、@人员、格式）
+  colorTitle?: string;   // Slate JSON 富文本（简化版，移除 tag/dateMention 元素，保留文本格式）
   simpleTitle?: string;  // 纯文本（用于搜索、同步、日志）
 }
 ```
@@ -2802,13 +2837,13 @@ interface EventTitle {
 
 **问题背景**：
 - PlanSlate 需要完整 Slate JSON（标签、元素）
-- UpcomingPanel/EditModal 需要 HTML 格式（颜色、加粗）
+- TimeLog/UpcomingPanel/EditModal 需要可编辑的 Slate JSON（但不需要 tag/dateMention）
 - TimeCalendar/搜索/同步 只需要纯文本
 - 旧架构混用 `title: string` 导致信息丢失
 
 **解决方案**：三层架构 + 自动转换
-1. **fullTitle** (Slate JSON) - 最完整的数据源
-2. **colorTitle** (HTML) - 中间层，保留格式但去除元素
+1. **fullTitle** (Slate JSON 完整版) - 最完整的数据源，包含所有元素
+2. **colorTitle** (Slate JSON 简化版) - 中间层，移除元素节点，保留文本格式
 3. **simpleTitle** (纯文本) - 最简化版本
 
 #### 🔄 自动转换机制
@@ -2819,11 +2854,12 @@ EventService 提供自动转换函数：
 class EventService {
   // 向下降级：fullTitle → colorTitle → simpleTitle
   private static fullTitleToColorTitle(fullTitle: string): string {
-    // 解析 Slate JSON，移除 tag/dateMention 节点，保留文本格式
+    // 解析 Slate JSON，移除 tag/dateMention 元素节点，保留文本和格式（bold/color等）
+    // 返回简化的 Slate JSON
   }
   
   private static colorTitleToSimpleTitle(colorTitle: string): string {
-    // 移除所有 HTML 标签，返回纯文本
+    // 解析 Slate JSON，提取所有文本节点，返回纯文本
   }
   
   // 向上升级：simpleTitle → fullTitle (基础 Slate JSON)
@@ -2846,8 +2882,9 @@ class EventService {
 | 组件/场景 | 使用字段 | 原因 | 示例 |
 |---------|---------|------|------|
 | **PlanSlate** | `fullTitle` | 需要完整 Slate JSON（标签、元素） | 保存/读取带标签的标题 |
-| **UpcomingEventsPanel** | `colorTitle` | 显示 HTML 格式（颜色、加粗） | 红色加粗标题 |
-| **EventEditModal** | `colorTitle` | 富文本输入框，支持格式 | 用户输入带颜色标题 |
+| **TimeLog** | `fullTitle` | 可编辑的 Slate JSON | 编辑带格式的标题 |
+| **UpcomingEventsPanel** | `colorTitle` | 显示 Slate JSON（无元素） | 红色加粗标题（无标签） |
+| **EventEditModal** | `colorTitle` | 可编辑的富文本（无标签） | 用户输入带颜色标题 |
 | **Timer 模块** | `simpleTitle` | 简单文本显示 | "[专注中] 写文档" |
 | **TimeCalendar** | `simpleTitle` | 周/日视图纯文本 | "团队会议" |
 | **Outlook 同步** | `simpleTitle` | 远程日历不支持 HTML | "团队会议" |
@@ -2870,19 +2907,23 @@ slateNodeToPlanItem(node) {
 
 // ✅ EventService 自动填充
 EventService.addEvent({
-  title: { fullTitle: '<p>红色标题</p>' }
+  title: { 
+    fullTitle: '[{"type":"paragraph","children":[{"text":"红色标题","color":"#ff0000"}]}]'
+  }
 });
 // → normalizeTitle() 自动生成:
 // {
-//   fullTitle: '<p>红色标题</p>',
-//   colorTitle: '<span style="color:red">红色标题</span>',
+//   fullTitle: '[{"type":"paragraph","children":[{"text":"红色标题","color":"#ff0000"}]}]',
+//   colorTitle: '[{"type":"paragraph","children":[{"text":"红色标题","color":"#ff0000"}]}]',
 //   simpleTitle: '红色标题'
 // }
 
-// ✅ UpcomingPanel 显示
-<div dangerouslySetInnerHTML={{ 
-  __html: event.title?.colorTitle || event.title?.simpleTitle || ''
-}} />
+// ✅ UpcomingPanel 显示（使用 Slate 编辑器只读模式）
+<LogSlate
+  mode="title"
+  value={event.title?.colorTitle || ''}
+  readOnly
+/>
 
 // ✅ 搜索过滤
 items.filter(item => 

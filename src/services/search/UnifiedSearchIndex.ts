@@ -20,7 +20,17 @@ import Fuse from 'fuse.js'; // 安装: npm install fuse.js
 import { Event } from '../../types';
 import { logger as AppLogger } from '../../utils/logger';
 import { EventService } from '../EventService';
+import { TagService, FlatTag } from '../TagService';
 import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
+
+// SVG 图标路径（直接使用路径字符串避免 Vite 转换为 data URL）
+const ICON_PATHS = {
+  addTask: '/src/assets/icons/Add_task_gray.svg',
+  dateTime: '/src/assets/icons/datetime.svg',
+  recurring: '/src/assets/icons/recurring_gray.svg',
+  tag: '/src/assets/icons/Tag.svg',
+  doc: '/src/assets/icons/doc.svg',
+};
 
 // 🔍 搜索结果类型
 export type MentionType = 'event' | 'tag' | 'person' | 'time' | 'ai' | 'new';
@@ -55,7 +65,7 @@ export interface SearchResult {
 class UnifiedSearchIndex {
   // 内存索引
   private eventsIndex: Fuse<Event> | null = null;
-  private tagsMap: Map<string, { name: string; count: number; events: string[] }> = new Map();
+  private tagsMap: Map<string, FlatTag & { count: number; events: string[] }> = new Map();
   private peopleMap: Map<string, { id: string; name: string; email?: string }> = new Map();
   
   // 最近访问记录（用于权重提升）
@@ -106,6 +116,7 @@ class UnifiedSearchIndex {
       tags: tags.length,
       time: time.length,
       tagsMapSize: this.tagsMap.size,
+      tagsMapKeys: Array.from(this.tagsMap.keys()).slice(0, 10), // 显示前10个标签名
     });
 
     // 🎯 智能排序：计算上下文权重
@@ -191,8 +202,32 @@ class UnifiedSearchIndex {
         useExtendedSearch: true,
       });
 
-      // 3. 构建标签索引
+      // 3. 构建标签索引（从 TagService 加轾所有标签）
       this.tagsMap.clear();
+      
+      // 3.1 先从 TagService 加载所有已创建的标签（包含完整元数据：id、color、emoji）
+      try {
+        await TagService.initialize();
+        const allTags = TagService.getFlatTags();
+        AppLogger.log('🔍 [UnifiedSearchIndex] TagService 返回的标签:', allTags.map(t => ({ 
+          name: t.name, 
+          id: t.id, 
+          color: t.color, 
+          emoji: t.emoji 
+        })));
+        allTags.forEach(tag => {
+          this.tagsMap.set(tag.name, { 
+            ...tag, // 包含 id, name, color, emoji 等完整信息
+            count: 0, 
+            events: [] 
+          });
+        });
+        AppLogger.log('✅ [UnifiedSearchIndex] 从 TagService 加载了', allTags.length, '个标签（含完整元数据）');
+      } catch (error) {
+        AppLogger.error('❌ [UnifiedSearchIndex] 加载 TagService 标签失败:', error);
+      }
+      
+      // 3.2 统计每个标签的事件数量
       events.forEach(event => {
         if (event.tags && Array.isArray(event.tags)) {
           event.tags.forEach(tag => {
@@ -201,7 +236,14 @@ class UnifiedSearchIndex {
               existing.count++;
               existing.events.push(event.id);
             } else {
-              this.tagsMap.set(tag, { name: tag, count: 1, events: [event.id] });
+              // 如果 TagService 中不存在，也添加进来（兼容旧数据，但缺少完整元数据）
+              this.tagsMap.set(tag, { 
+                id: `legacy-tag-${tag}`, // 临时 ID
+                name: tag, 
+                color: '#999999', // 默认颜色
+                count: 1, 
+                events: [event.id] 
+              });
             }
           });
         }
@@ -219,12 +261,118 @@ class UnifiedSearchIndex {
   private _setupEventListeners(): void {
     // 监听事件更新，增量同步索引
     window.addEventListener('eventsUpdated', ((e: CustomEvent) => {
-      const { eventId } = e.detail || {};
+      const { eventId, eventIds } = e.detail || {};
+      
       if (eventId) {
-        // TODO: 增量更新索引（避免全量重建）
-        // this._updateEventInIndex(eventId);
+        // 单个事件更新
+        this._updateEventInIndex(eventId);
+      } else if (eventIds && Array.isArray(eventIds)) {
+        // 批量事件更新
+        eventIds.forEach((id: string) => this._updateEventInIndex(id));
+      } else {
+        // 全量更新（兼容老版本）
+        AppLogger.log('🔄 [UnifiedSearchIndex] 检测到全量 eventsUpdated，重建索引');
+        this._buildIndex();
       }
     }) as EventListener);
+  }
+
+  /**
+   * 🔄 增量更新单个事件的索引
+   */
+  private async _updateEventInIndex(eventId: string): Promise<void> {
+    try {
+      const event = await EventService.getEventById(eventId);
+      if (!event) {
+        // 事件被删除，从索引中移除
+        this._removeEventFromIndex(eventId);
+        return;
+      }
+
+      // 重建 Fuse.js 索引（Fuse.js 没有原生增量更新 API）
+      const allEvents = await EventService.getAllEvents();
+      this.eventsIndex = new Fuse(allEvents, {
+        keys: [
+          { name: 'title.simpleTitle', weight: 2 },
+          { name: 'title.fullTitle', weight: 1.5 },
+          { name: 'eventlog.plainText', weight: 1 },
+          { name: 'tags', weight: 1.5 },
+        ],
+        threshold: 0.4,
+        includeScore: true,
+        useExtendedSearch: true,
+      });
+
+      // 更新标签索引
+      await this._rebuildTagsIndex(allEvents);
+    } catch (error) {
+      AppLogger.error('❌ [UnifiedSearchIndex] 增量更新索引失败:', { eventId, error });
+    }
+  }
+
+  /**
+   * 🗑️ 从索引中移除事件
+   */
+  private async _removeEventFromIndex(eventId: string): Promise<void> {
+    // Fuse.js 需要重建索引
+    const allEvents = await EventService.getAllEvents();
+    this.eventsIndex = new Fuse(allEvents, {
+      keys: [
+        { name: 'title.simpleTitle', weight: 2 },
+        { name: 'title.fullTitle', weight: 1.5 },
+        { name: 'eventlog.plainText', weight: 1 },
+        { name: 'tags', weight: 1.5 },
+      ],
+      threshold: 0.4,
+      includeScore: true,
+      useExtendedSearch: true,
+    });
+
+    await this._rebuildTagsIndex(allEvents);
+    AppLogger.log('✅ [UnifiedSearchIndex] 移除事件成功:', { eventId });
+  }
+
+  /**
+   * 🔄 重建标签索引
+   */
+  private async _rebuildTagsIndex(events: Event[]): Promise<void> {
+    this.tagsMap.clear();
+    
+    // 先从 TagService 加载所有已创建的标签（包含完整元数据）
+    try {
+      const allTags = TagService.getFlatTags();
+      allTags.forEach(tag => {
+        this.tagsMap.set(tag.name, { 
+          ...tag, // 包含 id, name, color, emoji 等完整信息
+          count: 0, 
+          events: [] 
+        });
+      });
+    } catch (error) {
+      AppLogger.error('❌ [UnifiedSearchIndex] 重建标签索引时加载 TagService 失败:', error);
+    }
+    
+    // 统计每个标签的事件数量
+    events.forEach(event => {
+      if (event.tags && Array.isArray(event.tags)) {
+        event.tags.forEach(tag => {
+          const existing = this.tagsMap.get(tag);
+          if (existing) {
+            existing.count++;
+            existing.events.push(event.id);
+          } else {
+            // 如果 TagService 中不存在，也添加进来（兼容旧数据，但缺少完整元数据）
+            this.tagsMap.set(tag, { 
+              id: `legacy-tag-${tag}`, // 临时 ID
+              name: tag, 
+              color: '#999999', // 默认颜色
+              count: 1, 
+              events: [event.id] 
+            });
+          }
+        });
+      }
+    });
   }
 
   private async _searchEvents(query: string, limit: number): Promise<MentionItem[]> {
@@ -263,9 +411,17 @@ class UnifiedSearchIndex {
           type: 'tag',
           title: `#${tagName}`,
           subtitle: `${tagData.count} 个事件`,
-          icon: '🏷️',
+          icon: ICON_PATHS.tag,
           score,
-          metadata: { count: tagData.count, events: tagData.events },
+          metadata: { 
+            count: tagData.count, 
+            events: tagData.events,
+            // ✅ 传递完整标签元数据给 PlanSlate
+            tagId: tagData.id,
+            tagName: tagData.name,
+            tagColor: tagData.color,
+            tagEmoji: tagData.emoji,
+          },
         });
       }
     });
@@ -387,23 +543,58 @@ class UnifiedSearchIndex {
   private _formatEventSubtitle(event: Event): string {
     const parts: string[] = [];
     
+    // 1. 时间信息
     if (event.startTime) {
       const date = new Date(event.startTime);
-      parts.push(date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
+      const now = new Date();
+      const isToday = date.toDateString() === now.toDateString();
+      const isTomorrow = date.toDateString() === new Date(now.getTime() + 86400000).toDateString();
+      
+      if (isToday) {
+        parts.push('🔥 今天');
+      } else if (isTomorrow) {
+        parts.push('⏰ 明天');
+      } else {
+        parts.push(date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
+      }
+    } else if (event.createdAt) {
+      // 没有开始时间，显示创建时间
+      const created = new Date(event.createdAt);
+      const daysAgo = Math.floor((Date.now() - created.getTime()) / 86400000);
+      if (daysAgo === 0) {
+        parts.push('🆕 今天创建');
+      } else if (daysAgo === 1) {
+        parts.push('昨天创建');
+      } else if (daysAgo < 7) {
+        parts.push(`${daysAgo}天前`);
+      } else {
+        parts.push(created.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' }));
+      }
     }
     
+    // 2. 标签信息（最多显示 2 个）
     if (event.tags && event.tags.length > 0) {
-      parts.push(event.tags.slice(0, 2).map(t => `#${t}`).join(' '));
+      const tagText = event.tags.slice(0, 2).map(t => `#${t}`).join(' ');
+      parts.push(tagText);
+      if (event.tags.length > 2) {
+        parts.push(`+${event.tags.length - 2}`);
+      }
     }
     
-    return parts.join(' · ') || '无日期';
+    // 3. 关联事件数量
+    const linkedCount = (event.linkedEventIds?.length || 0) + (event.childEventIds?.length || 0);
+    if (linkedCount > 0) {
+      parts.push(`🔗 ${linkedCount}`);
+    }
+    
+    return parts.join(' · ') || '无信息';
   }
 
   private _getEventIcon(event: Event): string {
-    if (event.isPlan) return '✅';
-    if (event.isTimeCalendar) return '📅';
-    if (event.checkType && event.checkType !== 'none') return '☑️';
-    return '📄';
+    if (event.isPlan) return ICON_PATHS.addTask;
+    if (event.isTimeCalendar) return ICON_PATHS.dateTime;
+    if (event.checkType && event.checkType !== 'none') return ICON_PATHS.recurring;
+    return ICON_PATHS.doc;
   }
 
   private _getEmptyResult(): SearchResult {
@@ -416,7 +607,7 @@ class UnifiedSearchIndex {
         type: 'tag' as MentionType,
         title: `#${tag.name}`,
         subtitle: `${tag.count} 个事件`,
-        icon: '🏷️',
+        icon: ICON_PATHS.tag,
         score: 1.0,
         metadata: { count: tag.count, events: tag.events },
       }));

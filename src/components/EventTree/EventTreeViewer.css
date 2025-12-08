@@ -7,47 +7,13 @@
   background: white;
   border-radius: 8px;
   overflow: hidden;
-}
-
-.mode-switcher {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  background: #f9fafb;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.mode-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  background: white;
-  border: 1px solid #e5e7eb;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #6b7280;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.mode-btn:hover {
-  background: #f9fafb;
-  border-color: #d1d5db;
-  color: #374151;
-}
-
-.mode-btn.active {
-  background: #3b82f6;
-  border-color: #3b82f6;
-  color: white;
-}
-
-.mode-btn svg {
-  stroke: currentColor;
+  margin-top: 0;
+  margin-bottom: 0;
 }
 
 .tree-content {
-  min-height: 400px;
+  min-height: auto;
+  background: white;
+  padding-top: 0;
+  margin-top: 0;
 }

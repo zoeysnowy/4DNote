@@ -1,5 +1,5 @@
 /**
- * EditableEventTree Styles
+ * EditableEventTree Styles - 树形结构
  */
 
 .editable-event-tree {
@@ -9,55 +9,176 @@
   min-height: 300px;
 }
 
-.event-tree-item {
+.editable-event-tree.loading,
+.editable-event-tree.error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9ca3af;
+}
+
+/* 树根容器 */
+.tree-root {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* 树节点 */
+.tree-node-item {
+  position: relative;
+  padding-left: 24px;
+  list-style: none;
+}
+
+/* 垂直连接线 - 贯穿整个节点高度 */
+.vertical-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #e5e7eb;
+}
+
+/* L 形弯曲连接线 */
+.connector-curve {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 16px;
+  height: 24px;
+  border-left: 1px solid #e5e7eb;
+  border-bottom: 1px solid #e5e7eb;
+  border-bottom-left-radius: 6px;
+}
+
+.connector-curve.connector-last {
+  height: 12px; /* 最后一个节点的连接线只到一半高度 */
+}
+
+/* 节点内容区域 */
+.tree-node-content {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 0;
+  padding: 4px 0;
   min-height: 32px;
+  position: relative;
   transition: background 0.2s;
 }
 
-.event-tree-item:hover {
+.tree-node-content:hover {
   background: #f9fafb;
+  border-radius: 6px;
 }
 
-.event-bullet {
-  font-size: 18px;
-  color: #9ca3af;
-  user-select: none;
-  width: 16px;
-  text-align: center;
+/* 折叠/展开按钮 */
+.toggle-button {
   flex-shrink: 0;
-}
-
-.event-title-editable {
-  flex: 1;
-  font-size: 14px;
-  color: #1f2937;
-  outline: none;
-  min-width: 100px;
-}
-
-.event-title-editable:focus {
-  background: rgba(59, 130, 246, 0.05);
-  border-radius: 4px;
-  padding: 2px 4px;
-  margin: -2px -4px;
-}
-
-.keyboard-hints {
+  width: 20px;
+  height: 20px;
   display: flex;
-  gap: 16px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
-  font-size: 12px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
   color: #9ca3af;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s;
 }
 
-.keyboard-hints span {
+.toggle-button:hover {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.circle-dot {
+  fill: #d1d5db;
+}
+
+/* Slate 标题编辑器 */
+.title-editor {
+  flex: 1;
+  min-width: 0;
+}
+
+.title-editor [contenteditable] {
+  outline: none;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #1f2937;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.title-editor [contenteditable]:focus {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+.title-editor [contenteditable]:empty:before {
+  content: attr(placeholder);
+  color: #9ca3af;
+  pointer-events: none;
+}
+
+/* Link 按钮容器 */
+.link-button-container {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 100;
+}
+
+/* Link 按钮 */
+.link-button {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 4px 8px;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  color: #3b82f6;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.link-button:hover {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.5);
+  transform: scale(1.05);
+}
+
+/* 堆叠卡片容器 - 纵向布局 */
+.linked-cards-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  pointer-events: auto;
+  padding: 4px;
+}
+
+/* Tippy 自定义主题 */
+.tippy-box[data-theme~='light-border'] {
+  background-color: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.tippy-box[data-theme~='light-border'] .tippy-content {
+  padding: 0;
+}
+
+/* 子节点容器 */
+.tree-children {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  position: relative;
+  border-left: 1px solid #e5e7eb;
+  margin-left: 11px; /* 对齐父节点图标中心 */
 }

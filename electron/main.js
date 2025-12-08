@@ -29,6 +29,12 @@ const formatTimeForStorage = (date) => {
 // 简化环境检测
 const isDev = process.env.NODE_ENV === 'development' || process.defaultApp || /[\\/]electron-prebuilt[\\/]/.test(process.execPath) || /[\\/]electron[\\/]/.test(process.execPath);
 
+// ⚠️ 开发环境：忽略证书错误（仅用于调试 Microsoft Graph API）
+if (isDev) {
+  app.commandLine.appendSwitch('ignore-certificate-errors');
+  console.log('⚠️ [Main] Development mode: SSL certificate validation disabled');
+}
+
 let mainWindow;
 let widgetSettingsWindow = null; // Widget Settings 子窗口
 let proxyProcess = null; // 存储代理服务器进程
@@ -243,15 +249,15 @@ function createWindow() {
 function createMenu() {
   const template = [
     {
-      label: 'ReMarkable',
+      label: '4DNote',
       submenu: [
         {
-          label: '关于 ReMarkable',
+          label: '关于 4DNote',
           click: () => {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
-              title: '关于 ReMarkable',
-              message: 'ReMarkable Desktop',
+              title: '关于 4DNote',
+              message: '4DNote Desktop',
               detail: '智能日历和任务管理应用\n版本: 1.0.0'
             });
           }

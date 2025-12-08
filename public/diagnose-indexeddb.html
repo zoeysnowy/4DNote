@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IndexedDB 性能诊断 - 4DNote</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    }
+    
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #667eea;
+      padding-bottom: 10px;
+      margin-top: 0;
+    }
+    
+    .status {
+      padding: 15px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-weight: 500;
+    }
+    
+    .status.pending {
+      background: #fef3c7;
+      color: #92400e;
+      border-left: 4px solid #f59e0b;
+    }
+    
+    .status.running {
+      background: #dbeafe;
+      color: #1e40af;
+      border-left: 4px solid #3b82f6;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    
+    .status.success {
+      background: #d1fae5;
+      color: #065f46;
+      border-left: 4px solid #10b981;
+    }
+    
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+      border-left: 4px solid #ef4444;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+      margin-right: 10px;
+    }
+    
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    #console {
+      background: #1e293b;
+      color: #e2e8f0;
+      padding: 20px;
+      border-radius: 8px;
+      font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      max-height: 600px;
+      overflow-y: auto;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    
+    #console:empty::before {
+      content: '等待诊断开始...';
+      color: #64748b;
+      font-style: italic;
+    }
+    
+    .log-entry {
+      margin: 4px 0;
+      padding: 2px 0;
+    }
+    
+    .log-error { color: #f87171; }
+    .log-warn { color: #fbbf24; }
+    .log-success { color: #34d399; }
+    .log-info { color: #60a5fa; }
+    
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    
+    .metric-card {
+      background: #f8fafc;
+      padding: 15px;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    
+    .metric-label {
+      font-size: 12px;
+      color: #64748b;
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 5px;
+    }
+    
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+      color: #1e293b;
+    }
+    
+    .actions {
+      margin: 20px 0;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 IndexedDB 性能诊断工具</h1>
+    
+    <div class="status pending" id="status">
+      准备就绪，点击"开始诊断"开始分析数据库性能
+    </div>
+    
+    <div class="actions">
+      <button onclick="startDiagnosis()" id="startBtn">🚀 开始诊断</button>
+      <button onclick="clearConsole()" id="clearBtn">🗑️ 清空日志</button>
+      <button onclick="exportLog()" id="exportBtn" disabled>💾 导出日志</button>
+    </div>
+    
+    <div class="metric-grid" id="metrics" style="display: none;"></div>
+    
+    <div id="console"></div>
+  </div>
+
+  <script>
+    const consoleDiv = document.getElementById('console');
+    const statusDiv = document.getElementById('status');
+    const startBtn = document.getElementById('startBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const metricsDiv = document.getElementById('metrics');
+    
+    let logBuffer = [];
+    let diagnosisResult = null;
+
+    // Override console methods to capture output
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+
+    function captureLog(type, ...args) {
+      const message = args.map(arg => 
+        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+      ).join(' ');
+      
+      logBuffer.push({ type, message, timestamp: new Date() });
+      
+      const logEntry = document.createElement('div');
+      logEntry.className = `log-entry log-${type}`;
+      logEntry.textContent = message;
+      consoleDiv.appendChild(logEntry);
+      consoleDiv.scrollTop = consoleDiv.scrollHeight;
+      
+      // Also log to real console
+      if (type === 'error') originalError(...args);
+      else if (type === 'warn') originalWarn(...args);
+      else originalLog(...args);
+    }
+
+    console.log = (...args) => captureLog('info', ...args);
+    console.error = (...args) => captureLog('error', ...args);
+    console.warn = (...args) => captureLog('warn', ...args);
+
+    function clearConsole() {
+      consoleDiv.innerHTML = '';
+      logBuffer = [];
+    }
+
+    function exportLog() {
+      const logText = logBuffer.map(entry => 
+        `[${entry.timestamp.toISOString()}] [${entry.type.toUpperCase()}] ${entry.message}`
+      ).join('\n');
+      
+      const blob = new Blob([logText], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `indexeddb-diagnosis-${Date.now()}.log`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function updateStatus(message, type) {
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+    }
+
+    function showMetrics(data) {
+      metricsDiv.style.display = 'grid';
+      metricsDiv.innerHTML = `
+        <div class="metric-card">
+          <div class="metric-label">总记录数</div>
+          <div class="metric-value">${data.totalRecords || 0}</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">查询耗时</div>
+          <div class="metric-value">${data.queryDuration ? data.queryDuration.toFixed(0) : 0} ms</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">平均大小</div>
+          <div class="metric-value">${data.avgSize ? data.avgSize.toFixed(0) : 0} B</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">删除率</div>
+          <div class="metric-value">${data.deletedRatio ? data.deletedRatio.toFixed(1) : 0}%</div>
+        </div>
+      `;
+    }
+
+    async function startDiagnosis() {
+      startBtn.disabled = true;
+      updateStatus('🔄 诊断进行中，请稍候...', 'running');
+      clearConsole();
+      metricsDiv.style.display = 'none';
+
+      try {
+        const result = await runDiagnosis();
+        diagnosisResult = result;
+        
+        updateStatus('✅ 诊断完成！查看下方日志了解详情', 'success');
+        exportBtn.disabled = false;
+        
+        if (result) {
+          showMetrics(result);
+        }
+      } catch (error) {
+        console.error('诊断失败:', error);
+        updateStatus('❌ 诊断失败：' + error.message, 'error');
+      } finally {
+        startBtn.disabled = false;
+      }
+    }
+
+    // Include the diagnosis script inline
+    async function runDiagnosis() {
+      const DB_NAME = '4DNoteDB';
+      const DB_VERSION = 2;
+      const result = {};
+
+      console.log('🔍 Starting IndexedDB Performance Diagnosis...\n');
+
+      // ==================== 1. 打开数据库 ====================
+      console.log('📂 Opening database...');
+      const openStart = performance.now();
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        request.onupgradeneeded = () => {
+          console.warn('⚠️ Upgrade triggered - this should not happen in diagnosis mode');
+        };
+      });
+      const openDuration = performance.now() - openStart;
+      console.log(`✅ Database opened in ${openDuration.toFixed(1)}ms\n`);
+
+      // ==================== 2. 检查 ObjectStores ====================
+      console.log('📊 Checking object stores...');
+      const storeNames = Array.from(db.objectStoreNames);
+      console.log(`Found ${storeNames.length} stores: ${storeNames.join(', ')}\n`);
+
+      // ==================== 3. 检查 Events Store ====================
+      if (!storeNames.includes('events')) {
+        console.error('❌ Events store not found!');
+        db.close();
+        throw new Error('Events store not found');
+      }
+
+      console.log('🔍 Analyzing events store...');
+      const tx = db.transaction('events', 'readonly');
+      const store = tx.objectStore('events');
+
+      // 检查索引
+      console.log('\n📌 Indexes:');
+      const indexNames = Array.from(store.indexNames);
+      console.log(`  - Found ${indexNames.length} indexes: ${indexNames.join(', ')}`);
+      
+      if (!indexNames.includes('startTime')) {
+        console.error('  ❌ Missing critical index: startTime');
+      } else {
+        console.log('  ✅ startTime index exists');
+      }
+
+      // ==================== 4. 测试查询性能 ====================
+      console.log('\n⚡ Running performance tests...\n');
+
+      // Test 1: Count
+      console.log('Test 1: Count all records');
+      const countStart = performance.now();
+      const count = await new Promise((resolve, reject) => {
+        const request = store.count();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const countDuration = performance.now() - countStart;
+      console.log(`  ✅ Total records: ${count} in ${countDuration.toFixed(1)}ms`);
+      result.totalRecords = count;
+
+      // Test 2: Sample
+      console.log('\nTest 2: Get first 10 records (getAll with limit)');
+      const getAllStart = performance.now();
+      const sampleEvents = await new Promise((resolve, reject) => {
+        const request = store.getAll(undefined, 10);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+      const getAllDuration = performance.now() - getAllStart;
+      console.log(`  ✅ Retrieved ${sampleEvents.length} events in ${getAllDuration.toFixed(1)}ms`);
+
+      // Test 3: Full query
+      console.log('\nTest 3: Get ALL records (getAll without limit)');
+      console.log('  ⏳ This may take a while if database is corrupted...');
+      const fullGetAllStart = performance.now();
+      const allEvents = await new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+        
+        setTimeout(() => reject(new Error('Query timeout after 30 seconds')), 30000);
+      });
+      const fullGetAllDuration = performance.now() - fullGetAllStart;
+      console.log(`  ✅ Retrieved ${allEvents.length} events in ${fullGetAllDuration.toFixed(1)}ms`);
+      result.queryDuration = fullGetAllDuration;
+      
+      if (fullGetAllDuration > 1000) {
+        console.warn(`  ⚠️ SLOW QUERY: ${fullGetAllDuration.toFixed(1)}ms for ${allEvents.length} records`);
+        console.warn(`     Expected: <500ms for ${allEvents.length} records`);
+        console.warn(`     Performance degradation: ${(fullGetAllDuration / 500).toFixed(1)}x slower`);
+      }
+
+      // ==================== 5. 数据质量检查 ====================
+      console.log('\n🔍 Data quality analysis...');
+      
+      const sampleSize = Math.min(100, allEvents.length);
+      const samples = allEvents.slice(0, sampleSize);
+      
+      let totalSize = 0;
+      let maxSize = 0;
+      let maxSizeEvent = null;
+      
+      samples.forEach(event => {
+        const size = JSON.stringify(event).length;
+        totalSize += size;
+        if (size > maxSize) {
+          maxSize = size;
+          maxSizeEvent = event;
+        }
+      });
+      
+      const avgSize = totalSize / sampleSize;
+      const estimatedTotalSize = avgSize * allEvents.length;
+      result.avgSize = avgSize;
+      
+      console.log(`  - Average event size: ${avgSize.toFixed(0)} bytes`);
+      console.log(`  - Largest event size: ${maxSize} bytes`);
+      console.log(`  - Estimated total size: ${(estimatedTotalSize / 1024 / 1024).toFixed(2)} MB`);
+      
+      if (maxSize > 100000) {
+        console.warn(`  ⚠️ Large event detected: ${maxSize} bytes`);
+        console.warn(`     Event ID: ${maxSizeEvent?.id}`);
+      }
+
+      const deletedCount = allEvents.filter(e => e.deletedAt).length;
+      const deletedRatio = (deletedCount / allEvents.length * 100);
+      result.deletedRatio = deletedRatio;
+      
+      console.log(`  - Deleted events: ${deletedCount} (${deletedRatio.toFixed(1)}%)`);
+      
+      if (deletedCount > allEvents.length * 0.3) {
+        console.warn(`  ⚠️ HIGH deletion ratio: ${deletedRatio.toFixed(1)}%`);
+        console.warn('     Recommend running cleanup to remove soft-deleted events');
+      }
+
+      // ==================== 6. 存储配额 ====================
+      console.log('\n💾 Storage quota check...');
+      if (navigator.storage && navigator.storage.estimate) {
+        const estimate = await navigator.storage.estimate();
+        const usedMB = (estimate.usage / 1024 / 1024).toFixed(2);
+        const quotaMB = (estimate.quota / 1024 / 1024).toFixed(2);
+        const usagePercent = (estimate.usage / estimate.quota * 100).toFixed(1);
+        
+        console.log(`  - Used: ${usedMB} MB`);
+        console.log(`  - Quota: ${quotaMB} MB`);
+        console.log(`  - Usage: ${usagePercent}%`);
+        
+        if (estimate.usage / estimate.quota > 0.8) {
+          console.warn(`  ⚠️ Storage usage is high: ${usagePercent}%`);
+        }
+      }
+
+      // ==================== 7. 总结 ====================
+      console.log('\n📋 DIAGNOSIS SUMMARY');
+      console.log('='.repeat(50));
+      
+      if (fullGetAllDuration > 10000) {
+        console.error('❌ CRITICAL: Query performance is severely degraded');
+        console.error('   Root cause likely:');
+        console.error('   1. Database file corruption or excessive fragmentation');
+        console.error('   2. Browser storage system under heavy load');
+        console.error('   3. Antivirus software interfering with disk I/O');
+        console.log('\n   RECOMMENDED ACTIONS:');
+        console.log('   □ Close all other tabs and applications');
+        console.log('   □ Run database rebuild (export → delete → import)');
+        console.log('   □ Check browser storage folder permissions');
+        console.log('   □ Consider migrating to a new database instance');
+      } else if (fullGetAllDuration > 1000) {
+        console.warn('⚠️ WARNING: Query performance is degraded');
+        console.log('\n   RECOMMENDED ACTIONS:');
+        console.log('   □ Clean up soft-deleted events');
+        console.log('   □ Rebuild indexes');
+        console.log('   □ Check for background sync processes');
+      } else {
+        console.log('✅ Database performance is normal');
+      }
+
+      db.close();
+      console.log('\n✅ Diagnosis complete');
+      
+      return result;
+    }
+  </script>
+</body>
+</html>

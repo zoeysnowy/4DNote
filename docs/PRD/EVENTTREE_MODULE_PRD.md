@@ -97,15 +97,128 @@ export interface Event {
 - 支持快速导航到关联事件
 - 预览关联事件的基本信息
 
-#### 2.3 EditableEventTree
+#### 2.3 EditableEventTree (v2.18+)
 
-**文件**: `src/components/EventTree/EditableEventTree.tsx`
+**文件**: `src/components/EventTree/EditableEventTree.tsx` (344 lines)
 
 **功能**:
-- 可编辑的事件树组件
-- 支持拖拽节点调整层级
-- 支持内联创建子事件
-- 实时同步到数据库
+- ✅ **树形结构编辑器**: 递归渲染事件树，支持无限层级
+- ✅ **每节点独立 Slate 编辑器**: 每个节点 title 可独立编辑
+- ✅ **L 型连接线**: CSS 绝对定位实现树形连接线
+- ✅ **折叠/展开**: ChevronDown/Right 图标控制子节点显示
+- ✅ **Link 按钮悬浮**: 右对齐 Link 按钮，Tippy.js 定位链接堆叠卡片
+- ✅ **递归加载**: `buildTree()` 递归加载所有 `childEventIds`
+- ✅ **实时更新**: Slate onChange 防抖 500ms 保存到数据库
+- ✅ **LinkedCard 堆叠**: 纵向堆叠展示双向链接，Tippy 定位避免模态框裁剪
+
+**核心代码**:
+```typescript
+const TreeNodeItem: React.FC<TreeNodeProps> = ({ node, depth }) => {
+  // 1. 独立 Slate 编辑器
+  const [editor] = useState(() => withReact(createEditor()));
+  
+  // 2. 防抖保存
+  const handleChange = useMemo(() => 
+    debounce(async (value: Descendant[]) => {
+      const newTitle = serialize(value);
+      await EventService.updateEvent(node.event.id, {
+        title: { fullTitle: newTitle }
+      });
+    }, 500),
+    [node.event.id]
+  );
+  
+  // 3. 递归渲染子节点
+  return (
+    <div className="tree-node">
+      <div className="tree-line" />
+      <div className="tree-connector" />
+      
+      <div className="tree-content">
+        <button onClick={toggleOpen}>
+          {hasChildren ? <ChevronDown /> : <Circle />}
+        </button>
+        
+        <Slate editor={editor} initialValue={slateValue} onChange={handleChange}>
+          <Editable placeholder="输入标题..." />
+        </Slate>
+        
+        <div className="link-button-container">
+          <LinkButton eventId={node.event.id} />
+        </div>
+      </div>
+      
+      {isOpen && children.map(child => (
+        <TreeNodeItem key={child.event.id} node={child} depth={depth + 1} />
+      ))}
+    </div>
+  );
+};
+```
+
+**递归加载逻辑**:
+```typescript
+const buildTree = async (event: Event, depth: number = 0): Promise<TreeNode> => {
+  const children: TreeNode[] = [];
+  
+  if (event.childEventIds && event.childEventIds.length > 0) {
+    for (const childId of event.childEventIds) {
+      const child = await EventService.getEventById(childId);
+      if (child && EventService.shouldShowInEventTree(child)) {
+        // 🔥 递归加载子事件的子事件
+        const childNode = await buildTree(child, depth + 1);
+        children.push(childNode);
+      }
+    }
+  }
+  
+  return { event, children, isOpen: true };
+};
+```
+
+**Link 按钮与 LinkedCard (v2.18.1)**:
+```tsx
+{/* Tippy.js 定位 LinkedCard 堆叠 */}
+{linkedEvents.length > 0 && (
+  <Tippy
+    content={
+      <div className="linked-cards-stack">
+        {linkedEvents.map((linkedEvent, index) => (
+          <LinkedCard
+            key={linkedEvent.id}
+            event={linkedEvent}
+            index={index}
+            isHovered={true}
+            onClick={() => onEventClick?.(linkedEvent)}
+          />
+        ))}
+      </div>
+    }
+    interactive={true}
+    placement="right-end"  // 🎯 从按钮右下角开始对齐
+    theme="light-border"
+    offset={[8, 0]}        // 8px 横向间距
+    appendTo={() => document.body}  // 避免被 EventEditModal 裁剪
+    zIndex={9999}
+  >
+    <button className="link-button">
+      <LinkIcon size={14} />
+      <span>{linkedEvents.length}</span>
+    </button>
+  </Tippy>
+)}
+```
+
+**LinkedCard 纵向堆叠** (`src/components/EventTree/LinkedCard.tsx`):
+```typescript
+// 展开态：卡片纵向堆叠展开，间隔 80px
+const yOffset = isHovered ? index * 80 : (index + 1) * 4; // 第一张从 0 开始
+```
+
+**关键配置**:
+- `placement="right-end"`: Tippy 从按钮右下角开始对齐
+- `yOffset = index * 80`: 第一张卡片 yOffset=0，紧贴按钮
+- `appendTo={() => document.body}`: 渲染到 body，避免 EventEditModal 的 overflow 裁剪
 
 #### 2.4 EventTreeViewer
 
@@ -210,7 +323,79 @@ if (event.childEventIds?.length) {
 }
 ```
 
-### 2. Backlinks 自动计算
+### 2. 父子关系自动维护（v2.18+）
+
+#### 触发时机
+- **创建事件**: 在 `EventHub.createEvent()` 时传入 `parentEventId`
+- **更新事件**: 调用 `EventService.updateEvent()` 修改 `parentEventId`
+- **Tab 键缩进**: PlanManager 中按 Tab 键建立父子关系
+- **Shift+Tab 反缩进**: 解除父子关系或改变层级
+
+#### 双向维护逻辑
+```typescript
+// EventService.updateEvent() 自动维护
+async updateEvent(eventId: string, updates: Partial<Event>) {
+  const originalEvent = await this.getEventById(eventId);
+  const filteredUpdates = { ...updates }; // 过滤 undefined 字段
+  
+  // 🔥 检测 parentEventId 变化
+  if (filteredUpdates.parentEventId !== undefined) {
+    const parentHasChanged = 
+      filteredUpdates.parentEventId !== originalEvent.parentEventId;
+    
+    // 1️⃣ 从旧父事件移除（如果父事件变化）
+    if (parentHasChanged && originalEvent.parentEventId) {
+      const oldParent = await this.getEventById(originalEvent.parentEventId);
+      if (oldParent?.childEventIds) {
+        await this.updateEvent(oldParent.id, {
+          childEventIds: oldParent.childEventIds.filter(id => id !== eventId)
+        }, true); // skipSync
+      }
+    }
+    
+    // 2️⃣ 添加到新父事件（无论是否变化，都确保包含）
+    if (filteredUpdates.parentEventId) {
+      const newParent = await this.getEventById(filteredUpdates.parentEventId);
+      if (newParent) {
+        const childIds = newParent.childEventIds || [];
+        
+        if (!childIds.includes(eventId)) {
+          await this.updateEvent(newParent.id, {
+            childEventIds: [...childIds, eventId]
+          }, true); // skipSync
+        }
+      }
+    }
+  }
+}
+```
+
+#### PlanManager Tab 键集成
+```typescript
+// PlanSlate.tsx - Tab 键处理
+if (event.key === 'Tab' && !event.shiftKey) {
+  const currentEventId = eventLine.eventId;
+  const previousEventId = findPreviousEventLine().eventId;
+  
+  // 🔥 创建新事件时直接设置 parentEventId
+  if (currentEventId.startsWith('line-')) {
+    await EventHub.createEvent({
+      id: currentEventId,
+      title: '',
+      isPlan: true,
+      parentEventId: previousEventId // ✅ 创建时就设置
+    });
+  } 
+  // 🔥 已存在事件则调用 updateEvent
+  else {
+    await EventService.updateEvent(currentEventId, {
+      parentEventId: previousEventId
+    });
+  }
+}
+```
+
+### 3. Backlinks 自动计算
 
 #### 触发时机
 - 保存 EventLog 时检测 `@mention` 语法
@@ -499,10 +684,33 @@ describe('EventTree Management', () => {
 - ✅ EventService API: `addLink()`, `removeLink()`
 - ✅ EventRelationSummary 组件
 
-### v2.18 (计划中)
+### v2.18 (2025-12-06) ✅ 已完成
+- ✅ **父子关系自动维护**: `updateEvent()` 检测 `parentEventId` 变化，自动同步 `childEventIds`
+- ✅ **PlanManager Tab 键集成**: Tab 缩进建立父子关系，Shift+Tab 解除关系
+- ✅ **EditableEventTree 组件**: 树形结构编辑器，每个节点独立 Slate 编辑器
+- ✅ **递归子事件加载**: `buildTree()` 递归加载所有层级子事件
+- ✅ **Link 按钮悬浮卡片**: 显示双向链接的堆叠卡片（Vessels as Stacks）
+- ✅ **创建时设置关系**: 新事件创建时直接传入 `parentEventId`，避免二次更新
+
+#### 关键修复
+- 🐛 修复 `executeShiftTabOutdent` 函数提升问题
+- 🐛 修复 EventEditModalV2 `parentEvent` 未定义问题
+- 🐛 确保 `childEventIds` 即使 `parentEventId` 未变化也能正确维护
+
+### v2.19 (计划中)
+- ⏳ **单一 Slate 编辑器架构**: 重构 EditableEventTree 使用单一编辑器 + 自定义 `tree-node` 类型，支持跨行选择
+- ⏳ **Tippy.js 堆叠卡片定位**: 使用 Tippy 定位双向链接卡片，避免 Modal 溢出问题 ✅ 已实现
 - ⏳ Canvas 可视化优化
 - ⏳ 拖拽编辑功能
 - ⏳ 性能优化（虚拟滚动）
+
+#### 单一编辑器架构设计
+参考 PlanSlate 的 `event-line` 实现，EditableEventTree 应该：
+1. 使用单一 `<Slate>` 编辑器包含所有节点
+2. 定义 `tree-node` 自定义元素类型，包含 `level`, `isOpen`, `eventId` 等属性
+3. `renderElement` 渲染函数处理树形视觉（L 型连接线、折叠按钮）
+4. 支持跨节点选择和复制
+5. Tab/Shift+Tab 调整 `level` 属性而非 `parentEventId`（乐观更新）
 
 ---
 

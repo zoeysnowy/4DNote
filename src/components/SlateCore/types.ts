@@ -69,6 +69,17 @@ export interface DateMentionNode {
 }
 
 /**
+ * EventMention - 事件提及元素 (双向链接)
+ */
+export interface EventMentionNode {
+  type: 'eventMention';
+  eventId: string;        // 目标事件 ID
+  eventTitle: string;     // 事件标题（缓存，用于显示）
+  eventEmoji?: string;    // 事件 emoji（缓存）
+  children: [{ text: '' }];
+}
+
+/**
  * TimestampDivider - 时间戳分隔线元素
  * 
  * 用于 EventLog 记录编辑时间，自动插入：

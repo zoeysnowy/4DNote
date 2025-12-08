@@ -1,5 +1,5 @@
 @echo off
-echo Starting ReMarkable Electron Development Environment...
+echo Starting 4DNote Electron Development Environment...
 
 rem Check if we're in the electron directory
 if not exist "package.json" (

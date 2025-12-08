@@ -1,4 +1,4 @@
-import { PublicClientApplication } from '@azure/msal-browser';
+﻿import { PublicClientApplication } from '@azure/msal-browser';
 import { MICROSOFT_GRAPH_CONFIG } from '../config/calendar';
 import { formatTimeForStorage } from '../utils/timeUtils';
 import { STORAGE_KEYS } from '../constants/storage';
@@ -9,9 +9,9 @@ import { logger } from '../utils/logger';
 const MSCalendarLogger = logger.module('MSCalendar');
 
 // 4DNote 联系人信息标记（类似签名机制）
-const REMARKABLE_CONTACTS_PREFIX = '【参会人】';
-const REMARKABLE_ORGANIZER_PREFIX = '【组织者】';
-const REMARKABLE_CONTACTS_MARKER = '<!-- ReMarkable Contacts -->';
+const FOURDNOTE_CONTACTS_PREFIX = '【参会人】';
+const FOURDNOTE_ORGANIZER_PREFIX = '【组织者】';
+const FOURDNOTE_CONTACTS_MARKER = '<!-- 4DNote Contacts -->';
 
 /**
  * 将不符合 Outlook 格式的联系人信息整合到描述中
@@ -34,7 +34,7 @@ function integrateContactsToDescription(
   
   // 添加组织者信息（如果没有邮箱）
   if (organizer && organizer.name && !organizer.email) {
-    contactsInfo.push(`${REMARKABLE_ORGANIZER_PREFIX}${organizer.name}`);
+    contactsInfo.push(`${FOURDNOTE_ORGANIZER_PREFIX}${organizer.name}`);
   }
   
   // 添加参会人信息（仅包含没有邮箱的）
@@ -42,13 +42,13 @@ function integrateContactsToDescription(
     const invalidAttendees = attendees.filter(a => a.name && !a.email);
     if (invalidAttendees.length > 0) {
       const names = invalidAttendees.map(a => a.name).join('/');
-      contactsInfo.push(`${REMARKABLE_CONTACTS_PREFIX}${names}`);
+      contactsInfo.push(`${FOURDNOTE_CONTACTS_PREFIX}${names}`);
     }
   }
   
   // 如果有需要整合的联系人信息，添加到描述开头
   if (contactsInfo.length > 0) {
-    const contactsBlock = `${REMARKABLE_CONTACTS_MARKER}\n${contactsInfo.join('\n')}\n${REMARKABLE_CONTACTS_MARKER}\n\n`;
+    const contactsBlock = `${FOURDNOTE_CONTACTS_MARKER}\n${contactsInfo.join('\n')}\n${FOURDNOTE_CONTACTS_MARKER}\n\n`;
     result = contactsBlock + result;
   }
   
@@ -65,7 +65,7 @@ function removeContactsFromDescription(description: string): string {
   
   // 移除标记块之间的内容
   const markerPattern = new RegExp(
-    `${REMARKABLE_CONTACTS_MARKER}[\\s\\S]*?${REMARKABLE_CONTACTS_MARKER}\\n*`,
+    `${FOURDNOTE_CONTACTS_MARKER}[\\s\\S]*?${FOURDNOTE_CONTACTS_MARKER}\\n*`,
     'g'
   );
   
@@ -91,7 +91,7 @@ function extractContactsFromDescription(description: string): {
   
   // 提取标记块中的内容
   const markerPattern = new RegExp(
-    `${REMARKABLE_CONTACTS_MARKER}([\\s\\S]*?)${REMARKABLE_CONTACTS_MARKER}`,
+    `${FOURDNOTE_CONTACTS_MARKER}([\\s\\S]*?)${FOURDNOTE_CONTACTS_MARKER}`,
     ''
   );
   
@@ -101,11 +101,11 @@ function extractContactsFromDescription(description: string): {
     const lines = contactsBlock.split('\n').filter(line => line.trim());
     
     for (const line of lines) {
-      if (line.startsWith(REMARKABLE_ORGANIZER_PREFIX)) {
-        const name = line.substring(REMARKABLE_ORGANIZER_PREFIX.length).trim();
+      if (line.startsWith(FOURDNOTE_ORGANIZER_PREFIX)) {
+        const name = line.substring(FOURDNOTE_ORGANIZER_PREFIX.length).trim();
         organizer = { name, is4DNote: true };
-      } else if (line.startsWith(REMARKABLE_CONTACTS_PREFIX)) {
-        const names = line.substring(REMARKABLE_CONTACTS_PREFIX.length).trim();
+      } else if (line.startsWith(FOURDNOTE_CONTACTS_PREFIX)) {
+        const names = line.substring(FOURDNOTE_CONTACTS_PREFIX.length).trim();
         const nameList = names.split('/').map(n => n.trim());
         nameList.forEach(name => {
           if (name) {
@@ -961,6 +961,39 @@ export class MicrosoftCalendarService {
           const result = retryResponse.status === 204 ? null : await retryResponse.json();
           MSCalendarLogger.log('✅ [callGraphAPI] Retry successful');
           return result;
+        } else if (response.status === 429) {
+          // 🔧 429 Too Many Requests - 速率限制，等待后重试
+          const retryAfter = response.headers.get('Retry-After');
+          const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000; // 默认 5 秒
+          MSCalendarLogger.warn(`⏳ [callGraphAPI] 429 Rate Limit - Waiting ${waitTime}ms before retry...`);
+          
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          
+          // 重试一次
+          const retryResponse429 = await fetch(url, {
+            method: method,
+            headers: {
+              'Authorization': `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: body ? JSON.stringify(body) : undefined
+          });
+          
+          if (!retryResponse429.ok) {
+            const errorText = await retryResponse429.text();
+            MSCalendarLogger.error('❌ [callGraphAPI] 429 Retry failed:', errorText);
+            throw new Error(`Graph API call failed: ${retryResponse429.status} ${retryResponse429.statusText}`);
+          }
+          
+          const result429 = retryResponse429.status === 204 ? null : await retryResponse429.json();
+          MSCalendarLogger.log('✅ [callGraphAPI] 429 Retry successful');
+          return result429;
+        } else if (response.status === 503) {
+          // 🔧 503 Service Unavailable - 服务暂时不可用，建议稍后重试
+          const errorText = await response.text();
+          MSCalendarLogger.error('❌ [callGraphAPI] 503 Service Unavailable:', errorText);
+          throw new Error(`Graph API call failed: 503 Service Unavailable - Microsoft 服务暂时不可用，请稍后重试`);
         } else {
           const errorText = await response.text();
           MSCalendarLogger.error('❌ [callGraphAPI] Error response:', errorText);
@@ -1460,8 +1493,29 @@ export class MicrosoftCalendarService {
         }
 
         if (!response.ok) {
-          MSCalendarLogger.warn(`⚠️ Failed to get events from calendar ${calendarId}:`, response.status);
-          break;
+          // 🔧 429 错误：速率限制，等待后重试
+          if (response.status === 429) {
+            const retryAfter = response.headers.get('Retry-After');
+            const waitTime = retryAfter ? parseInt(retryAfter) * 1000 : 5000; // 默认 5 秒
+            MSCalendarLogger.warn(`⏳ [429 Rate Limit] Waiting ${waitTime}ms before retry...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            
+            // 重试一次
+            response = await fetch(nextLink, {
+              headers: {
+                'Authorization': `Bearer ${this.accessToken}`,
+                'Content-Type': 'application/json'
+              }
+            });
+            
+            if (!response.ok) {
+              MSCalendarLogger.warn(`⚠️ Failed to get events from calendar ${calendarId} after retry:`, response.status);
+              throw new Error(`Failed to get events: ${response.status}`);
+            }
+          } else {
+            MSCalendarLogger.warn(`⚠️ Failed to get events from calendar ${calendarId}:`, response.status);
+            break;
+          }
         }
 
         const data: any = await response.json();

@@ -28,6 +28,7 @@ interface EventSnapshot {
 
 class EventHubClass {
   private cache: Map<string, EventSnapshot> = new Map();
+  private subscribers: Map<string, Array<(data: any) => void>> = new Map();
 
   /**
    * 获取事件快照（从缓存或 EventService）
@@ -40,9 +41,8 @@ class EventHubClass {
       return { ...cached.event }; // 返回副本，防止外部修改
     }
 
-    // 2. 从 EventService 冷加载
-    const events = EventService.getAllEvents();
-    const event = events.find((e: Event) => e.id === eventId);
+    // 2. 从 EventService 冷加载（使用 Index 查询，避免全表扫描）
+    const event = EventService.getEventById(eventId);
     
     if (!event) {
       console.warn('⚠️ [EventHub] 事件不存在', { eventId });
@@ -287,6 +287,47 @@ class EventHubClass {
         age: Date.now() - snapshot.lastModified
       }))
     };
+  }
+
+  /**
+   * 订阅事件通知
+   * @param eventType 事件类型：'event-created' | 'event-updated' | 'event-deleted'
+   * @param callback 回调函数
+   */
+  subscribe(eventType: string, callback: (data: any) => void): () => void {
+    if (!this.subscribers.has(eventType)) {
+      this.subscribers.set(eventType, []);
+    }
+    this.subscribers.get(eventType)!.push(callback);
+    
+    // 返回取消订阅函数
+    return () => {
+      const callbacks = this.subscribers.get(eventType);
+      if (callbacks) {
+        const index = callbacks.indexOf(callback);
+        if (index > -1) {
+          callbacks.splice(index, 1);
+        }
+      }
+    };
+  }
+
+  /**
+   * 发布事件通知
+   * @param eventType 事件类型
+   * @param data 事件数据
+   */
+  notify(eventType: string, data: any): void {
+    const callbacks = this.subscribers.get(eventType);
+    if (callbacks) {
+      callbacks.forEach(callback => {
+        try {
+          callback(data);
+        } catch (error) {
+          console.error(`[EventHub] Subscriber error for ${eventType}:`, error);
+        }
+      });
+    }
   }
 }
 

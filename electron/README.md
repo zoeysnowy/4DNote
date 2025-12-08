@@ -1,6 +1,6 @@
-# ReMarkable Desktop Application
+# 4DNote Desktop Application
 
-基于Electron的ReMarkable桌面应用版本，提供原生桌面体验和系统级监听功能。
+基于Electron的4DNote桌面应用版本，提供原生桌面体验和系统级监听功能。
 
 ## 🚀 快速开始
 
@@ -113,7 +113,7 @@ window.electronService      // ElectronService实例
 // 现有的服务
 window.microsoftCalendarService
 window.actionBasedSyncManager
-window.ReMarkableCache
+window.FourDNoteCache
 ```
 
 ## 🔧 开发指南
@@ -169,8 +169,8 @@ window.ReMarkableCache
 ```json
 {
   "build": {
-    "appId": "com.remarkable.desktop",
-    "productName": "ReMarkable",
+    "appId": "com.4dnote.desktop",
+    "productName": "4DNote",
     "directories": {
       "output": "dist"
     }

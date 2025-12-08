@@ -7,12 +7,23 @@
  * - 提供联系人搜索和过滤功能
  * - 支持头像管理（Gravatar 集成）
  * - 事件驱动架构：联系人变更自动广播通知
+ * 
+ * ✅ v2.0: 已迁移到 StorageManager（IndexedDB + SQLite 双写）
+ * 
+ * 迁移状态：
+ * - ✅ 使用 StorageManager 存储
+ * - ✅ 支持 IndexedDB + SQLite 双写
+ * - ✅ 支持软删除
+ * - ✅ LRU 缓存（10 MB）
+ * - ✅ 自动数据迁移
  */
 
 import { Contact, ContactSource } from '../types';
 import md5 from 'crypto-js/md5';
 import { logger } from '../utils/logger';
 import { formatTimeForStorage } from '../utils/timeUtils';
+import { storageManager } from './storage/StorageManager';
+import { generateContactId } from '../utils/idGenerator';
 
 const STORAGE_KEY = '4dnote-contacts';
 const contactLogger = logger.module('ContactService');
@@ -35,30 +46,79 @@ type ContactEventListener = (event: ContactEvent) => void;
 export class ContactService {
   private static contacts: Contact[] = [];
   private static initialized = false;
+  private static initializingPromise: Promise<void> | null = null;
   
   // 事件监听器存储
   private static eventListeners: Map<ContactEventType, Set<ContactEventListener>> = new Map();
 
   /**
-   * 初始化联系人服务
+   * 初始化联系人服务（异步，使用 StorageManager）
    */
-  static initialize(): void {
+  static async initialize(): Promise<void> {
     if (this.initialized) return;
     
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        this.contacts = JSON.parse(stored);
-      }
-      this.initialized = true;
-      contactLogger.log('✅ [ContactService] Initialized with', this.contacts.length, 'contacts');
-    } catch (error) {
-      contactLogger.error('❌ [ContactService] Failed to initialize:', error);
-      this.contacts = [];
+    // 如果正在初始化，返回现有 Promise
+    if (this.initializingPromise) {
+      return this.initializingPromise;
     }
+    
+    this.initializingPromise = (async () => {
+      try {
+        contactLogger.log('🔍 [ContactService] Loading contacts from StorageManager...');
+        
+        // 从 StorageManager 加载联系人
+        const result = await storageManager.queryContacts({ limit: 10000 });
+        
+        if (result.items.length > 0) {
+          this.contacts = result.items;
+          contactLogger.log(`✅ [ContactService] Loaded ${this.contacts.length} contacts from storage`);
+        } else {
+          // 尝试从 localStorage 迁移旧数据
+          await this.migrateFromLocalStorage();
+        }
+        
+        this.initialized = true;
+      } catch (error) {
+        contactLogger.error('❌ [ContactService] Failed to initialize:', error);
+        this.contacts = [];
+        this.initialized = true;
+      } finally {
+        this.initializingPromise = null;
+      }
+    })();
+    
+    return this.initializingPromise;
   }
 
   /**
+   * 从 localStorage 迁移旧数据
+   */
+  private static async migrateFromLocalStorage(): Promise<void> {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (!stored) return;
+    
+    try {
+      const oldContacts: Contact[] = JSON.parse(stored);
+      if (oldContacts.length === 0) return;
+      
+      contactLogger.log(`🔄 [ContactService] Migrating ${oldContacts.length} contacts from localStorage...`);
+      
+      // 批量写入 StorageManager（自动双写）
+      const result = await storageManager.batchCreateContacts(oldContacts);
+      contactLogger.log(`✅ [ContactService] Migrated ${result.successful}/${oldContacts.length} contacts`);
+      
+      // 重新加载到内存
+      this.contacts = oldContacts;
+      
+      // 备份旧数据并清理
+      localStorage.setItem(`${STORAGE_KEY}-backup`, stored);
+      localStorage.removeItem(STORAGE_KEY);
+      
+      contactLogger.log('✅ [ContactService] Migration completed, old data backed up');
+    } catch (error) {
+      contactLogger.error('❌ [ContactService] Migration failed:', error);
+    }
+  }  /**
    * 添加事件监听器
    * @param eventType 事件类型
    * @param listener 监听器回调函数
@@ -110,30 +170,28 @@ export class ContactService {
   }
 
   /**
-   * 保存联系人到本地存储
+   * 保存联系人到 StorageManager（不再需要，已在各方法中直接调用 StorageManager）
+   * 保留此方法仅用于向后兼容
    */
-  private static save(): void {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.contacts));
-    } catch (error) {
-      console.error('[ContactService] Failed to save contacts:', error);
-    }
+  private static async save(): Promise<void> {
+    // 不再使用 localStorage，改为在各 CRUD 方法中直接调用 StorageManager
+    contactLogger.log('💾 [ContactService] Save called (no-op, using StorageManager)');
   }
 
   /**
-   * 获取所有联系人
+   * 获取所有联系人（异步，从 StorageManager）
    */
-  static getAllContacts(): Contact[] {
-    this.initialize();
-    // 解析扩展字段后返回
+  static async getAllContacts(): Promise<Contact[]> {
+    await this.initialize();
+    // 返回内存缓存的联系人列表
     return this.contacts.map(c => this.parseExtendedFields(c));
   }
 
   /**
-   * 根据 ID 获取联系人
+   * 根据 ID 获取联系人（异步）
    */
-  static getContactById(id: string): Contact | undefined {
-    this.initialize();
+  static async getContactById(id: string): Promise<Contact | undefined> {
+    await this.initialize();
     const contact = this.contacts.find(c => c.id === id);
     return contact ? this.parseExtendedFields(contact) : undefined;
   }
@@ -143,8 +201,8 @@ export class ContactService {
    * @param ids 联系人 ID 数组
    * @returns 联系人数组（保持传入 ID 的顺序）
    */
-  static getContactsByIds(ids: string[]): Contact[] {
-    this.initialize();
+  static async getContactsByIds(ids: string[]): Promise<Contact[]> {
+    await this.initialize();
     
     const contactMap = new Map<string, Contact>();
     this.contacts.forEach(c => {
@@ -159,20 +217,20 @@ export class ContactService {
   }
 
   /**
-   * 根据邮箱获取联系人
+   * 根据邮箱获取联系人（异步）
    */
-  static getContactByEmail(email: string): Contact | undefined {
-    this.initialize();
+  static async getContactByEmail(email: string): Promise<Contact | undefined> {
+    await this.initialize();
     return this.contacts.find(c => c.email?.toLowerCase() === email.toLowerCase());
   }
 
   /**
-   * 搜索联系人
+   * 搜索联系人（异步）
    * @param query 搜索关键词（匹配姓名、邮箱、组织）
    * @param source 筛选平台来源
    */
-  static searchContacts(query: string, source?: ContactSource): Contact[] {
-    this.initialize();
+  static async searchContacts(query: string, source?: ContactSource): Promise<Contact[]> {
+    await this.initialize();
     
     const lowerQuery = query.toLowerCase();
     let results = this.contacts.filter(contact => {
@@ -186,7 +244,7 @@ export class ContactService {
       // 平台来源过滤
       if (source) {
         switch (source) {
-          case 'remarkable':
+          case '4dnote':
             return contact.is4DNote === true;
           case 'outlook':
             return contact.isOutlook === true;
@@ -208,7 +266,7 @@ export class ContactService {
    * @param contacts 来自不同来源的联系人数组
    * @returns 去重后的联系人数组
    * 
-   * 优先级：Outlook/Google/iCloud > ReMarkable > 历史参会人
+   * 优先级：Outlook/Google/iCloud > 4DNote > 历史参会人
    * 去重规则：邮箱相同视为同一人，无邮箱则按姓名去重
    */
   static mergeContactSources(contacts: Contact[]): Contact[] {
@@ -274,14 +332,14 @@ export class ContactService {
   }
 
   /**
-   * 添加联系人
+   * 添加联系人（异步，使用 StorageManager）
    */
-  static addContact(contact: Omit<Contact, 'id'>): Contact {
-    this.initialize();
+  static async addContact(contact: Omit<Contact, 'id'>): Promise<Contact> {
+    await this.initialize();
     
     const newContact: Contact = {
       ...contact,
-      id: this.generateContactId(),
+      id: generateContactId(),
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
     };
@@ -291,8 +349,11 @@ export class ContactService {
       newContact.avatarUrl = this.getGravatarUrl(newContact.email);
     }
 
+    // 写入 StorageManager（自动双写）
+    await storageManager.createContact(newContact);
+
+    // 更新内存缓存
     this.contacts.push(newContact);
-    this.save();
     
     // 触发创建事件
     this.emitEvent('contact.created', { contact: newContact });
@@ -302,23 +363,23 @@ export class ContactService {
   }
 
   /**
-   * 保存联系人（addContact 的别名）
+   * 保存联系人（addContact 的别名，异步）
    */
-  static saveContact(contact: Omit<Contact, 'id'>): Contact {
-    return this.addContact(contact);
+  static async saveContact(contact: Omit<Contact, 'id'>): Promise<Contact> {
+    return await this.addContact(contact);
   }
 
   /**
-   * 批量添加联系人
+   * 批量添加联系人（异步，使用 StorageManager）
    */
-  static addContacts(contacts: Omit<Contact, 'id'>[]): Contact[] {
-    this.initialize();
+  static async addContacts(contacts: Omit<Contact, 'id'>[]): Promise<Contact[]> {
+    await this.initialize();
     
     const timestamp = formatTimeForStorage(new Date());
     const newContacts = contacts.map(contact => {
       const newContact: Contact = {
         ...contact,
-        id: this.generateContactId(),
+        id: generateContactId(),
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -330,24 +391,34 @@ export class ContactService {
       return newContact;
     });
 
-    this.contacts.push(...newContacts);
-    this.save();
+    // 批量写入 StorageManager
+    const result = await storageManager.batchCreateContacts(newContacts);
+    
+    if (result.failed.length > 0) {
+      contactLogger.warn(`⚠️ [ContactService] Failed to create ${result.failed.length} contacts`);
+    }
+
+    // 更新内存缓存（只添加成功的）
+    const successfulContacts = newContacts.filter(c => 
+      !result.failed.some(f => f.contact.id === c.id)
+    );
+    this.contacts.push(...successfulContacts);
     
     // 触发批量同步事件
     this.emitEvent('contacts.synced', { 
-      count: newContacts.length,
-      contacts: newContacts,
+      count: successfulContacts.length,
+      contacts: successfulContacts,
     });
     
-    contactLogger.log('✅ [ContactService] Added', newContacts.length, 'contacts');
-    return newContacts;
+    contactLogger.log('✅ [ContactService] Added', successfulContacts.length, 'contacts');
+    return successfulContacts;
   }
 
   /**
-   * 更新联系人
+   * 更新联系人（异步，使用 StorageManager）
    */
-  static updateContact(id: string, updates: Partial<Contact>): Contact | null {
-    this.initialize();
+  static async updateContact(id: string, updates: Partial<Contact>): Promise<Contact | null> {
+    await this.initialize();
     
     const index = this.contacts.findIndex(c => c.id === id);
     if (index === -1) {
@@ -364,14 +435,16 @@ export class ContactService {
       updatedAt: formatTimeForStorage(new Date()),
     });
     
-    this.contacts[index] = updatesToSave;
-    
     // 更新头像
     if (updates.email && !updates.avatarUrl) {
-      this.contacts[index].avatarUrl = this.getGravatarUrl(updates.email);
+      updatesToSave.avatarUrl = this.getGravatarUrl(updates.email);
     }
 
-    this.save();
+    // 写入 StorageManager（自动双写）
+    await storageManager.updateContact(updatesToSave);
+
+    // 更新内存缓存
+    this.contacts[index] = updatesToSave;
     
     // 触发更新事件（返回解析后的数据）
     const after = this.parseExtendedFields(this.contacts[index]);
@@ -382,10 +455,10 @@ export class ContactService {
   }
 
   /**
-   * 删除联系人
+   * 删除联系人（异步，使用 StorageManager 软删除）
    */
-  static deleteContact(id: string): boolean {
-    this.initialize();
+  static async deleteContact(id: string): Promise<boolean> {
+    await this.initialize();
     
     const index = this.contacts.findIndex(c => c.id === id);
     if (index === -1) {
@@ -393,8 +466,13 @@ export class ContactService {
       return false;
     }
 
-    const deleted = this.contacts.splice(index, 1)[0];
-    this.save();
+    const deleted = this.contacts[index];
+    
+    // 使用 StorageManager 软删除（设置 deletedAt）
+    await storageManager.deleteContact(id);
+    
+    // 从内存缓存中移除
+    this.contacts.splice(index, 1);
     
     // 触发删除事件
     this.emitEvent('contact.deleted', { id, contact: deleted });
@@ -437,10 +515,11 @@ export class ContactService {
   }
 
   /**
-   * 生成联系人 ID
+   * 生成联系人 ID（已迁移到 utils/idGenerator.ts）
+   * 保留此方法仅用于向后兼容
    */
   private static generateContactId(): string {
-    return `contact-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    return generateContactId();
   }
 
   /**
@@ -545,7 +624,7 @@ export class ContactService {
    * 获取平台来源显示文本
    */
   static getSourceLabel(contact: Contact): string {
-    if (contact.is4DNote) return 'ReMarkable';
+    if (contact.is4DNote) return '4DNote';
     if (contact.isOutlook) return 'Outlook';
     if (contact.isGoogle) return 'Google';
     if (contact.isiCloud) return 'iCloud';
@@ -604,7 +683,7 @@ export class ContactService {
   }
 
   /**
-   * 搜索本地联系人（ReMarkable）
+   * 搜索本地联系人（4DNote）
    */
   static searchLocalContacts(query: string): Contact[] {
     this.initialize();

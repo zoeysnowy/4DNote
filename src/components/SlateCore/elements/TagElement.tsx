@@ -13,6 +13,9 @@ export const TagElementComponent: React.FC<RenderElementProps> = ({ attributes, 
   const tagElement = element as TagElement;
   const selected = useSelected();
   const focused = useFocused();
+  
+  // 使用 state 来触发重新渲染
+  const [updateTrigger, setUpdateTrigger] = React.useState(0);
 
   // 从 TagService 获取最新标签数据
   const tagData = useMemo(() => {
@@ -22,12 +25,13 @@ export const TagElementComponent: React.FC<RenderElementProps> = ({ attributes, 
       color: tag?.color ?? tagElement.tagColor ?? '#666',
       emoji: tag?.emoji ?? tagElement.tagEmoji ?? '',
     };
-  }, [tagElement.tagId, tagElement.tagName, tagElement.tagColor, tagElement.tagEmoji]);
+  }, [tagElement.tagId, tagElement.tagName, tagElement.tagColor, tagElement.tagEmoji, updateTrigger]);
 
   // 监听 TagService 更新
   useEffect(() => {
     const listener = () => {
       // 触发重新渲染
+      setUpdateTrigger(prev => prev + 1);
     };
     TagService.addListener(listener as any);
     return () => TagService.removeListener(listener as any);

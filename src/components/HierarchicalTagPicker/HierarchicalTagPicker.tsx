@@ -285,29 +285,6 @@ export const HierarchicalTagPicker: React.FC<HierarchicalTagPickerProps> = ({
         )}
       </div>
 
-      {/* 已选标签 */}
-      {multiSelect && selectedTagIds.length > 0 && (
-        <div className="selected-tags-section">
-          <div className="section-title">已选中 ({selectedTagIds.length})</div>
-          <div className="selected-tags-list">
-            {selectedTagIds.map(tagId => {
-              const tag = getTagById(tagId);
-              return tag ? (
-                <span 
-                  key={tagId} 
-                  className="tag-chip-small" 
-                  style={{ borderColor: tag.color, color: tag.color }}
-                >
-                  {tag.emoji && <span>{tag.emoji}</span>}
-                  #{tag.name}
-                  <button onClick={() => removeTag(tagId)}>✕</button>
-                </span>
-              ) : null;
-            })}
-          </div>
-        </div>
-      )}
-
       {/* 可选标签列表 */}
       <div className="popup-tag-list">
         {filteredTags.length > 0 ? (

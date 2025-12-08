@@ -14,9 +14,9 @@ import ToastUIReactCalendar, { ToastUIReactCalendarType } from './components/Toa
 // import { EventEditModal } from '../../components/EventEditModal'; // v1 - 已替换为 v2
 import { EventEditModalV2 } from '../../components/EventEditModal/EventEditModalV2';
 import CalendarSettingsPanel, { CalendarSettings } from './components/CalendarSettingsPanel';
-import type { EventObject } from '@toast-ui/calendar';
-import '@toast-ui/calendar/dist/toastui-calendar.css';
-import '../../styles/calendar.css'; // 🎨 ReMarkable 自定义样式
+import type { EventObject } from '../../lib/tui.calendar/apps/calendar';
+import '../../lib/tui.calendar/apps/calendar/dist/toastui-calendar.css'; // 使用本地打包的 TUI Calendar
+import '../../styles/calendar.css'; // 🎨 4DNote 自定义样式
 import { Event } from '../../types';
 import { TagService } from '../../services/TagService';
 import { MicrosoftCalendarService } from '../../services/MicrosoftCalendarService';
@@ -167,6 +167,9 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   const calendarRef = useRef<ToastUIReactCalendarType>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [hierarchicalTags, setHierarchicalTags] = useState<any[]>([]);
+  
+  // 🔧 防抖 ref，避免 500ms 内重复调用 loadEvents
+  const lastLoadTimeRef = useRef<number>(0);
   
   // 🎯 使用lazy initialization恢复上次查看的日期
   const [currentDate, setCurrentDate] = useState<Date>(() => {
@@ -352,41 +355,75 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
 
 
   //  从 localStorage 加载事件数据
-  const loadEvents = useCallback(() => {
+  // 🎯 使用 ref 保存最新的 currentDate，避免 useCallback 依赖导致的重复触发
+  const currentDateRef = useRef(currentDate);
+  useEffect(() => {
+    currentDateRef.current = currentDate;
+  }, [currentDate]);
+
+  const loadEvents = useCallback(async () => {
     // ✅ 防止组件卸载后继续执行
     if (!eventListenersAttachedRef.current) {
       console.log('⏭️ [TimeCalendar] Skipping loadEvents - component unmounted');
       return;
     }
     
+    // 🔧 防抖：500ms 内不重复加载
+    const now = Date.now();
+    if (now - lastLoadTimeRef.current < 500) {
+      console.log(`⏭️ [TimeCalendar] Skipping loadEvents - debounced (${now - lastLoadTimeRef.current}ms since last load)`);
+      return;
+    }
+    lastLoadTimeRef.current = now;
+    
     console.log(`🔄 [TimeCalendar] loadEvents START at ${performance.now().toFixed(2)}ms`);
     const startTime = performance.now();
     try {
-      console.log(`📂 [TimeCalendar] About to read localStorage...`);
-      const getItemStart = performance.now();
-      const savedEvents = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      const getItemDuration = performance.now() - getItemStart;
-      console.log(`💾 [TimeCalendar] localStorage.getItem took ${getItemDuration.toFixed(2)}ms`);
+      // 🚀 懒加载优化：只加载当前可见月份 ±3 个月的数据
+      const viewStart = new Date(currentDateRef.current);
+      viewStart.setMonth(viewStart.getMonth() - 3);
+      viewStart.setDate(1);
+      viewStart.setHours(0, 0, 0, 0);
       
-      if (savedEvents) {
-        console.log(`� [TimeCalendar] Got ${savedEvents.length} chars, about to parse...`);
-        const parseStart = performance.now();
-        const parsedEvents = JSON.parse(savedEvents);
-        const parseDuration = performance.now() - parseStart;
-        console.log(`🔍 [TimeCalendar] JSON.parse took ${parseDuration.toFixed(2)}ms for ${parsedEvents.length} events`);
-        
-        console.log(`🎯 [TimeCalendar] About to call setEvents()...`);
-        const setEventsStart = performance.now();
-        setEvents(parsedEvents);
-        const setEventsDuration = performance.now() - setEventsStart;
-        console.log(`✅ [TimeCalendar] setEvents() took ${setEventsDuration.toFixed(2)}ms`);
-      }
+      const viewEnd = new Date(currentDateRef.current);
+      viewEnd.setMonth(viewEnd.getMonth() + 4);
+      viewEnd.setDate(0); // 上个月最后一天
+      viewEnd.setHours(23, 59, 59, 999);
+      
+      const viewStartTime = formatTimeForStorage(viewStart);
+      const viewEndTime = formatTimeForStorage(viewEnd);
+      
+      console.log(`📂 [TimeCalendar] Loading events in range:`, {
+        start: viewStartTime,
+        end: viewEndTime
+      });
+      
+      const loadStart = performance.now();
+      const events = await EventService.getEventsByDateRange(
+        viewStartTime,
+        viewEndTime
+      );
+      const loadDuration = performance.now() - loadStart;
+      console.log(`💾 [TimeCalendar] Lazy load took ${loadDuration.toFixed(2)}ms, loaded ${events.length} events`);
+      
+      console.log(`🎯 [TimeCalendar] About to call setEvents()...`);
+      const setEventsStart = performance.now();
+      setEvents(events);
+      const setEventsDuration = performance.now() - setEventsStart;
+      console.log(`✅ [TimeCalendar] setEvents() took ${setEventsDuration.toFixed(2)}ms`);
     } catch (error) {
       console.error('❌ [LOAD] Failed to load events:', error);
+      setEvents([]); // 失败时设置为空数组
     }
     const totalDuration = performance.now() - startTime;
     console.log(`🏁 [TimeCalendar] loadEvents COMPLETE in ${totalDuration.toFixed(2)}ms`);
-  }, []);
+  }, []); // ✅ 空依赖数组，函数引用永远不变
+
+  // 🔄 当 currentDate 改变时，重新加载事件（月份切换）
+  useEffect(() => {
+    console.log(`📅 [TimeCalendar] currentDate changed, reloading events`);
+    loadEvents();
+  }, [currentDate, loadEvents]);
 
   // 🏷️ 从 localStorage 加载标签数据
   const loadHierarchicalTags = useCallback(() => {
@@ -549,7 +586,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     // ✅ 架构清理：移除 handleLocalEventsChanged，统一使用 eventsUpdated 事件
     // const handleLocalEventsChanged = (event: unknown) => { ... }
 
-    const handleEventsUpdated = (event: unknown) => {
+    const handleEventsUpdated = async (event: unknown) => {
       // ✅ 防止组件卸载后继续执行
       if (!eventListenersAttachedRef.current) {
         return;
@@ -566,8 +603,8 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
           setEvents(prev => prev.filter(e => e.id !== eventId));
           return;
         } else if (detail?.isNewEvent || detail?.isUpdate) {
-          // 新建/更新操作：从 EventService 读取单个事件并更新
-          const updatedEvent = EventService.getEventById(eventId);
+          // 新建/更新操作：从 EventService 异步读取单个事件并更新
+          const updatedEvent = await EventService.getEventById(eventId); // ✅ 添加await
           
           if (updatedEvent) {
             setEvents(prev => {
@@ -1358,7 +1395,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   
   // 🔧 实时读取当前运行中的 Timer（不使用 useMemo，每次都读取最新状态）
   // 用于在 calendarEvents 计算时获取最新的 timer 状态
-  const getRunningTimerEventId = () => {
+  const getRunningTimerEventId = async () => { // ✅ 改为async函数
     // 1. 优先使用传入的 globalTimer prop（主应用场景）
     if (globalTimer !== undefined) {
       if (globalTimer && globalTimer.isRunning) {
@@ -1383,7 +1420,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     // 2. Widget简化方案：检测localStorage中是否有带"[专注中]"前缀的timer事件
     // console.log('🔍 [WIDGET TIMER] Checking for events with [专注中] prefix...');
     try {
-      const events = EventService.getAllEvents(); // 自动规范化 title
+      const events = await EventService.getAllEvents(); // ✅ 添加await，从StorageManager异步读取
       if (events.length > 0) {
         
         // 查找带有"[专注中]"前缀的timer事件
@@ -1598,8 +1635,8 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
 
     // console.log(`🎨 [USEMEMO] Processing ${uniqueFiltered.length} events in ${(performance.now() - startTime).toFixed(1)}ms`);
 
-    // 🔧 每次渲染时实时读取 timer 状态（不缓存）
-    const currentRunningTimerEventId = getRunningTimerEventId();
+    // 🔧 每次渲染时实时读取 timer 状态（不缓存），传入已过滤的events
+    const currentRunningTimerEventId = getRunningTimerEventId(uniqueFiltered);
     
     // 🔍 额外调试：检查实时timer事件和currentRunningTimerEventId的匹配
     // const realtimeTimer = generateRealtimeTimerEvent();
@@ -1718,16 +1755,16 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   /**
    * 📝 点击事件 - 打开编辑弹窗
    */
-  const handleClickEvent = useCallback((eventInfo: any) => {
-    // 直接从 EventService 读取最新的 event，避免闭包问题
-    const event = EventService.getEventById(eventInfo.event.id);
+  const handleClickEvent = useCallback(async (eventInfo: any) => {
+    // 直接从 EventService 异步读取最新的 event，避免闭包问题
+    const event = await EventService.getEventById(eventInfo.event.id); // ✅ 添加await
     
     if (event) {
       setEditingEvent(event);
       setShowEventEditModal(true);
     }
     return false;
-  }, []); // 空依赖数组，因为我们直接从 localStorage 读取
+  }, []); // 空依赖数组，因为我们直接从 StorageManager 读取
 
   /**
    * 📅 选择日期时间 - 打开创建事件模态框
@@ -1779,7 +1816,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       const { event: calendarEvent, changes } = updateInfo;
       
       // 查找原始事件
-      const originalEvent = EventService.getEventById(calendarEvent.id);
+      const originalEvent = await EventService.getEventById(calendarEvent.id); // ✅ 添加await
       
       if (!originalEvent) {
         console.error('❌ [TimeCalendar] Event not found:', calendarEvent.id);
@@ -1841,12 +1878,8 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     try {
       const eventId = eventInfo.event.id;
       
-      // 验证事件存在
-      const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      if (!saved) return;
-      
-      const existingEvents: Event[] = JSON.parse(saved);
-      const eventToDelete = existingEvents.find((e: Event) => e.id === eventId);
+      // ✅ 从EventService异步读取事件（而非localStorage）
+      const eventToDelete = await EventService.getEventById(eventId);
       
       if (!eventToDelete) {
         console.error('❌ [TimeCalendar] Event to delete not found');

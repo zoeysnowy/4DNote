@@ -59,7 +59,7 @@ export class StorageManagerVersionExt {
     previousEventLog?: EventLog
   ): Promise<void> {
     if (!sqliteService) {
-      console.warn('[StorageManager] SQLite not available, skipping version save');
+      // ✨ Silent skip in web environment (SQLite only available in Electron)
       return;
     }
 
