@@ -399,6 +399,12 @@
   height: 16px;
 }
 
+/* 🎯 Sync 图标缩小 */
+.nav-item[data-page="sync"] .nav-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .nav-item.active .nav-icon img {
   filter: brightness(0) saturate(100%) invert(24%) sepia(5%) saturate(464%) hue-rotate(183deg) brightness(95%) contrast(88%); /* 🎨 Figma: same color for active */
 }
