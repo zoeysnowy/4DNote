@@ -30,6 +30,29 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
   
   // ✅ 自己维护 events state，从 EventService 初始化
   const [events, setEvents] = useState<Event[]>([]);
+  
+  // 🆕 订阅 TagService 初始化状态
+  const [tagsInitialized, setTagsInitialized] = useState(TagService.isInitialized());
+
+  // 🆕 监听 TagService 初始化和更新
+  useEffect(() => {
+    // 检查初始化状态
+    if (TagService.isInitialized()) {
+      setTagsInitialized(true);
+    }
+    
+    // 监听标签变化（包括初始化完成）
+    const handleTagsUpdate = () => {
+      setTagsInitialized(true);
+      setRefreshKey(prev => prev + 1);
+    };
+    
+    TagService.addListener(handleTagsUpdate);
+    
+    return () => {
+      TagService.removeListener(handleTagsUpdate);
+    };
+  }, []);
 
   // 异步加载初始事件数据
   useEffect(() => {
@@ -85,6 +108,11 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
   };
 
   const tagStats = useMemo(() => {
+    // 🔒 等待 TagService 初始化
+    if (!tagsInitialized) {
+      return { stats: [], total: 0, max: 0 };
+    }
+    
     const targetDateStr = currentDate.toDateString();
     const dayEvents = events.filter(event => {
       const eventDate = new Date(event.startTime);
@@ -232,7 +260,7 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
       totalDuration,
       barBaseline
     };
-  }, [events, currentDate, refreshKey]);
+  }, [events, currentDate, refreshKey, tagsInitialized]);
 
   const formatDuration = (ms: number): string => {
     const hours = Math.floor(ms / 3600000);
