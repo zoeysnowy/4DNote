@@ -1438,29 +1438,36 @@ const TimeLog: React.FC = () => {
                   <h1 className="timelog-title">时光日志</h1>
                 </div>
                 {/* 打开的事件tab */}
-                {tabManagerEvents.map((event) => (
-                  <div 
-                    key={event.id} 
-                    className="timelog-tab"
-                    onClick={() => {
-                      // TODO: 切换到对应事件编辑视图
-                    }}
-                  >
-                    <span className="tab-title">{event.title || '未命名事件'}</span>
-                    <button 
-                      className="tab-close"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
-                        if (tabManagerEvents.length <= 1) {
-                          setShowTabManager(false);
-                        }
+                {tabManagerEvents.map((event) => {
+                  // 获取事件标题（处理对象和字符串两种情况）
+                  const titleText = typeof event.title === 'object' && event.title !== null
+                    ? event.title.simpleTitle || event.title.fullTitle || '未命名事件'
+                    : event.title || '未命名事件';
+                  
+                  return (
+                    <div 
+                      key={event.id} 
+                      className="timelog-tab"
+                      onClick={() => {
+                        // TODO: 切换到对应事件编辑视图
                       }}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                      <span className="tab-title">{titleText}</span>
+                      <button 
+                        className="tab-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
+                          if (tabManagerEvents.length <= 1) {
+                            setShowTabManager(false);
+                          }
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
