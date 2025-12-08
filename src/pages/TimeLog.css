@@ -498,8 +498,25 @@
 .time-calendar-source-wrapper {
   display: flex;
   align-items: center;
+  gap: 6px;
   margin-left: auto;
   flex-shrink: 0;
+}
+
+.time-sync-mode-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+  flex-shrink: 0;
+}
+
+.time-sync-mode-icon:hover {
+  background-color: #f3f4f6;
 }
 
 .time-calendar-source {
@@ -517,33 +534,6 @@
 
 .time-calendar-source:hover {
   background-color: #f9fafb;
-}
-
-/* 🆕 标题行 - 同步模式选择器（仅显示图标） */
-.title-sync-mode {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.15s;
-  flex-shrink: 0;
-  width: 32px;
-  height: 28px;
-}
-
-.title-sync-mode:hover {
-  background-color: #f3f4f6;
-}
-
-.title-sync-mode .sync-mode-emoji {
-  font-size: 16px !important;
-  line-height: 1;
-  flex-shrink: 0;
-  padding: 0;
-  margin: 0;
 }
 
 /* Row 3: Tags */
