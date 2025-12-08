@@ -2357,6 +2357,20 @@ private getUserSettings(): any {
           continue;
         }
         
+        // 🔧 [MIGRATION FIX] 自动升级旧的 receive-only 模式为 bidirectional-private
+        // 这是为了修复历史遗留问题：旧代码将 Outlook 事件默认设置为 receive-only
+        if (localEvent.syncMode === 'receive-only' || !localEvent.syncMode) {
+          if (successCount < 3) {
+            console.log(`🔧 [Migration] 自动升级 syncMode: ${localEvent.id.slice(-8)} receive-only → bidirectional-private`);
+          }
+          // 立即更新数据库
+          await storageManager.updateEvent(localEvent.id, {
+            syncMode: 'bidirectional-private'
+          });
+          // 更新内存中的对象
+          localEvent.syncMode = 'bidirectional-private';
+        }
+        
         // 🔧 检测变化
         let remoteTitle = action.data.subject || '';
         
@@ -2404,7 +2418,8 @@ private getUserSettings(): any {
           });
         }
         
-        const syncMode = localEvent.syncMode || 'receive-only'; // 🔧 提升作用域
+        // 🔧 读取 syncMode（此时已经过自动升级处理）
+        const syncMode = localEvent.syncMode || 'bidirectional-private'; // 默认双向同步
         
         // 🔧 [CRITICAL FIX] 如果 remoteTitle 为空但 localTitle 不为空，保留 localTitle
         // Outlook 不允许空标题，如果 action.data.subject 为空，说明数据不完整

@@ -25,6 +25,7 @@ import removestyleSvg from './Removestyle.svg';
 import textcolorSvg from './TextColor.svg';
 import backgroundcolorSvg from './backgroundcolor.svg';
 import textstyleSvg from './Textstyle.svg';
+import aiDemoSvg from './AIDemo.svg';
 
 export const icons = {
   logo: logoSvg,
@@ -53,6 +54,7 @@ export const icons = {
   textcolor: textcolorSvg,
   backgroundcolor: backgroundcolorSvg,
   textstyle: textstyleSvg,
+  'ai-demo': aiDemoSvg,
 };
 
 // 图标类型定义

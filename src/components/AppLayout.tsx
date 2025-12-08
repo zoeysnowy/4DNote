@@ -145,7 +145,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
     { id: 'tag' as PageType, label: '标签', icon: 'tag' },
     { id: 'plan' as PageType, label: '计划', icon: 'plan' },
     { id: 'sync' as PageType, label: '同步', icon: 'sync' },
-    { id: 'ai-demo' as PageType, label: 'AI Demo', icon: 'sync' } // 临时用 sync 图标
+    { id: 'ai-demo' as PageType, label: 'AI Demo', icon: 'ai-demo' }
   ];
 
   // 处理导航点击

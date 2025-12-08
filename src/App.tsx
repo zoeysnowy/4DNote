@@ -80,6 +80,11 @@ function App() {
         await storageManager.initialize();
         console.log('✅ [App] StorageManager initialized');
         
+        // 🔧 暴露到全局，供调试和迁移脚本使用
+        if (typeof window !== 'undefined') {
+          (window as any).storageManagerInstance = storageManager;
+        }
+        
         // 🔥 v3.1.0: 初始化 EventHistoryService（SQLite）
         console.log('📚 [App] Initializing EventHistoryService...');
         const { EventHistoryService } = await import('./services/EventHistoryService');
@@ -1895,7 +1900,7 @@ function App() {
 
       case 'ai-demo':
         // 懒加载 AIDemo 组件
-        const AIDemo = React.lazy(() => import('./components/AIDemo').then(m => ({ default: m.AIDemo })));
+        const AIDemo = React.lazy(() => import('./components/AIDemo.tsx'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo"><div>加载中...</div></PageContainer>}>
             <AIDemo />

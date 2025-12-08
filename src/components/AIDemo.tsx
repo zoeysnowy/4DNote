@@ -1046,3 +1046,5 @@ export const AIDemo: React.FC = () => {
     </div>
   );
 };
+
+export default AIDemo;

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>修复 Outlook SyncMode - 4DNote</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      margin-top: 0;
+    }
+    .info {
+      background: #e3f2fd;
+      padding: 15px;
+      border-left: 4px solid #2196f3;
+      margin: 20px 0;
+    }
+    .warning {
+      background: #fff3e0;
+      padding: 15px;
+      border-left: 4px solid #ff9800;
+      margin: 20px 0;
+    }
+    button {
+      background: #2196f3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-top: 20px;
+    }
+    button:hover {
+      background: #1976d2;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #output {
+      background: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 修复 Outlook 事件 SyncMode</h1>
+    
+    <div class="info">
+      <strong>问题：</strong>历史 Outlook 事件的 syncMode 为 'receive-only'，导致本地修改被远程覆盖。
+    </div>
+    
+    <div class="info">
+      <strong>解决方案：</strong>将所有 Outlook 事件的 syncMode 更新为 'bidirectional-private'（双向私有同步）。
+    </div>
+    
+    <div class="warning">
+      <strong>注意：</strong>
+      <ul>
+        <li>此操作会修改数据库中的事件数据</li>
+        <li>建议在执行前备份数据</li>
+        <li>执行过程中不要关闭浏览器</li>
+      </ul>
+    </div>
+    
+    <button id="runBtn" onclick="runMigration()">开始修复</button>
+    
+    <div id="output" style="display: none;"></div>
+  </div>
+  
+  <script type="module">
+    let outputDiv;
+    let runBtn;
+    
+    window.onload = () => {
+      outputDiv = document.getElementById('output');
+      runBtn = document.getElementById('runBtn');
+    };
+    
+    function log(msg) {
+      outputDiv.style.display = 'block';
+      outputDiv.textContent += msg + '\n';
+      outputDiv.scrollTop = outputDiv.scrollHeight;
+      console.log(msg);
+    }
+    
+    window.runMigration = async function() {
+      runBtn.disabled = true;
+      outputDiv.textContent = '';
+      outputDiv.style.display = 'block';
+      
+      try {
+        log('🚀 [Migration] 开始修复 Outlook 事件 syncMode...');
+        
+        // 1. 获取所有 Outlook 事件
+        const { default: StorageManager } = await import('./src/services/StorageManager.js');
+        const storageManager = StorageManager.getInstance();
+        
+        log('📊 [Migration] 正在查询所有事件...');
+        const result = await storageManager.queryEvents({
+          filters: {},
+          limit: 10000
+        });
+        
+        const outlookEvents = result.items.filter(e => 
+          e.id.startsWith('outlook-') || 
+          e.source === 'outlook' ||
+          e.calendarIds?.some(cid => cid.startsWith('outlook-'))
+        );
+        
+        log(`📊 [Migration] 找到 ${outlookEvents.length} 个 Outlook 事件`);
+        
+        // 2. 统计当前 syncMode 分布
+        const syncModeStats = {};
+        outlookEvents.forEach(e => {
+          const mode = e.syncMode || 'undefined';
+          syncModeStats[mode] = (syncModeStats[mode] || 0) + 1;
+        });
+        
+        log('📊 [Migration] 当前 syncMode 分布:');
+        Object.entries(syncModeStats).forEach(([k, v]) => {
+          log(`  ${k}: ${v}`);
+        });
+        
+        // 3. 筛选需要修复的事件（syncMode 不是 bidirectional-private）
+        const needsFixEvents = outlookEvents.filter(e => 
+          e.syncMode !== 'bidirectional-private'
+        );
+        
+        log(`\n🔧 [Migration] 需要修复 ${needsFixEvents.length} 个事件`);
+        
+        if (needsFixEvents.length === 0) {
+          log('✅ [Migration] 所有事件已是最新状态，无需修复');
+          runBtn.disabled = false;
+          return;
+        }
+        
+        // 4. 确认操作
+        const confirmed = confirm(
+          `将修复 ${needsFixEvents.length} 个 Outlook 事件的 syncMode:\n` +
+          `${Object.entries(syncModeStats).map(([k, v]) => `  ${k}: ${v}`).join('\n')}\n\n` +
+          `全部改为: bidirectional-private\n\n` +
+          `是否继续？`
+        );
+        
+        if (!confirmed) {
+          log('❌ [Migration] 用户取消操作');
+          runBtn.disabled = false;
+          return;
+        }
+        
+        // 5. 批量更新
+        let successCount = 0;
+        let failCount = 0;
+        
+        log('\n⏳ [Migration] 开始批量更新...');
+        
+        for (const event of needsFixEvents) {
+          try {
+            await storageManager.updateEvent(event.id, {
+              syncMode: 'bidirectional-private'
+            });
+            successCount++;
+            
+            if (successCount % 50 === 0) {
+              log(`⏳ [Migration] 进度: ${successCount}/${needsFixEvents.length}`);
+            }
+          } catch (error) {
+            log(`❌ [Migration] 更新失败: ${event.id.slice(-8)} - ${error.message}`);
+            failCount++;
+          }
+        }
+        
+        log(`\n✅ [Migration] 完成!`);
+        log(`  总数: ${needsFixEvents.length}`);
+        log(`  成功: ${successCount}`);
+        log(`  失败: ${failCount}`);
+        
+        // 6. 验证结果
+        log('\n📊 [Migration] 验证修复结果...');
+        const verifyResult = await storageManager.queryEvents({
+          filters: {},
+          limit: 10000
+        });
+        
+        const verifyOutlookEvents = verifyResult.items.filter(e => 
+          e.id.startsWith('outlook-') || 
+          e.source === 'outlook' ||
+          e.calendarIds?.some(cid => cid.startsWith('outlook-'))
+        );
+        
+        const newStats = {};
+        verifyOutlookEvents.forEach(e => {
+          const mode = e.syncMode || 'undefined';
+          newStats[mode] = (newStats[mode] || 0) + 1;
+        });
+        
+        log('📊 [Migration] 修复后 syncMode 分布:');
+        Object.entries(newStats).forEach(([k, v]) => {
+          log(`  ${k}: ${v}`);
+        });
+        
+        log('\n✅ [Migration] 全部完成！请重启应用使修改生效。');
+        
+      } catch (error) {
+        log(`\n❌ [Migration] 执行失败: ${error.message}`);
+        console.error(error);
+      } finally {
+        runBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
