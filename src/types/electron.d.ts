@@ -114,6 +114,15 @@ export interface ElectronAPI {
   // 🎨 Widget 设置同步
   widgetUpdateSettings: (settings: { bgOpacity?: number; bgColor?: string; isLocked?: boolean }) => Promise<{ success: boolean; settings: any }>;
   onWidgetSettingsUpdate: (callback: (settings: { bgOpacity?: number; bgColor?: string; isLocked?: boolean }) => void) => () => void;
+
+  // 🪟 多窗口管理
+  window?: {
+    openEventEditor: (eventId: string, eventData: any) => Promise<{ success: boolean; error?: string }>;
+    closeEventEditor: (eventId: string) => Promise<{ success: boolean; error?: string }>;
+    getEditorCount: () => Promise<number>;
+    onEventUpdated: (callback: (data: any) => void) => void;
+    onEventData: (callback: (data: any) => void) => void;
+  };
   
   on: (channel: string, callback: (...args: any[]) => void) => void;
   send: (channel: string, data?: any) => void;

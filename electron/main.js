@@ -4,6 +4,7 @@ const http = require('http');
 const url = require('url');
 const { spawn } = require('child_process');
 const fs = require('fs');
+const windowManager = require('./windowManager');
 
 // 🗄️ 加载 better-sqlite3（在主进程中）
 let Database;
@@ -203,8 +204,13 @@ function createWindow() {
     }
   });
 
+  // 设置窗口管理器的主窗口引用
+  windowManager.setMainWindow(mainWindow);
+
   // 处理窗口关闭
   mainWindow.on('closed', () => {
+    // 关闭所有子窗口
+    windowManager.closeAllEditors();
     mainWindow = null;
   });
 
@@ -353,6 +359,31 @@ ipcMain.handle('app-platform', createIPCHandler('app-platform', () => {
     arch: process.arch,
     version: process.versions
   };
+}));
+
+// 🪟 窗口管理 IPC
+ipcMain.handle('open-event-editor', createIPCHandler('open-event-editor', (event, eventId, eventData) => {
+  try {
+    windowManager.openEventEditor(eventId, eventData);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [Window] Failed to open event editor:', error);
+    return { success: false, error: error.message };
+  }
+}));
+
+ipcMain.handle('close-event-editor', createIPCHandler('close-event-editor', (event, eventId) => {
+  try {
+    windowManager.closeEventEditor(eventId);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [Window] Failed to close event editor:', error);
+    return { success: false, error: error.message };
+  }
+}));
+
+ipcMain.handle('get-editor-count', createIPCHandler('get-editor-count', () => {
+  return windowManager.getEditorCount();
 }));
 
 // 🔍 性能监控 IPC

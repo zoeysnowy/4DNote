@@ -15,7 +15,9 @@ import { CompressedDateRange } from '../components/TimeLog/CompressedDateRange';
 import { EventEditModalV2 } from '../components/EventEditModal/EventEditModalV2';
 import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
+import EventTabManager from '../components/EventTabManager';
 import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
+import { supportsMultiWindow, openEventInWindow } from '../utils/electronUtils';
 import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
@@ -94,6 +96,31 @@ const TimeLog: React.FC = () => {
   // 🆕 日历和同步模式选择器的 ref
   const calendarPickerRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const syncModePickerRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  
+  // 🆕 标签页管理状态
+  const [showTabManager, setShowTabManager] = useState(false);
+  const [tabManagerEvents, setTabManagerEvents] = useState<Event[]>([]);
+
+  // Handler: Open event in tab manager or separate window
+  const handleOpenInTab = useCallback(async (event: Event) => {
+    // Electron 环境下优先使用多窗口
+    if (supportsMultiWindow()) {
+      const success = await openEventInWindow(event.id, event);
+      if (success) {
+        console.log('✅ Opened event in separate window:', event.id);
+        return;
+      }
+      console.warn('⚠️ Failed to open window, falling back to tab manager');
+    }
+    
+    // Web 环境或窗口打开失败，使用标签页管理器
+    setTabManagerEvents(prev => {
+      const exists = prev.find(e => e.id === event.id);
+      if (exists) return prev;
+      return [...prev, event];
+    });
+    setShowTabManager(true);
+  }, []);
   
   // 动态滚动加载状态 - 支持双向无限滚动
   const [dynamicStartDate, setDynamicStartDate] = useState<Date | null>(null);
@@ -2065,11 +2092,8 @@ const TimeLog: React.FC = () => {
                             </button>
                             <button 
                               className="ghost-menu-btn"
-                              title="标签页"
-                              onClick={() => {
-                                // TODO: 实现标签页功能
-                                console.log('打开标签页', event.id);
-                              }}
+                              title="在标签页中打开"
+                              onClick={() => handleOpenInTab(event)}
                             >
                               <img src={TabIconSvg} alt="tab" style={{ width: '20px', height: '20px' }} />
                             </button>
@@ -2341,6 +2365,16 @@ const TimeLog: React.FC = () => {
             }
           }}
           onClose={handleTimePickerClose}
+        />
+      )}
+
+      {/* Event Tab Manager - Chrome-style tabs */}
+      {showTabManager && (
+        <EventTabManager
+          initialTabs={tabManagerEvents.map(e => ({ id: e.id, event: e, isDirty: false }))}
+          onClose={() => setShowTabManager(false)}
+          availableTags={allTags}
+          availableCalendars={availableCalendars}
         />
       )}
     </div>

@@ -48,6 +48,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: () => ipcRenderer.invoke('close-window'),
   widgetMinimize: () => ipcRenderer.invoke('widget-minimize'),
   widgetLock: (isLocked) => ipcRenderer.invoke('widget-lock', isLocked),
+
+  // 🪟 多窗口管理
+  window: {
+    openEventEditor: (eventId, eventData) => ipcRenderer.invoke('open-event-editor', eventId, eventData),
+    closeEventEditor: (eventId) => ipcRenderer.invoke('close-event-editor', eventId),
+    getEditorCount: () => ipcRenderer.invoke('get-editor-count'),
+    onEventUpdated: (callback) => {
+      ipcRenderer.on('event-updated', (event, data) => callback(data));
+    },
+    onEventData: (callback) => {
+      ipcRenderer.on('event-data', (event, data) => callback(data));
+    }
+  },
   widgetOpacity: (opacity) => ipcRenderer.invoke('widget-opacity', opacity),
   widgetMove: (position) => ipcRenderer.invoke('widget-move', position),
   widgetDragEnd: () => ipcRenderer.invoke('widget-drag-end'),
