@@ -2798,9 +2798,9 @@ private getUserSettings(): any {
             }
           }
           
-          // 🔧 从 colorTitle 提取完整文本（包含 emoji，但不包含 tag 元素）
+          // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
           const eventData = {
-            subject: this.extractTextFromColorTitle(action.data.title) || 'Untitled Event',
+            subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
             body: { 
               contentType: 'Text', 
               content: createDescription
@@ -3087,7 +3087,7 @@ private getUserSettings(): any {
             }
             
             const eventData = {
-              subject: this.extractTextFromColorTitle(action.data.title) || 'Untitled Event',
+              subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
               body: { 
                 contentType: 'text', 
                 content: createDescription
@@ -3189,7 +3189,7 @@ private getUserSettings(): any {
                 );
                 
                 const migrateEventData = {
-                  subject: this.extractTextFromColorTitle(action.data.title) || 'Untitled Event',
+                  subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
                   body: { 
                     contentType: 'text', 
                     content: migrateDescription
@@ -3240,7 +3240,7 @@ private getUserSettings(): any {
           // 📝 文本字段处理
           if (action.data.title) {
             // 🔧 从 colorTitle 提取完整文本（包含 emoji，但不包含 tag 元素）
-            updateData.subject = this.extractTextFromColorTitle(action.data.title) || 'Untitled Event';
+            updateData.subject = (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event';
           }
           
           // 描述处理：添加同步备注管理
@@ -3526,9 +3526,9 @@ private getUserSettings(): any {
                   }
                 }
                 
-                // 🔧 从 colorTitle 提取完整文本（包含 emoji，但不包含 tag 元素）
+                // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
                 const recreateEventData = {
-                  subject: this.extractTextFromColorTitle(action.data.title) || 'Untitled Event',
+                  subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
                   body: { 
                     contentType: 'text', 
                     content: recreateDescription
@@ -3577,9 +3577,9 @@ private getUserSettings(): any {
             // 🔧 尝试最小更新（仅标题和描述）
       // console.log('🔧 [PRIORITY 4] Attempting minimal update (title + description only)...');
             try {
-              // 🔧 从 colorTitle 提取完整文本（包含 emoji，但不包含 tag 元素）
+              // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
               const minimalUpdate = {
-                subject: this.extractTextFromColorTitle(action.data.title) || 'Untitled Event',
+                subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
                 body: { 
                   contentType: 'text', 
                   content: action.data.description || '📱 由 4DNote 更新'
