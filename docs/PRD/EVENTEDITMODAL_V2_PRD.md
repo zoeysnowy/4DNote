@@ -1,8 +1,8 @@
 # EventEditModal v2 产品需求文档 (PRD)
 
-> **版本**: v2.17.0  
+> **版本**: v2.17.1  
 > **创建时间**: 2025-11-06  
-> **最后更新**: 2025-12-06  
+> **最后更新**: 2025-12-09  
 > **Figma 设计稿**: [EventEditModal v2 设计稿](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=201-630&m=dev)  
 > **基于**: EventEditModal v1 + Figma 设计稿  
 > **依赖模块**: EventHub, TimeHub, SlateEditor, HeadlessFloatingToolbar, Timer Module, EventTree  
@@ -14,7 +14,20 @@
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
 > - [EVENTTREE_MODULE_PRD.md](./EVENTTREE_MODULE_PRD.md)
 
-> **🔥 v2.17.0 最新更新** (2025-12-06):
+> **🔥 v2.17.1 最新更新** (2025-12-09):
+> - ✅ **TitleSlate 中文 IME 输入优化**: 完全修复输入法导致的光标偏移和失焦问题
+>   - **根本原因**: `renderLeaf` 中的 emoji 过滤逻辑修改了 `leaf.text`，破坏了 Slate DOM ↔ AST 映射
+>   - **架构修复**: 移除 `renderLeaf` 中的文本修改逻辑，改为在数据层（`titleContent` useMemo）过滤 emoji
+>   - **Emoji 正则升级**: 更新为完整 Unicode 范围（`\u{1F300}-\u{1F9FF}`, `\u{2600}-\u{26FF}` 等），覆盖所有 emoji
+>   - **IME 兼容**: 输入法期间不修改 DOM，确保光标位置稳定，用户体验流畅
+> - ✅ **SyncMode 架构修复 - 历史数据迁移**: 修复 Outlook 事件被远程覆盖的根本问题
+>   - **问题诊断**: 旧代码将 Outlook 事件默认设为 `receive-only`，导致本地修改被远程同步覆盖
+>   - **数据修复**: 批量迁移脚本将 1083 个 Outlook 事件从 `receive-only` 升级为 `bidirectional-private`
+>   - **运行时自动升级**: 同步时检测 `receive-only` 模式自动升级，无需手动迁移
+>   - **默认值修改**: 新创建的 Outlook 事件默认 `bidirectional-private`（可用户修改）
+>   - **自动保存**: syncMode 修改后立即保存，防止 UI ↔ Database 状态不一致
+> 
+> **🔥 v2.17.0 历史更新** (2025-12-06):
 > - ✅ **EventTree 集成 - @ 触发双向链接**: 在 EventLog 中输入 @ 自动创建事件之间的双向链接
 >   - **@ 触发机制**: 输入 @ 字符自动弹出 UnifiedMentionMenu 搜索事件
 >   - **EventMention 节点**: Slate 编辑器中渲染蓝色背景的 @事件标题
@@ -893,12 +906,13 @@ const handleTitleChange = async (html: string) => {
 };
 ```
 
-**关键特性** (v2.15.4):
-- ✅ **富文本支持**: 保留 Plan 页面设置的文字颜色、高亮等格式
-- ✅ **contentEditable**: 替代 textarea，原生支持 HTML 渲染和编辑
+**关键特性** (v2.17.1):
+- ✅ **Slate.js 富文本编辑器**: 使用 TitleSlate 组件，原生支持富文本和 IME 输入法
+- ✅ **中文 IME 完美支持**: 完全修复输入法光标偏移问题，输入流畅无卡顿
+- ✅ **Emoji 数据层过滤**: 在 `titleContent` useMemo 中过滤 emoji，不修改 `renderLeaf`，保证 DOM ↔ AST 映射正确
+- ✅ **完整 Emoji 支持**: 正则覆盖所有 Unicode emoji 范围（🐙、🎉、❤️、😊 等）
 - ✅ **高度自适应**: 1-3行自动调整，超出显示滚动条（27px-81px）
 - ✅ **宽度自适应**: 根据内容动态调整宽度（50px-240px）
-- ✅ **块级标签清理**: 自动移除 `<p>`, `<div>` 等，避免异常换行
 - ✅ **Emoji 分离显示**: 标题输入框不显示 emoji，emoji 显示在左侧圆形区域
 
 **用户体验说明**:

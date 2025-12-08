@@ -1,11 +1,182 @@
 # EventHub & TimeHub 统一架构文档
 
-> **文档版本**: v2.16  
+> **文档版本**: v2.17  
 > **创建时间**: 2025-11-06  
-> **最后更新**: 2025-12-01  
+> **最后更新**: 2025-12-09  
 > **关联模块**: EventHub, TimeHub, EventService, EventHistoryService, TimeParsingService, PlanManager, UpcomingEventsPanel, EventEditModal V2, ActionBasedSyncManager, syncRouter  
 > **文档类型**: 核心架构文档
-> **新增关联**: EventTitle 三层架构、EventHistoryService 时间快照查询、Snapshot 功能优化、checkType 与 checkbox 关联、父-子事件单一配置架构（subEventConfig）、**syncMode 同步控制（已实现）**、**EventService 生命周期管理（HMR 修复）**、**null 时间字段支持与 createdAt fallback（v2.15.3）**、**EventTree 统一字段架构（v2.16）**
+> **新增关联**: EventTitle 三层架构、EventHistoryService 时间快照查询、Snapshot 功能优化、checkType 与 checkbox 关联、父-子事件单一配置架构（subEventConfig）、**syncMode 同步控制（已实现）**、**EventService 生命周期管理（HMR 修复）**、**null 时间字段支持与 createdAt fallback（v2.15.3）**、**EventTree 统一字段架构（v2.16）**、**TitleSlate IME 优化（v2.17）**、**SyncMode 历史数据迁移（v2.17）**
+
+---
+
+## 🔧 v2.17 TitleSlate IME 优化 & SyncMode 历史数据迁移 (2025-12-09)
+
+### 核心变更
+
+#### 1. TitleSlate 中文 IME 输入优化 ✅
+
+**背景**: 用户反馈中文输入法（IME）使用时出现光标偏移 -3 字符、失焦等问题  
+**根本原因**: `renderLeaf` 中的 emoji 过滤逻辑修改了 `leaf.text`，破坏了 Slate 的 DOM ↔ AST 映射关系  
+**解决方案**: 将 emoji 过滤逻辑从渲染层移至数据层，保证 Slate 内部状态一致性
+
+**架构修复**:
+
+```typescript
+// ❌ 旧代码 - 在 renderLeaf 中修改 leaf.text（破坏 Slate 映射）
+const renderLeaf = useCallback((props: RenderLeafProps) => {
+  let text = props.leaf.text;
+  // 🔥 问题：修改 leaf.text 导致 DOM 与 AST 不一致
+  text = text.replace(/emoji_regex/g, ''); 
+  return <span {...props.attributes}>{text}</span>;
+}, []);
+
+// ✅ 新代码 - 在数据层过滤 emoji（不影响 Slate 内部状态）
+const titleContent = useMemo(() => {
+  if (!value || value.length === 0) return value;
+  
+  const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}])+\s*/u;
+  
+  return value.map(node => {
+    if (node.type === 'paragraph' && node.children) {
+      return {
+        ...node,
+        children: node.children.map((child: any) => {
+          if (child.text) {
+            return { ...child, text: child.text.replace(emojiRegex, '') };
+          }
+          return child;
+        })
+      };
+    }
+    return node;
+  });
+}, [value]);
+
+// renderLeaf 不再修改文本
+const renderLeaf = useCallback((props: RenderLeafProps) => {
+  return <span {...props.attributes}>{props.children}</span>;
+}, []);
+```
+
+**Emoji 正则升级**:
+```typescript
+// 🆕 完整 Unicode 范围，覆盖所有 emoji（包括 🐙、🎉、❤️ 等）
+const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}])+\s*/u;
+```
+
+**关键改进**:
+- ✅ **IME 兼容**: 输入法期间不修改 DOM，光标位置稳定
+- ✅ **数据层处理**: emoji 过滤在 `useMemo` 中完成，不影响 Slate 内部状态
+- ✅ **完整 Emoji 支持**: 正则覆盖所有 Unicode emoji 范围
+- ✅ **用户体验提升**: 中文输入流畅无卡顿，光标不会跳动或偏移
+
+**与 EventTitle 架构集成**:
+- TitleSlate 编辑器内部使用 Slate JSON 格式（对应 `fullTitle`）
+- 失焦保存时转换为 `simpleTitle` 字符串，传递给 EventService
+- EventService.normalizeTitle() 自动生成 `colorTitle` 和 `fullTitle`
+- 详见下文 [8.1.1 EventTitle 三层架构](#811-eventtitle-三层架构v214)
+
+#### 2. SyncMode 历史数据迁移 & 架构修复 ✅
+
+**背景**: 用户修改 Outlook 事件标题后，远程同步时本地修改被覆盖  
+**根本原因**: 
+1. 旧代码将 Outlook 事件默认设为 `syncMode: 'receive-only'`（只接收远程更新）
+2. `convertRemoteEventToLocal` 创建事件时未设置 `syncMode` 字段（`undefined`）
+3. EventService 读取 `undefined`，ActionBasedSyncManager 使用 fallback 逻辑默认 `receive-only`
+4. 本地修改无法推送到远程，远程同步时覆盖本地标题
+
+**解决方案**:
+
+1. **新事件默认值修复** (ActionBasedSyncManager.ts Line 4689):
+```typescript
+// ✅ 所有 Outlook 事件默认 bidirectional-private（用户可修改）
+const partialEvent = {
+  // ...其他字段
+  syncMode: 'bidirectional-private'  // 🔥 关键修复：明确设置默认值
+};
+```
+
+2. **运行时自动升级** (ActionBasedSyncManager.ts Line 2360):
+```typescript
+// 🔧 同步时检测并自动升级旧事件
+if (localEvent.syncMode === 'receive-only' || !localEvent.syncMode) {
+  console.log(`🔧 [Migration] 自动升级 syncMode: ${localEvent.id} receive-only → bidirectional-private`);
+  await storageManager.updateEvent(localEvent.id, {
+    syncMode: 'bidirectional-private'
+  });
+  localEvent.syncMode = 'bidirectional-private';
+}
+
+// 读取 syncMode（使用升级后的值）
+const syncMode = localEvent.syncMode || 'bidirectional-private';
+```
+
+3. **批量迁移脚本** (scripts/fix-outlook-syncmode.js):
+```javascript
+// 一次性修复所有历史事件
+(async function fixOutlookSyncMode() {
+  const storageManager = window.storageManagerInstance;
+  const result = await storageManager.queryEvents({ filters: {}, limit: 10000 });
+  
+  const outlookEvents = result.items.filter(e => 
+    e.id.startsWith('outlook-') || 
+    e.source === 'outlook' ||
+    e.calendarIds?.some(cid => cid.startsWith('outlook-'))
+  );
+  
+  const needsFixEvents = outlookEvents.filter(e => 
+    e.syncMode !== 'bidirectional-private'
+  );
+  
+  // 批量更新：43 个事件从 receive-only → bidirectional-private
+  for (const event of needsFixEvents) {
+    await storageManager.updateEvent(event.id, {
+      syncMode: 'bidirectional-private'
+    });
+  }
+})();
+```
+
+**迁移结果**:
+- ✅ **1083 个 Outlook 事件**: 全部统一为 `bidirectional-private` 模式
+- ✅ **本地修改保留**: 用户修改标题后不再被远程覆盖
+- ✅ **双向同步**: 本地修改推送到 Outlook，远程修改也同步到本地
+
+**syncMode 架构完整性**:
+```typescript
+// Event 接口
+interface Event {
+  syncMode?: 'receive-only' | 'send-only' | 'bidirectional' | 'bidirectional-private' | 'send-only-private';
+}
+
+// 同步控制逻辑
+// 1. syncRouter.ts - 阻止 receive-only 事件推送到远程
+if (event.syncMode === 'receive-only') {
+  return null; // 不推送
+}
+
+// 2. ActionBasedSyncManager.ts - 阻止 send-only 事件接收远程更新
+if (event.syncMode === 'send-only' && titleChanged) {
+  updates.title = undefined; // 不更新本地标题
+}
+
+// 3. EventEditModalV2.tsx - syncMode 修改后立即保存
+const handleSyncModeChange = useCallback(async (newMode: string) => {
+  setFormData(prev => ({ ...prev, syncMode: newMode }));
+  
+  // 🔥 立即保存到数据库，防止状态不一致
+  await EventService.updateEvent(event.id, {
+    syncMode: newMode
+  });
+}, [event.id]);
+```
+
+**关键改进**:
+- ✅ **架构修复**: 所有 Outlook 事件创建时明确设置 syncMode
+- ✅ **自动迁移**: 运行时检测并自动升级旧事件，无需手动操作
+- ✅ **批量工具**: 提供迁移脚本快速修复历史数据
+- ✅ **即时保存**: UI 修改 syncMode 后立即持久化，防止状态不一致
+- ✅ **用户控制**: 默认双向同步，用户可根据需要修改为其他模式
 
 ---
 
