@@ -309,8 +309,8 @@
 }
 
 .sidebar-logo img {
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   object-fit: contain;
 }
 
@@ -375,14 +375,10 @@
   transition: filter 0.2s ease;
 }
 
-/* 🎯 TimeLog 图标加大 */
-.nav-item[data-page="timelog"] {
-  height: 52px;
-}
-
+/* 🎯 TimeLog 图标 */
 .nav-item[data-page="timelog"] .nav-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 /* 🎯 Plan 图标保持24px */
