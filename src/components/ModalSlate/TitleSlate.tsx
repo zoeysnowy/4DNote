@@ -95,14 +95,8 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   console.log('🎬 [TitleSlate] 组件正在mount/render', { 
     eventId, 
     readOnly, 
-    autoFocus,
-    isComposing: isComposingRef?.current 
+    autoFocus
   });
-  
-  // 🔧 [2024-12-09] 如果在 composition 期间重渲染，强制阻止
-  if (isComposingRef?.current) {
-    console.error('🚨 [TitleSlate] 在 IME 输入期间重渲染！这会导致光标位置错误！');
-  }
   
   // 创建 Slate 编辑器实例（只创建一次，永不重建）
   const editorRef = useRef<Editor | null>(null);
@@ -354,40 +348,7 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   }, [editor, readOnly, handleFocus]);
   
   // 🔧 [2024-12-09] Composition handlers 使用 useCallback
-  // 🔧 使用 ref 标记 composition 状态
-  const isComposingRef = useRef(false);
-  
-  const handleCompositionStart = useCallback((event: React.CompositionEvent) => {
-    isComposingRef.current = true;
-    console.log('🎌 [TitleSlate] IME 输入开始（compositionstart）', {
-      data: event.data,
-      hasSelection: !!editor.selection,
-      selection: editor.selection
-    });
-  }, [editor]);
-  
-  const handleCompositionUpdate = useCallback((event: React.CompositionEvent) => {
-    console.log('🎌 [TitleSlate] IME 输入中（compositionupdate）', {
-      data: event.data,
-      hasSelection: !!editor.selection
-    });
-  }, [editor]);
-  
-  const handleCompositionEnd = useCallback((event: React.CompositionEvent) => {
-    isComposingRef.current = false;
-    console.log('🎌 [TitleSlate] IME 输入结束（compositionend）', {
-      data: event.data,
-      hasSelection: !!editor.selection,
-      selection: editor.selection
-    });
-    
-    // 🔧 [2024-12-09] 不要在 compositionend 时保存和恢复 selection！
-    // Slate 会自动处理 IME 输入后的 selection 更新
-    // 强制恢复会导致光标位置错误
-    // 
-    // 之前的问题根源不在这里，而是事件处理函数没有用 useCallback
-    // 导致 Editable 重渲染，进而触发 selection 重置
-  }, [editor]);
+
   
   // 🔧 [2024-12-09] onKeyDown handler 使用 useCallback - 这是关键！
   // 内联函数会导致每次渲染创建新引用，触发 Editable 重渲染，进而重置 selection
@@ -424,13 +385,6 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   
   // 🔥 失焦时保存缓存的变化（blur-to-save 模式）
   const handleBlur = useCallback((event: React.FocusEvent) => {
-    // 🔧 [2024-12-09] 关键修复：如果在 IME composition 期间或刚结束，忽略 blur 事件
-    // 这是 Slate + IME 的已知问题：compositionend 后 Slate 会触发内部 normalize，导致 blur
-    if (isComposingRef.current) {
-      console.warn('⚠️ [TitleSlate] IME composition 期间的 blur，忽略');
-      return;
-    }
-    
     const relatedTarget = event.relatedTarget as HTMLElement;
     const activeEl = document.activeElement as HTMLElement;
     console.log('🎯 [TitleSlate] 失焦，保存变化', {
@@ -556,10 +510,6 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
           onBlur={handleBlur}
           onClick={handleClick}
           onFocus={handleFocusEvent}
-          onCompositionStart={handleCompositionStart}
-          onCompositionUpdate={handleCompositionUpdate}
-          onCompositionEnd={handleCompositionEnd}
-          onKeyDown={handleKeyDown}
         />
       </Slate>
     </div>

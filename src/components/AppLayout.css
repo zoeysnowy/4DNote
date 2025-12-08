@@ -1,7 +1,7 @@
 /* 应用布局样式 - 使用CSS Grid，保持原设计尺寸 */
 .app-layout {
   display: grid;
-  grid-template-columns: 98px 1fr;
+  grid-template-columns: 60px 1fr; /* 🎨 Figma: 60px sidebar width */
   grid-template-rows: 80px 1fr 41px; /* 🔧 修改为 80px 与 app-header 高度一致 */
   grid-template-areas:
     "header header"
@@ -266,10 +266,10 @@
 
 .notification-btn,
 .setting-btn {
-  width: 48px;
-  height: 48px;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  width: 36px; /* 🎨 Figma: 36x36px buttons */
+  height: 36px;
+  background: transparent; /* 🎨 Figma: transparent background */
+  border: none;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -281,24 +281,24 @@
 
 .notification-btn img,
 .setting-btn img {
-  width: 28px;
-  height: 28px;
+  width: 36px; /* 🎨 Figma: full size icons */
+  height: 36px;
   object-fit: contain;
 }
 
 .notification-btn:hover,
 .setting-btn:hover {
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.1);
   color: #374151;
 }
 
 .user-profile {
-  width: 36px;
-  height: 36px;
+  width: 48px; /* 🎨 Figma: 48x48px profile */
+  height: 48px;
   border-radius: 50%;
   background: linear-gradient(135deg, #a855f7 0%, #3b82f6 75%);
-  border: 2px solid rgba(168, 85, 247, 0.5);
-  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1), 0px 10px 15px rgba(0, 0, 0, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.8); /* 🎨 Figma: white border with 80% opacity */
+  box-shadow: none; /* 🎨 Figma: no shadow */
   display: flex;
   align-items: center;
   justify-content: center;
@@ -308,8 +308,9 @@
 
 .user-profile span {
   color: white;
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: 600; /* 🎨 Figma: Semi Bold */
+  font-size: 18px; /* 🎨 Figma: 18px text */
+  font-family: 'Inter', sans-serif;
 }
 
 .user-profile:hover {
@@ -323,10 +324,10 @@
    =================== */
 .app-sidebar {
   grid-area: sidebar;
-  width: 98px;
-  background: transparent;
+  width: 60px; /* 🎨 Figma: 60px sidebar width */
+  background: rgba(229, 232, 237, 0.5); /* 🎨 Figma: semi-transparent gray */
   border-right: none;
-  padding: 27px 0;
+  padding: 73px 0 0 0; /* 🎨 Figma: top padding for first icon positioning */
   display: flex;
   flex-direction: column;
   position: relative;
@@ -340,23 +341,26 @@
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 19px;
+  gap: 10px; /* 🎨 Figma: spacing between icons */
+  padding: 0;
+  align-items: center; /* 🎨 Figma: center icons in 60px width */
 }
 
 .nav-item {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 16px 8px;
+  justify-content: center;
+  gap: 0; /* 🎨 Figma: no gap, icon only */
+  padding: 12px 0; /* 🎨 Figma: vertical padding only */
   background: transparent;
   border: none;
-  border-radius: 12px;
+  border-radius: 10px; /* 🎨 Figma: 10px border radius */
   cursor: pointer;
   transition: all 0.2s ease;
   position: relative;
-  min-height: 60px;
+  width: 48px; /* 🎨 Figma: 48px button width */
+  height: 48px; /* 🎨 Figma: 48px button height */
   -webkit-app-region: no-drag;
   pointer-events: auto;
   user-select: none;
@@ -368,19 +372,19 @@
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.5);
-  backdrop-filter: blur(10px);
+  background: rgba(169, 170, 171, 0.3); /* 🎨 Figma: subtle gray hover */
+  border-radius: 10px;
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.9) 0%, rgba(59, 130, 246, 0.9) 75%);
-  backdrop-filter: blur(10px);
-  box-shadow: 0px 4px 12px rgba(168, 85, 247, 0.3), 0px 8px 24px rgba(59, 130, 246, 0.2);
+  background: rgba(169, 170, 171, 0.3); /* 🎨 Figma: gray active background */
+  border-radius: 10px;
+  box-shadow: none; /* 🎨 Figma: no shadow */
 }
 
 .nav-icon {
-  width: 25px;
-  height: 25px;
+  width: 24px; /* 🎨 Figma: 24px icons */
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -390,26 +394,16 @@
 .nav-icon img {
   width: 100%;
   height: 100%;
-  filter: brightness(0) saturate(100%) invert(36%) sepia(14%) saturate(464%) hue-rotate(183deg) brightness(95%) contrast(88%);
+  filter: brightness(0) saturate(100%) invert(24%) sepia(5%) saturate(464%) hue-rotate(183deg) brightness(95%) contrast(88%); /* 🎨 Figma: darker icon color */
   transition: filter 0.2s ease;
 }
 
 .nav-item.active .nav-icon img {
-  filter: brightness(0) saturate(100%) invert(100%);
+  filter: brightness(0) saturate(100%) invert(24%) sepia(5%) saturate(464%) hue-rotate(183deg) brightness(95%) contrast(88%); /* 🎨 Figma: same color for active */
 }
 
 .nav-label {
-  font-size: 12px;
-  font-weight: 500;
-  color: #374151;
-  text-align: center;
-  line-height: 1;
-  transition: color 0.2s ease;
-}
-
-.nav-item.active .nav-label {
-  color: white;
-  font-weight: 600;
+  display: none; /* 🎨 Figma: icon-only design, no labels */
 }
 
 /* 调试工具样式 */
