@@ -375,6 +375,13 @@
   transition: filter 0.2s ease;
 }
 
+/* 🎯 TimeLog 和 Plan 图标特殊尺寸 */
+.nav-item[data-page="timelog"] .nav-icon,
+.nav-item[data-page="plan"] .nav-icon {
+  width: 24px;
+  height: 24px;
+}
+
 .nav-item.active .nav-icon img {
   filter: brightness(0) saturate(100%) invert(24%) sepia(5%) saturate(464%) hue-rotate(183deg) brightness(95%) contrast(88%); /* 🎨 Figma: same color for active */
 }

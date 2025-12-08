@@ -432,18 +432,31 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // 🔧 日历同步配置（单一数据结构）
         calendarIds: event.calendarIds || [],
         // ✅ syncMode 根据事件来源设置默认值
-        syncMode: event.syncMode || (() => {
-          const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
-          const defaultMode = isLocalEvent ? 'bidirectional-private' : 'receive-only';
-          console.log('🎬 [formData 初始化] 事件来源检测:', {
+        syncMode: (() => {
+          const originalSyncMode = event.syncMode;
+          const finalSyncMode = event.syncMode || (() => {
+            const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
+            const defaultMode = isLocalEvent ? 'bidirectional-private' : 'receive-only';
+            console.log('🎬 [formData 初始化] 事件来源检测（降级逻辑）:', {
+              eventId: event.id,
+              fourDNoteSource: event.fourDNoteSource,
+              source: event.source,
+              isLocalEvent,
+              eventSyncMode: event.syncMode,
+              计算得到的defaultMode: defaultMode
+            });
+            return defaultMode;
+          })();
+          
+          // 🔥 关键日志：打印原始值和最终值
+          console.log('🔍 [formData.syncMode 初始化]:', {
             eventId: event.id,
-            fourDNoteSource: event.fourDNoteSource,
-            source: event.source,
-            isLocalEvent,
-            eventSyncMode: event.syncMode,
-            计算得到的defaultMode: defaultMode
+            'event.syncMode (原始)': originalSyncMode,
+            'formData.syncMode (最终)': finalSyncMode,
+            不一致: originalSyncMode !== finalSyncMode
           });
-          return defaultMode;
+          
+          return finalSyncMode;
         })(),
         subEventConfig: event.subEventConfig || { 
           calendarIds: [], 
@@ -1967,8 +1980,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
             children: node.children.map((child: any, index: number) => {
               // 只处理第一个文本节点
               if (index === 0 && child.text) {
-                // 移除开头的 emoji（使用 emoji 正则）
-                const emojiRegex = /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u;
+                // 移除开头的 emoji（使用完整的 emoji 正则，包括代理对）
+                // 匹配所有 emoji：基础 emoji、扩展 emoji、符号、修饰符等
+                const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{1F1E6}-\u{1F1FF}])+\s*/u;
                 const textWithoutEmoji = child.text.replace(emojiRegex, '');
                 return {
                   ...child,
@@ -2998,13 +3012,23 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                           <SyncModeDropdown
                             availableModes={syncModes}
                             selectedModeId={sourceSyncMode || 'disabled'}
-                            onSelectionChange={(modeId) => {
+                            onSelectionChange={async (modeId) => {
                               setSourceSyncMode(modeId);
                               setFormData(prev => ({
                                 ...prev,
                                 syncMode: modeId
                               }));
                               setShowSourceSyncModePicker(false);
+                              
+                              // 🔥 立即自动保存 syncMode，避免远程同步用旧值覆盖
+                              if (eventId) {
+                                console.log('💾 [SyncMode 变化] 立即保存到 EventService:', { eventId, syncMode: modeId });
+                                await EventHub.updateFields(eventId, {
+                                  syncMode: modeId
+                                }, {
+                                  source: 'EventEditModalV2-SyncModeChange'
+                                });
+                              }
                             }}
                             onClose={() => setShowSourceSyncModePicker(false)}
                             title="选择同步模式"
