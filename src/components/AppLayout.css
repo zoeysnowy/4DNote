@@ -375,11 +375,23 @@
   transition: filter 0.2s ease;
 }
 
-/* 🎯 TimeLog 和 Plan 图标特殊尺寸 */
-.nav-item[data-page="timelog"] .nav-icon,
+/* 🎯 TimeLog 图标加大 */
+.nav-item[data-page="timelog"] .nav-icon {
+  width: 26px;
+  height: 26px;
+}
+
+/* 🎯 Plan 图标保持24px */
 .nav-item[data-page="plan"] .nav-icon {
   width: 24px;
   height: 24px;
+}
+
+/* 🎯 TimeCalendar 和 Tag 图标缩小 */
+.nav-item[data-page="timecalendar"] .nav-icon,
+.nav-item[data-page="tag"] .nav-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .nav-item.active .nav-icon img {
