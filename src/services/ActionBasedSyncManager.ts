@@ -4679,7 +4679,11 @@ private getUserSettings(): any {
       calendarIds: remoteEvent.calendarIds || ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
       source: 'outlook', // 🔧 设置source字段
       syncStatus: 'synced',
-      fourDNoteSource: is4DNoteCreated // 根据描述内容判断来源
+      fourDNoteSource: is4DNoteCreated, // 根据描述内容判断来源
+      // 🔥 [CRITICAL FIX] 设置默认 syncMode，避免 undefined 导致单向覆盖
+      // 规则：所有从 Outlook 同步的事件默认双向同步（bidirectional-private）
+      //       用户可以在 UI 中随时修改同步模式
+      syncMode: 'bidirectional-private'
     };
     
     // ✅ 通过 EventService 规范化，自动生成 title 和 eventlog 对象

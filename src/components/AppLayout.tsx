@@ -5,7 +5,7 @@ import { icons } from '../assets/icons';
 import { formatTimeForStorage } from '../utils/timeUtils';
 
 // 页面类型定义
-export type PageType = 'home' | 'time' | 'log' | 'tag' | 'plan' | 'sync' | 'ai-demo';
+export type PageType = 'home' | 'timecalendar' | 'timelog' | 'tag' | 'plan' | 'sync' | 'ai-demo';
 
 interface AppLayoutProps {
   currentPage: PageType;
@@ -140,8 +140,8 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
   const menuItems = [
     { id: 'home' as PageType, label: '首页', icon: 'home' },
-    { id: 'time' as PageType, label: '时光', icon: 'time' },
-    { id: 'log' as PageType, label: '日志', icon: 'log' },
+    { id: 'timecalendar' as PageType, label: '时光', icon: 'time' },
+    { id: 'timelog' as PageType, label: '日志', icon: 'log' },
     { id: 'tag' as PageType, label: '标签', icon: 'tag' },
     { id: 'plan' as PageType, label: '计划', icon: 'plan' },
     { id: 'sync' as PageType, label: '同步', icon: 'sync' },

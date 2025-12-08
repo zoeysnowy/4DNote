@@ -1782,7 +1782,7 @@ function App() {
         );
         break;
 
-      case 'time':
+      case 'timecalendar':
         content = (
           <PageContainer title="时光" subtitle="时光日志与我的日历" className="time-calendar">
             <TimeCalendar 
@@ -1801,7 +1801,7 @@ function App() {
         );
         break;
 
-      case 'log':
+      case 'timelog':
         content = (
           <PageContainer title="时光日志" subtitle="事件回顾与日志记录" className="timelog-page-container">
             <TimeLog />
