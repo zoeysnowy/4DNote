@@ -32,7 +32,7 @@ export function slateNodesToEventLog(nodes: Descendant[]): EventLog {
     html,
     wordCount: countWords(plainText),
     characterCount: plainText.length,
-    lastEditedAt: new Date().toISOString(),
+    lastEditedAt: formatTimeForStorage(new Date()),
   };
 }
 

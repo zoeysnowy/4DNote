@@ -11,7 +11,7 @@
 
 import { Event, EventLog } from '../types';
 import { STORAGE_KEYS } from '../constants/storage';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
 import { storageManager } from './storage/StorageManager';
 import type { StorageEvent } from './storage/types';
 import { logger } from '../utils/logger';
@@ -1896,9 +1896,11 @@ export class EventService {
       }
       
       // 纯文本处理
+      // 🔧 修复: 将纯文本转换为 Slate JSON 格式保存到 colorTitle,保留 emoji
+      const slateJson = JSON.stringify([{ type: 'paragraph', children: [{ text: titleInput }] }]);
       return {
         simpleTitle: titleInput,
-        colorTitle: titleInput,
+        colorTitle: slateJson,  // ✅ 保存为 Slate JSON,保留 emoji
         fullTitle: this.simpleTitleToFullTitle(titleInput)
       };
     }
@@ -3454,7 +3456,7 @@ export class EventService {
           backfilledCount++;
           eventLogger.log('✅ [EventService] Backfilled create log:', {
             eventId,
-            createTime: createTime.toISOString()
+            createTime: formatTimeForStorage(createTime)
           });
         } catch (error: any) {
           if (error.name === 'QuotaExceededError') {

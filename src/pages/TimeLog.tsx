@@ -18,6 +18,7 @@ import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDro
 import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
 import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
+import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import type { Event } from '../types';
 import './TimeLog.css';
 
@@ -50,7 +51,13 @@ import RightIconSvg from '../assets/icons/right.svg';
 import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 
+// 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
+let hasScrolledToTodayGlobal = false;
+
 const TimeLog: React.FC = () => {
+  // ⏱️ 性能监控：组件挂载时间
+  const mountTimeRef = useRef(performance.now());
+  
   const [dateRange, setDateRange] = useState<{ start: Date; end: Date } | null>(null);
   const [hiddenTags, setHiddenTags] = useState<Set<string>>(new Set());
   const [searchQuery, setSearchQuery] = useState('');
@@ -178,8 +185,8 @@ const TimeLog: React.FC = () => {
           nearBottom,
           isLoadingEarlier: isLoadingEarlierRef.current,
           isLoadingLater: isLoadingLaterRef.current,
-          dynamicStart: dynamicStartDateRef.current?.toISOString(),
-          dynamicEnd: dynamicEndDateRef.current?.toISOString()
+          dynamicStart: dynamicStartDateRef.current ? formatTimeForStorage(dynamicStartDateRef.current) : null,
+          dynamicEnd: dynamicEndDateRef.current ? formatTimeForStorage(dynamicEndDateRef.current) : null
         });
       }
 
@@ -211,8 +218,8 @@ const TimeLog: React.FC = () => {
           
           try {
             const historyEvents = await EventService.getTimelineEvents(
-              newStart.toISOString(),
-              currentStart.toISOString()
+              formatTimeForStorage(newStart),
+              formatTimeForStorage(currentStart)
             );
             
             const mergedEvents = [...historyEvents, ...allEventsRef.current];
@@ -277,8 +284,8 @@ const TimeLog: React.FC = () => {
           
           try {
             const futureEvents = await EventService.getTimelineEvents(
-              currentEnd.toISOString(),
-              newEnd.toISOString()
+              formatTimeForStorage(currentEnd),
+              formatTimeForStorage(newEnd)
             );
             
             const mergedEvents = [...allEventsRef.current, ...futureEvents];
@@ -318,7 +325,9 @@ const TimeLog: React.FC = () => {
   // 获取所有标签（与 PlanManager 一致）
   const allTags = useMemo(() => {
     const tags = TagService.getFlatTags();
-    console.log('📌 [TimeLog] Loaded tags:', tags.length);
+    if (tagServiceVersion === 0) {
+      console.log('📌 [TimeLog] Initial tags loaded:', tags.length);
+    }
     return tags;
   }, [tagServiceVersion]);
 
@@ -339,8 +348,16 @@ const TimeLog: React.FC = () => {
 
   // 初始化加载事件数据
   useEffect(() => {
-    console.log('🚀 [TimeLog] Component mounted - Chronological Order & Smart Zipper Active');
+    const mountTime = performance.now() - mountTimeRef.current;
+    console.log(`🚀 [TimeLog] Component mounted - Chronological Order & Smart Zipper Active (mount time: ${mountTime.toFixed(2)}ms)`);
+    
+    // 🚀 组件挂载时重置滚动标记（允许每次进入页面都滚动一次）
+    hasScrolledToTodayGlobal = false;
+    
     const loadEvents = async () => {
+      const loadStartTime = performance.now();
+      console.log('⏱️ [TimeLog] Starting event load...');
+      
       setLoadingEvents(true);
       try {
         // 计算初始加载范围：今天前后30天
@@ -354,18 +371,20 @@ const TimeLog: React.FC = () => {
         initialEndDate.setDate(initialEndDate.getDate() + 30);
         initialEndDate.setHours(23, 59, 59, 999);
         
-        // console.log('📅 [TimeLog] Initial load range (Today ±30 days):', {
-        //   start: initialStartDate.toISOString(),
-        //   end: initialEndDate.toISOString()
-        // });
+        console.log('📅 [TimeLog] Initial load range (Today ±30 days):', {
+          start: formatTimeForStorage(initialStartDate),
+          end: formatTimeForStorage(initialEndDate)
+        });
         
+        const dbQueryStartTime = performance.now();
         // 加载今天前后30天的事件（使用 getTimelineEvents 过滤）
         const events = await EventService.getTimelineEvents(
-          initialStartDate.toISOString(),
-          initialEndDate.toISOString()
+          formatTimeForStorage(initialStartDate),
+          formatTimeForStorage(initialEndDate)
         );
+        const dbQueryTime = performance.now() - dbQueryStartTime;
         
-        console.log(`✅ [TimeLog] Loaded ${events.length} timeline events (Today ±30 days, filtered)`);
+        console.log(`✅ [TimeLog] Loaded ${events.length} timeline events (Today ±30 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
         setAllEvents(events);
         allEventsRef.current = events;
         
@@ -374,6 +393,9 @@ const TimeLog: React.FC = () => {
         setDynamicEndDate(initialEndDate);
         dynamicStartDateRef.current = initialStartDate;
         dynamicEndDateRef.current = initialEndDate;
+        
+        const totalLoadTime = performance.now() - loadStartTime;
+        console.log(`⏱️ [TimeLog] Total event load time: ${totalLoadTime.toFixed(2)}ms`);
         
       } catch (error) {
         console.error('❌ [TimeLog] Failed to load events:', error);
@@ -462,6 +484,8 @@ const TimeLog: React.FC = () => {
 
   // 获取事件列表（按时间排序，不过滤日期）
   const events = useMemo(() => {
+    const startTime = performance.now();
+    
     // 过滤：只显示有时间的事件（startTime, endTime, 或 createdAt）
     const timeBasedEvents = allEvents.filter(event => 
       event.startTime || event.endTime || event.createdAt
@@ -483,6 +507,11 @@ const TimeLog: React.FC = () => {
       return valA - valB;
     });
     
+    const processingTime = performance.now() - startTime;
+    if (processingTime > 1 || sorted.length > 100) {
+      console.log(`⏱️ [TimeLog] Events sorting time: ${processingTime.toFixed(2)}ms (${sorted.length} events)`);
+    }
+    
     return sorted;
   }, [allEvents]);
 
@@ -495,6 +524,8 @@ const TimeLog: React.FC = () => {
 
   // 按日期分组事件
   const eventsByDate = useMemo(() => {
+    const startTime = performance.now();
+    
     const groups: Map<string, Event[]> = new Map();
     
     events.forEach(event => {
@@ -506,6 +537,11 @@ const TimeLog: React.FC = () => {
       }
       groups.get(dateKey)!.push(event);
     });
+    
+    const processingTime = performance.now() - startTime;
+    if (processingTime > 1 || groups.size > 30) {
+      console.log(`⏱️ [TimeLog] eventsByDate grouping time: ${processingTime.toFixed(2)}ms (${groups.size} dates)`);
+    }
     
     return groups;
   }, [events]);
@@ -532,6 +568,7 @@ const TimeLog: React.FC = () => {
     | { type: 'compressed'; startDate: Date; endDate: Date };
 
   const timelineSegments = useMemo(() => {
+    const segmentStart = performance.now();
     // 使用动态日期范围（初始值在 useEffect 中设置）
     const startDate = dynamicStartDate;
     const endDate = dynamicEndDate;
@@ -684,8 +721,11 @@ const TimeLog: React.FC = () => {
     });
 
     // 插入月份标题：
-    // - compressed段：总是插入月份标题（每个compressed段都需要显示所属月份）
+    // - compressed段：总是插入月份标题（视觉上更清晰，每个压缩段都显示月份）
     // - events段：只在新月份时插入月份标题
+    // 
+    // 注意：compressed段后紧跟同月的events段时，会出现同月份标题连续出现2次的情况，
+    // 这是**期望行为**，因为compressed段需要独立的月份标识，否则用户无法识别日期所属月份
     const segmentsWithMonthHeaders: TimelineSegment[] = [];
     let lastMonthKey: string | null = null;
 
@@ -699,7 +739,7 @@ const TimeLog: React.FC = () => {
         currentMonthKey = `${segment.startDate.getFullYear()}-${segment.startDate.getMonth() + 1}`;
       }
 
-      // compressed段：总是插入月份标题（视觉上更清晰，每个压缩段都显示月份）
+      // compressed段：总是插入月份标题（即使与上一个段月份相同）
       if (segment.type === 'compressed') {
         const [year, month] = currentMonthKey.split('-').map(Number);
         segmentsWithMonthHeaders.push({ type: 'month-header', year, month });
@@ -715,21 +755,8 @@ const TimeLog: React.FC = () => {
       segmentsWithMonthHeaders.push(segment);
     });
 
-    // 调试：检查是否有重复的段
-    const monthHeaderCount = new Map<string, number>();
-    segmentsWithMonthHeaders.forEach(seg => {
-      if (seg.type === 'month-header') {
-        const key = `${seg.year}-${seg.month}`;
-        monthHeaderCount.set(key, (monthHeaderCount.get(key) || 0) + 1);
-      }
-    });
-    monthHeaderCount.forEach((count, key) => {
-      if (count > 1) {
-        console.warn(`⚠️ [TimeLog] Duplicate month header: ${key} appears ${count} times`);
-      }
-    });
-    
-    // console.log('📅 [TimeLog] Generated timeline segments with month headers:', segmentsWithMonthHeaders);
+    // 调试日志（已移除，月份标题重复是正常行为）
+    // compressed 段后紧跟同月 events 段时，月份标题会连续出现 2 次，这是期望的设计
     
     // 最终调试：检查今天的位置
     const todaySegmentIndex = segmentsWithMonthHeaders.findIndex(
@@ -743,8 +770,20 @@ const TimeLog: React.FC = () => {
     //   segmentsAroundToday: segmentsWithMonthHeaders.slice(Math.max(0, todaySegmentIndex - 2), todaySegmentIndex + 3)
     // });
     
+    const segmentDuration = performance.now() - segmentStart;
+    if (segmentDuration > 50) {
+      console.log(`⚠️ [TimeLog] timelineSegments calculation slow: ${segmentDuration.toFixed(1)}ms`);
+    }
+    
     return segmentsWithMonthHeaders;
   }, [sortedDates, eventsByDate, dynamicStartDate, dynamicEndDate]);
+  
+  // ⏱️ 性能监控：timelineSegments 计算时间（仅首次渲染时输出）
+  useEffect(() => {
+    if (timelineSegments.length > 0 && !loadingEvents) {
+      console.log(`⏱️ [TimeLog] timelineSegments rendered: ${timelineSegments.length} segments`);
+    }
+  }, [timelineSegments.length, loadingEvents]);
 
   // 格式化日期标题（例如：12月5日 | 周四）
   const formatDateTitle = (dateKey: string): string => {
@@ -777,13 +816,15 @@ const TimeLog: React.FC = () => {
     return getTodayDateKey();
   }, [getTodayDateKey]);
 
-  // 初始滚动到今天的位置
+  // 初始滚动到今天的位置（只执行一次）
   useEffect(() => {
-    if (!loadingEvents && todayEventRef.current && timelineContainerRef.current) {
+    if (!loadingEvents && !hasScrolledToTodayGlobal && todayEventRef.current && timelineContainerRef.current) {
+      hasScrolledToTodayGlobal = true; // 🚀 全局标记，防止重复滚动（HMR 不会重置）
+      const scrollStartTime = performance.now();
       console.log('🎯 [TimeLog] Scrolling to today marker');
       
-      // 使用 setTimeout 确保 DOM 已完全渲染
-      setTimeout(() => {
+      // 使用 requestAnimationFrame 确保 DOM 已完全渲染（比 setTimeout 更快更准确）
+      requestAnimationFrame(() => {
         if (todayEventRef.current && timelineContainerRef.current) {
           const container = timelineContainerRef.current;
           const todayElement = todayEventRef.current;
@@ -795,17 +836,20 @@ const TimeLog: React.FC = () => {
           // 滚动到今天的位置（让今天显示在容器顶部，留一点padding）
           const scrollTop = container.scrollTop + (todayRect.top - containerRect.top) - 20;
           
-          // console.log('📍 [TimeLog] Scroll calculation:', {
-          //   containerTop: containerRect.top,
-          //   todayTop: todayRect.top,
-          //   currentScrollTop: container.scrollTop,
-          //   targetScrollTop: scrollTop,
-          //   todayDateKey: getTodayDateKey()
-          // });
+          console.log('📍 [TimeLog] Scroll calculation:', {
+            containerTop: containerRect.top,
+            todayTop: todayRect.top,
+            currentScrollTop: container.scrollTop,
+            targetScrollTop: scrollTop,
+            todayDateKey: getTodayDateKey()
+          });
           
           container.scrollTop = scrollTop;
+          
+          const scrollTime = performance.now() - scrollStartTime;
+          console.log(`⏱️ [TimeLog] Scrolled to today (${scrollTime.toFixed(2)}ms)`);
         }
-      }, 150);
+      });
     }
   }, [loadingEvents, getTodayDateKey]);
 
@@ -1137,12 +1181,12 @@ const TimeLog: React.FC = () => {
         colorTitle: '',
         fullTitle: ''
       },
-      startTime: startTime.toISOString(),
-      endTime: new Date(startTime.getTime() + 30 * 60000).toISOString(), // 默认30分钟
+      startTime: formatTimeForStorage(startTime),
+      endTime: formatTimeForStorage(new Date(startTime.getTime() + 30 * 60000)), // 默认30分钟
       tags: [],
       isAllDay: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date()),
     };
     setNewEventTemplate(newEvent);
     setCreateModalOpen(true);
@@ -1153,7 +1197,7 @@ const TimeLog: React.FC = () => {
     try {
       // 🎯 创建一个纯笔记：无时间、无标题、无标签，只记录 createdAt
       // 注意：忽略建议的 startTime，笔记不需要时间
-      const createdAt = new Date().toISOString();
+      const createdAt = formatTimeForStorage(new Date());
       const newEvent: Event = {
         id: generateEventId(),
         title: {
@@ -1304,6 +1348,27 @@ const TimeLog: React.FC = () => {
     setEditingEvent(null);
   };
 
+  // ⏱️ 性能监控：整体渲染时间（仅首次）
+  useEffect(() => {
+    const renderTime = performance.now() - mountTimeRef.current;
+    if (renderTime < 100) { // 只在首次渲染时输出
+      console.log(`⏱️ [TimeLog] Initial render time: ${renderTime.toFixed(2)}ms`);
+    }
+  }, []);
+
+  // ⏱️ 性能监控：页面完全加载完成后输出摘要
+  useEffect(() => {
+    if (!loadingEvents && events.length > 0) {
+      const totalTime = performance.now() - mountTimeRef.current;
+      console.log(`\n📊 [TimeLog Performance Summary]`);
+      console.log(`├─ Total Load Time: ${totalTime.toFixed(2)}ms`);
+      console.log(`├─ Events Loaded: ${events.length}`);
+      console.log(`├─ Dates Grouped: ${eventsByDate.size}`);
+      console.log(`├─ Timeline Segments: ${timelineSegments.length}`);
+      console.log(`└─ Status: ✅ Ready\n`);
+    }
+  }, [loadingEvents, events.length, eventsByDate.size, timelineSegments.length]);
+
   return (
     <div className="timelog-page">
       {/* 左侧内容选取区 - 完全复用 ContentSelectionPanel */}
@@ -1345,7 +1410,145 @@ const TimeLog: React.FC = () => {
                 const hasCompressedNext = nextSegment && nextSegment.type === 'compressed';
                 
                 if (hasCompressedNext) {
-                  // 月份标题和压缩日期段在同一行
+                  // 检查压缩段内是否有展开的日期
+                  const hasExpandedDateInNext = Array.from(expandedDates).some(expandedDateKey => {
+                    const currentDate = new Date(nextSegment.startDate);
+                    while (currentDate <= nextSegment.endDate) {
+                      const dateKey = formatDateForStorage(currentDate);
+                      if (dateKey === expandedDateKey) {
+                        return true;
+                      }
+                      currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    return false;
+                  });
+                  
+                  if (hasExpandedDateInNext) {
+                    // 有展开的日期，将压缩段拆分成：压缩段1 + 展开日期 + 压缩段2
+                    const segments: JSX.Element[] = [];
+                    let isFirstSegment = true;
+                    
+                    // 遍历压缩段的所有日期，按展开状态分段渲染
+                    const currentDate = new Date(nextSegment.startDate);
+                    let compressedStart: Date | null = null;
+                    
+                    while (currentDate <= nextSegment.endDate) {
+                      const dateKey = formatDateForStorage(currentDate);
+                      const isExpanded = expandedDates.has(dateKey);
+                      
+                      if (isExpanded) {
+                        // 如果之前有累积的压缩段，先渲染它
+                        if (compressedStart) {
+                          const compressedEnd = new Date(currentDate);
+                          compressedEnd.setDate(compressedEnd.getDate() - 1);
+                          
+                          if (isFirstSegment) {
+                            // 第一个段落：月份标题 + 压缩段在同一行
+                            segments.push(
+                              <div key={`month-header-compressed-${segment.year}-${segment.month}`} className="timeline-month-header">
+                                <div className="timeline-month-info">
+                                  <div className="month-year">{segment.year}</div>
+                                  <div className="month-number">{segment.month}</div>
+                                </div>
+                                <CompressedDateRange
+                                  startDate={compressedStart}
+                                  endDate={compressedEnd}
+                                  onDateClick={(date) => {
+                                    const key = formatDateForStorage(date);
+                                    setExpandedDates(prev => new Set(prev).add(key));
+                                  }}
+                                />
+                              </div>
+                            );
+                            isFirstSegment = false;
+                          } else {
+                            // 后续段落：压缩段带月份标题
+                            segments.push(
+                              <div key={`month-header-compressed-mid-${dateKey}`} className="timeline-month-header">
+                                <div className="timeline-month-info">
+                                  <div className="month-year">{segment.year}</div>
+                                  <div className="month-number">{segment.month}</div>
+                                </div>
+                                <CompressedDateRange
+                                  startDate={compressedStart}
+                                  endDate={compressedEnd}
+                                  onDateClick={(date) => {
+                                    const key = formatDateForStorage(date);
+                                    setExpandedDates(prev => new Set(prev).add(key));
+                                  }}
+                                />
+                              </div>
+                            );
+                          }
+                          compressedStart = null;
+                        } else if (isFirstSegment) {
+                          // 第一个就是展开的日期，只渲染月份标题
+                          segments.push(
+                            <div key={`month-header-${segment.year}-${segment.month}`} className="timeline-month-header">
+                              <div className="timeline-month-info">
+                                <div className="month-year">{segment.year}</div>
+                                <div className="month-number">{segment.month}</div>
+                              </div>
+                            </div>
+                          );
+                          isFirstSegment = false;
+                        }
+                        
+                        // 渲染展开的日期
+                        const dateEvents = eventsByDate.get(dateKey) || [];
+                        const isToday = dateKey === findTodayFirstDateKey();
+                        
+                        segments.push(
+                          <div key={dateKey} className="timeline-date-group" data-date-key={dateKey}>
+                            <div className="timeline-date-header">
+                              <h2 className="timeline-date-title">{formatDateTitle(dateKey)}</h2>
+                            </div>
+                            
+                            {dateEvents.length === 0 && (
+                              <TimeGap
+                                prevEventEndTime={undefined}
+                                nextEventStartTime={undefined}
+                                onCreateEvent={handleCreateEvent}
+                                onCreateNote={handleCreateNote}
+                                onUploadAttachment={handleUploadAttachment}
+                              />
+                            )}
+                          </div>
+                        );
+                      } else {
+                        // 未展开的日期，累积到压缩段
+                        if (!compressedStart) {
+                          compressedStart = new Date(currentDate);
+                        }
+                      }
+                      
+                      currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    
+                    // 如果最后还有累积的压缩段，渲染它（带月份标题）
+                    if (compressedStart) {
+                      segments.push(
+                        <div key={`month-header-compressed-after-${segmentIndex}`} className="timeline-month-header">
+                          <div className="timeline-month-info">
+                            <div className="month-year">{segment.year}</div>
+                            <div className="month-number">{segment.month}</div>
+                          </div>
+                          <CompressedDateRange
+                            startDate={compressedStart}
+                            endDate={nextSegment.endDate}
+                            onDateClick={(date) => {
+                              const key = formatDateForStorage(date);
+                              setExpandedDates(prev => new Set(prev).add(key));
+                            }}
+                          />
+                        </div>
+                      );
+                    }
+                    
+                    return <React.Fragment key={`month-${segment.year}-${segment.month}-${segmentIndex}`}>{segments}</React.Fragment>;
+                  }
+                  
+                  // 没有展开的日期，渲染月份标题和压缩段在同一行
                   return (
                     <div key={`month-${segment.year}-${segment.month}-${segmentIndex}`} className="timeline-month-header">
                       <div className="timeline-month-info">
@@ -1356,9 +1559,14 @@ const TimeLog: React.FC = () => {
                         startDate={nextSegment.startDate}
                         endDate={nextSegment.endDate}
                         onDateClick={(date) => {
-                          const dateKey = date.toISOString().split('T')[0];
-                          // console.log('📅 [TimeLog] 展开压缩日期:', dateKey);
-                          setExpandedDates(prev => new Set(prev).add(dateKey));
+                          console.log('🎯 [TimeLog] onDateClick callback triggered with:', date);
+                          const dateKey = formatDateForStorage(date);
+                          console.log('📅 [TimeLog] Formatted dateKey:', dateKey);
+                          setExpandedDates(prev => {
+                            const newSet = new Set(prev).add(dateKey);
+                            console.log('✅ [TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
+                            return newSet;
+                          });
                         }}
                       />
                     </div>
@@ -1385,50 +1593,96 @@ const TimeLog: React.FC = () => {
                 // 独立的压缩日期段（没有月份标题）
                 // 检查该段内是否有日期被展开
                 const hasExpandedDate = Array.from(expandedDates).some(expandedDateKey => {
-                  const expandedDate = new Date(expandedDateKey);
-                  return expandedDate >= segment.startDate && expandedDate <= segment.endDate;
-                });
-                
-                if (hasExpandedDate) {
-                  // 有展开的日期，渲染完整的日期组件
-                  const datesInRange: string[] = [];
                   const currentDate = new Date(segment.startDate);
                   while (currentDate <= segment.endDate) {
-                    const dateKey = currentDate.toISOString().split('T')[0];
-                    if (expandedDates.has(dateKey)) {
-                      datesInRange.push(dateKey);
+                    const dateKey = formatDateForStorage(currentDate);
+                    if (dateKey === expandedDateKey) {
+                      return true;
                     }
                     currentDate.setDate(currentDate.getDate() + 1);
                   }
+                  return false;
+                });
+                
+                if (hasExpandedDate) {
+                  // 有展开的日期，将压缩段拆分成：压缩段1 + 展开日期 + 压缩段2
+                  const segments: JSX.Element[] = [];
                   
-                  return (
-                    <React.Fragment key={`compressed-${segmentIndex}`}>
-                      {datesInRange.map(dateKey => {
-                        const dateEvents = eventsByDate.get(dateKey) || [];
-                        const isToday = dateKey === findTodayFirstDateKey();
-                        
-                        return (
-                          <div key={dateKey} className="timeline-date-group" data-date-key={dateKey}>
-                            <div className="timeline-date-header">
-                              <h2 className="timeline-date-title">{formatDateTitle(dateKey)}</h2>
-                            </div>
-                            
-                            {/* 展开的空白日期显示完整 TimeGap（00:00 - 23:59）
-                                允许用户在任意时间点创建事件 */}
-                            {dateEvents.length === 0 && (
-                              <TimeGap
-                                prevEventEndTime={undefined}
-                                nextEventStartTime={undefined}
-                                onCreateEvent={handleCreateEvent}
-                                onCreateNote={handleCreateNote}
-                                onUploadAttachment={handleUploadAttachment}
-                              />
-                            )}
+                  const currentDate = new Date(segment.startDate);
+                  let compressedStart: Date | null = null;
+                  
+                  while (currentDate <= segment.endDate) {
+                    const dateKey = formatDateForStorage(currentDate);
+                    const isExpanded = expandedDates.has(dateKey);
+                    
+                    if (isExpanded) {
+                      // 如果之前有累积的压缩段，先渲染它
+                      if (compressedStart) {
+                        const compressedEnd = new Date(currentDate);
+                        compressedEnd.setDate(compressedEnd.getDate() - 1);
+                        segments.push(
+                          <div key={`compressed-before-${dateKey}`} className="timeline-compressed-segment">
+                            <CompressedDateRange
+                              startDate={compressedStart}
+                              endDate={compressedEnd}
+                              onDateClick={(date) => {
+                                const key = formatDateForStorage(date);
+                                setExpandedDates(prev => new Set(prev).add(key));
+                              }}
+                            />
                           </div>
                         );
-                      })}
-                    </React.Fragment>
-                  );
+                        compressedStart = null;
+                      }
+                      
+                      // 渲染展开的日期
+                      const dateEvents = eventsByDate.get(dateKey) || [];
+                      const isToday = dateKey === findTodayFirstDateKey();
+                      
+                      segments.push(
+                        <div key={dateKey} className="timeline-date-group" data-date-key={dateKey}>
+                          <div className="timeline-date-header">
+                            <h2 className="timeline-date-title">{formatDateTitle(dateKey)}</h2>
+                          </div>
+                          
+                          {dateEvents.length === 0 && (
+                            <TimeGap
+                              prevEventEndTime={undefined}
+                              nextEventStartTime={undefined}
+                              onCreateEvent={handleCreateEvent}
+                              onCreateNote={handleCreateNote}
+                              onUploadAttachment={handleUploadAttachment}
+                            />
+                          )}
+                        </div>
+                      );
+                    } else {
+                      // 未展开的日期，累积到压缩段
+                      if (!compressedStart) {
+                        compressedStart = new Date(currentDate);
+                      }
+                    }
+                    
+                    currentDate.setDate(currentDate.getDate() + 1);
+                  }
+                  
+                  // 如果最后还有累积的压缩段，渲染它
+                  if (compressedStart) {
+                    segments.push(
+                      <div key={`compressed-after-${segmentIndex}`} className="timeline-compressed-segment">
+                        <CompressedDateRange
+                          startDate={compressedStart}
+                          endDate={segment.endDate}
+                          onDateClick={(date) => {
+                            const key = formatDateForStorage(date);
+                            setExpandedDates(prev => new Set(prev).add(key));
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+                  
+                  return <React.Fragment key={`compressed-${segmentIndex}`}>{segments}</React.Fragment>;
                 }
                 
                 return (
@@ -1437,9 +1691,14 @@ const TimeLog: React.FC = () => {
                       startDate={segment.startDate}
                       endDate={segment.endDate}
                       onDateClick={(date) => {
-                        const dateKey = date.toISOString().split('T')[0];
-                        console.log('📅 [TimeLog] 展开压缩日期:', dateKey);
-                        setExpandedDates(prev => new Set(prev).add(dateKey));
+                        console.log('🎯 [TimeLog] onDateClick callback triggered (standalone) with:', date);
+                        const dateKey = formatDateForStorage(date);
+                        console.log('📅 [TimeLog] Formatted dateKey:', dateKey);
+                        setExpandedDates(prev => {
+                          const newSet = new Set(prev).add(dateKey);
+                          console.log('✅ [TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
+                          return newSet;
+                        });
                       }}
                     />
                   </div>
@@ -1452,8 +1711,8 @@ const TimeLog: React.FC = () => {
                 const isToday = dateKey === todayDateKey;
                 const hasNoEvents = dateEvents.length === 0; // 单独1天空白
                 
-                // 调试：检查今天的判断
-                if (isToday) {
+                // 调试：检查今天的判断（仅首次渲染时输出）
+                if (isToday && import.meta.env.DEV && false) {
                   console.log(`📍 [TimeLog] Rendering today (${dateKey}):`, {
                     dateKey,
                     isToday,
@@ -1794,7 +2053,7 @@ const TimeLog: React.FC = () => {
                                 console.log('打开标签页', event.id);
                               }}
                             >
-                              <img src={TabIconSvg} alt="tab" style={{ width: '16px', height: '16px' }} />
+                              <img src={TabIconSvg} alt="tab" style={{ width: '20px', height: '20px' }} />
                             </button>
                             <button 
                               className="ghost-menu-btn"

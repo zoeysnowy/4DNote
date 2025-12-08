@@ -1959,7 +1959,7 @@ function App() {
       {/* 计时器事件编辑模态框 - 使用 EventEditModalV2 */}
       {timerEditModal.isOpen && timerEditModal.event && (
         <EventEditModalV2
-          event={timerEditModal.event}
+          eventId={timerEditModal.event.id}
           isOpen={timerEditModal.isOpen}
           onClose={() => setTimerEditModal({ isOpen: false, event: null })}
           onSave={handleTimerEditSave}

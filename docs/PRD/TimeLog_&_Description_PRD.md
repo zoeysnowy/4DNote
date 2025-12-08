@@ -1,14 +1,165 @@
 ﻿# TimeLog 页面 & Event.eventlog 字段 PRD
 
-> **版本**: v2.4  
+> **版本**: v2.5  
 > **创建时间**: 2024-01-XX  
-> **最后更新**: 2025-12-08  
+> **最后更新**: 2025-12-09  
 > **Figma 设计稿**: [TimeLog 页面设计](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=333-1178&m=dev)  
 > **依赖模块**: EventService, PlanSlateEditor, TimeHub, EventHub  
 > **关联文档**:
 > - [EventEditModal v2 PRD](./EVENTEDITMODAL_V2_PRD.md)
 > - [TIME_ARCHITECTURE.md](../TIME_ARCHITECTURE.md)
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
+
+---
+
+## 🔄 v2.5 更新日志 (2025-12-09)
+
+### 压缩日期交互式展开功能 ✨
+
+#### 功能描述
+用户可以点击压缩日期范围中的任意日期按钮，将该日期展开为完整的时间轴日期段，并支持在该日期的任意时间点创建事件。
+
+#### 交互流程
+
+1. **初始状态**
+   - 压缩日期段显示为横向日历格子
+   - 每个日期显示为可点击的按钮（星期 + 日期）
+   - 例：`三 10` `四 11` `五 12`
+
+2. **点击展开**
+   - 用户点击任意日期按钮（如"四 11"）
+   - 该日期从压缩段中提取出来
+   - 压缩段自动拆分为三部分：
+     - **压缩段1**: 展开日期之前的日期（如 9-10日）+ 月份标题
+     - **展开日期**: 完整的日期标题 + TimeGap（如"12月11日 | 周四"）
+     - **压缩段2**: 展开日期之后的日期（如 12-31日）+ 月份标题
+
+3. **TimeGap 交互**
+   - 展开的日期显示完整时间轴（00:00 - 23:59）
+   - 用户可以在任意时间点创建事件/笔记
+   - 支持精准时间选择（鼠标悬停显示时间点）
+
+#### 技术实现
+
+**1. 日期格式化工具函数** (`src/utils/timeUtils.ts`)
+```typescript
+// 新增：格式化日期为 YYYY-MM-DD（本地时间，避免时区问题）
+export const formatDateForStorage = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+```
+
+**2. 展开日期状态管理** (`src/pages/TimeLog.tsx`)
+```typescript
+const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+```
+
+**3. 压缩段智能拆分渲染**
+
+月份标题 + 压缩段组合：
+- 检查压缩段内是否有展开的日期
+- 如果有展开，遍历所有日期，按展开状态分段：
+  - **未展开的连续日期** → 压缩段（带月份标题）
+  - **展开的日期** → 完整日期组件（带 TimeGap）
+  - 确保每个压缩段都有自己的月份标题
+
+**4. 时区问题修复**
+
+- ❌ 禁止使用 `date.toISOString().split('T')[0]`
+  - 原因：toISOString() 返回 UTC 时间，GMT+8 会导致日期减1
+  - 例：`Thu Dec 11 2025 00:00:00 GMT+0800` → `2025-12-10`（错误）
+  
+- ✅ 使用 `formatDateForStorage(date)`
+  - 直接读取本地时间组件（getFullYear/getMonth/getDate）
+  - 例：`Thu Dec 11 2025 00:00:00 GMT+0800` → `2025-12-11`（正确）
+
+**5. 渲染逻辑**
+
+```typescript
+// 检查是否有展开的日期
+const hasExpandedDate = Array.from(expandedDates).some(expandedDateKey => {
+  const currentDate = new Date(segment.startDate);
+  while (currentDate <= segment.endDate) {
+    if (formatDateForStorage(currentDate) === expandedDateKey) return true;
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  return false;
+});
+
+if (hasExpandedDate) {
+  // 遍历日期范围，按展开状态分段渲染
+  let compressedStart: Date | null = null;
+  
+  for (let date = startDate; date <= endDate; date++) {
+    if (expandedDates.has(formatDateForStorage(date))) {
+      // 先渲染累积的压缩段（带月份标题）
+      if (compressedStart) {
+        renderCompressedRange(compressedStart, date - 1);
+        compressedStart = null;
+      }
+      // 渲染展开的日期
+      renderExpandedDate(date);
+    } else {
+      // 累积压缩段
+      if (!compressedStart) compressedStart = date;
+    }
+  }
+  
+  // 渲染剩余的压缩段
+  if (compressedStart) renderCompressedRange(compressedStart, endDate);
+}
+```
+
+#### 视觉效果
+
+展开前：
+```
+2025
+12    三 10  四 11  五 12  六 13  ...  三 31
+```
+
+点击"四 11"后：
+```
+2025
+12    三 10
+
+12月11日 | 周四
+├─ 00:00
+├─ [TimeGap - 可创建事件]
+└─ 23:59
+
+2025
+12    五 12  六 13  ...  三 31
+```
+
+#### 代码变更
+
+- **src/utils/timeUtils.ts**
+  - 新增 `formatDateForStorage()` 函数
+  - 替换所有 `.toISOString().split('T')[0]` 为 TimeSpec 格式
+
+- **src/pages/TimeLog.tsx**
+  - 导入 `formatDateForStorage`
+  - 新增 `expandedDates` 状态
+  - CompressedDateRange 添加 `onDateClick` 回调
+  - 月份标题 + 压缩段拆分渲染逻辑
+  - 独立压缩段拆分渲染逻辑
+
+- **src/components/TimeLog/CompressedDateRange.tsx**
+  - 按钮添加 `onClick` 事件
+  - 调用 `onDateClick?.(date)` 回调
+
+- **src/utils/slateSerializer.ts** & **versionDiff.ts**
+  - 修复 `lastEditedAt` 使用 `formatTimeForStorage` 替代 `.toISOString()`
+
+#### 性能优化
+
+- 展开日期不触发完整列表刷新
+- 只更新局部渲染（React Fragment 拆分）
+- Set 数据结构确保 O(1) 查找性能
 
 ---
 

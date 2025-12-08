@@ -11,6 +11,7 @@
 import { compare, applyPatch as applyJSONPatch, type Operation } from 'fast-json-patch';
 import pako from 'pako';
 import type { EventLog } from '../types';
+import { formatTimeForStorage } from './timeUtils';
 
 export interface DeltaResult {
   delta: string;              // Base64 编码的压缩数据
@@ -113,7 +114,7 @@ export function applyDelta(
       slateJson: restoredSlateJson,
       plainText: slateNodesToPlainText(result.newDocument),
       html: slateNodesToHtml(result.newDocument),
-      lastEditedAt: new Date().toISOString()
+      lastEditedAt: formatTimeForStorage(new Date())
     };
   } catch (error) {
     console.error('[versionDiff] Failed to apply delta:', error);
@@ -182,7 +183,7 @@ export function decompressFullEventLog(deltaBase64: string): EventLog {
       slateJson,
       plainText: slateNodesToPlainText(nodes),
       html: slateNodesToHtml(nodes),
-      lastEditedAt: new Date().toISOString()
+      lastEditedAt: formatTimeForStorage(new Date())
     };
   } catch (error) {
     console.error('[versionDiff] Failed to decompress full EventLog:', error);

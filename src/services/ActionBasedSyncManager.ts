@@ -2387,7 +2387,23 @@ private getUserSettings(): any {
           // 不是 JSON，保持原样
         }
         
-        const localTitle = localEvent.title?.simpleTitle || localEvent.title || '';
+        // 🔧 确保 localTitle 是字符串
+        const localTitle = (() => {
+          if (!localEvent.title) return '';
+          if (typeof localEvent.title === 'string') return localEvent.title;
+          return localEvent.title.simpleTitle || '';
+        })();
+        
+        // 🔍 调试：验证 localTitle 类型
+        if (successCount < 3 && typeof localTitle !== 'string') {
+          console.error('❌ [Sync] localTitle 类型错误:', {
+            eventId: localEvent.id.slice(-8),
+            'typeof localTitle': typeof localTitle,
+            localTitle,
+            'localEvent.title': localEvent.title
+          });
+        }
+        
         const syncMode = localEvent.syncMode || 'receive-only'; // 🔧 提升作用域
         
         // 🔧 [CRITICAL FIX] 如果 remoteTitle 为空但 localTitle 不为空，保留 localTitle

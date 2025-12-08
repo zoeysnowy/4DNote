@@ -1902,9 +1902,58 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   };
 
   /**
-   * 💾 保存编辑弹窗的更改
+   * 🚪 关闭编辑弹窗
+   * ✅ 使用 useCallback 避免不必要的 EventEditModalV2 re-render
    */
-  const handleSaveEventFromModal = async (updatedEvent: Event) => {
+  const handleCloseModal = React.useCallback(() => {
+    setShowEventEditModal(false);
+    setEditingEvent(null);
+    // 清除 TUI Calendar 的时间段选择状态
+    if (calendarRef.current) {
+      const instance = calendarRef.current.getInstance();
+      if (instance) {
+        instance.clearGridSelections();
+      }
+    }
+  }, []);
+
+  /**
+   * ⏱️ Timer 动作分发器
+   * ✅ 使用 useCallback 避免不必要的 EventEditModalV2 re-render
+   */
+  const handleTimerAction = React.useCallback((action: string, tagIds?: string | string[], eventIdOrParentId?: string) => {
+    switch (action) {
+      case 'start':
+        onTimerStart?.(tagIds, eventIdOrParentId);
+        break;
+      case 'pause':
+        onTimerPause?.();
+        break;
+      case 'resume':
+        onTimerResume?.();
+        break;
+      case 'stop':
+        onTimerStop?.();
+        break;
+      case 'cancel':
+        onTimerCancel?.();
+        break;
+      default:
+        console.warn(`[TimeCalendar] Unknown timer action: ${action}`);
+    }
+  }, [onTimerStart, onTimerPause, onTimerResume, onTimerStop, onTimerCancel]);
+
+  /**
+   * 🏷️ 缓存 hierarchicalTags
+   * ✅ 使用 useMemo 避免每次 render 都调用 getAvailableTagsForSettings()
+   */
+  const hierarchicalTagsMemo = React.useMemo(() => getAvailableTagsForSettings(), []);
+
+  /**
+   * 💾 保存编辑弹窗的更改
+   * ✅ 使用 useCallback 避免不必要的 EventEditModalV2 re-render
+   */
+  const handleSaveEventFromModal = React.useCallback(async (updatedEvent: Event) => {
     console.log('💾 [TimeCalendar] Event saved via EditModal:', updatedEvent.id);
     console.log('📋 [TimeCalendar] Received event data (for reference only, NOT modifying):', {
       title: updatedEvent.title,
@@ -1946,7 +1995,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     } catch (error) {
       console.error('❌ [TimeCalendar] Save failed:', error);
     }
-  };
+  }, []); // 空依赖，函数永不变化
 
   /**
    * 🗑️ 从编辑弹窗删除事件
@@ -2790,45 +2839,14 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
 
       {/* ✏️ 事件编辑弹窗 - 使用 EventEditModalV2 */}
       <EventEditModalV2
-        event={editingEvent}
+        eventId={editingEvent?.id || null}
         isOpen={showEventEditModal}
-        onClose={() => {
-          setShowEventEditModal(false);
-          setEditingEvent(null);
-          // 清除 TUI Calendar 的时间段选择状态
-          if (calendarRef.current) {
-            const instance = calendarRef.current.getInstance();
-            if (instance) {
-              instance.clearGridSelections();
-            }
-          }
-        }}
+        onClose={handleCloseModal}
         onSave={handleSaveEventFromModal}
         onDelete={handleDeleteEventFromModal}
-        hierarchicalTags={getAvailableTagsForSettings()}
+        hierarchicalTags={hierarchicalTagsMemo}
         globalTimer={globalTimer}
-        onTimerAction={(action, tagIds, eventIdOrParentId) => {
-          // 🎯 Timer 动作分发器：根据 action 调用对应的 Timer 处理函数
-          switch (action) {
-            case 'start':
-              onTimerStart?.(tagIds, eventIdOrParentId);
-              break;
-            case 'pause':
-              onTimerPause?.();
-              break;
-            case 'resume':
-              onTimerResume?.();
-              break;
-            case 'stop':
-              onTimerStop?.();
-              break;
-            case 'cancel':
-              onTimerCancel?.();
-              break;
-            default:
-              console.warn(`[TimeCalendar] Unknown timer action: ${action}`);
-          }
-        }}
+        onTimerAction={handleTimerAction}
       />
 
       {/* ⚙️ 设置面板 */}

@@ -74,16 +74,17 @@
  * @lastModified 2025-11-24
  */
 
-import React, { useState, useCallback, useRef, useEffect, RefObject } from 'react';
+import React, { useState, useCallback, useRef, useEffect, RefObject, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
 import { TagService } from '../../services/TagService';
 import { EventService } from '../../services/EventService';
+import { EventHub } from '../../services/EventHub';
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact } from '../../types';
+import { Event, Contact, EventTitle } from '../../types';
 import { HierarchicalTagPicker } from '../HierarchicalTagPicker/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { AttendeeDisplay } from '../common/AttendeeDisplay';
@@ -163,7 +164,7 @@ interface MockEvent {
 }
 
 interface EventEditModalV2Props {
-  event: Event | null;
+  eventId: string | null; // 🔧 重构：只传 eventId，Modal 自己从 EventHub 获取数据
   isOpen: boolean;
   onClose: () => void;
   onSave: (updatedEvent: Event) => void;
@@ -188,8 +189,8 @@ interface EventEditModalV2Props {
   resizable?: boolean;
 }
 
-export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
-  event,
+const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
+  eventId,
   isOpen,
   onClose,
   onSave,
@@ -198,9 +199,26 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   globalTimer,
   onTimerAction,
 }) => {
-  // 如果modal未打开，不渲染
-  if (!isOpen) return null;
-
+  // 🔧 从 EventHub 获取最新的 event 数据（单一数据源）
+  const [event, setEvent] = React.useState<Event | null>(null);
+  
+  React.useEffect(() => {
+    if (!eventId) {
+      setEvent(null);
+      return;
+    }
+    
+    // 🔧 从 EventService 异步加载事件数据
+    EventService.getEventById(eventId).then(serviceEvent => {
+      if (serviceEvent) {
+        setEvent(serviceEvent);
+      } else {
+        console.error('❌ [EventEditModalV2] 事件不存在:', eventId);
+        setEvent(null);
+      }
+    });
+  }, [eventId]);
+  
   // 🔧 模式检测：判断是父事件模式还是子事件模式
   const isParentMode = !event?.parentEventId;
   
@@ -220,6 +238,47 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
     syncStatus: event?.syncStatus,
     calendarIds: event?.calendarIds
   });
+  
+  // 🔍 检测 event 对象引用是否变化（用于诊断重新渲染）
+  const eventRefTracker = React.useRef({ count: 0, lastEventId: null, lastEventRef: null });
+  if (eventRefTracker.current.lastEventRef !== event) {
+    eventRefTracker.current.count++;
+    eventRefTracker.current.lastEventRef = event;
+    console.log('⚠️ [EventEditModalV2] event prop 引用变化！', {
+      renderCount: eventRefTracker.current.count,
+      eventId: event?.id,
+      isSameEvent: eventRefTracker.current.lastEventId === event?.id
+    });
+    eventRefTracker.current.lastEventId = event?.id;
+  }
+
+  // 🔍 渲染原因追踪器 - 记录所有导致重新渲染的原因
+  const renderTracker = React.useRef({
+    renderCount: 0,
+    lastProps: { event, isOpen, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction },
+    lastStates: {} as any
+  });
+  
+  renderTracker.current.renderCount++;
+  const currentProps = { event, isOpen, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction };
+  const propsChanged: string[] = [];
+  
+  Object.keys(currentProps).forEach(key => {
+    if (renderTracker.current.lastProps[key] !== currentProps[key]) {
+      propsChanged.push(key);
+    }
+  });
+  
+  if (propsChanged.length > 0 || renderTracker.current.renderCount <= 2) {
+    console.log(`🔄 [EventEditModalV2] Render #${renderTracker.current.renderCount}`, {
+      propsChanged: propsChanged.length > 0 ? propsChanged : '无prop变化',
+      eventIdChanged: renderTracker.current.lastProps.event?.id !== event?.id,
+      isOpenChanged: renderTracker.current.lastProps.isOpen !== isOpen,
+      functionRefsChanged: propsChanged.filter(k => typeof currentProps[k] === 'function')
+    });
+  }
+  
+  renderTracker.current.lastProps = currentProps;
   
   /**
    * ==================== formData 初始化 ====================
@@ -249,24 +308,26 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   
   // 🌲 EventTree: 加载所有事件用于树状图
   const [allEvents, setAllEvents] = useState<any[]>([]);
-  
-  React.useEffect(() => {
-    const loadEvents = async () => {
-      const events = await EventService.getAllEvents();
-      setAllEvents(events);
-    };
-    
-    if (isOpen) {
-      loadEvents();
-    }
-  }, [isOpen]);
+
+  // 🔍 [已删除] State变化追踪器 - 导致频繁 re-render，仅在开发时需要可手动启用
   
   // 🏷️ 订阅 TagService 更新（当标签在 TagManager 中被修改时）
   React.useEffect(() => {
+    console.log('🔄 [useEffect] TagService subscription 触发');
     const handleTagsUpdate = () => {
       const updatedTags = TagService.getTags();
       console.log('🏷️ [EventEditModalV2] TagService 更新，重新加载标签:', updatedTags.length);
-      setAvailableTags(updatedTags);
+      setAvailableTags(prev => {
+        // 比较标签ID数组避免循环
+        const prevIds = prev.map(t => t.id).sort().join(',');
+        const newIds = updatedTags.map(t => t.id).sort().join(',');
+        if (prevIds === newIds) {
+          console.log('⏭️ [useEffect] TagService 跳过更新(ID相同)');
+          return prev;
+        }
+        console.log('✅ [useEffect] TagService 更新', { prevCount: prev.length, newCount: updatedTags.length });
+        return updatedTags;
+      });
     };
     
     // 添加监听器
@@ -296,33 +357,9 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
           console.log('🔄 [formData 初始化] 纯文本标题，转换为 JSON:', event.title);
           titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
         } else {
-          // 优先使用 fullTitle (Slate JSON)，fallback 到 colorTitle 或 simpleTitle
-          console.log('📦 [formData 初始化] 对象标题:', {
-            fullTitle: event.title.fullTitle,
-            colorTitle: event.title.colorTitle,
-            simpleTitle: event.title.simpleTitle
-          });
-          
-          // ✅ 优先使用 fullTitle 或 colorTitle（它们已经是 Slate JSON）
-          if (event.title.fullTitle) {
-            titleText = event.title.fullTitle;
-          } else if (event.title.colorTitle) {
-            titleText = event.title.colorTitle;
-          } else if (event.title.simpleTitle) {
-            // simpleTitle 可能是纯文本或 Slate JSON，需要判断
-            const simple = event.title.simpleTitle;
-            try {
-              // 尝试解析为 JSON，如果成功说明已经是 Slate JSON 格式
-              JSON.parse(simple);
-              titleText = simple; // 已经是 Slate JSON，直接使用
-            } catch {
-              // 不是 JSON，说明是纯文本，需要转换
-              console.log('🔄 [formData 初始化] simpleTitle 纯文本，转换为 JSON:', simple);
-              titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: simple }] }]);
-            }
-          } else {
-            titleText = '';
-          }
+          // 🔧 只读取 colorTitle（Slate JSON 格式，可编辑）
+          console.log('📦 [formData 初始化] event.title.colorTitle:', event.title.colorTitle);
+          titleText = event.title.colorTitle || '';
         }
       }
       console.log('✅ [formData 初始化] 最终 titleText:', titleText);
@@ -440,22 +477,118 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
     };
   });
 
-  // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
+  // 🔧 当 Modal 打开时，立即重置 formData 为新建事件的默认值（避免显示旧数据）
   React.useEffect(() => {
-    if (isOpen && formData && !initialSnapshotRef.current) {
-      initialSnapshotRef.current = JSON.parse(JSON.stringify(formData));
-      console.log('📸 [EventEditModalV2] Initial snapshot captured:', {
-        eventId: formData.id,
-        syncMode: formData.syncMode,
-        calendarIds: formData.calendarIds
+    if (isOpen && !eventId) {
+      // 新建事件：重置为空表单
+      setFormData({
+        id: `event-${Date.now()}`,
+        title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
+        tags: [],
+        isTask: false,
+        isTimer: false,
+        parentEventId: null,
+        childEventIds: [],
+        linkedEventIds: [],
+        backlinks: [],
+        startTime: null,
+        endTime: null,
+        allDay: false,
+        location: '',
+        attendees: [],
+        eventlog: [],
+        description: '',
+        calendarIds: [],
+        syncMode: 'bidirectional-private',
+        subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
       });
     }
+  }, [isOpen, eventId]);
+
+  // 🔧 当从 EventHub 加载的 event 变化时重新初始化 formData
+  React.useEffect(() => {
+    if (!event) return;
     
-    if (!isOpen) {
-      // Modal 关闭时清理快照
-      initialSnapshotRef.current = null;
+    console.log('🔍 [formData初始化] event.title 结构:', {
+      'event.title类型': typeof event.title,
+      'event.title': event.title,
+      'event.title.colorTitle': typeof event.title === 'object' ? event.title.colorTitle : undefined,
+      'event.title.simpleTitle': typeof event.title === 'object' ? event.title.simpleTitle : undefined,
+    });
+    
+    let titleText = '';
+    if (event.title) {
+      if (typeof event.title === 'string') {
+        // 旧数据：纯文本，转换为 Slate JSON
+        titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
+      } else {
+        // 🔧 只读取 colorTitle（Slate JSON 格式，可编辑）
+        titleText = event.title.colorTitle || '';
+      }
     }
-  }, [isOpen, formData.id]);
+    
+    console.log('🔍 [formData初始化] 提取的 titleText:', titleText?.substring(0, 100));
+    
+    // 🔧 同步 titleRef（避免事件切换后 titleRef 与 formData 不一致）
+    titleRef.current = titleText;
+    
+    const childEventIds = (event as any).childEventIds || [];
+    const linkedEventIds = (event as any).linkedEventIds || [];
+    const backlinks = (event as any).backlinks || [];
+    
+    setFormData({
+      id: event.id,
+      title: titleText,
+      tags: event.tags || [],
+      isTask: event.isTask || false,
+      isTimer: event.isTimer || false,
+      parentEventId: event.parentEventId || null,
+      childEventIds,
+      linkedEventIds,
+      backlinks,
+      startTime: event.startTime || null,
+      endTime: event.endTime || null,
+      allDay: event.isAllDay || false,
+      location: event.location || '',
+      organizer: event.organizer,
+      attendees: event.attendees || [],
+      eventlog: (() => {
+        if (!event.eventlog) return [];
+        if (typeof event.eventlog === 'string') {
+          try {
+            return JSON.parse(event.eventlog);
+          } catch (error) {
+            console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
+            return [];
+          }
+        }
+        if (event.eventlog.slateJson) {
+          try {
+            return typeof event.eventlog.slateJson === 'string' 
+              ? JSON.parse(event.eventlog.slateJson) 
+              : event.eventlog.slateJson;
+          } catch (error) {
+            console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
+            return [];
+          }
+        }
+        if (Array.isArray(event.eventlog)) {
+          return event.eventlog;
+        }
+        return [];
+      })(),
+      description: event.description || '',
+      calendarIds: event.calendarIds || [],
+      syncMode: event.syncMode || (() => {
+        const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
+        return isLocalEvent ? 'bidirectional-private' : 'receive-only';
+      })(),
+      subEventConfig: event.subEventConfig || { 
+        calendarIds: [], 
+        syncMode: 'bidirectional-private'
+      },
+    });
+  }, [event?.id]); // 只在 event ID 变化时重新初始化
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -470,12 +603,43 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   const [isDetailView, setIsDetailView] = useState(true);
   const [tagPickerPosition, setTagPickerPosition] = useState({ top: 0, left: 0, width: 0 });
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
+
+  // 🔥 延迟加载 allEvents - 只在用户打开 EventTree 时才加载，避免打开Modal时就触发re-render导致失焦
+  React.useEffect(() => {
+    console.log('🔄 [useEffect] loadEvents 触发', { showEventTree, allEventsLength: allEvents.length });
+    const loadEvents = async () => {
+      const events = await EventService.getAllEvents();
+      setAllEvents(prev => {
+        // 比较ID数组避免循环
+        const prevIds = prev.map(e => e.id).sort().join(',');
+        const newIds = events.map((e: any) => e.id).sort().join(',');
+        if (prevIds === newIds) {
+          console.log('⏭️ [useEffect] loadEvents 跳过更新(ID相同)');
+          return prev;
+        }
+        console.log('✅ [useEffect] loadEvents 更新', { prevCount: prev.length, newCount: events.length });
+        return events;
+      });
+    };
+    
+    // 🔥 只在打开EventTree时才加载（延迟加载，避免打开Modal时就加载导致失焦）
+    if (isOpen && showEventTree && allEvents.length === 0) {
+      loadEvents();
+    }
+  }, [isOpen, showEventTree, allEvents.length]);
   
   // 🆕 三层保存架构状态
   // ✅ Layer 2: 静默自动保存（保护断网/断电数据）
   // 注意：不显示"已保存"提示，避免干扰用户
   const initialSnapshotRef = React.useRef<MockEvent | null>(null);
   const isAutoSavingRef = React.useRef<boolean>(false); // 🔧 标记是否正在 auto-save
+  const titleRef = React.useRef<string>(formData.title); // 🔧 缓存 title，避免 blur-to-save 时 setFormData 导致 re-render
+  
+  // 🔧 同步 titleRef 与 formData.title（仅在 formData.id 变化时，即事件切换）
+  React.useEffect(() => {
+    titleRef.current = formData.title;
+    console.log('🔄 [titleRef] 同步 titleRef.current =', formData.title?.substring(0, 50));
+  }, [formData.id]); // 只在事件 ID 变化时同步
   
   // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
   React.useEffect(() => {
@@ -494,102 +658,22 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
     }
   }, [isOpen, formData.id]);
   
-  // 🆕 Layer 2: 静默自动保存机制（5秒防抖，保护断网/断电）
-  React.useEffect(() => {
-    if (!isOpen || !formData.id || formData.id.startsWith('event-')) {
-      // 未打开或新建事件，跳过 auto-save
-      return;
-    }
-    
-    // ⚠️ 检查 initialSnapshotRef 是否已捕获（防止初始化时触发 auto-save）
-    if (!initialSnapshotRef.current) {
-      // Modal 刚打开，还没捕获 initialSnapshot，跳过 auto-save
-      return;
-    }
-    
-    // 5秒防抖计时器
-    const autoSaveTimer = setTimeout(async () => {
-      try {
-        console.log('🔄 [Auto-save] Starting silent auto-save for event:', formData.id);
-        console.log('🔍 [Auto-save] Triggered by formData change, current values:', {
-          titleLength: formData.title?.length,
-          tagsCount: formData.tags?.length,
-          eventlogType: typeof formData.eventlog,
-          startTime: formData.startTime,
-          endTime: formData.endTime,
-        });
-        
-        // 🔧 标记正在 auto-save，防止 eventsUpdated 触发刷新
-        isAutoSavingRef.current = true;
-        
-        // 准备 eventlog
-        let currentEventlogJson = '';
-        if (slateEditorRef.current?.editor) {
-          try {
-            const editorContent = slateEditorRef.current.editor.children;
-            currentEventlogJson = slateNodesToJson(editorContent);
-          } catch (error) {
-            console.error('❌ [Auto-save] Failed to read editor content:', error);
-            currentEventlogJson = JSON.stringify(formData.eventlog || []);
-          }
-        } else {
-          currentEventlogJson = JSON.stringify(formData.eventlog || []);
-        }
-        
-        // 构建更新对象（只包含关键字段）
-        const updates: Partial<Event> = {
-          title: formData.title,
-          tags: formData.tags,
-          eventlog: currentEventlogJson,
-          startTime: formData.startTime,
-          endTime: formData.endTime,
-          isAllDay: formData.allDay,
-          location: formData.location,
-          attendees: formData.attendees,
-          calendarIds: formData.calendarIds,
-          syncMode: formData.syncMode,
-        };
-        
-        console.log('🔄 [Auto-save] Saving updates:', {
-          eventId: formData.id,
-          syncMode: updates.syncMode,
-          calendarIds: updates.calendarIds,
-          hasEventlog: !!currentEventlogJson
-        });
-        
-        // 直接调用 EventService.updateEvent（不通过 EventHub，避免触发 UI 更新）
-        const { EventService } = await import('../../services/EventService');
-        await EventService.updateEvent(formData.id, updates);
-        
-        console.log('✅ [Auto-save] Silent auto-save completed:', formData.id);
-      } catch (error) {
-        console.error('❌ [Auto-save] Auto-save failed:', error);
-      } finally {
-        // 🔧 延迟 100ms 再清除标志，确保 eventsUpdated 事件已处理完毕
-        setTimeout(() => {
-          isAutoSavingRef.current = false;
-        }, 100);
-      }
-    }, 5000); // 5秒防抖
-    
-    return () => clearTimeout(autoSaveTimer);
-  }, [
-    isOpen,
-    formData.id,
-    // ❌ 移除 formData.title - 由 TitleSlate 在 blur 时保存
-    // ❌ 移除 formData.tags - 由 TagPicker 在 blur/change 时保存
-    formData.eventlog,
-    formData.startTime,
-    formData.endTime,
-    formData.allDay,
-    formData.location,
-    formData.attendees,
-    formData.calendarIds,
-    formData.syncMode,
-  ]);
+  // 🔧 [已删除] Layer 2 静默自动保存机制 - 与 blur-to-save 冲突，导致重复保存
+  // 现在采用双层保存架构：
+  // Layer 1: blur-to-save（字段级，TitleSlate/TagPicker/ModalSlate blur 时立即保存）
+  // Layer 2: 显式保存按钮（handleSave，保存所有字段包括时间、地点等）
   
-  // 🔧 只更新 EventTree 关联关系（childEventIds/linkedEventIds/backlinks）
-  // 📌 formData 只在初始化时从 event 读取，之后完全由用户编辑和 Layer 2 维护
+  // 🔧 使用 useMemo 缓存 EventTree 数据，避免频繁序列化
+  const eventTreeData = React.useMemo(() => {
+    if (!event) return { childEventIds: [], linkedEventIds: [], backlinks: [] };
+    return {
+      childEventIds: (event as any).childEventIds || [],
+      linkedEventIds: (event as any).linkedEventIds || [],
+      backlinks: (event as any).backlinks || [],
+    };
+  }, [event?.id]); // 只监听 ID 变化
+  
+  // 🔧 只在 event.id 变化时更新 EventTree 关联关系
   React.useEffect(() => {
     if (!event) return;
     
@@ -599,59 +683,21 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
       return;
     }
     
-    // 🔧 直接从 event prop 读取 EventTree 数据（避免异步问题）
-    const childEventIds = (event as any).childEventIds || [];
-    const linkedEventIds = (event as any).linkedEventIds || [];
-    const backlinks = (event as any).backlinks || [];
-    
     console.log('🔗 [EventEditModalV2] 更新 EventTree 关联关系:', {
       eventId: event.id,
-      childEventIds,
-      linkedEventIds,
-      backlinks,
+      ...eventTreeData,
     });
     
     // 只更新关联关系，不覆盖用户编辑的 title/tags/eventlog 等字段
     setFormData(prev => ({
       ...prev,
-      childEventIds,
-      linkedEventIds,
-      backlinks,
+      ...eventTreeData,
     }));
-  }, [
-    event?.id, 
-    JSON.stringify((event as any)?.childEventIds),
-    JSON.stringify((event as any)?.linkedEventIds),
-    JSON.stringify((event as any)?.backlinks),
-  ]);
+  }, [event?.id, eventTreeData]);
   
-  // 🆕 当 formData.syncMode 变化时，同步到 sourceSyncMode 和 syncSyncMode（UI 显示）
-  React.useEffect(() => {
-    if (formData.syncMode) {
-      setSourceSyncMode(formData.syncMode);
-      console.log('🔄 [EventEditModalV2] formData.syncMode → sourceSyncMode:', formData.syncMode);
-    }
-    
-    if (formData.subEventConfig?.syncMode) {
-      setSyncSyncMode(formData.subEventConfig.syncMode);
-      console.log('🔄 [EventEditModalV2] formData.subEventConfig.syncMode → syncSyncMode:', formData.subEventConfig.syncMode);
-    }
-  }, [formData.syncMode, formData.subEventConfig?.syncMode]);
+  // 🔧 [已删除] syncMode 同步 useEffect - 改为在 sourceSyncMode/syncSyncMode 初始化时直接设置，避免额外的 state 更新
   
-  // 打印接收到的原始 event 数据
-  React.useEffect(() => {
-    console.log('==================== EventEditModalV2 Debug ====================');
-    console.log('📥 props.event:', event);
-    console.log('📥 props.event.eventlog:', event?.eventlog);
-    console.log('📥 eventlog type:', typeof event?.eventlog);
-    console.log('📦 formData.eventlog:', formData.eventlog);
-    console.log('📦 formData.eventlog type:', typeof formData.eventlog);
-    console.log('🔍 [同步配置] props.event.calendarIds:', event?.calendarIds);
-    console.log('🔍 [同步配置] props.event.syncMode:', event?.syncMode);
-    console.log('🔍 [同步配置] formData.calendarIds:', formData.calendarIds);
-    console.log('🔍 [同步配置] formData.syncMode:', formData.syncMode);
-    console.log('================================================================');
-  }, [event, formData.eventlog]);
+  // 🔧 [已删除] 调试日志 useEffect - 导致频繁 re-render，如需调试可在关键位置手动添加日志
 
   // TimeLog 相关状态 - 直接使用 formData.eventlog（现在是对象或空数组）
   const timelogContent = formData.eventlog || [];
@@ -688,8 +734,14 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   // 🆕 v2.0.5 同步 formData.subEventConfig.calendarIds 到 syncCalendarIds（使用新架构）
   React.useEffect(() => {
     if (formData.subEventConfig?.calendarIds) {
-      console.log('🔄 [EventEditModalV2] 同步 subEventConfig.calendarIds 到 syncCalendarIds:', formData.subEventConfig.calendarIds);
-      setSyncCalendarIds(formData.subEventConfig.calendarIds);
+      setSyncCalendarIds(prev => {
+        const newIds = formData.subEventConfig.calendarIds;
+        if (JSON.stringify(prev) !== JSON.stringify(newIds)) {
+          console.log('🔄 [EventEditModalV2] 同步 subEventConfig.calendarIds 到 syncCalendarIds:', newIds);
+          return newIds;
+        }
+        return prev;
+      });
     }
   }, [formData.subEventConfig?.calendarIds]);
 
@@ -701,7 +753,7 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   React.useEffect(() => {
     const loadParent = async () => {
       if (!event?.parentEventId) {
-        setParentEvent(null);
+        setParentEvent(prev => prev === null ? prev : null); // 只在需要时更新
         return;
       }
       const parent = await EventService.getEventById(event.parentEventId);
@@ -712,7 +764,11 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
         parentChildrenCount: parent?.childEventIds?.length || 0,
         refreshCounter  // 🔧 添加日志验证刷新
       });
-      setParentEvent(parent);
+      setParentEvent(prev => {
+        // 比较ID避免循环
+        if (prev?.id === parent?.id) return prev;
+        return parent;
+      });
     };
     loadParent();
   }, [event?.id, event?.parentEventId, refreshCounter]);
@@ -727,7 +783,7 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
       // 所以当 App.tsx 更新父事件时，Modal 不会收到事件通知，需要主动读取
       
       if (!event?.id) {
-        setChildEvents([]);
+        setChildEvents(prev => prev.length === 0 ? prev : []);
         return;
       }
       
@@ -740,7 +796,7 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
       // 🆕 从 EventService 重新读取当前事件的最新数据
       const latestEvent = await EventService.getEventById(event.id);
       if (!latestEvent) {
-        setChildEvents([]);
+        setChildEvents(prev => prev.length === 0 ? prev : []);
         return;
       }
       
@@ -758,7 +814,13 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
           ids: children.map(e => e.id)
         });
         
-        setChildEvents(children);
+        setChildEvents(prev => {
+          // 比较ID数组避免循环
+          const prevIds = prev.map(e => e.id).sort().join(',');
+          const newIds = children.map(e => e.id).sort().join(',');
+          if (prevIds === newIds) return prev;
+          return children;
+        });
         return;
       }
       
@@ -776,7 +838,13 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
         refreshCounter
       });
       
-      setChildEvents(children);
+      setChildEvents(prev => {
+        // 比较ID数组避免循环
+        const prevIds = prev.map(e => e.id).sort().join(',');
+        const newIds = children.map(e => e.id).sort().join(',');
+        if (prevIds === newIds) return prev;
+        return children;
+      });
     };
     
     loadChildren();
@@ -866,45 +934,27 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
   const isSaveDisabled = !formData.title?.trim() && (!formData.tags || formData.tags.length === 0);
 
   /**
-   * 🆕 Layer 3: 取消按钮处理（回滚到初始快照或 EventHistory）
+   * 📝 TitleSlate onChange 处理（使用 useCallback 优化）
+   * 🔧 修复：只更新 titleRef，不触发 setFormData re-render
+   * 原因：blur-to-save 时 onChange 触发 setFormData 会导致 TitleSlate unmount → 失焦
+   */
+  const handleTitleChange = useCallback((slateJson: string) => {
+    console.log('😀 [TitleSlate] onChange (blur) 触发, slateJson:', slateJson.substring(0, 50));
+    // 🔥 只更新 titleRef，不触发 setFormData（避免 re-render → TitleSlate unmount）
+    titleRef.current = slateJson;
+    console.log('✅ [TitleSlate] title 已缓存到 titleRef，不触发 re-render');
+  }, []); // 空依赖数组，函数永不变化
+
+  /**
+   * 🆕 Layer 3: 取消按钮处理（直接关闭，不保存任何更改）
    */
   const handleCancel = async () => {
-    try {
-      if (initialSnapshotRef.current && formData.id && !formData.id.startsWith('event-')) {
-        // 有快照且是已存在事件，回滚到初始状态
-        console.log('↩️ [EventEditModalV2] Rolling back to initial snapshot:', formData.id);
-        
-        const snapshot = initialSnapshotRef.current;
-        const updates: Partial<Event> = {
-          title: snapshot.title,
-          tags: snapshot.tags,
-          eventlog: JSON.stringify(snapshot.eventlog || []),
-          startTime: snapshot.startTime,
-          endTime: snapshot.endTime,
-          isAllDay: snapshot.allDay,
-          location: snapshot.location,
-          attendees: snapshot.attendees,
-          calendarIds: snapshot.calendarIds,
-          syncMode: snapshot.syncMode,
-        };
-        
-        console.log('↩️ [EventEditModalV2] Restoring fields:', {
-          syncMode: updates.syncMode,
-          calendarIds: updates.calendarIds
-        });
-        
-        const { EventService } = await import('../../services/EventService');
-        await EventService.updateEvent(formData.id, updates);
-        
-        console.log('✅ [EventEditModalV2] Rollback completed');
-      }
-    } catch (error) {
-      console.error('❌ [EventEditModalV2] Rollback failed:', error);
-    } finally {
-      // 清理并关闭
-      initialSnapshotRef.current = null;
-      onClose();
-    }
+    console.log('🚫 [EventEditModalV2] Cancel clicked - 丢弃所有未保存的更改');
+    // 🔥 取消操作：直接关闭 Modal，不调用 EventService.updateEvent
+    // formData 中的任何修改都会被丢弃
+    // 下次打开时会重新从 EventService 加载最新数据
+    initialSnapshotRef.current = null;
+    onClose();
   };
 
   /**
@@ -925,37 +975,16 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
     try {
       console.log('💾 [EventEditModalV2] Saving event:', formData.id);
       
-      // 🔧 Step 0: 准备 eventlog（Slate JSON 字符串）
-      // 原因：用户可能直接点击保存按钮，2秒防抖还没触发
-      // 策略：
-      //   - 如果编辑器有焦点 → 读取编辑器最新内容（Slate JSON）
-      //   - 如果编辑器无焦点 → 使用 formData（已通过失焦保存更新）
-      // 
-      // ✅ 架构优化：传递 Slate JSON **字符串**给 EventService
-      // EventService 会自动转换为 EventLog 对象（slateJson, html, plainText）
-      let currentEventlogJson = '';
-      
-      if (slateEditorRef.current?.editor) {
-        const editorElement = document.querySelector('.slate-editable');
-        if (editorElement && editorElement.contains(document.activeElement)) {
-          console.log('📝 [EventEditModalV2] 编辑器有焦点，读取最新内容');
-          try {
-            const editorContent = slateEditorRef.current.editor.children;
-            currentEventlogJson = slateNodesToJson(editorContent); // ✅ 保持为 JSON 字符串
-          } catch (error) {
-            console.error('❌ [EventEditModalV2] 读取编辑器内容失败，使用 formData:', error);
-            // 降级：formData.eventlog 已经是 Descendant[] 数组，直接序列化
-            currentEventlogJson = JSON.stringify(formData.eventlog || []);
-          }
-        } else {
-          console.log('📝 [EventEditModalV2] 编辑器无焦点，使用 formData（已通过失焦或自动保存更新）');
-          // ✅ formData.eventlog 已经是 Descendant[] 数组，直接序列化
-          currentEventlogJson = JSON.stringify(formData.eventlog || []);
-        }
-      } else {
-        // 无编辑器，使用 formData - formData.eventlog 已经是 Descendant[] 数组
-        currentEventlogJson = JSON.stringify(formData.eventlog || []);
+      // 🔧 Step 0a: 从 titleRef 同步最新 title 到 formData
+      // 原因：handleTitleChange 只更新 titleRef，避免 blur 时 re-render
+      if (titleRef.current !== formData.title) {
+        formData.title = titleRef.current;
+        console.log('✅ [handleSave] 从 titleRef 同步 title:', titleRef.current.substring(0, 50));
       }
+      
+      // 🔧 Step 0b: 准备 eventlog（Slate JSON 字符串）
+      // ✅ 简化：formData.eventlog 已通过 ModalSlate blur-to-save 更新，直接使用
+      const currentEventlogJson = JSON.stringify(formData.eventlog || []);
       
       // 🔧 Step 1: 确定最终标题
       // formData.title 是 Slate JSON 字符串（colorTitle - 不含标签元素，只有文本和格式）
@@ -1556,136 +1585,9 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
    * - event?.id 可能为 undefined（新建事件）
    * - 时间字段从 event.startTime/endTime 同步（不调用 TimeHub）
    */
-  // 🔧 [修复] 只在 Modal 打开时初始化一次 formData，之后不再覆盖用户编辑
-  // 问题根源：之前监听 event?.id 变化，导致 Layer 2 auto-save 触发 eventsUpdated 后，
-  // App.tsx 更新 event prop，这个 useEffect 重新触发，覆盖用户正在编辑的 title/tags/eventlog
-  const isFormDataInitializedRef = useRef(false);
+  // 🔥 [删除] 重复的formData初始化useEffect - formData已在useState中初始化，不需要useEffect再次设置
+  // 这个useEffect会在首次render后触发setFormData，导致re-render和TitleSlate unmount
   
-  useEffect(() => {
-    // 🔥 关键修复：只在 Modal 首次打开时初始化，之后不再响应 event 变化
-    if (!isOpen) {
-      // Modal 关闭时重置标志
-      isFormDataInitializedRef.current = false;
-      return;
-    }
-    
-    if (!event) {
-      return;
-    }
-    
-    // 🔥 如果已经初始化过，跳过（防止覆盖用户编辑）
-    if (isFormDataInitializedRef.current) {
-      console.log('⏭️ [EventEditModalV2] formData 已初始化，跳过同步，保护用户编辑');
-      return;
-    }
-    
-    console.log('🔄 [EventEditModalV2] 首次初始化 formData:', {
-      eventId: event?.id,
-      isOpen
-    });
-    
-    // 标记已初始化
-    isFormDataInitializedRef.current = true;
-      // ✨ 处理 title - 确保始终转换为 Slate JSON
-      let titleText = '';
-      if (event.title) {
-        if (typeof event.title === 'string') {
-          // 字符串标题：转换为 Slate JSON
-          titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
-        } else {
-          // EventTitle 对象：优先使用 fullTitle (Slate JSON)
-          if (event.title.fullTitle) {
-            titleText = event.title.fullTitle;
-          } else if (event.title.simpleTitle) {
-            // ✅ 从 simpleTitle 生成 Slate JSON
-            titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title.simpleTitle }] }]);
-          } else if (event.title.colorTitle) {
-            // ✅ colorTitle 可能是 HTML，尝试提取纯文本
-            const plainText = event.title.colorTitle.replace(/<[^>]*>/g, '');
-            titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: plainText }] }]);
-          } else {
-            titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
-          }
-        }
-      } else {
-        // 空标题
-        titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
-      }
-      
-      setFormData({
-        id: event.id,
-        title: titleText,
-        tags: event.tags || [],
-        isTask: event.isTask || false,
-        isTimer: event.isTimer || false,
-        parentEventId: event.parentEventId || null,
-        // 🔗 EventTree 关系字段
-        childEventIds: (event as any).childEventIds || [],
-        linkedEventIds: (event as any).linkedEventIds || [],
-        backlinks: (event as any).backlinks || [],
-        startTime: event.startTime || null,
-        endTime: event.endTime || null,
-        allDay: event.isAllDay || false,
-        location: event.location || '',
-        organizer: event.organizer,
-        attendees: event.attendees || [],
-        eventlog: (() => {
-          // 处理 eventlog 字段的多种格式，统一转换为 Descendant[] 对象
-          if (!event.eventlog) return [];
-          
-          if (typeof event.eventlog === 'string') {
-            // 如果是字符串（Slate JSON），解析为对象
-            try {
-              return JSON.parse(event.eventlog);
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
-              return [];
-            }
-          }
-          
-          // 如果是 EventLog 对象，提取 slateJson 字段并解析
-          if (event.eventlog.slateJson) {
-            try {
-              return typeof event.eventlog.slateJson === 'string' 
-                ? JSON.parse(event.eventlog.slateJson) 
-                : event.eventlog.slateJson;
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
-              return [];
-            }
-          }
-          
-          // 如果是数组，直接返回（已经是 Descendant[]）
-          if (Array.isArray(event.eventlog)) {
-            return event.eventlog;
-          }
-          
-          return [];
-        })(),
-        description: event.description || '',
-        // 🔧 日历同步配置（单一数据结构）
-        calendarIds: event.calendarIds || [],
-        // ✅ syncMode 根据事件来源设置正确的默认值
-        syncMode: event.syncMode || (() => {
-          const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
-          const defaultMode = isLocalEvent ? 'bidirectional-private' : 'receive-only';
-          console.log('🎬 [useEffect同步formData] 事件来源检测:', {
-            eventId: event.id,
-            fourDNoteSource: event.fourDNoteSource,
-            source: event.source,
-            isLocalEvent,
-            eventSyncMode: event.syncMode,
-            计算得到的defaultMode: defaultMode
-          });
-          return defaultMode;
-        })(),
-        subEventConfig: event.subEventConfig || { 
-          calendarIds: [], 
-          syncMode: 'bidirectional-private'  // ✅ 修正默认值
-        },
-      });
-  }, [isOpen, event?.id]); // 🔥 只依赖 isOpen 和 event?.id（event 对象变化不触发）
-
   // 初始化时手动提取演示数据的联系人到联系人库
   useEffect(() => {
     console.log('[EventEditModalV2] 初始化：手动提取联系人');
@@ -2000,37 +1902,31 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
     return cleanHtml;
   };
 
-  const getTitlePlaceholder = (tags: string[]): string => {
+  const getTitlePlaceholder = useCallback((tags: string[]): string => {
     // 根据标签动态生成 placeholder
     if (!tags || tags.length === 0) return '事件标题';
     const firstTag = TagService.getTagById(tags[0]);
     // Timer 标签直接显示标签名，不添加"事项"
     return firstTag?.name || '事件标题';
-  };
+  }, []);
+  
+  // 🔧 [2024-12-09] 使用 useMemo 缓存 placeholder，避免每次渲染时重新计算导致 TitleSlate props 变化
+  const titlePlaceholder = useMemo(() => {
+    return getTitlePlaceholder(formData.tags);
+  }, [formData.tags, getTitlePlaceholder]);
+  
+  // 🔧 [2024-12-09] 缓存 titleContent，避免每次渲染时 formData.title || '' 创建新的字符串引用
+  // 这对于中文输入法（IME）至关重要，任何 content prop 的变化都会中断输入法
+  const titleContent = useMemo(() => {
+    console.log('🔍 [titleContent useMemo] 重新计算', {
+      title: formData.title?.substring(0, 50),
+      titleLength: formData.title?.length
+    });
+    return formData.title || '';
+  }, [formData.title]);
 
-  const handleTitleChange = (html: string) => {
-    // 提取纯文本来检测 emoji
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = html;
-    const plainText = tempDiv.textContent || tempDiv.innerText || '';
-    
-    // 获取原有标题的纯文本
-    const existingTempDiv = document.createElement('div');
-    existingTempDiv.innerHTML = formData.title;
-    const existingPlainText = existingTempDiv.textContent || existingTempDiv.innerText || '';
-    
-    const existingEmoji = extractFirstEmoji(existingPlainText);
-    const newEmoji = extractFirstEmoji(plainText);
-    
-    let finalTitle = html;
-    
-    // 如果新输入中没有emoji，但原来有emoji，则保留原emoji
-    if (!newEmoji && existingEmoji) {
-      finalTitle = `${existingEmoji} ${html}`;
-    }
-    
-    setFormData({ ...formData, title: finalTitle });
-  };
+  // 🔧 [已删除] 旧的 handleTitleChange (HTML版本) - 已改用 TitleSlate 的 blur-to-save 模式
+  // 新的 handleTitleChange useCallback 定义在上方（行 842）
 
   // ==================== 标签处理函数 ====================
   
@@ -2349,6 +2245,17 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
 
   // ==================== 渲染函数 ====================
 
+  // 🔧 如果 modal 未打开，不渲染（使用 JSX 条件渲染，避免违反 Hook 规则）
+  if (!isOpen) return null;
+
+  // 🔍 DEBUG: 检查 formData 初始化状态
+  console.log('🎨 [EventEditModalV2] 准备渲染，formData 状态:', {
+    id: formData.id,
+    title: formData.title?.substring(0, 50),
+    tagsCount: formData.tags?.length,
+    eventlogLength: formData.eventlog?.length
+  });
+
   return (
     <div className="event-edit-modal-v2-overlay" onClick={onClose}>
       <div 
@@ -2392,22 +2299,17 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
                       className={`custom-checkbox ${formData.isTask ? 'checked' : ''}`}
                       onClick={() => handleTaskCheckboxChange(!formData.isTask)}
                     />
-                    {/* 📌 TitleSlate 必须从 formData.title 读取（单一数据源） */}
-                    {/* 🔧 使用 React.useMemo 缓存 content，避免 formData 其他字段变化导致 TitleSlate 重新渲染 */}
+                    {/* 📌 TitleSlate 必须从 formData.title.colorTitle 读取（单一数据源） */}
+                    {/* 🔥 CRITICAL: 使用 formData.id 作为 key 确保只在事件ID变化时才重新mount */}
                     <TitleSlate
+                      key={`title-slate-${formData.id}`}
                       eventId={formData.id}
-                      content={React.useMemo(() => formData.title, [formData.title])}
-                      onChange={(slateJson) => {
-                        // 🔧 直接保存完整的 Slate JSON（包含 paragraph 包装）
-                        // EventService.normalizeTitle 需要完整的文档结构 [{type:'paragraph', children:[...]}]
-                        console.log('😀 [TitleSlate] onChange 触发, slateJson:', slateJson);
-                        // 🔥 修复：使用函数式更新，避免覆盖其他字段（如 syncMode）
-                        setFormData(prev => ({ ...prev, title: slateJson }));
-                      }}
-                      placeholder={getTitlePlaceholder(formData.tags)}
+                      content={titleContent}
+                      onChange={handleTitleChange}
+                      placeholder={titlePlaceholder}
                       className="title-input"
                       readOnly={false}
-                      autoFocus={true}
+                      autoFocus={false}
                       hideEmoji={true}
                     />
                   </div>
@@ -3515,7 +3417,6 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
                             setFormData(clickedEvent as any);
                             setShowEventTree(false);
                           }}
-                          defaultMode="edit"
                         />
                       </div>
                     )}
@@ -3722,3 +3623,44 @@ export const EventEditModalV2: React.FC<EventEditModalV2Props> = ({
       </div>
     );
 };
+
+// 🔥 使用 React.memo 避免父组件重新渲染时子组件也重新渲染
+// 只在 props 真正变化时才重新渲染
+export const EventEditModalV2 = React.memo(EventEditModalV2Component, (prevProps, nextProps) => {
+  // 返回 true 表示 props 相等，跳过重新渲染
+  // 返回 false 表示 props 不等，需要重新渲染
+  
+  // 如果 modal 都关闭，跳过重新渲染
+  if (!prevProps.isOpen && !nextProps.isOpen) {
+    return true; // props 相等，跳过渲染
+  }
+  
+  // 如果 modal 打开状态变化，需要重新渲染
+  if (prevProps.isOpen !== nextProps.isOpen) {
+    console.log('🔄 [EventEditModalV2] React.memo: isOpen 变化，需要渲染');
+    return false; // props 不等，需要渲染
+  }
+  
+  // 如果 eventId 变化，需要重新渲染
+  if (prevProps.eventId !== nextProps.eventId) {
+    console.log('🔄 [EventEditModalV2] React.memo: eventId 变化，需要渲染');
+    return false; // props 不等，需要渲染
+  }
+  
+  // 🔧 检查 globalTimer 状态（计时器运行时需要更新）
+  const prevTimer = prevProps.globalTimer;
+  const nextTimer = nextProps.globalTimer;
+  
+  // 如果计时器状态变化（启动/暂停/停止），需要重新渲染
+  if (prevTimer?.isRunning !== nextTimer?.isRunning || 
+      prevTimer?.isPaused !== nextTimer?.isPaused ||
+      prevTimer?.eventId !== nextTimer?.eventId) {
+    console.log('🔄 [EventEditModalV2] React.memo: globalTimer 状态变化，需要渲染');
+    return false;
+  }
+  
+  // 其他情况：eventId 相同，modal 保持打开状态，timer 状态相同
+  // 跳过重新渲染（忽略回调函数引用变化，因为内部使用最新的 props）
+  console.log('⏭️ [EventEditModalV2] React.memo 跳过重新渲染（eventId 和关键状态未变化）');
+  return true; // props 相等，跳过渲染
+});

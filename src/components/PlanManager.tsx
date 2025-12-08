@@ -2555,7 +2555,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       {/* 右侧编辑面板 - 使用 EventEditModalV2 */}
       {selectedItemId && editingItem && (
         <EventEditModalV2
-          event={convertPlanItemToEvent(editingItem)}
+          event={React.useMemo(() => convertPlanItemToEvent(editingItem), [editingItem])}
           isOpen={true}
           onClose={() => {
             setSelectedItemId(null);

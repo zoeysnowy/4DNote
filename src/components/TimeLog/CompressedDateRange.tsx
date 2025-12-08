@@ -96,7 +96,11 @@ export const CompressedDateRange: React.FC<CompressedDateRangeProps> = ({
                     {showWeekSeparator && <div className="week-separator" />}
                     <button
                       className={`compressed-date-cell ${isToday ? 'is-today' : ''}`}
-                      onClick={() => onDateClick?.(date)}
+                      onClick={(e) => {
+                        console.log('🖱️ [CompressedDateRange] Button clicked:', date, 'onDateClick exists:', !!onDateClick);
+                        e.stopPropagation();
+                        onDateClick?.(date);
+                      }}
                       title={`${year}年${month}月${day}日（周${weekday}）`}
                     >
                       <span className="date-weekday">{weekday}</span>

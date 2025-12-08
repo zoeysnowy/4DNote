@@ -27,9 +27,9 @@
   left: 0;
   top: 0;
   bottom: 0;
-  width: 200px; /* 大幅扩大到200px，让用户可以在宽阔区域内移动选择时间 */
+  width: 30px; /* 30px宽触发区域，让用户可以轻松触发悬浮菜单 */
   cursor: pointer;
-  z-index: 10; /* 确保在 content 上方 */
+  z-index: 5; /* 在 content 上方，但在 sticky header (z-index: 10) 下方 */
 }
 
 /* 小间隙样式 */
@@ -47,6 +47,7 @@
   opacity: 0.6;
   transition: all 0.2s ease;
   transform: translateX(-1px); /* Center the 2px border */
+  z-index: 1; /* 在最底层，确保在 sticky header (z-index: 10) 下方 */
 }
 
 .time-gap-axis.active {

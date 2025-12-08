@@ -40,6 +40,13 @@ const DB_VERSION = 2; // v2: Added event_history store
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
+  
+  // 🚀 性能优化：查询缓存（避免重复查询同一时间范围）
+  private queryCache: Map<string, { data: any[]; timestamp: number }> = new Map();
+  private CACHE_TTL = 60000; // 60秒缓存（页面切换通常在1分钟内返回）
+  
+  // 🔒 查询锁：防止并发重复查询（解决 React StrictMode 双重渲染问题）
+  private pendingQueries: Map<string, Promise<QueryResult<StorageEvent>>> = new Map();
 
   /**
    * 初始化数据库
@@ -310,6 +317,65 @@ export class IndexedDBService {
   }
 
   async queryEvents(options: QueryOptions): Promise<QueryResult<StorageEvent>> {
+    // 🚀 辅助函数：将 Date 转为 TimeSpec 格式字符串（用于缓存键）
+    const formatKey = (date: Date) => {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      const d = String(date.getDate()).padStart(2, '0');
+      const h = String(date.getHours()).padStart(2, '0');
+      const min = String(date.getMinutes()).padStart(2, '0');
+      const s = String(date.getSeconds()).padStart(2, '0');
+      return `${y}-${m}-${d} ${h}:${min}:${s}`;
+    };
+
+    // 🚀 缓存检查和查询锁
+    if (options.startDate || options.endDate) {
+      const cacheKey = `${options.startDate ? formatKey(options.startDate) : 'null'}_${options.endDate ? formatKey(options.endDate) : 'null'}`;
+      
+      // 🔒 检查是否有正在进行的查询（防止并发重复）
+      const pendingQuery = this.pendingQueries.get(cacheKey);
+      if (pendingQuery) {
+        console.log(`[IndexedDB] 🔒 Query already in progress, waiting... key="${cacheKey}"`);
+        return pendingQuery;
+      }
+      
+      // 检查缓存
+      const cached = this.queryCache.get(cacheKey);
+      console.log(`[IndexedDB] 🔍 Cache lookup: key="${cacheKey}", found=${!!cached}, age=${cached ? (performance.now() - cached.timestamp).toFixed(0) : 'N/A'}ms, TTL=${this.CACHE_TTL}ms`);
+      
+      if (cached && (performance.now() - cached.timestamp) < this.CACHE_TTL) {
+        console.log(`[IndexedDB] ⚡ Cache hit: ${cached.data.length} events (saved ${(performance.now() - cached.timestamp).toFixed(0)}ms ago)`);
+        return {
+          items: cached.data,
+          total: cached.data.length,
+          hasMore: false,
+          offset: 0
+        };
+      }
+      
+      // 🔒 创建查询 Promise 并加锁
+      const queryPromise = this.executeQuery(options, formatKey, cacheKey);
+      this.pendingQueries.set(cacheKey, queryPromise);
+      
+      try {
+        const result = await queryPromise;
+        return result;
+      } finally {
+        // 查询完成后释放锁
+        this.pendingQueries.delete(cacheKey);
+      }
+    }
+    
+    // 无时间范围的查询直接执行（不需要锁）
+    return this.executeQuery(options, formatKey, null);
+  }
+
+  // 🚀 实际执行查询的内部方法
+  private async executeQuery(
+    options: QueryOptions, 
+    formatKey: (date: Date) => string,
+    cacheKey: string | null
+  ): Promise<QueryResult<StorageEvent>> {
     const perfStart = performance.now();
     let events: StorageEvent[];
 
@@ -350,10 +416,21 @@ export class IndexedDBService {
       events = allEvents.filter(event => !event.deletedAt);
       
       const queryDuration = performance.now() - queryStart;
-      // Only log slow queries to reduce noise
-      if (queryDuration > 100) {
-        console.log(`[IndexedDB] ⚡ Index getAll() query took ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms) → ${events.length} events`);
+      
+      // 🚀 缓存查询结果
+      if (cacheKey) {
+        this.queryCache.set(cacheKey, { data: events, timestamp: performance.now() });
+        console.log(`[IndexedDB] 💾 Cache saved: key="${cacheKey}", ${events.length} events, total cached queries: ${this.queryCache.size}`);
+        
+        // 清理过期缓存（最多保留10条）
+        if (this.queryCache.size > 10) {
+          const oldestKey = Array.from(this.queryCache.keys())[0];
+          this.queryCache.delete(oldestKey);
+        }
       }
+      
+      // 🔍 总是显示查询时间（用于性能调试）
+      console.log(`[IndexedDB] ⚡ Index query took ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms) → ${events.length} events`);
     } else {
       // 🚀 [PERFORMANCE FIX] 无时间范围过滤，使用 getAll() 全表读取
       // getAll() 比游标遍历快 5-10 倍（批量读取 vs 逐个读取）
@@ -411,6 +488,7 @@ export class IndexedDBService {
   }
 
   async createEvent(event: StorageEvent): Promise<void> {
+    this.clearQueryCache(); // 清除缓存
     return this.put('events', event);
   }
 
@@ -430,10 +508,12 @@ export class IndexedDBService {
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
     const updatedEvent = { ...existingEvent, ...updates, updatedAt: formatTimeForStorage(new Date()) };
+    this.clearQueryCache(); // 清除缓存
     return this.put('events', updatedEvent);
   }
 
   async deleteEvent(id: string): Promise<void> {
+    this.clearQueryCache(); // 清除缓存
     return this.delete('events', id);
   }
 
@@ -589,6 +669,15 @@ export class IndexedDBService {
    */
   async getAllContacts(): Promise<Contact[]> {
     return this.query<Contact>('contacts');
+  }
+
+  // ==================== 缓存管理 ====================
+  
+  /**
+   * 清除查询缓存（数据更新时调用）
+   */
+  clearQueryCache(): void {
+    this.queryCache.clear();
   }
 
   // ==================== SyncQueue 操作 ====================

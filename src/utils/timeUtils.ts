@@ -3,6 +3,16 @@
  * 目标：18:06的事件在任何地方都显示为18:06，不受时区影响
  */
 
+// 🔧 将日期转换为 YYYY-MM-DD 格式（本地日期，不受时区影响）
+// ⚠️ WARNING: 不要使用 date.toISOString().split('T')[0]！
+// 原因：toISOString() 返回 UTC 时间，会造成日期偏移（如 GMT+8 的 2025-12-11 00:00 会变成 2025-12-10）
+export const formatDateForStorage = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 // 🔧 将时间转换为存储格式（本地时间字符串，空格分隔符）
 // ⚠️ WARNING: 不要使用 ISO 格式（T分隔符）！
 // 原因：数据会同步到 Outlook，ISO 格式会被误认为 UTC 时间，造成时区偏移

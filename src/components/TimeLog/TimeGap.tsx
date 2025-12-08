@@ -257,8 +257,9 @@ export const TimeGap: React.FC<TimeGapProps> = ({
         theme="time-gap-menu"
         animation={false}
         duration={0}
-        children={<div className={`time-gap-axis ${isHovered ? 'active' : ''}`} />}
-      />
+      >
+        <div className={`time-gap-axis ${isHovered ? 'active' : ''}`} />
+      </Tippy>
       </div>
 
       {/* 中间内容区域 */}
