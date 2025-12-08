@@ -3628,10 +3628,11 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                 </div>
               )}
             </div>
-            {/* modal-content 结束 */}
+          </div>
+          {/* modal-content 结束 */}
 
-            {/* 底部按钮 */}
-            {isDetailView ? (
+          {/* 底部按钮 */}
+          {isDetailView ? (
               <div className="detail-footer">
                 <button 
                   className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-delete"
@@ -3708,7 +3709,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                 </div>
               </div>
             )}
-          </div>
         </>
   );
 
