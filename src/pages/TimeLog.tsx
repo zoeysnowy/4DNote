@@ -136,11 +136,12 @@ const TimeLog: React.FC = () => {
 
     TagService.addListener(listener);
     
-    // 初始加载时检查一次
+    // 初始加载时强制刷新一次标签数据
+    console.log('📌 [TimeLog] Forcing initial tag refresh');
+    setTagServiceVersion(v => v + 1);
+    
     const tags = TagService.getFlatTags();
-    if (tags.length > 0) {
-      console.log('📌 [TimeLog] Initial tags loaded:', tags.length);
-    }
+    console.log('📌 [TimeLog] Current tags count:', tags.length);
     
     return () => TagService.removeListener(listener);
   }, []);
