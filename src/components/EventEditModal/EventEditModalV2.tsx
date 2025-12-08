@@ -2339,9 +2339,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
 
   // 📦 渲染主内容（embedded和modal模式共享）
   const renderModalContent = () => (
-        <div className="modal-content">
-          {/* 左侧：Event Overview */}
-              <div className="event-overview">
+        <>
+          <div className="modal-content">
+            {/* 左侧：Event Overview */}
+                <div className="event-overview">
                 {/* 上 Section - 事件标识区 */}
                 <div className="section-identity">
                   {/* Emoji (大图标) */}
@@ -3707,7 +3708,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                 </div>
               </div>
             )}
-        </div>
+          </div>
+        </>
   );
 
   // 🆕 嵌入模式：去掉遮罩层，直接渲染内容
