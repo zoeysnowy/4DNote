@@ -588,31 +588,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: 'bidirectional-private'
       },
     });
-  }, [event?.id]); // 只在 event ID 变化时重新初始化完整 formData
-  
-  // 🔥 单独监听 event.title 变化（双向同步更新）
-  React.useEffect(() => {
-    if (!event || !event.title) return;
-    
-    // 🔥 如果正在自动保存，说明是本地触发的保存，不要用远程数据覆盖
-    if (isAutoSavingRef.current) {
-      console.log('⏭️ [event.title 同步] 跳过（正在自动保存）');
-      return;
-    }
-    
-    let titleText = '';
-    if (typeof event.title === 'string') {
-      titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
-    } else {
-      titleText = event.title.colorTitle || '';
-    }
-    
-    // 只更新 title，不影响其他字段
-    if (titleText && titleText !== formData.title) {
-      console.log('🔄 [event.title 同步] 双向同步更新 title:', titleText.substring(0, 50));
-      setFormData(prev => ({ ...prev, title: titleText }));
-    }
-  }, [event?.title]);
+  }, [event?.id]); // 只在 event ID 变化时重新初始化（Modal 打开时加载一次）
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -659,19 +635,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const isAutoSavingRef = React.useRef<boolean>(false); // 🔧 标记是否正在 auto-save
   const titleRef = React.useRef<string>(formData.title); // 🔧 缓存 title，避免 blur-to-save 时 setFormData 导致 re-render
   
-  // 🔧 同步 titleRef 与 formData.title
-  // 🔥 关键：formData.title 变化时同步（包括双向同步事件从 EventHub 更新回来）
-  // 但要避免用户正在编辑时被覆盖（通过检查 isAutoSavingRef 判断）
+  // 🔧 同步 titleRef 与 formData.title（只在事件切换时，即 formData.id 变化）
+  // 🔥 关键：不监听 formData.title，避免其他字段更新时误触发同步
+  // 原因：handleTitleChange 只更新 titleRef（不含 emoji），如果 formData.title 变化就同步回来，
+  //       会导致 titleRef 被 formData 覆盖，下次保存时 emoji 丢失
   React.useEffect(() => {
-    // 如果正在自动保存，说明是 handleSave 触发的 formData 更新，不要同步回 titleRef
-    if (isAutoSavingRef.current) {
-      console.log('⏭️ [titleRef] 跳过同步（正在自动保存）');
-      return;
-    }
-    
     titleRef.current = formData.title;
     console.log('🔄 [titleRef] 同步 titleRef.current =', formData.title?.substring(0, 50));
-  }, [formData.title]); // 监听 title 变化，而不是 ID 变化
+  }, [formData.id]); // 只监听事件 ID 变化（事件切换时）
   
   // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
   React.useEffect(() => {

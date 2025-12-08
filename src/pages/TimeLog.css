@@ -10,7 +10,7 @@
   height: 100%;
   background: none; /* 🎨 Figma: 移除背景 */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', sans-serif;
-  overflow: hidden;
+  overflow: visible; /* 🎨 Figma: 允许阴影溢出 */
   gap: 8px; /* Reduced from 16px */
 }
 

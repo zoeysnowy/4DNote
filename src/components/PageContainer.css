@@ -12,7 +12,7 @@
 
 .page-content {
   flex: 1;
-  overflow: hidden; /* 🔧 隐藏外层滚动条，让内部组件自己处理滚动 */
+  overflow: visible; /* 🎨 Figma: 允许阴影溢出 */
   min-height: 0; /* 🔧 重要：允许flex子元素正确收缩 */
   display: flex;
   flex-direction: column;
