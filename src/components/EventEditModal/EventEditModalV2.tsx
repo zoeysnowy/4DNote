@@ -3629,7 +3629,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
               )}
             </div>
             {/* event-overview 结束 */}
-          </div>
           {/* modal-content 结束 */}
 
           {/* 底部按钮 */}
