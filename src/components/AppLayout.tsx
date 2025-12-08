@@ -72,16 +72,6 @@ const Header: React.FC<HeaderProps> = ({ globalTimer, onTimerClick, onSettingsCl
   return (
     <header className="app-header">
       <div className="header-content">
-        {/* Logo 区域 */}
-        <div className="logo-section">
-          <div className="logo-icon">
-            <Logo />
-          </div>
-          <div className="logo-text">
-            <h1>4DNote</h1>
-          </div>
-        </div>
-
         {/* 右侧工具栏 */}
         <div className="header-tools">
           {/* 全局计时器显示 - 紧凑两行布局 */}
@@ -183,6 +173,11 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
 
   return (
     <aside className="app-sidebar">
+      {/* 🎨 Figma: Logo 在侧边栏顶部 */}
+      <div className="sidebar-logo">
+        <Logo />
+      </div>
+      
       <nav className="sidebar-nav">
         {menuItems.map((item) => (
           <button
