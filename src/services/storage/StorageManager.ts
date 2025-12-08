@@ -738,10 +738,12 @@ export class StorageManager {
   async createTag(tag: import('./types').StorageTag): Promise<import('./types').StorageTag> {
     await this.ensureInitialized();
 
-    // 双写：IndexedDB + SQLite
-    // 注意：IndexedDB 暂不支持 Tag，先只写 SQLite
+    // 优先使用 SQLite，降级到 IndexedDB
     if (this.sqliteService) {
       await this.sqliteService.createTag(tag);
+    } else if (this.indexedDBService) {
+      // 🔧 浏览器环境降级：使用 IndexedDB
+      await this.indexedDBService.createTag(tag);
     }
 
     // 写入缓存
@@ -757,9 +759,12 @@ export class StorageManager {
     await this.ensureInitialized();
     console.log('[StorageManager] Updating tag:', id);
 
-    // 双写：IndexedDB + SQLite
+    // 优先使用 SQLite，降级到 IndexedDB
     if (this.sqliteService) {
       await this.sqliteService.updateTag(id, updates);
+    } else if (this.indexedDBService) {
+      // 🔧 浏览器环境降级：使用 IndexedDB
+      await this.indexedDBService.updateTag(id, updates);
     }
 
     // 更新缓存
@@ -804,6 +809,9 @@ export class StorageManager {
 
     if (this.sqliteService) {
       await this.sqliteService.hardDeleteTag(id);
+    } else if (this.indexedDBService) {
+      // 🔧 浏览器环境降级：使用 IndexedDB
+      await this.indexedDBService.hardDeleteTag(id);
     }
 
     this.tagCache.delete(id);
@@ -823,9 +831,16 @@ export class StorageManager {
       return cached as any;
     }
 
-    // 2. 从 SQLite 查询
+    // 2. 优先从 SQLite 查询，降级到 IndexedDB
     if (this.sqliteService) {
       const tag = await this.sqliteService.getTag(id);
+      if (tag) {
+        this.tagCache.set(id, tag as any);
+        return tag;
+      }
+    } else if (this.indexedDBService) {
+      // 🔧 浏览器环境降级：使用 IndexedDB
+      const tag = await this.indexedDBService.getTag(id);
       if (tag) {
         this.tagCache.set(id, tag as any);
         return tag;
@@ -841,7 +856,7 @@ export class StorageManager {
   async queryTags(options: QueryOptions = {}): Promise<QueryResult<import('./types').StorageTag>> {
     await this.ensureInitialized();
 
-    // 优先使用 SQLite
+    // 优先使用 SQLite，降级到 IndexedDB
     if (this.sqliteService) {
       const result = await this.sqliteService.queryTags(options);
       
@@ -849,9 +864,21 @@ export class StorageManager {
       result.items.forEach(tag => this.tagCache.set(tag.id, tag as any));
       
       return result;
+    } else if (this.indexedDBService) {
+      // 🔧 浏览器环境降级：使用 IndexedDB
+      const tags = await this.indexedDBService.getTags();
+      
+      // 写入缓存
+      tags.forEach(tag => this.tagCache.set(tag.id, tag as any));
+      
+      return {
+        items: tags,
+        total: tags.length,
+        hasMore: false,
+      };
     }
 
-    // 降级：返回空结果
+    // 最终降级：返回空结果
     return {
       items: [],
       total: 0,

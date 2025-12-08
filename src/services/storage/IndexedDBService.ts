@@ -131,7 +131,7 @@ export class IndexedDBService {
         // 5. Tags Store
         if (!db.objectStoreNames.contains('tags')) {
           const tagsStore = db.createObjectStore('tags', { keyPath: 'id' });
-          tagsStore.createIndex('name', 'name', { unique: true });
+          tagsStore.createIndex('name', 'name', { unique: false }); // 🔧 允许同名标签（不同层级）
           tagsStore.createIndex('parentId', 'parentId', { unique: false });
           console.log('[IndexedDBService] Created tags store');
         }
@@ -570,6 +570,48 @@ export class IndexedDBService {
 
   async createTag(tag: Tag): Promise<void> {
     return this.put('tags', tag);
+  }
+
+  async getTag(id: string): Promise<Tag | null> {
+    return this.get('tags', id);
+  }
+
+  async getTags(): Promise<Tag[]> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('tags', 'readonly');
+      const store = transaction.objectStore('tags');
+      const request = store.getAll();
+
+      request.onsuccess = () => {
+        const tags = request.result as Tag[];
+        // 过滤已删除的标签
+        resolve(tags.filter(t => !t.deletedAt));
+      };
+
+      request.onerror = () => {
+        reject(new Error('Failed to get tags'));
+      };
+    });
+  }
+
+  async updateTag(id: string, updates: Partial<Tag>): Promise<void> {
+    const existing = await this.getTag(id);
+    if (!existing) {
+      throw new Error(`Tag not found: ${id}`);
+    }
+    const updated = { ...existing, ...updates };
+    return this.put('tags', updated);
+  }
+
+  async hardDeleteTag(id: string): Promise<void> {
+    return this.delete('tags', id);
   }
 
   // ==================== Contact 操作 ====================

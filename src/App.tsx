@@ -65,6 +65,9 @@ function App() {
   // 🔧 确认组件渲染
   console.log('🔍 [App] Component rendering...');
   
+  // 🆕 App 初始化状态（阻止渲染直到关键服务初始化完成）
+  const [appInitialized, setAppInitialized] = useState(false);
+  
   // 🔧 初始化缓存管理和标签系统
   useEffect(() => {
     const initializeApp = async () => {
@@ -120,7 +123,24 @@ function App() {
       }
       
       // 初始化标签系统（独立于日历连接）
-      await TagService.initialize();
+      console.log('🏷️  [App] Starting TagService initialization...');
+      try {
+        // 添加 5 秒超时保护
+        const initPromise = TagService.initialize();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('TagService initialization timeout (5s)')), 5000)
+        );
+        
+        await Promise.race([initPromise, timeoutPromise]);
+        console.log('✅ [App] TagService initialized');
+      } catch (error) {
+        console.error('❌ [App] TagService initialization failed:', error);
+        // 即使失败也要让应用继续启动
+      }
+      
+      // 🎯 标记 App 初始化完成（关键服务已就绪）
+      setAppInitialized(true);
+      console.log('✅ [App] App initialization complete, ready to render');
       
       // 🔍 初始化 Unified Mention 搜索索引
       console.log('🔍 [App] Initializing Unified Mention search index...');
@@ -206,6 +226,13 @@ function App() {
   // 监听TagService的变化
   useEffect(() => {
     const handleTagsUpdate = () => {
+      // 🔒 在 App 初始化完成前，忽略 TagService 的更新通知
+      // （避免初始化期间的 notifyListeners 触发不必要的重渲染）
+      if (!appInitialized) {
+        console.log('⏸️  [App] TagService update ignored (app not initialized yet)');
+        return;
+      }
+      
       loadAvailableTagsForEdit();
       // 🔧 [PERFORMANCE FIX] 触发 hierarchicalTags 更新
       setTagsVersion(v => v + 1);
@@ -1941,6 +1968,27 @@ function App() {
     handleTagsChange,
     handleSettingsChange
   ]); // 🔧 关键依赖项
+
+  // 🔒 等待关键服务初始化完成
+  if (!appInitialized) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        backgroundColor: '#f5f5f5',
+        color: '#666',
+        fontSize: '14px',
+        fontFamily: 'system-ui, -apple-system, sans-serif'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ marginBottom: '12px', fontSize: '24px' }}>⏳</div>
+          <div>正在初始化应用...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
       <AppLayout 

@@ -1,0 +1,169 @@
+/**
+ * LogTab - 标签页中的事件详情页面
+ * 
+ * 用途：在 TimeLog 的标签页中显示事件详情
+ * 与 EventEditModalV2 的区别：
+ * - LogTab: 完整页面布局，用于标签页中
+ * - EventEditModalV2: 弹窗模态框，用于快速编辑
+ * 
+ * 功能：完整复制 EventEditModalV2 的内容，移除弹窗相关代码
+ * 
+ * @version 1.0.0
+ * @based-on EventEditModalV2 v2.0.1
+ */
+
+import React, { useState, useCallback, useRef, useEffect, RefObject, useMemo } from 'react';
+import Picker from '@emoji-mart/react';
+import data from '@emoji-mart/data';
+
+import { TagService } from '../services/TagService';
+import { EventService } from '../services/EventService';
+import { EventHub } from '../services/EventHub';
+import { ContactService } from '../services/ContactService';
+import { EventHistoryService } from '../services/EventHistoryService';
+import { Event, Contact, EventTitle } from '../types';
+import { HierarchicalTagPicker } from '../components/HierarchicalTagPicker/HierarchicalTagPicker';
+import UnifiedDateTimePicker from '../components/FloatingToolbar/pickers/UnifiedDateTimePicker';
+import { AttendeeDisplay } from '../components/common/AttendeeDisplay';
+import { LocationInput } from '../components/common/LocationInput';
+import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
+import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
+import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
+import { ModalSlate } from '../components/ModalSlate';
+import { TitleSlate } from '../components/ModalSlate/TitleSlate';
+import { formatTimeForStorage } from '../utils/timeUtils';
+import { EventTreeViewer } from '../components/EventTree/EventTreeViewer';
+import '../components/EventEditModal/EventEditModalV2.css'; // 复用样式
+import './LogTab.css';
+
+// Import SVG icons
+import timerStartIcon from '../assets/icons/timer_start.svg';
+import pauseIcon from '../assets/icons/pause.svg';
+import stopIcon from '../assets/icons/stop.svg';
+import cancelIcon from '../assets/icons/cancel.svg';
+import rotationColorIcon from '../assets/icons/rotation_color.svg';
+import datetimeIcon from '../assets/icons/datetime.svg';
+import arrowBlueIcon from '../assets/icons/Arrow_blue.svg';
+import timerCheckIcon from '../assets/icons/timer_check.svg';
+import addTaskColorIcon from '../assets/icons/Add_task_color.svg';
+import ddlAddIcon from '../assets/icons/ddl_add.svg';
+import taskGrayIcon from '../assets/icons/task_gray.svg';
+import ddlWarnIcon from '../assets/icons/ddl_warn.svg';
+import backIcon from '../assets/icons/back.svg';
+
+interface MockEvent {
+  id: string;
+  title: string;
+  tags: string[];
+  isTask: boolean;
+  isTimer: boolean;
+  parentEventId: string | null;
+  childEventIds?: string[];
+  linkedEventIds?: string[];
+  backlinks?: string[];
+  startTime: string | null;
+  endTime: string | null;
+  allDay: boolean;
+  location?: string;
+  organizer?: Contact;
+  attendees?: Contact[];
+  eventlog?: any;
+  description?: string;
+  calendarIds?: string[];
+  syncMode?: string;
+  subEventConfig?: {
+    calendarIds?: string[];
+    syncMode?: string;
+  };
+}
+
+interface LogTabProps {
+  eventId: string;
+  onClose: () => void;
+  onSave: (updatedEvent: Event) => void;
+  onDelete?: (eventId: string) => void;
+  hierarchicalTags: any[];
+  globalTimer?: {
+    startTime: number;
+    originalStartTime?: number;
+    elapsedTime: number;
+    isRunning: boolean;
+    isPaused?: boolean;
+    eventId?: string;
+    parentEventId?: string;
+  } | null;
+  onStartTimeChange?: (newStartTime: number) => void;
+  onTimerAction?: (action: 'start' | 'pause' | 'resume' | 'stop' | 'cancel', tagIds?: string | string[], eventIdOrParentId?: string) => void;
+}
+
+export const LogTab: React.FC<LogTabProps> = ({
+  eventId,
+  onClose,
+  onSave,
+  onDelete,
+  hierarchicalTags,
+  globalTimer,
+  onTimerAction,
+}) => {
+  // 🔧 加载事件数据
+  const [event, setEvent] = React.useState<Event | null>(null);
+  
+  React.useEffect(() => {
+    if (!eventId) return;
+    EventService.getEventById(eventId).then(setEvent);
+  }, [eventId]);
+
+  // formData 初始化（省略详细实现，参考 EventEditModalV2）
+  const [formData, setFormData] = useState<MockEvent>(() => ({
+    id: eventId || `event-${Date.now()}`,
+    title: '',
+    tags: [],
+    isTask: false,
+    isTimer: false,
+    parentEventId: null,
+    childEventIds: [],
+    linkedEventIds: [],
+    backlinks: [],
+    startTime: null,
+    endTime: null,
+    allDay: false,
+    location: '',
+    attendees: [],
+    eventlog: [],
+    description: '',
+    calendarIds: [],
+    syncMode: 'bidirectional-private',
+    subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
+  }));
+
+  // 简化状态
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showTagPicker, setShowTagPicker] = useState(false);
+
+  return (
+    <div className="logtab-container">
+      <div className="logtab-header">
+        <h2>事件详情</h2>
+        <button className="logtab-close" onClick={onClose}>×</button>
+      </div>
+      <div className="logtab-content">
+        <div className="modal-content">
+          <div className="event-overview">
+            <div className="section-identity">
+              <div className="emoji-large" onClick={() => setShowEmojiPicker(!showEmojiPicker)}>
+                📝
+              </div>
+              <div className="title-checkbox-row">
+                <div className={`custom-checkbox ${formData.isTask ? 'checked' : ''}`} />
+                <div className="title-input" contentEditable>标题</div>
+              </div>
+              <div className="eventmodal-v2-tags-row">
+                <span className="tag-placeholder">选择标签...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

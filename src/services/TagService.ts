@@ -67,6 +67,7 @@ class TagServiceClass {
     try {
       // ✅ v3.0: 从 StorageManager 加载标签
       const result = await storageManager.queryTags({ limit: 1000 });
+      console.log(`🔍 [TagService] queryTags result:`, result);
       
       if (result.items.length > 0) {
         console.log(`🏷️ [TagService] Loaded ${result.items.length} tags from StorageManager`);
@@ -90,8 +91,29 @@ class TagServiceClass {
         // 重新计算 level
         this.flatTags = this.flattenTags(this.tags);
       } else {
-        console.log('🏷️ [TagService] No tags found, creating defaults...');
-        await this.createDefaultTags();
+        // 🔄 迁移：尝试从 localStorage 加载旧标签数据
+        console.log('🏷️ [TagService] No tags in StorageManager, checking localStorage...');
+        const { PersistentStorage, PERSISTENT_OPTIONS } = await import('../utils/persistentStorage');
+        const { STORAGE_KEYS } = await import('../constants/storage');
+        
+        console.log('📍 [TagService] Looking for key:', STORAGE_KEYS.HIERARCHICAL_TAGS);
+        console.log('📍 [TagService] Using options:', PERSISTENT_OPTIONS.TAGS);
+        
+        const oldTags = PersistentStorage.getItem(STORAGE_KEYS.HIERARCHICAL_TAGS, PERSISTENT_OPTIONS.TAGS);
+        console.log('📍 [TagService] Found in localStorage:', oldTags);
+        
+        if (oldTags && Array.isArray(oldTags) && oldTags.length > 0) {
+          console.log(`🔄 [TagService] Migrating ${oldTags.length} tags from localStorage...`);
+          this.tags = oldTags;
+          this.flatTags = this.flattenTags(oldTags);
+          
+          // 保存到 StorageManager
+          await this.saveTags();
+          console.log(`✅ [TagService] Migrated ${this.flatTags.length} tags to StorageManager`);
+        } else {
+          console.log('🏷️ [TagService] No tags found in localStorage, creating defaults...');
+          await this.createDefaultTags();
+        }
       }
       
       this.initialized = true;
@@ -165,9 +187,11 @@ class TagServiceClass {
   private async saveTags(): Promise<void> {
     try {
       console.log('💾 [TagService] Saving tags to StorageManager...');
+      console.log('📊 [TagService] Current tags structure:', this.tags);
       
       // 扁平化标签
       const flatTags = this.flattenTags(this.tags);
+      console.log(`📊 [TagService] Flattened ${flatTags.length} tags:`, flatTags.map(t => t.name));
       
       // 批量保存到 StorageManager
       for (const tag of flatTags) {
@@ -195,16 +219,19 @@ class TagServiceClass {
           // 尝试获取现有标签
           const existing = await storageManager.getTag(tag.id);
           // 如果存在，更新
+          console.log(`🔄 [TagService] Updating existing tag: ${tag.name} (${tag.id})`);
           await storageManager.updateTag(tag.id, storageTag);
         } catch {
           // 如果不存在，创建
+          console.log(`➕ [TagService] Creating new tag: ${tag.name} (${tag.id})`);
           await storageManager.createTag(storageTag);
         }
       }
       
-      // 静默保存，只在首次创建时显示
+      console.log(`✅ [TagService] Saved ${flatTags.length} tags to StorageManager`);
     } catch (error) {
       console.error('❌ [TagService] Failed to save tags:', error);
+      throw error; // 重新抛出错误以便调用方知道保存失败
     }
   }
 

@@ -8,10 +8,26 @@
 .timelog-page {
   display: flex;
   height: 100%;
+  width: 100%; /* 限制在视口宽度内 */
   background: none; /* 🎨 Figma: 移除背景 */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', sans-serif;
-  overflow: visible; /* 🎨 Figma: 允许阴影溢出 */
+  overflow: hidden; /* 防止内容溢出 */
   gap: 8px; /* Reduced from 16px */
+}
+
+/* ========================================
+   标签栏+卡片容器（组合为整体）
+   ======================================== */
+
+.timelog-card-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0; /* 标签栏和卡片之间无间隙 */
+  align-self: flex-start; /* 与左侧对齐 */
+  height: 100%; /* 占满容器高度 */
+  min-width: 0; /* 允许flex子元素收缩 */
+  overflow: hidden; /* 防止内容溢出 */
 }
 
 /* ========================================
@@ -28,6 +44,13 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0; /* 允许flex子元素收缩 */
+}
+
+/* 有标签时，卡片左上角改为0，右上角保持圆角 */
+.timelog-main-card.has-tabs {
+  border-top-left-radius: 0;
+  border-top-right-radius: 20px; /* 保持右上圆角 */
 }
 
 /* 标签模式下：移除顶部内边距，让标签栏贴在卡片顶部 */
@@ -37,7 +60,7 @@
 
 /* 为右侧悬浮玻璃栏腾出视觉与交互空间（仅在宽屏显示栏时应用） */
 @media (min-width: 1101px) {
-  .timelog-main-card {
+  .timelog-card-container {
     margin-right: 64px; /* 48px按钮宽度 + 左右各8px间距 */
   }
 }
@@ -75,26 +98,27 @@
 }
 
 /* ========================================
-   Chrome 风格标签栏
+   Chrome 风格标签栏（在卡片上方独立渲染）
    ======================================== */
 
 .timelog-header-with-tabs {
-  margin-bottom: 0;
-  margin-top: 0;
-}
-
-.timelog-header-with-tabs .timelog-header-border {
-  border-bottom: none;
-  padding-bottom: 0;
+  background: transparent; /* 透明背景，标签悬浮在app背景上 */
+  padding: 0;
+  margin: 0;
+  width: 100%; /* 确保不超过容器宽度 */
+  overflow: hidden; /* 防止标签溢出 */
 }
 
 .timelog-tab-bar {
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  border-bottom: 1px solid #E5E7EB;
-  padding: 8px 0 0 0; /* 顶部留8px，让标签不贴边 */
+  border-bottom: none; /* 移除边框，让激活标签与卡片融合 */
+  padding: 8px 0 0 0; /* 顶部留8px间距 */
   margin: 0;
+  width: 100%; /* 确保不超过容器宽度 */
+  overflow-x: auto; /* 标签过多时可滚动 */
+  overflow-y: hidden;
 }
 
 .timelog-tab {
@@ -117,15 +141,22 @@
   padding-left: 20px;
 }
 
+/* 最后一个标签的右上角圆角 */
+.timelog-tab:last-child {
+  border-top-right-radius: 20px;
+  padding-right: 20px;
+}
+
 .timelog-tab:hover {
   background: #E5E7EB;
 }
 
 .timelog-tab-active {
   background: white;
-  border-bottom: 2px solid white;
-  margin-bottom: -1px;
+  border-bottom: none; /* 移除边框 */
+  margin-bottom: 0; /* 与卡片紧密相连 */
   cursor: default;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05); /* 添加轻微阴影增强层次感 */
 }
 
 .timelog-tab-active:hover {
@@ -185,18 +216,12 @@
   color: #374151;
 }
 
-/* 事件编辑器视图 */
-.timelog-event-editor {
+/* LogTab 内容区域 */
+.timelog-tab-content {
   flex: 1;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-}
-
-.timelog-event-editor .event-edit-modal-v2-embedded {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
 }
 
 /* ========================================

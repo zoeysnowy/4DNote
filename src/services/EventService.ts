@@ -1966,7 +1966,8 @@ export class EventService {
       } catch {
         // 解析失败，说明是纯文本
         result.simpleTitle = simpleTitle;
-        result.colorTitle = simpleTitle; // 纯文本直接赋值（无格式）
+        // 🔧 修复: 纯文本需要转换为 Slate JSON 格式
+        result.colorTitle = JSON.stringify([{ type: 'paragraph', children: [{ text: simpleTitle }] }]);
         // ✅ 尝试使用保存的 formatMap
         result.fullTitle = this.simpleTitleToFullTitle(simpleTitle, (titleInput as any).formatMap);
         result.formatMap = (titleInput as any).formatMap; // 保留 formatMap
@@ -3595,7 +3596,7 @@ export class EventService {
     return {
       ...storageEvent,
       title: this.normalizeTitle(storageEvent.title),
-      eventlog: storageEvent.eventlog as any, // EventLog 类型兼容
+      eventlog: this.normalizeEventLog(storageEvent.eventlog, storageEvent.description),
     } as Event;
   }
 

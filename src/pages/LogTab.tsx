@@ -1,7 +1,9 @@
 /**
- * EventEditModal v2 - 双视图事件编辑模态框
+ * LogTab - 标签页中的事件详情页面
  * 
- * ==================== 功能概览 ====================
+ * 基于 EventEditModalV2 的完整功能，移除弹窗相关代码
+ * 
+ * ==================== 功能概览 ==
  * 1. 左侧事件标识区（Emoji、标题、标签、任务勾选）
  * 2. Timer 计时按钮交互
  * 3. 计划安排编辑（时间、地点、参会人）
@@ -79,52 +81,52 @@ import { createPortal } from 'react-dom';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
-import { TagService } from '../../services/TagService';
-import { EventService } from '../../services/EventService';
-import { EventHub } from '../../services/EventHub';
-import { ContactService } from '../../services/ContactService';
-import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact, EventTitle } from '../../types';
-import { HierarchicalTagPicker } from '../HierarchicalTagPicker/HierarchicalTagPicker';
-import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
-import { AttendeeDisplay } from '../common/AttendeeDisplay';
-import { LocationInput } from '../common/LocationInput';
-import { CalendarPicker } from '../../features/Calendar/components/CalendarPicker';
-import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
-import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor } from '../../utils/calendarUtils';
+import { TagService } from '../services/TagService';
+import { EventService } from '../services/EventService';
+import { EventHub } from '../services/EventHub';
+import { ContactService } from '../services/ContactService';
+import { EventHistoryService } from '../services/EventHistoryService';
+import { Event, Contact, EventTitle } from '../types';
+import { HierarchicalTagPicker } from '../components/HierarchicalTagPicker/HierarchicalTagPicker';
+import UnifiedDateTimePicker from '../components/FloatingToolbar/pickers/UnifiedDateTimePicker';
+import { AttendeeDisplay } from '../components/common/AttendeeDisplay';
+import { LocationInput } from '../components/common/LocationInput';
+import { CalendarPicker } from '../features/Calendar/components/CalendarPicker';
+import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
+import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
+import { getAvailableCalendarsForSettings, getCalendarGroupColor } from '../utils/calendarUtils';
 // TimeLog 相关导入
-import { ModalSlate } from '../ModalSlate';
-import { TitleSlate } from '../ModalSlate/TitleSlate';
-import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '../ModalSlate/serialization';
-import { HeadlessFloatingToolbar } from '../FloatingToolbar/HeadlessFloatingToolbar';
-import { useFloatingToolbar } from '../FloatingToolbar/useFloatingToolbar';
-import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../PlanSlate/helpers';
-// import { parseExternalHtml, slateNodesToRichHtml } from '../PlanSlate/serialization';
-import { formatTimeForStorage } from '../../utils/timeUtils';
-import { EventRelationSummary } from '../EventTree/EventRelationSummary';
-import { EventTreeViewer } from '../EventTree/EventTreeViewer';
-import './EventEditModalV2.css';
+import { ModalSlate } from '../components/ModalSlate';
+import { TitleSlate } from '../components/ModalSlate/TitleSlate';
+import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '../components/ModalSlate/serialization';
+import { HeadlessFloatingToolbar } from '../components/FloatingToolbar/HeadlessFloatingToolbar';
+import { useFloatingToolbar } from '../components/FloatingToolbar/useFloatingToolbar';
+import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../components/PlanSlate/helpers';
+// import { parseExternalHtml, slateNodesToRichHtml } from '../components/PlanSlate/serialization';
+import { formatTimeForStorage } from '../utils/timeUtils';
+import { EventRelationSummary } from '../components/EventTree/EventRelationSummary';
+import { EventTreeViewer } from '../components/EventTree/EventTreeViewer';
+import './LogTab.css';
 
 // Import SVG icons
-import timerStartIcon from '../../assets/icons/timer_start.svg';
-import pauseIcon from '../../assets/icons/pause.svg';
-import stopIcon from '../../assets/icons/stop.svg';
-import cancelIcon from '../../assets/icons/cancel.svg';
-import rotationColorIcon from '../../assets/icons/rotation_color.svg';
-import attendeeIcon from '../../assets/icons/Attendee.svg';
-import datetimeIcon from '../../assets/icons/datetime.svg';
-import locationIcon from '../../assets/icons/Location.svg';
-import arrowBlueIcon from '../../assets/icons/Arrow_blue.svg';
-import timerCheckIcon from '../../assets/icons/timer_check.svg';
-import addTaskColorIcon from '../../assets/icons/Add_task_color.svg';
-import ddlAddIcon from '../../assets/icons/ddl_add.svg';
-import ddlCheckedIcon from '../../assets/icons/ddl_checked.svg';
-import taskGrayIcon from '../../assets/icons/task_gray.svg';
-import ddlWarnIcon from '../../assets/icons/ddl_warn.svg';
-import linkColorIcon from '../../assets/icons/link_color.svg';
-import backIcon from '../../assets/icons/back.svg';
-import remarkableLogo from '../../assets/icons/LOGO.svg';
+import timerStartIcon from '../assets/icons/timer_start.svg';
+import pauseIcon from '../assets/icons/pause.svg';
+import stopIcon from '../assets/icons/stop.svg';
+import cancelIcon from '../assets/icons/cancel.svg';
+import rotationColorIcon from '../assets/icons/rotation_color.svg';
+import attendeeIcon from '../assets/icons/Attendee.svg';
+import datetimeIcon from '../assets/icons/datetime.svg';
+import locationIcon from '../assets/icons/Location.svg';
+import arrowBlueIcon from '../assets/icons/Arrow_blue.svg';
+import timerCheckIcon from '../assets/icons/timer_check.svg';
+import addTaskColorIcon from '../assets/icons/Add_task_color.svg';
+import ddlAddIcon from '../assets/icons/ddl_add.svg';
+import ddlCheckedIcon from '../assets/icons/ddl_checked.svg';
+import taskGrayIcon from '../assets/icons/task_gray.svg';
+import ddlWarnIcon from '../assets/icons/ddl_warn.svg';
+import linkColorIcon from '../assets/icons/link_color.svg';
+import backIcon from '../assets/icons/back.svg';
+import remarkableLogo from '../assets/icons/LOGO.svg';
 
 interface MockEvent {
   id: string;
@@ -163,9 +165,8 @@ interface MockEvent {
   } | null;
 }
 
-interface EventEditModalV2Props {
-  eventId: string | null; // 🔧 重构：只传 eventId，Modal 自己从 EventHub 获取数据
-  isOpen: boolean;
+interface LogTabProps {
+  eventId: string; // LogTab 总是打开的，不需要 isOpen
   onClose: () => void;
   onSave: (updatedEvent: Event) => void;
   onDelete?: (eventId: string) => void;
@@ -189,9 +190,8 @@ interface EventEditModalV2Props {
   resizable?: boolean;
 }
 
-const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
+const LogTabComponent: React.FC<LogTabProps> = ({
   eventId,
-  isOpen,
   onClose,
   onSave,
   onDelete,
@@ -1055,7 +1055,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       let endTimeForStorage = formData.endTime;
       
       if (formData.startTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeString } = await import('../utils/timeUtils');
         try {
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const startDate = parseLocalTimeString(formData.startTime);
@@ -1072,7 +1072,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       }
       
       if (formData.endTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeString } = await import('../utils/timeUtils');
         try {
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const endDate = parseLocalTimeString(formData.endTime);
@@ -1204,7 +1204,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       });
 
       // 🔧 提前导入 EventHub
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('../services/EventHub');
 
       // 🔧 Step 7: 统一保存路径（已移除 Timer 特殊处理）
       // 说明：所有事件创建/更新都通过 EventHub 统一处理，确保架构一致性
@@ -2323,11 +2323,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
 
   // ==================== 渲染函数 ====================
 
-  // 🔧 如果 modal 未打开，不渲染（使用 JSX 条件渲染，避免违反 Hook 规则）
-  if (!isOpen) return null;
-
   // 🔍 DEBUG: 检查 formData 初始化状态
-  console.log('🎨 [EventEditModalV2] 准备渲染，formData 状态:', {
+  console.log('🎨 [LogTab] 准备渲染，formData 状态:', {
     id: formData.id,
     title: formData.title?.substring(0, 50),
     tagsCount: formData.tags?.length,
@@ -2939,7 +2936,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                 // 子模式：实时同步到父事件
                                 if (parentEvent) {
                                   console.log('🔗 [EventEditModalV2] 子事件模式：同步calendarIds到父事件:', parentEvent.id);
-                                  const { EventHub } = await import('../../services/EventHub');
+                                  const { EventHub } = await import('../services/EventHub');
                                   await EventHub.updateFields(parentEvent.id, {
                                     calendarIds: calendarIds,
                                   }, {
@@ -3209,7 +3206,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                       calendarIds
                                     });
                                     
-                                    const { EventHub } = await import('../../services/EventHub');
+                                    const { EventHub } = await import('../services/EventHub');
                                     for (const childEvent of childEvents) {
                                       if (childEvent.isTimer) {
                                         await EventHub.updateFields(childEvent.id, {
@@ -3328,7 +3325,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                         calendarIds: allCalendarIds
                                       });
                                       
-                                      const { EventHub } = await import('../../services/EventHub');
+                                      const { EventHub } = await import('../services/EventHub');
                                       for (const childEvent of childEvents) {
                                         if (childEvent.isTimer) {
                                           await EventHub.updateFields(childEvent.id, {
@@ -3709,56 +3706,32 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         </>
   );
 
-  // 🖼️ 模态框模式：带遮罩层
+  // 📄 LogTab 模式：直接渲染内容，无遮罩层
   return (
-    <div className="event-edit-modal-v2-overlay" onClick={onClose}>
-      <div 
-        className={`event-edit-modal-v2 ${isDetailView ? 'detail-view' : 'compact-view'}`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {renderModalContent()}
-      </div>
+    <div className={`event-edit-modal-v2 logtab-view ${isDetailView ? 'detail-view' : 'compact-view'}`}>
+      {renderModalContent()}
     </div>
   );
 };
 
-// 🔥 使用 React.memo 避免父组件重新渲染时子组件也重新渲染
-// 只在 props 真正变化时才重新渲染
-export const EventEditModalV2 = React.memo(EventEditModalV2Component, (prevProps, nextProps) => {
-  // 返回 true 表示 props 相等，跳过重新渲染
-  // 返回 false 表示 props 不等，需要重新渲染
-  
-  // 如果 modal 都关闭，跳过重新渲染
-  if (!prevProps.isOpen && !nextProps.isOpen) {
-    return true; // props 相等，跳过渲染
-  }
-  
-  // 如果 modal 打开状态变化，需要重新渲染
-  if (prevProps.isOpen !== nextProps.isOpen) {
-    console.log('🔄 [EventEditModalV2] React.memo: isOpen 变化，需要渲染');
-    return false; // props 不等，需要渲染
-  }
-  
-  // 如果 eventId 变化，需要重新渲染
+// 导出为 LogTab
+export const LogTab = React.memo(LogTabComponent, (prevProps, nextProps) => {
+  // LogTab 简化的 memo 逻辑：只检查 eventId 变化
   if (prevProps.eventId !== nextProps.eventId) {
-    console.log('🔄 [EventEditModalV2] React.memo: eventId 变化，需要渲染');
-    return false; // props 不等，需要渲染
-  }
-  
-  // 🔧 检查 globalTimer 状态（计时器运行时需要更新）
-  const prevTimer = prevProps.globalTimer;
-  const nextTimer = nextProps.globalTimer;
-  
-  // 如果计时器状态变化（启动/暂停/停止），需要重新渲染
-  if (prevTimer?.isRunning !== nextTimer?.isRunning || 
-      prevTimer?.isPaused !== nextTimer?.isPaused ||
-      prevTimer?.eventId !== nextTimer?.eventId) {
-    console.log('🔄 [EventEditModalV2] React.memo: globalTimer 状态变化，需要渲染');
+    console.log('🔄 [LogTab] React.memo: eventId 变化，需要渲染');
     return false;
   }
   
-  // 其他情况：eventId 相同，modal 保持打开状态，timer 状态相同
-  // 跳过重新渲染（忽略回调函数引用变化，因为内部使用最新的 props）
-  console.log('⏭️ [EventEditModalV2] React.memo 跳过重新渲染（eventId 和关键状态未变化）');
-  return true; // props 相等，跳过渲染
+  // 检查 globalTimer 状态
+  const prevTimer = prevProps.globalTimer;
+  const nextTimer = nextProps.globalTimer;
+  
+  if (prevTimer?.isRunning !== nextTimer?.isRunning || 
+      prevTimer?.isPaused !== nextTimer?.isPaused ||
+      prevTimer?.eventId !== nextTimer?.eventId) {
+    console.log('🔄 [LogTab] React.memo: globalTimer 状态变化，需要渲染');
+    return false;
+  }
+  
+  return true; // 跳过渲染
 });

@@ -1,0 +1,961 @@
+/* EventEditModal v2 Demo Page Styles */
+
+.eventmodal-v2-demo-container {
+  min-height: 100vh;
+  background: transparent;
+  padding: 0;
+}
+
+.demo-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.demo-header h1 {
+  font-size: 24px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0;
+}
+
+.demo-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.view-switch-btn {
+  padding: 8px 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: white;
+  color: #6b7280;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.view-switch-btn:hover {
+  background: #f9fafb;
+  border-color: #3b82f6;
+}
+
+.view-switch-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.demo-content {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+/* 左侧信息面板 */
+.demo-info-panel {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+
+.demo-info-panel h2 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 16px 0;
+}
+
+.info-section {
+  margin-bottom: 24px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.info-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.info-section h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 12px 0;
+}
+
+.info-section ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-section li {
+  padding: 6px 0;
+  color: #6b7280;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.info-section code {
+  background: #f9fafb;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #3b82f6;
+}
+
+.info-section pre {
+  background: #f9fafb;
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #374151;
+  overflow-x: auto;
+  margin: 8px 0 0 0;
+}
+
+/* 右侧预览面板 */
+.demo-preview-panel {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 600px;
+  padding: 40px 20px;
+}
+
+/* Emoji Picker Overlay */
+.emoji-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.emoji-picker-wrapper {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  overflow: hidden;
+}
+
+/* Tag Picker Placeholder */
+.tag-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.tag-picker-placeholder {
+  background: white;
+  padding: 40px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  text-align: center;
+}
+
+.tag-picker-placeholder h3 {
+  margin: 0 0 12px 0;
+  font-size: 18px;
+  color: #1f2937;
+}
+
+.tag-picker-placeholder p {
+  margin: 0 0 20px 0;
+  color: #6b7280;
+}
+
+.tag-picker-placeholder button {
+  padding: 8px 24px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.tag-picker-placeholder button:hover {
+  background: #2563eb;
+}
+
+/* 复用 test-eventeditmodal-v2.html 的样式 */
+/* 这些样式与测试页面保持一致 */
+
+.event-edit-modal-v2-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.event-edit-modal-v2 {
+  background: #FFF;
+  box-shadow: 0 10px 10px 0 rgba(0, 0, 0, 0.10);
+  display: flex;
+  flex-direction: column;
+  font-family: 'Microsoft YaHei', Arial;
+}
+
+.event-edit-modal-v2.detail-view {
+  border-radius: 45px;
+  width: 1200px;
+  height: 800px;
+  border: 1px solid #E5E7EB;
+}
+
+.event-edit-modal-v2.compact-view {
+  border-radius: 45px;
+  width: 383px;
+  height: 730px;
+  border: 1px solid #E5E7EB;
+}
+
+.modal-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.event-overview {
+  width: 400px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 48px 24px 48px;
+  overflow-y: visible;
+  box-sizing: border-box; /* padding不会增加总宽度 */
+  overflow-x: hidden; /* 防止横向溢出 */
+}
+
+.compact-view .event-overview {
+  width: 100%;
+  padding: 24px 36px 0 36px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+}
+
+/* Section Identity */
+.section-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px;
+  align-items: center; /* 让子元素水平居中 */
+  width: 100%; /* 确保容器占满父元素 */
+  box-sizing: border-box; /* padding不会增加总宽度 */
+}
+
+.emoji-large {
+  font-size: 42px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 8px;
+  transition: background 0.2s;
+  text-align: center;
+  user-select: none;
+}
+
+.emoji-large:hover {
+  background: #f3f4f6;
+}
+
+.title-checkbox-row {
+  display: inline-flex; /* 改为inline-flex，宽度由内容决定 */
+  align-items: flex-start; /* 顶部对齐，checkbox通过margin-top和第一行文字对齐 */
+  gap: 6px;
+  max-width: 100%;
+}
+
+.custom-checkbox {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  flex-shrink: 0; /* 防止checkbox被压缩 */
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 3.5px; /* (18px font-size × 1.5 line-height = 27px，27px / 2 - 20px / 2 = 3.5px) */
+}
+
+.custom-checkbox:hover {
+  border-color: #3b82f6;
+}
+
+.custom-checkbox.checked {
+  border-color: #3b82f6;
+  background: #3b82f6;
+  position: relative;
+}
+
+.custom-checkbox.checked::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.title-input {
+  font-size: 18px;
+  font-weight: 400;
+  border: none;
+  outline: none;
+  padding: 0;
+  color: #1f2937;
+  line-height: 1.5;
+  text-align: center; /* 文字居中 */
+  flex: 0 0 auto; /* 不自动伸缩，使用动态计算的宽度 */
+  min-height: 27px; /* 最小高度（一行） */
+  max-height: 81px; /* 最大3行高度 (27px * 3) */
+  height: auto; /* 高度自适应内容 */
+  word-wrap: break-word;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  white-space: pre-wrap; /* 保持空格，达到最大宽度时换行 */
+  overflow-y: auto; /* 超出时滚动 */
+  overflow-x: hidden; /* 隐藏横向滚动 */
+  font-family: inherit; /* 继承父元素字体 */
+  box-sizing: border-box;
+}
+
+/* 富文本样式保留 */
+.title-input * {
+  white-space: pre-wrap;
+  display: inline; /* 所有子元素默认行内显示 */
+  line-height: inherit;
+  font-size: inherit;
+}
+
+/* 段落标签转为行内 */
+.title-input p {
+  display: inline;
+  margin: 0;
+  padding: 0;
+}
+
+/* 保持富文本样式效果 */
+.title-input span[style*="color"],
+.title-input span[style*="background"] {
+  display: inline;
+}
+
+/* contentEditable placeholder 支持 */
+.title-input:empty:before {
+  content: attr(data-placeholder);
+  color: #d1d5db;
+}
+
+.title-input::placeholder {
+  color: #d1d5db;
+}
+
+.eventmodal-v2-tags-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 280px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.eventmodal-v2-tags-row:hover {
+  background: #f9fafb;
+}
+
+.eventmodal-v2-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.eventmodal-v2-tag-separator {
+  color: #d1d5db;
+  margin: 0 2px;
+}
+
+.eventmodal-v2-tag-etc {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+.tag-placeholder {
+  color: #9ca3af;
+  font-size: 13px;
+}
+
+/* Timer Button */
+.timer-button-start {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 0;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin: 16px 0;
+}
+
+.timer-button-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.timer-button-start img {
+  width: 20px;
+  height: 20px;
+}
+
+/* Timer 开始专注按钮 - Figma 原设计 */
+.timer-button-start {
+  background: transparent !important;
+  background-color: transparent !important;
+  border: 0 !important;
+  border-style: none !important;
+  padding: 0;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 400;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s;
+  margin: 24px 0; /* 上下间距各24px */
+  outline: none;
+  box-shadow: none !important; /* 覆盖 EventEditModalV2.css 中的阴影 */
+  border-radius: 0 !important; /* 移除 border-radius */
+}
+
+.timer-button-start:hover {
+  opacity: 0.8;
+  box-shadow: none !important; /* 覆盖 EventEditModalV2.css 中的 hover 阴影 */
+  transform: none !important; /* 移除 transform 效果 */
+  background: transparent !important; /* 保持透明背景 */
+}
+
+.timer-button-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.timer-button-start img {
+  width: 20px;
+  height: 20px;
+}
+
+/* Timer 按钮组（计时中状态）- 匹配 HomePage TimerCard 样式 */
+.timer-buttons {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0px; /* 按钮紧贴在一起 */
+  margin: 16px 0;
+  height: 60px; /* 匹配长方形按钮的高度 */
+}
+
+.timer-btn {
+  width: 48px; /* 长方形容器：宽度48px */
+  height: 56px; /* 长方形容器：高度56px，匹配SVG的40:47比例 */
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  padding: 0; /* 移除padding，让SVG填满容器 */
+  flex-shrink: 0; /* 防止按钮被压缩 */
+  box-sizing: border-box;
+}
+
+.timer-btn:hover {
+  transform: scale(1.15);
+}
+
+.timer-btn:active {
+  transform: scale(0.9);
+}
+
+.timer-btn img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center; /* 确保图标在容器中居中 */
+  display: block; /* 移除inline元素的baseline对齐问题 */
+}
+
+/* Timer Display (Elapsed Time) - 匹配 HomePage TimerCard 样式 */
+.timer-display {
+  text-align: center;
+  font-size: 24px;
+  font-weight: 600;
+  color: #333;
+  margin-top: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+/* Section Header */
+.eventmodal-v2-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  margin-top: 24px; /* 与开始专注按钮保持24px间距 */
+}
+
+.eventmodal-v2-section-header-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.eventmodal-v2-section-header-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.eventmodal-v2-header-text-btn {
+  font-size: 13px;
+  color: #6b7280;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.eventmodal-v2-header-text-btn:hover {
+  background: #f3f4f6;
+}
+
+.eventmodal-v2-header-icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.eventmodal-v2-header-icon-btn:hover {
+  background: #f3f4f6;
+}
+
+.eventmodal-v2-header-icon-btn img {
+  width: 16px;
+  height: 16px;
+}
+
+.total-duration {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+/* Plan Row */
+.eventmodal-v2-plan-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.eventmodal-v2-plan-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.eventmodal-v2-plan-content {
+  flex: 1;
+  color: #6b7280;
+  line-height: 1.6;
+}
+
+/* Progress Section */
+.progress-section-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.progress-section-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+.timer-segments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Event Log */
+.event-log {
+  position: relative; /* 为 collapse-button 提供定位上下文 */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+  border-left: none !important; /* 覆盖 EventEditModalV2.css 中的左边框 */
+  overflow: hidden; /* 防止整体滚动 */
+}
+
+/* Event Log 固定顶部区域 */
+.event-log-header {
+  flex-shrink: 0; /* 不参与压缩 */
+  padding: 24px 98px 0 24px; /* 右侧留出收起按钮空间 */
+}
+
+/* Event Log 可滚动编辑区域 */
+.event-log-editor-wrapper {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0 98px 24px 24px; /* 右侧留出收起按钮空间 */
+  overflow-y: auto;
+  min-height: 200px; /* 最小高度，保证可以点击和输入 */
+  /* 隐藏滚动条但保持滚动功能 */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+}
+
+/* 顶部阴影 - 当内容向上滚动时显示 */
+.event-log-editor-wrapper::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.06), transparent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.event-log-editor-wrapper.show-top-shadow::before {
+  opacity: 1;
+}
+
+/* 隐藏 Webkit 浏览器的滚动条 */
+.event-log-editor-wrapper::-webkit-scrollbar {
+  display: none;
+}
+
+/* 收起按钮 - 固定在右侧中间 */
+.collapse-button {
+  position: absolute;
+  right: 36px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.2s;
+  z-index: 10;
+  opacity: 0.5;
+  outline: none;
+}
+
+.collapse-button:hover {
+  opacity: 0.8;
+}
+
+.collapse-button .collapse-icon {
+  width: 26px;
+  height: 40px;
+}
+
+.tags-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.tag-mention {
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+/* Footer */
+.detail-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 48px 40px 48px;
+  border-top: none;
+}
+
+.compact-footer {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 12px 36px 40px 36px;
+  border-top: none;
+}
+
+.compact-footer .eventmodal-v2-footer-btn-delete {
+  justify-self: start;
+}
+
+.compact-footer .eventmodal-v2-footer-btn-expand {
+  justify-self: center;
+}
+
+.compact-footer > div {
+  justify-self: end;
+}
+
+.eventmodal-v2-footer-btn {
+  font-family: 'Istok Web', sans-serif;
+  font-size: 15px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.2s;
+}
+
+.eventmodal-v2-footer-btn-delete {
+  color: #ef4444;
+}
+
+.eventmodal-v2-footer-btn-delete:hover {
+  color: #dc2626;
+}
+
+.eventmodal-v2-footer-btn-expand {
+  color: #9ca3af;
+}
+
+.eventmodal-v2-footer-btn-expand:hover {
+  color: #6b7280;
+}
+
+.eventmodal-v2-footer-btn-cancel {
+  color: #9ca3af;
+}
+
+.eventmodal-v2-footer-btn-cancel:hover {
+  color: #6b7280;
+}
+
+.eventmodal-v2-footer-btn-save {
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.eventmodal-v2-footer-btn-save:hover {
+  color: #2563eb;
+}
+
+/* 时间箭头区域 */
+.time-arrow-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0px;
+  margin: 0 4px;
+}
+
+.duration-text {
+  font-size: 10px;
+  font-weight: 600;
+  background: linear-gradient(135deg, #22d3ee, #3b82f6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.arrow-icon {
+  width: 51px;
+  height: auto;
+  flex-shrink: 0;
+}
+
+/* 总时长 */
+.total-duration {
+  font-size: 14px;
+  font-weight: 500;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+/* 时间片段 */
+.timer-segment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: #1f2937;
+  overflow: visible;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.timer-check-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* ddl完成状态 */
+.ddl-completion {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.ddl-completion img {
+  width: 16px;
+  height: 16px;
+}
+
+/* 标签区域 */
+.tag-mention {
+  padding: 0;
+  border-radius: 0;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+}
+
+.tag-work {
+  color: #10b981;
+}
+
+.tag-client {
+  color: #ea580c;
+}
+
+/* Tag Picker Overlay */
+.tag-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.tag-picker-popup {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 500px;
+  max-height: 600px;
+  overflow: hidden;
+}
+
+.tag-picker-dropdown {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 300px;
+  max-width: 400px;
+  max-height: 500px;
+  overflow: hidden;
+}
+
+.time-picker-popup {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  max-width: 800px;
+  max-height: 700px;
+  overflow: auto;
+}
+
+/* Tippy Time Picker Styling */
+.tippy-box[data-theme~='light'] {
+  background-color: white;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  padding: 0;
+  max-width: none !important;
+}
+
+.tippy-box[data-theme~='light'] .tippy-content {
+  padding: 0;
+  max-width: 800px;
+  max-height: 700px;
+  overflow: auto;
+}
