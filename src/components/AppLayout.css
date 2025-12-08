@@ -9,11 +9,52 @@
     "statusbar statusbar";
   height: 100vh;
   width: 100vw;
-  background-color: #f8f9fa;
+  background: #F3F4F6;
   font-family: 'Microsoft YaHei', Arial, sans-serif;
   overflow: hidden;
   position: relative; /* 🔧 [FIX] 添加相对定位，为 sticky 提供定位上下文 */
   min-height: 100vh; /* 🔧 [FIX] 确保最小高度 */
+}
+
+/* 弥散渐变背景 */
+.app-layout::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  background: #F3F4F6;
+}
+
+/* 弥散渐变效果层 */
+.app-layout::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    /* 左上角紫色光晕 */
+    radial-gradient(ellipse 438px 452px at -174px -50px, rgba(168, 85, 247, 0.13), transparent),
+    radial-gradient(ellipse 277px 304px at 37px 387px, rgba(168, 85, 247, 0.13), transparent),
+    radial-gradient(ellipse 277px 304px at -94px 265px, rgba(168, 85, 247, 0.13), transparent),
+    /* 左侧渐变条 */
+    radial-gradient(ellipse 439px 452px at -219px 154px, rgba(168, 85, 247, 0.10), rgba(59, 130, 246, 0.20) 75%, transparent),
+    /* 大范围蓝色渐变 */
+    radial-gradient(ellipse 1409px 1585px at -156px -181px, rgba(59, 130, 246, 0.05), rgba(59, 130, 246, 0.01)),
+    /* 右上角紫色 */
+    radial-gradient(ellipse 161px 347px at 1343px -145px, rgba(168, 85, 247, 0.13), transparent),
+    /* 右上角粉色 */
+    radial-gradient(ellipse 333px 384px at 1017px -210px, rgba(252, 187, 219, 0.13), transparent),
+    radial-gradient(ellipse 333px 384px at 1077px -250px, rgba(252, 187, 219, 0.13), transparent),
+    /* 右侧蓝色大光晕 */
+    radial-gradient(ellipse 731px 573px at 720px -8px, rgba(59, 130, 246, 0.10), transparent);
 }
 
 /* ===================
@@ -22,9 +63,9 @@
 .app-header {
   grid-area: header;
   height: 80px;
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
-  box-shadow: 0px 1px 2px rgba(0, 0, 0, 0.05);
+  background: transparent;
+  border-bottom: none;
+  box-shadow: none;
   position: relative;
   z-index: 1000;
 }
@@ -283,8 +324,8 @@
 .app-sidebar {
   grid-area: sidebar;
   width: 98px;
-  background: white;
-  border-right: 1px solid #e5e7eb;
+  background: transparent;
+  border-right: none;
   padding: 27px 0;
   display: flex;
   flex-direction: column;
@@ -327,12 +368,14 @@
 }
 
 .nav-item:hover {
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(10px);
 }
 
 .nav-item.active {
-  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 75%);
-  box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1), 0px 10px 15px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.9) 0%, rgba(59, 130, 246, 0.9) 75%);
+  backdrop-filter: blur(10px);
+  box-shadow: 0px 4px 12px rgba(168, 85, 247, 0.3), 0px 8px 24px rgba(59, 130, 246, 0.2);
 }
 
 .nav-icon {
@@ -401,9 +444,9 @@
   grid-area: main;
   padding: 0; /* 🔧 [FIX] 移除所有padding，由子组件控制 */
   overflow: auto;
-  background: #f8f9fa;
+  background: transparent;
   position: relative; /* 🔧 [FIX] 确保正确的堆叠上下文 */
-  z-index: 1; /* 🔧 [FIX] 确保在 statusbar 下方 */
+  z-index: 10; /* 🔧 提升 z-index，确保在渐变背景之上 */
 }
 
 /* ===================
@@ -414,8 +457,9 @@
   height: 41px;
   min-height: 41px; /* 🔧 [FIX] 强制最小高度 */
   max-height: 41px; /* 🔧 [FIX] 强制最大高度，防止高度变化 */
-  background: white;
-  border-top: 1px solid #e5e7eb;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(229, 231, 235, 0.5);
   position: fixed; /* 🔧 [FIX] 使用 fixed 定位，确保始终在视口底部 */
   bottom: 0; /* 🔧 [FIX] 固定在底部 */
   left: 0; /* 🔧 [FIX] 从左边开始 */

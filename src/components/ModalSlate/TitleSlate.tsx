@@ -81,7 +81,7 @@ export interface TitleSlateProps {
   hideEmoji?: boolean;
 }
 
-export const TitleSlate: React.FC<TitleSlateProps> = ({
+const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   eventId,
   content,
   onChange,
@@ -92,7 +92,17 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
   hideEmoji = true // 默认隐藏 emoji
 }) => {
   // 🎬 组件mount日志
-  console.log('🎬 [TitleSlate] 组件正在mount/render', { eventId, readOnly, autoFocus });
+  console.log('🎬 [TitleSlate] 组件正在mount/render', { 
+    eventId, 
+    readOnly, 
+    autoFocus,
+    isComposing: isComposingRef?.current 
+  });
+  
+  // 🔧 [2024-12-09] 如果在 composition 期间重渲染，强制阻止
+  if (isComposingRef?.current) {
+    console.error('🚨 [TitleSlate] 在 IME 输入期间重渲染！这会导致光标位置错误！');
+  }
   
   // 创建 Slate 编辑器实例（只创建一次，永不重建）
   const editorRef = useRef<Editor | null>(null);
@@ -344,7 +354,11 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
   }, [editor, readOnly, handleFocus]);
   
   // 🔧 [2024-12-09] Composition handlers 使用 useCallback
+  // 🔧 使用 ref 标记 composition 状态
+  const isComposingRef = useRef(false);
+  
   const handleCompositionStart = useCallback((event: React.CompositionEvent) => {
+    isComposingRef.current = true;
     console.log('🎌 [TitleSlate] IME 输入开始（compositionstart）', {
       data: event.data,
       hasSelection: !!editor.selection,
@@ -360,6 +374,7 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
   }, [editor]);
   
   const handleCompositionEnd = useCallback((event: React.CompositionEvent) => {
+    isComposingRef.current = false;
     console.log('🎌 [TitleSlate] IME 输入结束（compositionend）', {
       data: event.data,
       hasSelection: !!editor.selection,
@@ -409,6 +424,13 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
   
   // 🔥 失焦时保存缓存的变化（blur-to-save 模式）
   const handleBlur = useCallback((event: React.FocusEvent) => {
+    // 🔧 [2024-12-09] 关键修复：如果在 IME composition 期间或刚结束，忽略 blur 事件
+    // 这是 Slate + IME 的已知问题：compositionend 后 Slate 会触发内部 normalize，导致 blur
+    if (isComposingRef.current) {
+      console.warn('⚠️ [TitleSlate] IME composition 期间的 blur，忽略');
+      return;
+    }
+    
     const relatedTarget = event.relatedTarget as HTMLElement;
     const activeEl = document.activeElement as HTMLElement;
     console.log('🎯 [TitleSlate] 失焦，保存变化', {
@@ -421,13 +443,10 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
       activeElementTextContent: activeEl?.textContent?.substring(0, 50)
     });
     
-    // 🔧 [2024-12-09] 关键修复：检测到焦点重新回到自己（Slate 重渲染导致的 blur→focus 循环）
+    // 🔧 检测到焦点重新回到自己（Slate 重渲染导致的 blur→focus 循环）
     // activeElement 是 title-slate-editable 说明焦点马上会回到这里，不是真正的失焦
-    // 这种情况下，不保存（因为用户还在编辑），避免触发额外的状态更新
     if (activeEl?.className?.includes('title-slate-editable')) {
       console.log('⚠️ [TitleSlate] 检测到 Slate 内部焦点循环（重渲染），跳过本次 blur');
-      // 🔥 不保存，不做任何操作，让 Slate 自己处理焦点恢复
-      // 注意：此时 editor.selection 应该还保留着，焦点会自动恢复
       return;
     }
     
@@ -435,7 +454,6 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
     // 说明焦点被某个不可聚焦的元素（如 DIV）抢走了，这是异常情况
     if (!relatedTarget && !activeEl?.className?.includes('title-slate-editable')) {
       console.warn('⚠️ [TitleSlate] 检测到焦点丢失到未知元素，跳过保存，避免丢失编辑状态');
-      // 不保存，因为用户可能还在输入，只是被同步操作短暂打断
       return;
     }
     
@@ -547,3 +565,30 @@ export const TitleSlate: React.FC<TitleSlateProps> = ({
     </div>
   );
 };
+
+// 🔧 [2024-12-09] 使用 React.memo 优化，避免父组件重渲染时 TitleSlate 不必要的重渲染
+// 特别是在 IME composition 期间，任何重渲染都会导致光标位置错误
+export const TitleSlate = React.memo(TitleSlateComponent, (prevProps, nextProps) => {
+  // 如果 eventId 变化，需要重新渲染
+  if (prevProps.eventId !== nextProps.eventId) {
+    console.log('🔄 [TitleSlate memo] eventId 变化，需要重新渲染');
+    return false;
+  }
+  
+  // 如果 content 变化，需要重新渲染
+  if (prevProps.content !== nextProps.content) {
+    console.log('🔄 [TitleSlate memo] content 变化，需要重新渲染');
+    return false;
+  }
+  
+  // 如果 readOnly 变化，需要重新渲染
+  if (prevProps.readOnly !== nextProps.readOnly) {
+    console.log('🔄 [TitleSlate memo] readOnly 变化，需要重新渲染');
+    return false;
+  }
+  
+  // 其他 props 变化（如 onChange, placeholder 等）不触发重渲染
+  // 因为 onChange 已经用 useCallback 包装，placeholder 已经用 useMemo 缓存
+  console.log('⏭️ [TitleSlate memo] props 未变化，跳过重新渲染');
+  return true;
+});
