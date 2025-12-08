@@ -375,12 +375,12 @@
   transition: filter 0.2s ease;
 }
 
-/* 🎯 TimeLog 图标加大 */
-.nav-item[data-page="timelog"] {
+/* 🎯 TimeLog (log页面) 图标加大 */
+.nav-item[data-page="log"] {
   height: 52px;
 }
 
-.nav-item[data-page="timelog"] .nav-icon {
+.nav-item[data-page="log"] .nav-icon {
   width: 28px;
   height: 28px;
 }
@@ -391,13 +391,13 @@
   height: 24px;
 }
 
-/* 🎯 TimeCalendar 和 Tag 图标缩小 */
-.nav-item[data-page="timecalendar"],
+/* 🎯 TimeCalendar (time页面) 和 Tag 图标缩小 */
+.nav-item[data-page="time"],
 .nav-item[data-page="tag"] {
   height: 44px;
 }
 
-.nav-item[data-page="timecalendar"] .nav-icon,
+.nav-item[data-page="time"] .nav-icon,
 .nav-item[data-page="tag"] .nav-icon {
   width: 16px;
   height: 16px;
