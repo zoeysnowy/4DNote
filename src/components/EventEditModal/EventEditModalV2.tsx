@@ -3713,7 +3713,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
               </div>
             )}
         </div>
-      </div>
     );
   }
 

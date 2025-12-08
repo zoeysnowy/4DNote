@@ -1,0 +1,475 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState, useMemo } from 'react';
+import { Layers, Zap } from 'lucide-react';
+
+/*
+  生长参数配置
+*/
+const LAYERS_CONFIG = [
+  { id: 1, petals: 6,  hoursPerPetal: 1,    radius: 40,  color: '#818cf8' }, // Layer 1: 6h total
+  { id: 2, petals: 10, hoursPerPetal: 5,    radius: 70,  color: '#38bdf8' }, // Layer 2: 50h total
+  { id: 3, petals: 14, hoursPerPetal: 20,   radius: 105, color: '#34d399' }, // Layer 3: 280h total
+  { id: 4, petals: 18, hoursPerPetal: 50,   radius: 140, color: '#fbbf24' }, // Layer 4: 900h total
+  { id: 5, petals: 24, hoursPerPetal: 100,  radius: 180, color: '#f472b6' }, // Layer 5: 2400h total
+];
+
+function ProgressiveGrowth() {
+  const [totalHours, setTotalHours] = useState(1);
+
+  const { segments, currentStats } = useMemo(() => {
+    let remainingHours = totalHours;
+    const generatedSegments = [];
+    let activeLayerInfo = null;
+
+    // 遍历每一层，计算这一层长了多少
+    for (let layerIndex = 0; layerIndex < LAYERS_CONFIG.length; layerIndex++) {
+      const config = LAYERS_CONFIG[layerIndex];
+      const layerTotalCost = config.petals * config.hoursPerPetal;
+      
+      // 计算这一层完成了多少个完整花瓣
+      // 如果剩余时间足够填满这一层，那就是满的；否则就是剩余时间能换算的量
+      const hoursSpentInThisLayer = Math.min(remainingHours, layerTotalCost);
+      
+      // 这一层长出的花瓣数 (可以是小数，代表正在画)
+      const petalsGrown = hoursSpentInThisLayer / config.hoursPerPetal;
+      
+      const isLayerActive = remainingHours > 0 && remainingHours < layerTotalCost;
+      const isLayerFull = remainingHours >= layerTotalCost;
+
+      if (isLayerActive) {
+          activeLayerInfo = {
+              layer: config.id,
+              progress: Math.floor((hoursSpentInThisLayer / layerTotalCost) * 100),
+              cost: config.hoursPerPetal
+          };
+      }
+
+      // 生成这一层的花瓣数据
+      for (let i = 0; i < Math.ceil(petalsGrown); i++) {
+        // 计算当前花瓣的完整度 (0~1)
+        // 只有最后一个花瓣可能是不完整的 (正在画)
+        let completeness = 1;
+        if (i === Math.floor(petalsGrown)) {
+            completeness = petalsGrown - i;
+        }
+
+        // 角度逻辑：
+        // 每一层都需要错开角度，形成交叠
+        // Layer 1: 0, 60...
+        // Layer 2: 偏移一半角度，插空
+        const angleStep = 360 / config.petals;
+        const offset = layerIndex % 2 === 0 ? 0 : angleStep / 2;
+        const angle = i * angleStep + offset;
+
+        // 路径生成 (Spirograph Logic)
+        const r = config.radius;
+        const rad = (angle * Math.PI) / 180;
+        
+        // 宽度随层级变大 (外层花瓣更宽更舒展)
+        const width = 20 + layerIndex * 5; 
+        
+        const tipX = r * Math.cos(rad);
+        const tipY = r * Math.sin(rad);
+        
+        // 垂直向量
+        const perpX = -Math.sin(rad) * width;
+        const perpY = Math.cos(rad) * width;
+        
+        // 控制点张力
+        const tension = 0.35;
+
+        // 基础路径
+        const cp1x = tipX * tension + perpX;
+        const cp1y = tipY * tension + perpY;
+        const cp2x = tipX - perpX * 0.6;
+        const cp2y = tipY - perpY * 0.6;
+        const cp3x = tipX + perpX * 0.6;
+        const cp3y = tipY + perpY * 0.6;
+        const cp4x = tipX * tension - perpX;
+        const cp4y = tipY * tension - perpY;
+
+        // 这里有个难点：如何让 SVG 路径只画一半？
+        // 简单方法：画完整路径，利用 strokeDasharray 控制显示
+        // 我们在数据里存 pathLength，然后在 render 时控制
+        
+        const d = `M 0,0 C ${cp1x},${cp1y} ${cp2x},${cp2y} ${tipX},${tipY} C ${cp3x},${cp3y} ${cp4x},${cp4y} 0,0`;
+
+        generatedSegments.push({
+            id: `${layerIndex}-${i}`,
+            d,
+            color: config.color,
+            completeness, // 0.1 ~ 1
+            isLast: i === Math.floor(petalsGrown) && !isLayerFull,
+            layer: layerIndex
+        });
+      }
+
+      remainingHours -= hoursSpentInThisLayer;
+      if (remainingHours <= 0) break;
+    }
+
+    return { segments: generatedSegments, currentStats: activeLayerInfo };
+  }, [totalHours]);
+
+  return (
+    <div className="flex flex-col items-center justify-center p-8 bg-slate-900 rounded-[40px] shadow-2xl min-h-[600px] w-full max-w-lg mx-auto relative overflow-hidden border border-slate-800">
+      
+      {/* 顶部指示器 */}
+      <div className="absolute top-8 left-0 w-full px-8 flex justify-between items-start z-10">
+        <div>
+           <h2 className="text-white font-bold text-xl flex items-center gap-2">
+             <Layers size={20} className="text-indigo-400"/>
+             Layered Growth
+           </h2>
+           <p className="text-slate-400 text-xs mt-1">Growth slows as layers expand.</p>
+        </div>
+        {currentStats && (
+            <div className="text-right">
+                <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Current Pace</div>
+                <div className="text-white font-mono text-lg">
+                    {currentStats.cost}h <span className="text-xs text-slate-500">/ petal</span>
+                </div>
+            </div>
+        )}
+      </div>
+
+      {/* 绘图区 */}
+      <div className="relative w-[340px] h-[340px] mt-8 mb-8">
+        <svg 
+          viewBox="-200 -200 400 400" 
+          className="w-full h-full overflow-visible"
+        >
+          {/* 背景网格环 (提示还有多少层) */}
+          {LAYERS_CONFIG.map((layer, i) => (
+             <circle 
+               key={`guide-${i}`} 
+               r={layer.radius} 
+               fill="none" 
+               stroke="#334155" 
+               strokeWidth="1" 
+               strokeDasharray="4 4" 
+               opacity="0.3" 
+             />
+          ))}
+
+          {/* 实际花瓣 */}
+          {segments.map((seg, i) => (
+            <g key={seg.id}>
+                {/* 
+                   描边动画逻辑：
+                   pathLength="100" 配合 strokeDasharray 
+                   如果 completeness = 0.5, 则 array="50 100"
+                */}
+                <path 
+                  d={seg.d}
+                  fill="none"
+                  stroke={seg.color}
+                  strokeWidth={seg.layer === 0 ? 3 : 2}
+                  strokeOpacity={0.8}
+                  strokeLinecap="round"
+                  // 这里的 400 是估算的路径总长度，用来做 stroke-dasharray 动画
+                  // 实线长度 = 总长 * 进度
+                  strokeDasharray={`${400 * seg.completeness} 400`}
+                  pathLength="400"
+                  className="transition-all duration-300"
+                  style={{
+                      filter: seg.isLast ? 'drop-shadow(0 0 8px white)' : 'none',
+                      mixBlendMode: 'screen'
+                  }}
+                />
+                
+                {/* 如果是正在画的那一瓣，加个发光的笔头 */}
+                {seg.isLast && (
+                    <circle r="3" fill="white" className="animate-pulse">
+                        <animateMotion 
+                            dur="0s" 
+                            repeatCount="indefinite"
+                            path={seg.d}
+                            // 这一步比较难精确对齐，通常需要 JS 计算终点
+                            // 这里简化处理，直接让整个线条发光
+                        />
+                    </circle>
+                )}
+            </g>
+          ))}
+          
+          {/* 中心点 */}
+          <circle r="3" fill="white" className="shadow-[0_0_15px_white]" />
+        </svg>
+
+        {/* 正在进行时的状态浮层 */}
+        {currentStats && (
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+               <div className="w-24 h-24 rounded-full border border-white/10 flex items-center justify-center animate-pulse opacity-20"></div>
+            </div>
+        )}
+      </div>
+
+      {/* 控制条 */}
+      <div className="w-full px-6 space-y-4 z-10">
+        <div className="flex justify-between items-baseline text-white">
+           <span className="text-4xl font-mono font-black">{totalHours}</span>
+           <span className="text-sm font-bold text-slate-400">HOURS INVESTED</span>
+        </div>
+        
+        <input 
+          type="range" 
+          min="1" 
+          max="1000" 
+          step="1"
+          value={totalHours} 
+          onChange={(e) => setTotalHours(parseInt(e.target.value))}
+          className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+        />
+
+        {/* 阶段标记 */}
+        <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold tracking-widest pt-2 border-t border-slate-800">
+           <div className="text-indigo-400">Layer 1 (1h)</div>
+           <div className="text-sky-400">Layer 2 (5h)</div>
+           <div className="text-emerald-400">Layer 3 (20h)</div>
+           <div className="text-amber-400">Layer 4 (50h)</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <ProgressiveGrowth />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>

@@ -1,0 +1,409 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { Sun, Moon, Sparkles, Coffee } from 'lucide-react';
+
+/* 
+  数据结构变化：
+  hours: 代表具体的小时 (e.g., 9点)
+  quarters: 数组，长度最大为4。每个元素代表一个15分钟的区间。
+            null 代表没记录/休息，字符串代表 Tag 类型。
+*/
+const MOCK_PIXEL_DATA = {
+  am: [
+    { hour: '6', quarters: [null, null, 'life', 'life'] }, // 6:30 起床
+    { hour: '7', quarters: ['life', 'life', 'study', 'study'] },
+    { hour: '8', quarters: ['study', 'study', 'study', 'coffee'] }, // 最后15min 喝咖啡
+    { hour: '9', quarters: ['work', 'work', 'work', 'work'] }, // 满勤
+    { hour: '10', quarters: ['work', 'work', 'meeting', 'meeting'] },
+    { hour: '11', quarters: ['work', 'work', 'work', 'deep'] }, // Deep 是特殊的高亮态
+    { hour: '12', quarters: ['life', 'life', null, null] },
+  ],
+  pm: [
+    { hour: '1', quarters: [null, 'life', 'work', 'work'] },
+    { hour: '2', quarters: ['work', 'work', 'work', 'work'] },
+    { hour: '3', quarters: ['meeting', 'meeting', 'work', 'coffee'] },
+    { hour: '4', quarters: ['deep', 'deep', 'deep', 'deep'] }, // 完美心流
+    { hour: '5', quarters: ['work', 'social', 'social', null] },
+    { hour: '6', quarters: [null, null, 'life', 'life'] },
+    { hour: '7', quarters: ['life', 'life', 'life', 'life'] },
+    { hour: '8', quarters: ['study', 'study', null, null] },
+  ]
+};
+
+const THEME = {
+  work:    { bg: 'bg-blue-500',    border: 'border-blue-600',    icon: '💻' },
+  study:   { bg: 'bg-indigo-400',  border: 'border-indigo-500',  icon: '📚' },
+  life:    { bg: 'bg-orange-300',  border: 'border-orange-400',  icon: '🧘' },
+  meeting: { bg: 'bg-rose-400',    border: 'border-rose-500',    icon: '💬' },
+  social:  { bg: 'bg-emerald-400', border: 'border-emerald-500', icon: '👯' },
+  deep:    { bg: 'bg-violet-600',  border: 'border-violet-700',  icon: '🔥' }, // 心流模式
+  coffee:  { bg: 'bg-amber-700',   border: 'border-amber-800',   icon: '☕' }, // 休息
+};
+
+function PixelTimeBeans() {
+  const [hoveredQuarter, setHoveredQuarter] = useState(null);
+
+  const renderQuarterBlock = (type, hourIndex, qIndex, isAm) => {
+    if (!type) {
+      // 空闲时间的占位符 (虚线框或淡点)
+      return (
+        <div 
+          key={qIndex} 
+          className="h-3 w-8 rounded-sm border border-slate-100 bg-slate-50/50" 
+        />
+      );
+    }
+
+    const style = THEME[type];
+    const uniqueId = `${isAm ? 'am' : 'pm'}-${hourIndex}-${qIndex}`;
+    const isHovered = hoveredQuarter === uniqueId;
+
+    return (
+      <div
+        key={qIndex}
+        onMouseEnter={() => setHoveredQuarter(uniqueId)}
+        onMouseLeave={() => setHoveredQuarter(null)}
+        className={`
+          relative h-3 w-8 cursor-pointer rounded-[3px] border-b-2 transition-all duration-200
+          ${style.bg} ${style.border}
+          ${isHovered ? 'z-10 -translate-y-0.5 scale-110 shadow-sm brightness-110' : 'hover:brightness-105'}
+        `}
+      >
+        {/* 极简 Hover 提示 */}
+        {isHovered && (
+             <div className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-20 whitespace-nowrap rounded bg-slate-800 px-2 py-1 text-[10px] font-bold text-white shadow-lg animate-in fade-in zoom-in duration-200">
+               {style.icon} {type.toUpperCase()}
+             </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-xl shadow-slate-200/50 border border-slate-100">
+      
+      {/* Header */}
+      <div className="flex items-center justify-between mb-10">
+        <div>
+          <h2 className="flex items-center gap-2 text-xl font-black text-slate-800">
+            <Sparkles className="text-yellow-400 fill-yellow-400" size={20} />
+            Daily Pixels
+          </h2>
+          <p className="text-xs font-medium text-slate-400 mt-1">
+             Each block = 15 mins of your life.
+          </p>
+        </div>
+        <div className="flex gap-2">
+            <div className="h-2 w-2 rounded-full bg-blue-500"></div>
+            <div className="h-2 w-2 rounded-full bg-indigo-400"></div>
+            <div className="h-2 w-2 rounded-full bg-rose-400"></div>
+            <div className="h-2 w-2 rounded-full bg-violet-600"></div>
+        </div>
+      </div>
+
+      {/* Main Grid Container */}
+      <div className="relative">
+        
+        {/* 1. AM Section (Upward Stack) */}
+        <div className="flex items-end justify-between px-4 pb-4 border-b-2 border-slate-100">
+          {MOCK_PIXEL_DATA.am.map((data, hIdx) => (
+            <div key={hIdx} className="flex flex-col gap-[3px]">
+               {/* 倒序渲染，让 00-15分 在最下面，45-60分 在最上面 */}
+               {[...data.quarters].reverse().map((type, qIdx) => 
+                  renderQuarterBlock(type, hIdx, 3-qIdx, true)
+               )}
+            </div>
+          ))}
+          
+          {/* AM Label */}
+          <div className="absolute left-0 top-1/4 -translate-x-4">
+             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-100 text-orange-500 font-bold text-xs shadow-sm">
+                AM
+             </div>
+          </div>
+        </div>
+
+        {/* Axis Labels */}
+        <div className="flex justify-between px-4 py-3">
+           {MOCK_PIXEL_DATA.am.map(d => (
+             <div key={d.hour} className="w-8 text-center text-xs font-black text-slate-300 font-mono">
+               {d.hour}
+             </div>
+           ))}
+        </div>
+
+        {/* 2. PM Section (Downward Stack) */}
+        <div className="flex items-start justify-between px-4 pt-4 border-t-2 border-slate-100">
+          {MOCK_PIXEL_DATA.pm.map((data, hIdx) => (
+            <div key={hIdx} className="flex flex-col gap-[3px]">
+               {/* 正序渲染，让 00-15分 在最上面（靠近轴线） */}
+               {data.quarters.map((type, qIdx) => 
+                  renderQuarterBlock(type, hIdx, qIdx, false)
+               )}
+            </div>
+          ))}
+
+          {/* PM Label */}
+          <div className="absolute left-0 bottom-1/4 -translate-x-4">
+             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-100 text-indigo-500 font-bold text-xs shadow-sm">
+                PM
+             </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Footer / Summary */}
+      <div className="mt-8 flex justify-center">
+         <div className="inline-flex items-center gap-3 rounded-full bg-slate-50 px-4 py-2 border border-slate-100">
+            <span className="text-xs font-bold text-slate-500">Total Blocks:</span>
+            <div className="flex items-center gap-1">
+                <span className="font-black text-slate-700">42</span>
+                <span className="text-[10px] text-slate-400">(= 10.5 hrs)</span>
+            </div>
+         </div>
+      </div>
+
+    </div>
+  );
+}
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <PixelTimeBeans />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>
