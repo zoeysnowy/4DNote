@@ -8,7 +8,7 @@
 .timelog-page {
   display: flex;
   height: 100%;
-  background: #FAFAFA;
+  background: none; /* 🎨 Figma: 移除背景 */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', sans-serif;
   overflow: hidden;
   gap: 8px; /* Reduced from 16px */

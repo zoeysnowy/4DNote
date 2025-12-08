@@ -79,3 +79,5 @@
   font-family: 'Monaco', 'Menlo', 'Courier New', monospace;
   font-size: 12px;
 }
+
+/* 标题行 emoji 已在数据层处理，这里不需要额外的隐藏逻辑 */

@@ -164,7 +164,6 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   const isInitializedRef = useRef(false);
   const hasLoadedContentRef = useRef(false); // 🔧 标记是否已加载过非空内容
   const lastContentRef = useRef(content);
-  const pendingChangesRef = useRef<string | null>(null); // 🔥 缓存待保存的 JSON（blur-to-save 模式）
   const isEditingRef = useRef(false); // 标记是否正在编辑
 
   // 🔄 同步外部 content 变化到编辑器（完全参考 LogSlate）
@@ -180,8 +179,7 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
     // 🔧 Cleanup: 检测组件是否被unmount
     return () => {
       console.log('💀 [TitleSlate] useEffect cleanup - 组件可能被unmount或依赖项变化', {
-        isEditing: isEditingRef.current,
-        hasPendingChanges: !!pendingChangesRef.current
+        isEditing: isEditingRef.current
       });
     };
   }, [eventId]); // 依赖项只有eventId
@@ -220,12 +218,6 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
       return;
     }
     
-    // 🔥 如果有待保存的变化，跳过外部 content 同步，避免丢失用户输入
-    if (pendingChangesRef.current) {
-      console.log('⏭️ [TitleSlate] 有待保存变化，跳过外部 content 同步');
-      return;
-    }
-    
     // 只在 content 真正变化时才同步
     if (content !== lastContentRef.current) {
       console.warn('⚠️ [TitleSlate] content 变化，重置编辑器！', {
@@ -252,7 +244,7 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
     }
   }, [content, eventId]); // 🔧 监听 content 和 eventId，允许首次初始化时更新
 
-  // 🔥 blur-to-save 模式：缓存变化，失焦时保存（学习 PlanSlate 架构）
+  // 🔥 实时保存模式：AST 变化时立即序列化并通过 onChange 向上抛出
   const handleChange = useCallback((newValue: Descendant[]) => {
     const isAstChange = editor.operations.some(
       (op) => op.type !== 'set_selection'
@@ -280,8 +272,7 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
       if (!hasSelection && isEditingRef.current) {
         console.error('🚨 [TitleSlate] Selection 被清空！可能导致失焦', {
           operations: editor.operations.map(op => op.type),
-          isEditing: isEditingRef.current,
-          hasPendingChanges: !!pendingChangesRef.current
+          isEditing: isEditingRef.current
         });
       }
     }
@@ -293,16 +284,16 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
         isEditingRef.current = true;
       }, 0);
       
-      // 🔥 缓存变化，不立即调用 onChange（等失焦时保存）
+      // 🔥 直接序列化并通过 onChange 向上抛出（与 ModalSlate 保持一致，避免 IME + blur 导致的 selection 错位）
       try {
         const json = slateNodesToJsonCore(newValue);
-        pendingChangesRef.current = json;
-        console.log('💾 [TitleSlate] 变化已缓存，等待失焦保存');
+        console.log('💾 [TitleSlate] 实时保存变化:', json.slice(0, 80));
+        onChange(json);
       } catch (error) {
         console.error('[TitleSlate] 序列化失败:', error);
       }
     }
-  }, [editor]);
+  }, [editor, onChange]);
   // 🔥 聚焦时标记为编辑状态
   const handleFocus = useCallback(() => {
     console.log('🎯 [TitleSlate] 聚焦,标记为编辑状态');
@@ -350,73 +341,23 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   // 🔧 [2024-12-09] Composition handlers 使用 useCallback
 
   
-  // 🔧 [2024-12-09] onKeyDown handler 使用 useCallback - 这是关键！
-  // 内联函数会导致每次渲染创建新引用，触发 Editable 重渲染，进而重置 selection
-  const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
-    console.log('⌨️ [TitleSlate] 键盘输入:', {
-      key: event.key,
-      readOnly,
-      hasSelection: !!editor.selection
-    });
-    // 拦截 Enter 键
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      return;
-    }
-    
-    // 处理快捷键
-    if (event.ctrlKey || event.metaKey) {
-      switch (event.key) {
-        case 'b':
-          event.preventDefault();
-          slateApplyTextFormat(editor, 'bold');
-          break;
-        case 'i':
-          event.preventDefault();
-          slateApplyTextFormat(editor, 'italic');
-          break;
-        case 'u':
-          event.preventDefault();
-          slateApplyTextFormat(editor, 'underline');
-          break;
-      }
-    }
-  }, [editor, readOnly]);
-  
-  // 🔥 失焦时保存缓存的变化（blur-to-save 模式）
+  // 🔧 目前 TitleSlate 不处理快捷键和 Enter，交给上层或默认行为
+  // 保持实现简单，最大程度减少对 IME 的干扰
+
+  // 🔥 失焦：仅标记编辑结束，不再参与保存逻辑（保存已在 handleChange 完成）
   const handleBlur = useCallback((event: React.FocusEvent) => {
-    const relatedTarget = event.relatedTarget as HTMLElement;
-    const activeEl = document.activeElement as HTMLElement;
-    console.log('🎯 [TitleSlate] 失焦，保存变化', {
+    const relatedTarget = event.relatedTarget as HTMLElement | null;
+    const activeEl = document.activeElement as HTMLElement | null;
+    console.log('🎯 [TitleSlate] 失焦', {
       relatedTarget: relatedTarget?.tagName,
       relatedTargetClass: relatedTarget?.className,
       activeElement: activeEl?.tagName,
       activeElementClass: activeEl?.className,
-      activeElementId: activeEl?.id,
-      activeElementTabIndex: activeEl?.tabIndex,
-      activeElementTextContent: activeEl?.textContent?.substring(0, 50)
+      activeElementId: activeEl?.id
     });
-    
-    // 🔧 检测blur→refocus循环：只在焦点立即回到编辑器自身时跳过保存
-    // 这种情况只发生在Slate内部重渲染时，activeElement马上又是title-slate-editable
-    if (activeEl?.className?.includes('title-slate-editable')) {
-      console.log('⏭️ [TitleSlate] 检测到blur→refocus循环（焦点回到编辑器），跳过保存');
-      return;
-    }
-    
-    // 所有其他情况都正常保存（包括焦点到BODY、到其他元素等）
-    console.log('💾 [TitleSlate] 正常失焦，执行保存');
-    
-    // 如果有待保存的变化，立即保存
-    if (pendingChangesRef.current) {
-      console.log('💾 [TitleSlate] 保存缓存的变化:', pendingChangesRef.current.slice(0, 50));
-      onChange(pendingChangesRef.current);
-      pendingChangesRef.current = null;
-    }
-    
-    // 标记编辑结束
+
     isEditingRef.current = false;
-  }, [onChange, editor, readOnly]);
+  }, []);
 
   // 渲染元素
   // 渲染元素
@@ -438,18 +379,10 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
   // 渲染文本叶子节点
   const renderLeaf = useCallback((props: RenderLeafProps) => {
     const leaf = props.leaf as CustomText;
-    let textContent = props.children;
-
-    // 如果 hideEmoji 启用，过滤掉 emoji
-    if (hideEmoji && leaf.text) {
-      const emojiRegex = /[\uD800-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF]/g;
-      const filteredText = leaf.text.replace(emojiRegex, '').trim();
-      if (filteredText !== leaf.text) {
-        textContent = <>{filteredText}</>;
-      }
-    }
-
-    let children = <>{textContent}</>;
+    
+    // 在标题行且 hideEmoji 为 true 时，用 CSS 类隐藏 emoji
+    // 不修改 props.children，保持 Slate 文本完整性
+    let children = <>{props.children}</>;
     
     // 应用文本格式
     if (leaf.bold) {
@@ -481,7 +414,10 @@ const TitleSlateComponent: React.FC<TitleSlateProps> = ({
       children = <span style={style}>{children}</span>;
     }
     
-    return <span {...props.attributes}>{children}</span>;
+    // 如果需要隐藏 emoji，给最外层 span 加一个特殊类名
+    const className = hideEmoji ? 'hide-emoji-leaf' : undefined;
+    
+    return <span {...props.attributes} className={className}>{children}</span>;
   }, [hideEmoji]);
 
   return (

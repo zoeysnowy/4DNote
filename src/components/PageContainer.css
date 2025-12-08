@@ -5,6 +5,7 @@
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
+  background: none; /* 🎨 Figma: 移除背景 */
 }
 
 /* page-header相关样式已移除 - 使用section-header代替 */
@@ -15,6 +16,7 @@
   min-height: 0; /* 🔧 重要：允许flex子元素正确收缩 */
   display: flex;
   flex-direction: column;
+  background: none; /* 🎨 Figma: 移除背景 */
 }
 
 /* 特殊页面样式 */
@@ -24,7 +26,7 @@
 
 .page-container.plan-management {
   padding: 8px;  /* 🔧 Plan页面：四周8px */
-  background: #F5F5F7;  /* 灰色背景 */
+  background: none;  /* 🎨 Figma: 移除背景 */
 }
 
 .page-container.plan-management .page-content {

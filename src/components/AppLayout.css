@@ -414,7 +414,7 @@
   grid-area: main;
   padding: 0; /* 🔧 [FIX] 移除所有padding，由子组件控制 */
   overflow: auto;
-  background: transparent;
+  background: none; /* 🎨 Figma: 移除背景，显示渐变 */
   position: relative; /* 🔧 [FIX] 确保正确的堆叠上下文 */
   z-index: 10; /* 🔧 提升 z-index，确保在渐变背景之上 */
 }

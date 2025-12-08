@@ -588,7 +588,31 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: 'bidirectional-private'
       },
     });
-  }, [event?.id]); // 只在 event ID 变化时重新初始化
+  }, [event?.id]); // 只在 event ID 变化时重新初始化完整 formData
+  
+  // 🔥 单独监听 event.title 变化（双向同步更新）
+  React.useEffect(() => {
+    if (!event || !event.title) return;
+    
+    // 🔥 如果正在自动保存，说明是本地触发的保存，不要用远程数据覆盖
+    if (isAutoSavingRef.current) {
+      console.log('⏭️ [event.title 同步] 跳过（正在自动保存）');
+      return;
+    }
+    
+    let titleText = '';
+    if (typeof event.title === 'string') {
+      titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
+    } else {
+      titleText = event.title.colorTitle || '';
+    }
+    
+    // 只更新 title，不影响其他字段
+    if (titleText && titleText !== formData.title) {
+      console.log('🔄 [event.title 同步] 双向同步更新 title:', titleText.substring(0, 50));
+      setFormData(prev => ({ ...prev, title: titleText }));
+    }
+  }, [event?.title]);
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -635,11 +659,19 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const isAutoSavingRef = React.useRef<boolean>(false); // 🔧 标记是否正在 auto-save
   const titleRef = React.useRef<string>(formData.title); // 🔧 缓存 title，避免 blur-to-save 时 setFormData 导致 re-render
   
-  // 🔧 同步 titleRef 与 formData.title（仅在 formData.id 变化时，即事件切换）
+  // 🔧 同步 titleRef 与 formData.title
+  // 🔥 关键：formData.title 变化时同步（包括双向同步事件从 EventHub 更新回来）
+  // 但要避免用户正在编辑时被覆盖（通过检查 isAutoSavingRef 判断）
   React.useEffect(() => {
+    // 如果正在自动保存，说明是 handleSave 触发的 formData 更新，不要同步回 titleRef
+    if (isAutoSavingRef.current) {
+      console.log('⏭️ [titleRef] 跳过同步（正在自动保存）');
+      return;
+    }
+    
     titleRef.current = formData.title;
     console.log('🔄 [titleRef] 同步 titleRef.current =', formData.title?.substring(0, 50));
-  }, [formData.id]); // 只在事件 ID 变化时同步
+  }, [formData.title]); // 监听 title 变化，而不是 ID 变化
   
   // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
   React.useEffect(() => {
@@ -975,11 +1007,30 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     try {
       console.log('💾 [EventEditModalV2] Saving event:', formData.id);
       
-      // 🔧 Step 0a: 从 titleRef 同步最新 title 到 formData
+      // 🔧 Step 0a: 从 titleRef 同步最新 title 到 formData，并把 emoji 加回去
       // 原因：handleTitleChange 只更新 titleRef，避免 blur 时 re-render
+      // 🔥 关键：titleContent 传给 TitleSlate 时去掉了 emoji，保存时需要加回去
       if (titleRef.current !== formData.title) {
-        formData.title = titleRef.current;
-        console.log('✅ [handleSave] 从 titleRef 同步 title:', titleRef.current.substring(0, 50));
+        try {
+          // 解析当前不含 emoji 的 title JSON
+          const titleNodes = JSON.parse(titleRef.current);
+          
+          // 从 formData.title 中提取原始 emoji
+          const originalEmoji = extractFirstEmoji(
+            JSON.parse(formData.title || '[]')[0]?.children?.[0]?.text || ''
+          );
+          
+          // 如果有 emoji，把它加回到第一个文本节点的开头
+          if (originalEmoji && titleNodes[0]?.children?.[0]) {
+            titleNodes[0].children[0].text = originalEmoji + ' ' + titleNodes[0].children[0].text;
+          }
+          
+          formData.title = JSON.stringify(titleNodes);
+          console.log('✅ [handleSave] 从 titleRef 同步 title 并恢复 emoji:', formData.title.substring(0, 50));
+        } catch (error) {
+          console.error('❌ [handleSave] 恢复 emoji 失败，使用原始 title:', error);
+          formData.title = titleRef.current;
+        }
       }
       
       // 🔧 Step 0b: 准备 eventlog（Slate JSON 字符串）
@@ -1917,12 +1968,47 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   
   // 🔧 [2024-12-09] 缓存 titleContent，避免每次渲染时 formData.title || '' 创建新的字符串引用
   // 这对于中文输入法（IME）至关重要，任何 content prop 的变化都会中断输入法
+  // 🔥 在传给 TitleSlate 之前，把 emoji 从 JSON 中剥离出来
   const titleContent = useMemo(() => {
     console.log('🔍 [titleContent useMemo] 重新计算', {
       title: formData.title?.substring(0, 50),
       titleLength: formData.title?.length
     });
-    return formData.title || '';
+    
+    if (!formData.title) return '';
+    
+    try {
+      // 解析 Slate JSON
+      const nodes = JSON.parse(formData.title);
+      
+      // 遍历所有文本节点，移除 emoji
+      const processedNodes = nodes.map((node: any) => {
+        if (node.type === 'paragraph' && node.children) {
+          return {
+            ...node,
+            children: node.children.map((child: any, index: number) => {
+              // 只处理第一个文本节点
+              if (index === 0 && child.text) {
+                // 移除开头的 emoji（使用 emoji 正则）
+                const emojiRegex = /^[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]\s*/u;
+                const textWithoutEmoji = child.text.replace(emojiRegex, '');
+                return {
+                  ...child,
+                  text: textWithoutEmoji
+                };
+              }
+              return child;
+            })
+          };
+        }
+        return node;
+      });
+      
+      return JSON.stringify(processedNodes);
+    } catch (error) {
+      console.error('❌ [titleContent] 解析 Slate JSON 失败:', error);
+      return formData.title || '';
+    }
   }, [formData.title]);
 
   // 🔧 [已删除] 旧的 handleTitleChange (HTML版本) - 已改用 TitleSlate 的 blur-to-save 模式
