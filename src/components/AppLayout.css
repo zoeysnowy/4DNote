@@ -381,10 +381,10 @@
   height: 24px;
 }
 
-/* 🎯 Plan 图标保持24px */
+/* 🎯 Plan 图标 */
 .nav-item[data-page="plan"] .nav-icon {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 /* 🎯 TimeCalendar 和 Tag 图标缩小 */
@@ -399,10 +399,10 @@
   height: 16px;
 }
 
-/* 🎯 Sync 图标缩小 */
+/* 🎯 Sync 图标 */
 .nav-item[data-page="sync"] .nav-icon {
-  width: 18px;
-  height: 18px;
+  width: 17px;
+  height: 17px;
 }
 
 .nav-item.active .nav-icon img {
