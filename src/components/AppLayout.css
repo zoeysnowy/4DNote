@@ -376,9 +376,13 @@
 }
 
 /* 🎯 TimeLog 图标加大 */
+.nav-item[data-page="timelog"] {
+  height: 52px;
+}
+
 .nav-item[data-page="timelog"] .nav-icon {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
 }
 
 /* 🎯 Plan 图标保持24px */
@@ -388,10 +392,15 @@
 }
 
 /* 🎯 TimeCalendar 和 Tag 图标缩小 */
+.nav-item[data-page="timecalendar"],
+.nav-item[data-page="tag"] {
+  height: 44px;
+}
+
 .nav-item[data-page="timecalendar"] .nav-icon,
 .nav-item[data-page="tag"] .nav-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .nav-item.active .nav-icon img {
