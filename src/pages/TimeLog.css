@@ -30,6 +30,11 @@
   overflow: hidden;
 }
 
+/* 标签模式下：移除顶部内边距，让标签栏贴在卡片顶部 */
+.timelog-main-card:has(.timelog-header-with-tabs) {
+  padding-top: 0;
+}
+
 /* 为右侧悬浮玻璃栏腾出视觉与交互空间（仅在宽屏显示栏时应用） */
 @media (min-width: 1101px) {
   .timelog-main-card {
@@ -75,6 +80,7 @@
 
 .timelog-header-with-tabs {
   margin-bottom: 0;
+  margin-top: 0;
 }
 
 .timelog-header-with-tabs .timelog-header-border {
@@ -87,7 +93,7 @@
   align-items: flex-end;
   gap: 2px;
   border-bottom: 1px solid #E5E7EB;
-  padding: 0;
+  padding: 8px 0 0 0; /* 顶部留8px，让标签不贴边 */
   margin: 0;
 }
 
@@ -103,6 +109,12 @@
   transition: all 0.2s ease;
   min-width: 120px;
   max-width: 200px;
+}
+
+/* 第一个标签的左上角与卡片圆角融合 */
+.timelog-tab:first-child {
+  border-top-left-radius: 20px;
+  padding-left: 20px;
 }
 
 .timelog-tab:hover {
