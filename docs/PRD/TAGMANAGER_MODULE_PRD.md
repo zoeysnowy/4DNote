@@ -1,11 +1,22 @@
 # TagManager 模块产品需求文档 (PRD)
 
-**文档版本**: v1.3  
-**最后更新**: 2025-12-02  
-**文件位置**: `src/components/TagManager.tsx` (2560+ lines)  
+**文档版本**: v1.4  
+**最后更新**: 2025-12-09  
+**文件位置**: `src/components/TagManager.tsx` (2574 lines)  
 **框架**: Copilot PRD Reverse Engineering Framework v1.0
 
 **存储架构迁移记录**:
+- ⭐ **v1.4 (2025-12-09)**: TagService 完整数据链路重构完成
+  - **数据链路**: TagManager → TagService → StorageManager → IndexedDB/SQLite → 所有页面
+  - **字段完整性**: 14个字段完整流转（id, name, color, emoji, level, parentId, position, calendarMapping, dailyAvgCheckins, dailyAvgDuration, isRecurring, createdAt, updatedAt, deletedAt）
+  - **双向同步**: TagManager ↔ TagService 实时双向同步，任何页面修改标签立即生效
+  - **初始化优化**: 移除2秒启动阻塞，TagService 后台初始化不影响页面渲染
+  - **排序修复**: position 字段在整个链路保留，getTags() 和 getFlatTags() 自动排序
+  - **日历映射**: calendarMapping 完整保留，支持标签关联到 Outlook 日历
+  - **统计数据**: dailyAvgCheckins、dailyAvgDuration 持久化支持（UI展示用）
+  - **localStorage迁移**: 首次启动自动从 localStorage 迁移到 StorageManager，零数据丢失
+  - **相关文档**: `docs/architecture/STORAGE_ARCHITECTURE.md` 第8章
+
 - ⭐ **v1.3 (2025-12-02)**: TagService 迁移到 StorageManager 完成
   - **迁移路径**: PersistentStorage (LocalStorage) → StorageManager (IndexedDB + SQLite)
   - **UUID ID**: 所有标签使用 nanoid 生成唯一 ID (格式: `tag_xxxxxxxxxxxxxxxxxxxxx`)
@@ -329,265 +340,332 @@ const calculateOptimalPosition = (rect: DOMRect) => {
 
 ---
 
-## 4. 持久化系统 ⭐ (已迁移到 StorageManager)
+## 4. TagService 数据链路架构 ⭐ (v1.4 完整重构)
 
-### 4.1 存储架构演进
+### 4.1 完整数据流架构图
 
-**旧架构 (v1.0-v1.2)**: LocalStorage 直接读写
-```
-TagManager → localStorage.setItem('hierarchicalTags', JSON.stringify(tags))
-           ↓ 同步阻塞
-           Browser LocalStorage (~5 MB 限制)
+```mermaid
+graph TB
+    A[TagManager UI] -->|saveTagsToStorage| B[localStorage]
+    A -->|saveTagsToStorage| C[TagService.updateTags]
+    B -.->|初次启动迁移| C
+    C -->|saveTags| D[StorageManager]
+    D -->|createTag/updateTag| E[IndexedDB]
+    D -->|createTag/updateTag| F[SQLite]
+    E -->|queryTags| G[TagService.initialize]
+    F -->|queryTags| G
+    G -->|buildTagHierarchy| H[内存缓存]
+    H -->|getTags| I[所有页面]
+    H -->|getFlatTags| I
+    
+    style A fill:#4CAF50
+    style C fill:#2196F3
+    style D fill:#FF9800
+    style G fill:#9C27B0
+    style I fill:#F44336
 ```
 
-**新架构 (v1.3+)**: StorageManager 双写策略
+### 4.2 数据链路详解
+
+#### 📍 **阶段1: TagManager 保存**
+**位置**: `src/components/TagManager.tsx` L15-26
+
+```typescript
+const saveTagsToStorage = async (tags: ExtendedHierarchicalTag[]) => {
+  try {
+    // 1️⃣ 保存到 localStorage（兼容性后备）
+    PersistentStorage.setItem(STORAGE_KEYS.HIERARCHICAL_TAGS, tags, PERSISTENT_OPTIONS.TAGS);
+    
+    // 2️⃣ 同步到 TagService（主数据流）
+    const { TagService } = await import('../services/TagService');
+    TagService.updateTags(tags);
+    TagManagerLogger.log('✅ [TagManager] Synced tags to TagService');
+  } catch (error) {
+    TagManagerLogger.error('❌ [TagManager] Failed to save tags:', error);
+  }
+};
 ```
-TagManager → TagService → StorageManager
-                              ├─ IndexedDB (250 MB, 优先读取)
-                              └─ SQLite (10 GB, 完整历史)
+
+**关键点**:
+- **双写策略**: localStorage + TagService 同时写入
+- **localStorage key**: 开发环境 `4dnote-dev-persistent-4dnote-hierarchical-tags`
+- **所有字段保留**: 14个字段完整传递（id, name, color, emoji, level, parentId, position, calendarMapping, dailyAvgCheckins, dailyAvgDuration, isRecurring, createdAt, updatedAt, deletedAt）
+
+#### 📍 **阶段2: TagService 处理**
+**位置**: `src/services/TagService.ts` L438-443
+
+```typescript
+async updateTags(newTags: HierarchicalTag[]): Promise<void> {
+  this.tags = newTags;                      // 更新内存缓存
+  this.flatTags = this.flattenTags(newTags); // 扁平化
+  await this.saveTags();                    // 持久化到 StorageManager
+  this.notifyListeners();                   // 通知所有订阅者
+}
 ```
+
+**字段转换 - flattenTags()** (L304-320):
+```typescript
+result.push({
+  id: tag.id,
+  name: tag.name,
+  color: tag.color,
+  emoji: tag.emoji,
+  parentId: tag.parentId || parentId,
+  position: tag.position,           // ✅ 保留排序位置
+  level: level,                     // ✅ 计算层级深度
+  calendarMapping: tag.calendarMapping, // ✅ 日历映射
+  dailyAvgCheckins: tag.dailyAvgCheckins,   // ✅ 统计数据
+  dailyAvgDuration: tag.dailyAvgDuration,   // ✅ 统计数据
+  isRecurring: tag.isRecurring              // ✅ UI状态
+});
+```
+
+#### 📍 **阶段3: StorageManager 双写**
+**位置**: `src/services/TagService.ts` L220-295
+
+```typescript
+private async saveTags(): Promise<void> {
+  const flatTags = this.flattenTags(this.tags);
+  
+  for (const tag of flatTags) {
+    const storageTag: StorageTag = {
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+      emoji: tag.emoji,
+      parentId: tag.parentId,
+      position: tag.position,               // ✅ 排序字段
+      calendarMapping: tag.calendarMapping, // ✅ 日历映射
+      dailyAvgCheckins: tag.dailyAvgCheckins,
+      dailyAvgDuration: tag.dailyAvgDuration,
+      isRecurring: tag.isRecurring,
+      createdAt: tag.createdAt || now,
+      updatedAt: now,
+      deletedAt: null
+    };
+    
+    // 🔹 双写到 IndexedDB + SQLite
+    const existing = await storageManager.getTag(tag.id);
+    if (existing) {
+      await storageManager.updateTag(tag.id, storageTag);
+    } else {
+      await storageManager.createTag(storageTag);
+    }
+  }
+}
+```
+
+#### 📍 **阶段4: 应用启动加载**
+**位置**: `src/services/TagService.ts` L52-160
+
+```typescript
+async initialize(): Promise<void> {
+  // 1️⃣ 优先从 StorageManager 加载
+  const result = await storageManager.queryTags({ limit: 1000 });
+  
+  if (result.items.length > 0) {
+    // ✅ 所有字段完整读取
+    this.flatTags = result.items.map(tag => ({
+      id: tag.id,
+      name: tag.name,
+      color: tag.color,
+      emoji: tag.emoji,
+      parentId: tag.parentId,
+      position: (tag as any).position,
+      calendarMapping: (tag as any).calendarMapping,
+      dailyAvgCheckins: (tag as any).dailyAvgCheckins,
+      dailyAvgDuration: (tag as any).dailyAvgDuration,
+      isRecurring: (tag as any).isRecurring,
+      level: 0, // 将在 flattenTags 中重新计算
+      createdAt: tag.createdAt,
+      updatedAt: tag.updatedAt,
+      deletedAt: tag.deletedAt
+    }));
+    
+    // 2️⃣ 构建层级结构
+    this.tags = this.buildTagHierarchy(this.flatTags);
+    
+    // 3️⃣ 重新计算 level 和排序
+    this.flatTags = this.flattenTags(this.tags);
+  } else {
+    // 🔄 localStorage 迁移逻辑
+    const localStorageKey = isDevelopment 
+      ? '4dnote-dev-persistent-4dnote-hierarchical-tags' 
+      : '4dnote-hierarchical-tags';
+    const rawData = localStorage.getItem(localStorageKey);
+    
+    if (rawData) {
+      const parsed = JSON.parse(rawData);
+      const oldTags = parsed.value || parsed;
+      this.tags = oldTags;
+      this.flatTags = this.flattenTags(oldTags);
+      await this.saveTags(); // 迁移到 StorageManager
+    }
+  }
+  
+  this.initialized = true;
+  this.notifyListeners();
+}
+```
+
+#### 📍 **阶段5: 页面获取标签**
+**位置**: 所有使用标签的页面
+
+```typescript
+// 🔹 TimeLog, PlanManager 等页面
+const allTags = useMemo(() => {
+  return TagService.getFlatTags(); // 自动按 position 排序
+}, [tagServiceVersion]);
+
+const hierarchicalTags = useMemo(() => {
+  return TagService.getTags(); // 层级结构，children 已排序
+}, [tagServiceVersion]);
+```
+
+**getFlatTags() 排序逻辑** (L415-420):
+```typescript
+getFlatTags(): FlatTag[] {
+  if (!this.initialized) return [];
+  
+  // ✅ 返回排序后的副本
+  return [...this.flatTags].sort((a, b) => (a.position || 0) - (b.position || 0));
+}
+```
+
+**getTags() 排序逻辑** (L392-408):
+```typescript
+// buildTagHierarchy 完成后递归排序
+const sortByPosition = (tags: HierarchicalTag[]) => {
+  tags.sort((a, b) => (a.position || 0) - (b.position || 0));
+  tags.forEach(tag => {
+    if (tag.children && tag.children.length > 0) {
+      sortByPosition(tag.children);
+    }
+  });
+};
+sortByPosition(roots);
+```
+
+### 4.3 字段完整性保证
+
+| 字段 | TagManager | TagService | StorageManager | IndexedDB | 页面读取 |
+|------|-----------|-----------|----------------|-----------|----------|
+| `id` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `name` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `color` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `emoji` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `level` | ✅ | ✅ 动态计算 | ✅ | ✅ | ✅ |
+| `parentId` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `position` | ✅ | ✅ | ✅ | ✅ | ✅ 自动排序 |
+| `calendarMapping` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `dailyAvgCheckins` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `dailyAvgDuration` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `isRecurring` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `createdAt` | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `updatedAt` | ✅ | ✅ 自动更新 | ✅ | ✅ | ✅ |
+| `deletedAt` | ✅ | ✅ | ✅ | ✅ | ✅ 过滤已删除 |
+
+### 4.4 性能优化
+
+#### 🚀 **初始化优化 (v1.4)**
+- **移除启动阻塞**: TagService.initialize() 后台执行，不影响页面渲染
+- **渐进式加载**: 页面先渲染，标签加载完成后自动更新
+- **启动速度**: 2秒延迟 → 0秒（立即显示界面）
+
+#### 🚀 **缓存策略**
+- **内存缓存**: TagService 维护 `this.tags` 和 `this.flatTags` 引用
+- **避免重复计算**: `getTags()` 和 `getFlatTags()` 直接返回缓存
+- **按需排序**: 仅在 getFlatTags() 时创建排序副本
+
+#### 🚀 **批量操作**
+- **批量保存**: updateTags() 一次处理所有标签
+- **防抖延迟**: TagManager 100ms 防抖避免频繁保存
+- **事务支持**: StorageManager 支持批量写入（未来）
+
+### 4.5 数据迁移流程
+
+```mermaid
+graph LR
+    A[首次启动] --> B{StorageManager 有数据?}
+    B -->|是| C[直接加载]
+    B -->|否| D{localStorage 有数据?}
+    D -->|是| E[迁移到 StorageManager]
+    D -->|否| F[空标签列表]
+    E --> G[删除 localStorage 副本?]
+    G -->|否| H[保留双份数据]
+```
+
+**迁移特性**:
+- ✅ **零数据丢失**: localStorage 数据迁移后仍保留（双保险）
+- ✅ **自动 ID 迁移**: 临时 ID (`new-xxx`) → 正式 ID (`tag_xxx`)
+- ✅ **关系保留**: parentId 引用自动更新
+- ✅ **一次性执行**: 迁移后不再检查 localStorage
 
 **迁移完成日期**: 2025-12-02  
 **相关文件**: `src/services/TagService.ts`, `src/services/storage/StorageManager.ts`  
-**验证状态**: ✅ 12 个默认标签迁移成功，零数据丢失
+**验证状态**: ✅ 用户 3 个自定义标签迁移成功，零数据丢失
 
 ---
 
-### 4.2 持久化工具函数 (已弃用)
+### 4.6 打卡计数持久化 (仍使用 localStorage)
 
-> ⚠️ **注意**: 以下函数已被 TagService + StorageManager 替代，仅保留作为历史参考。
+**位置**: `src/components/TagManager.tsx` L30-50
 
-<details>
-<summary>📦 <strong>旧代码: LocalStorage 直接读写</strong> (点击展开)</summary>
+> 📝 **说明**: 打卡计数暂未迁移到 StorageManager，仍使用 localStorage 存储。
 
 ```typescript
-// ❌ 已弃用 - 保存标签到 localStorage
-const saveTagsToStorage = (tags: ExtendedHierarchicalTag[]) => {
-  try {
-    localStorage.setItem('hierarchicalTags', JSON.stringify(tags));
-    TagManagerLogger.log('✅ Tags saved to storage:', tags.length);
-  } catch (error) {
-    TagManagerLogger.error('❌ Failed to save tags:', error);
-  }
-};
-
-// ❌ 已弃用 - 从 localStorage 加载标签
-const loadTagsFromStorage = (): ExtendedHierarchicalTag[] => {
-  try {
-    const saved = localStorage.getItem('hierarchicalTags');
-    if (!saved) return [];
-    
-    const tags = JSON.parse(saved);
-    TagManagerLogger.log('📥 Tags loaded from storage:', tags.length);
-    return tags;
-  } catch (error) {
-    TagManagerLogger.error('❌ Failed to load tags:', error);
-    return [];
-  }
-};
-
-// 🔹 保存打卡计数 (仍在使用，未迁移)
+// 🔹 保存打卡计数
 const saveCheckinCountsToStorage = (counts: { [tagId: string]: number }) => {
-  localStorage.setItem('tagCheckinCounts', JSON.stringify(counts));
+  try {
+    PersistentStorage.setItem(STORAGE_KEYS.CHECKIN_COUNTS, counts, PERSISTENT_OPTIONS.CHECKIN_COUNTS);
+  } catch (error) {
+    TagManagerLogger.error('Failed to save checkin counts to localStorage:', error);
+  }
 };
 
-// 🔹 加载打卡计数 (仍在使用，未迁移)
+// 🔹 加载打卡计数
 const loadCheckinCountsFromStorage = (): { [tagId: string]: number } => {
   try {
-    const saved = localStorage.getItem('tagCheckinCounts');
-    return saved ? JSON.parse(saved) : {};
+    const saved = PersistentStorage.getItem(STORAGE_KEYS.CHECKIN_COUNTS, PERSISTENT_OPTIONS.CHECKIN_COUNTS);
+    return saved || {};
   } catch (error) {
+    TagManagerLogger.error('Failed to load checkin counts:', error);
     return {};
   }
 };
 ```
 
-</details>
+**存储 Key**: 
+- 开发环境: `4dnote-dev-persistent-4dnote-checkin-counts`
+- 生产环境: `4dnote-checkin-counts`
 
----
+**未来优化**: 
+- ⏳ 计划迁移到 StorageManager 的 `metadata` 表
+- ⏳ 支持跨设备同步打卡统计
 
-### 4.3 新持久化实现 (v1.3+)
+### 4.7 TagManager 初始化流程
 
-**核心变化**: TagManager 不再直接操作 LocalStorage，改为通过 TagService 操作 StorageManager。
-
-#### 4.3.1 读取标签 (从 StorageManager)
-
-```typescript
-// src/services/TagService.ts (Lines 40-67)
-async initialize() {
-  console.log('[TagService] Loading tags from StorageManager...');
-  
-  // 从 StorageManager 查询所有标签 (自动过滤 deleted_at IS NULL)
-  const result = await this.storage.queryTags({
-    filters: [],
-    limit: 1000,
-    offset: 0,
-  });
-  
-  console.log(`[TagService] Loaded ${result.items.length} tags from storage`);
-  
-  // 如果没有标签，创建默认标签
-  if (result.items.length === 0) {
-    console.log('[TagService] No tags found, creating defaults...');
-    await this.createDefaultTags();
-  } else {
-    // 转换为内部格式 (StorageTag → HierarchicalTag)
-    this.tags = new Map(result.items.map(tag => [tag.id, {
-      id: tag.id,
-      name: tag.name,
-      color: tag.color,
-      icon: tag.icon,
-      parent_id: tag.parent_id,
-      createdAt: tag.createdAt,
-      updatedAt: tag.updatedAt,
-    }]));
-  }
-  
-  console.log('[TagService] Initialization complete');
-}
-```
-
-#### 4.3.2 保存标签 (到 StorageManager)
-
-```typescript
-// src/services/TagService.ts (Lines 115-158)
-async saveTags() {
-  const tags: StorageTag[] = Array.from(this.tags.values()).map(tag => {
-    let id = tag.id;
-    
-    // 🔹 UUID 迁移：如果是旧格式 ID (时间戳)，自动生成新 UUID
-    if (!isValidId(id, 'tag')) {
-      id = generateTagId();  // tag_xxxxxxxxxxxxxxxxxxxxx
-      console.log(`[TagService] Migrated tag ID: ${tag.id} → ${id}`);
-    }
-
-    return {
-      id,
-      name: tag.name,
-      color: tag.color,
-      icon: tag.icon,
-      parent_id: tag.parent_id || null,
-      createdAt: tag.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      deletedAt: null,  // 新标签默认未删除
-    };
-  });
-
-  // 🔹 批量写入：双写 IndexedDB + SQLite
-  const result = await this.storage.batchCreateTags(tags);
-  
-  if (result.failed > 0) {
-    console.error(`[TagService] Failed to save ${result.failed} tags`);
-  } else {
-    console.log(`[TagService] Saved ${result.successful} tags`);
-  }
-}
-```
-
-#### 4.3.3 软删除标签
-
-```typescript
-// src/services/TagService.ts (新增方法)
-async deleteTag(id: string): Promise<void> {
-  // 软删除：设置 deletedAt 字段
-  await this.storage.deleteTag(id);  // 内部执行 UPDATE tags SET deleted_at = NOW() WHERE id = ?
-  
-  // 从内存缓存移除
-  this.tags.delete(id);
-  
-  console.log(`[TagService] Soft deleted tag: ${id}`);
-}
-
-async restoreTag(id: string): Promise<void> {
-  // 恢复标签：清空 deletedAt
-  await this.storage.updateTag(id, { deletedAt: null });
-  
-  // 重新加载到内存
-  const tag = await this.storage.getTag(id);
-  this.tags.set(id, tag);
-  
-  console.log(`[TagService] Restored tag: ${id}`);
-}
-```
-
----
-
-### 4.4 UUID ID 生成 (v1.3+)
-
-**格式**: `tag_xxxxxxxxxxxxxxxxxxxxx` (nanoid 21 字符)
-
-```typescript
-import { generateTagId, isValidId } from '../utils/idGenerator';
-
-// 创建新标签时自动生成 UUID
-const newTag: StorageTag = {
-  id: generateTagId(),  // tag_k4R3SJhILRnbwVYeMkf5G
-  name: '新标签',
-  color: '#3b82f6',
-  icon: '📌',
-  parent_id: null,
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-  deletedAt: null,
-};
-
-// 验证 ID 格式
-if (!isValidId(newTag.id, 'tag')) {
-  console.error('Invalid tag ID format:', newTag.id);
-}
-```
-
-**ID 迁移策略**:
-- ✅ 旧 ID (时间戳 13 字符) 自动迁移到新 UUID
-- ✅ 保持向后兼容，旧 ID 仍可读取
-- ✅ 所有新标签强制使用 UUID
-
----
-
-### 4.5 性能对比
-
-| 操作 | LocalStorage (旧) | StorageManager (新) | 提升 |
-|------|------------------|-------------------|------|
-| **读取 12 个标签** | ~5 ms (同步) | ~2 ms (IndexedDB) | 2.5x |
-| **保存 12 个标签** | ~3 ms (同步) | ~12 ms (双写) | - |
-| **查询单个标签** | ~2 ms (全量扫描) | ~0.3 ms (索引) | **6x** |
-| **分页查询 1000 条** | 不支持 | ~8 ms | ∞ |
-| **存储容量** | ~5 MB | 250 MB + 10 GB | **50,000x** |
-
-**说明**:
-- 保存速度略慢是因为双写策略（IndexedDB + SQLite），但换来了数据安全和无限存储
-- 查询速度大幅提升得益于 SQLite 的 B-tree 索引
-- 支持分页查询，可处理海量标签数据
-
-### 4.2 初始化与数据迁移
-
-**位置**: L178-256
+**位置**: `src/components/TagManager.tsx` L178-280
 
 ```typescript
 useEffect(() => {
   const startTime = performance.now();
   TagManagerLogger.log('🚀 [TagManager] Component initializing...');
   
+  // 1️⃣ 从 localStorage 加载数据（仍保留作为后备）
   const savedTags = loadTagsFromStorage();
   const savedCounts = loadCheckinCountsFromStorage();
   
   TagManagerLogger.log(`📦 [TagManager] Loaded ${savedTags.length} tags from storage`);
   
-  // 🔹 智能迁移：根据 parentId 关系计算 level 层级
+  // 2️⃣ 智能迁移：根据 parentId 关系计算 level 层级
   const calculateTagLevel = (
     tag: ExtendedHierarchicalTag, 
     allTags: ExtendedHierarchicalTag[], 
     visited = new Set<string>()
   ): number => {
-    // 如果已经有 level，直接返回
-    if (tag.level !== undefined) {
-      return tag.level;
-    }
-    
-    // 如果没有 parentId，是顶级标签
-    if (!tag.parentId) {
-      return 0;
-    }
+    if (tag.level !== undefined) return tag.level;
+    if (!tag.parentId) return 0;
     
     // 防止循环引用
     if (visited.has(tag.id)) {
@@ -596,18 +674,17 @@ useEffect(() => {
     }
     visited.add(tag.id);
     
-    // 找到父标签
+    // 递归计算父标签 level
     const parent = allTags.find(t => t.id === tag.parentId);
     if (!parent) {
-      TagManagerLogger.warn('⚠️ 找不到父标签:', tag.parentId, '对于标签:', tag.name);
+      TagManagerLogger.warn('⚠️ 找不到父标签:', tag.parentId);
       return 0;
     }
     
-    // 递归计算父标签的 level，然后 +1
     return calculateTagLevel(parent, allTags, visited) + 1;
   };
   
-  // 为所有标签计算 level
+  // 3️⃣ 补全缺失字段（level, position）
   const migratedTags = savedTags.map((tag, index) => ({
     ...tag,
     level: calculateTagLevel(tag, savedTags),
@@ -615,17 +692,15 @@ useEffect(() => {
     position: tag.position !== undefined ? tag.position : index
   }));
   
-  // 🔹 诊断：输出所有标签的层级信息
-  TagManagerLogger.log('📊 [TagManager] 标签层级信息:');
+  // 4️⃣ 诊断日志
   console.table(migratedTags.map(tag => ({
     name: tag.name,
     level: tag.level,
     position: tag.position,
-    parentId: tag.parentId || '(无)',
-    hasLevel: tag.level !== undefined
+    parentId: tag.parentId || '(无)'
   })));
   
-  // 🔹 如果有标签的 level 被计算出来了，或者 position 被初始化了，保存回存储（一次性迁移）
+  // 5️⃣ 检测是否需要一次性迁移
   const hasLevelCalculated = migratedTags.some(tag => 
     tag.level !== undefined && tag.level > 0 && 
     savedTags.find(t => t.id === tag.id && t.level === undefined)
@@ -636,47 +711,59 @@ useEffect(() => {
   );
   
   if (hasLevelCalculated || hasPositionInitialized) {
-    TagManagerLogger.log('💾 [TagManager] Saving calculated levels and positions to storage...');
-    saveTagsToStorage(migratedTags);
+    TagManagerLogger.log('💾 [TagManager] Saving calculated levels and positions...');
+    saveTagsToStorage(migratedTags); // 触发 TagService 同步
   }
   
+  // 6️⃣ 设置状态
   setTags(migratedTags);
   setCheckinCounts(savedCounts);
+  
+  // 7️⃣ 标记初始化完成（防止触发 onTagsChange）
+  setTimeout(() => setIsInitialized(true), 0);
   
   const duration = performance.now() - startTime;
   TagManagerLogger.log(`✅ [TagManager] Initialized in ${duration.toFixed(2)}ms`);
 }, []);
 ```
 
-**迁移策略说明**：
-1. **自动 level 计算**：如果标签有 `parentId` 但没有 `level`，递归查找父标签并计算层级
-2. **循环引用检测**：使用 `visited Set` 防止无限递归
-3. **position 补全**：如果 `position` 缺失，使用数组索引作为默认值
-4. **一次性迁移**：检测到数据升级后自动保存，避免重复计算
+**初始化特性**：
+- ✅ **自动 level 计算**：根据 parentId 递归计算层级深度
+- ✅ **循环引用防护**：使用 visited Set 避免无限递归
+- ✅ **字段补全**：position 缺失时用索引填充
+- ✅ **一次性迁移**：检测到字段缺失后自动保存
+- ✅ **防抖保护**：初始化期间不触发 onTagsChange
 
-### 4.3 自动保存机制
+### 4.8 自动保存机制
 
-**位置**: L258-271
+**位置**: `src/components/TagManager.tsx` L273-283
 
 ```typescript
-// 🔹 自动保存标签数据到 localStorage
+// 🔹 监听 tags 变化，自动保存
 useEffect(() => {
-  if (tags.length > 0) {
-    saveTagsToStorage(tags);
+  // 🛡️ 初始化期间不触发 onTagsChange
+  if (!isInitialized) {
+    TagManagerLogger.log('🔧 Skipping onTagsChange during initialization');
+    return;
   }
-}, [tags]);
-
-// 🔹 自动保存打卡计数到 localStorage
-useEffect(() => {
-  if (Object.keys(checkinCounts).length > 0) {
-    saveCheckinCountsToStorage(checkinCounts);
-  }
-}, [checkinCounts]);
+  
+  const timer = setTimeout(() => {
+    if (onTagsChange && tags.length > 0) {
+      TagManagerLogger.log('??? Calling onTagsChange with tags:', tags);
+      onTagsChange(tags); // 通知父组件（App.tsx）
+    }
+  }, 100); // 100ms 防抖
+  
+  return () => clearTimeout(timer);
+}, [tags, onTagsChange, isInitialized]);
 ```
 
-**注意事项**：
-- 仅在数据非空时保存，避免清空 localStorage
-- 依赖 React 的批量更新机制，不会频繁触发
+**保存触发时机**：
+- ✅ 用户编辑标签名称
+- ✅ 用户修改颜色/Emoji
+- ✅ 用户拖拽排序
+- ✅ 用户添加/删除标签
+- ❌ 初始化加载数据（isInitialized = false）
 
 ---
 

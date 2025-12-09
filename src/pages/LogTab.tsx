@@ -255,12 +255,12 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   // 🔍 渲染原因追踪器 - 记录所有导致重新渲染的原因
   const renderTracker = React.useRef({
     renderCount: 0,
-    lastProps: { event, isOpen, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction },
+    lastProps: { event, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction },
     lastStates: {} as any
   });
   
   renderTracker.current.renderCount++;
-  const currentProps = { event, isOpen, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction };
+  const currentProps = { event, onClose, onSave, onDelete, hierarchicalTags, globalTimer, onTimerAction };
   const propsChanged: string[] = [];
   
   Object.keys(currentProps).forEach(key => {
@@ -270,10 +270,9 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   });
   
   if (propsChanged.length > 0 || renderTracker.current.renderCount <= 2) {
-    console.log(`🔄 [EventEditModalV2] Render #${renderTracker.current.renderCount}`, {
+    console.log(`🔄 [LogTab] Render #${renderTracker.current.renderCount}`, {
       propsChanged: propsChanged.length > 0 ? propsChanged : '无prop变化',
       eventIdChanged: renderTracker.current.lastProps.event?.id !== event?.id,
-      isOpenChanged: renderTracker.current.lastProps.isOpen !== isOpen,
       functionRefsChanged: propsChanged.filter(k => typeof currentProps[k] === 'function')
     });
   }
@@ -490,9 +489,9 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     };
   });
 
-  // 🔧 当 Modal 打开时，立即重置 formData 为新建事件的默认值（避免显示旧数据）
+  // 🔧 当打开时，立即重置 formData 为新建事件的默认值（避免显示旧数据）
   React.useEffect(() => {
-    if (isOpen && !eventId) {
+    if (!eventId) {
       // 新建事件：重置为空表单
       setFormData({
         id: `event-${Date.now()}`,
@@ -516,7 +515,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
       });
     }
-  }, [isOpen, eventId]);
+  }, [eventId]);
 
   // 🔧 当从 EventHub 加载的 event 变化时重新初始化 formData
   React.useEffect(() => {
@@ -635,11 +634,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       });
     };
     
-    // 🔥 只在打开EventTree时才加载（延迟加载，避免打开Modal时就加载导致失焦）
-    if (isOpen && showEventTree && allEvents.length === 0) {
+    // 🔥 只在打开EventTree时才加载（延迟加载）
+    if (showEventTree && allEvents.length === 0) {
       loadEvents();
     }
-  }, [isOpen, showEventTree, allEvents.length]);
+  }, [showEventTree, allEvents.length]);
   
   // 🆕 三层保存架构状态
   // ✅ Layer 2: 静默自动保存（保护断网/断电数据）
@@ -659,20 +658,15 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   
   // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
   React.useEffect(() => {
-    if (isOpen && formData && !initialSnapshotRef.current) {
+    if (formData && !initialSnapshotRef.current) {
       initialSnapshotRef.current = JSON.parse(JSON.stringify(formData));
-      console.log('📸 [EventEditModalV2] Initial snapshot captured:', {
+      console.log('📸 [LogTab] Initial snapshot captured:', {
         eventId: formData.id,
         syncMode: formData.syncMode,
         calendarIds: formData.calendarIds
       });
     }
-    
-    if (!isOpen) {
-      // Modal 关闭时清理快照
-      initialSnapshotRef.current = null;
-    }
-  }, [isOpen, formData.id]);
+  }, [formData.id]);
   
   // 🔧 [已删除] Layer 2 静默自动保存机制 - 与 blur-to-save 冲突，导致重复保存
   // 现在采用双层保存架构：

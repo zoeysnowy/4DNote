@@ -18,11 +18,15 @@ export interface StorageTag {
   color: string;
   emoji?: string;
   parentId?: string;
+  position?: number; // 标签在列表中的位置顺序
   level?: number;
   calendarMapping?: {
     calendarId: string;
     calendarName: string;
   };
+  dailyAvgCheckins?: number; // 每日平均打卡次数（UI统计数据）
+  dailyAvgDuration?: number; // 每日平均时长（分钟）
+  isRecurring?: boolean; // 是否为重复标签
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null; // 软删除
@@ -34,6 +38,10 @@ export interface StorageTag {
 export interface Tag {
   id: string;
   name: string;
+  color?: string;
+  emoji?: string;
+  parentId?: string;
+  position?: number; // 标签在列表中的位置顺序
   [key: string]: any;
 }
 

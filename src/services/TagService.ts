@@ -16,11 +16,15 @@ export interface HierarchicalTag {
   color: string;
   emoji?: string;
   parentId?: string;
+  position?: number; // 标签在列表中的位置顺序
   children?: HierarchicalTag[];
   calendarMapping?: {
     calendarId: string;
     calendarName: string;
   };
+  dailyAvgCheckins?: number; // 每日平均打卡次数（UI统计数据）
+  dailyAvgDuration?: number; // 每日平均时长（分钟）
+  isRecurring?: boolean; // 是否为重复标签
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -32,11 +36,15 @@ export interface FlatTag {
   color: string;
   emoji?: string;
   parentId?: string;
+  position?: number; // 标签在列表中的位置顺序
   level?: number;
   calendarMapping?: {
     calendarId: string;
     calendarName: string;
   };
+  dailyAvgCheckins?: number; // 每日平均打卡次数（UI统计数据）
+  dailyAvgDuration?: number; // 每日平均时长（分钟）
+  isRecurring?: boolean; // 是否为重复标签
   createdAt?: string;
   updatedAt?: string;
   deletedAt?: string | null;
@@ -71,6 +79,7 @@ class TagServiceClass {
       
       if (result.items.length > 0) {
         console.log(`🏷️ [TagService] Loaded ${result.items.length} tags from StorageManager`);
+        console.log('📋 [TagService] Raw tags from StorageManager:', result.items.map(t => ({ id: t.id, name: t.name, parentId: t.parentId })));
         
         // 转换为 FlatTag 格式
         this.flatTags = result.items.map(tag => ({
@@ -79,40 +88,73 @@ class TagServiceClass {
           color: tag.color,
           emoji: tag.emoji,
           parentId: tag.parentId,
+          position: (tag as any).position, // 保留 position 字段用于排序
           level: 0, // 将在 flattenTags 中计算
+          calendarMapping: (tag as any).calendarMapping, // 保留日历映射信息
+          dailyAvgCheckins: (tag as any).dailyAvgCheckins,
+          dailyAvgDuration: (tag as any).dailyAvgDuration,
+          isRecurring: (tag as any).isRecurring,
           createdAt: tag.createdAt,
           updatedAt: tag.updatedAt,
           deletedAt: tag.deletedAt,
         }));
         
+        console.log('🔍 [TagService] Flat tags after conversion:', this.flatTags.map(t => ({ name: t.name, emoji: t.emoji, position: t.position })));
+        
         // 构建层级结构
+        console.log(`📊 [TagService] Before buildTagHierarchy: ${this.flatTags.length} flat tags`);
         this.tags = this.buildTagHierarchy(this.flatTags);
+        console.log(`📊 [TagService] After buildTagHierarchy: ${this.tags.length} root tags`);
+        console.log('🔍 [TagService] Hierarchical tags:', this.tags.map(t => ({ name: t.name, emoji: t.emoji, position: t.position })));
         
         // 重新计算 level
         this.flatTags = this.flattenTags(this.tags);
+        console.log(`📊 [TagService] After flattenTags: ${this.flatTags.length} flat tags`);
+        console.log('🔍 [TagService] Final flat tags:', this.flatTags.map(t => ({ name: t.name, emoji: t.emoji, position: t.position, level: t.level })));
       } else {
-        // 🔄 迁移：尝试从 localStorage 加载旧标签数据
-        console.log('🏷️ [TagService] No tags in StorageManager, checking localStorage...');
-        const { PersistentStorage, PERSISTENT_OPTIONS } = await import('../utils/persistentStorage');
-        const { STORAGE_KEYS } = await import('../constants/storage');
+        // 🔄 迁移：尝试从 localStorage 加载 TagManager 保存的标签
+        console.log('🏷️ [TagService] No tags in StorageManager, checking localStorage (TagManager)...');
         
-        console.log('📍 [TagService] Looking for key:', STORAGE_KEYS.HIERARCHICAL_TAGS);
-        console.log('📍 [TagService] Using options:', PERSISTENT_OPTIONS.TAGS);
+        // TagManager 使用 PersistentStorage，在开发环境会加前缀
+        const isDevelopment = process.env.NODE_ENV === 'development' || 
+                             window.location.hostname === 'localhost' ||
+                             window.location.hostname === '127.0.0.1';
+        const baseKey = '4dnote-hierarchical-tags';
+        const localStorageKey = isDevelopment ? `4dnote-dev-persistent-${baseKey}` : baseKey;
         
-        const oldTags = PersistentStorage.getItem(STORAGE_KEYS.HIERARCHICAL_TAGS, PERSISTENT_OPTIONS.TAGS);
-        console.log('📍 [TagService] Found in localStorage:', oldTags);
+        console.log('📍 [TagService] Looking for key:', localStorageKey);
+        const rawData = localStorage.getItem(localStorageKey);
         
-        if (oldTags && Array.isArray(oldTags) && oldTags.length > 0) {
-          console.log(`🔄 [TagService] Migrating ${oldTags.length} tags from localStorage...`);
-          this.tags = oldTags;
-          this.flatTags = this.flattenTags(oldTags);
-          
-          // 保存到 StorageManager
-          await this.saveTags();
-          console.log(`✅ [TagService] Migrated ${this.flatTags.length} tags to StorageManager`);
+        if (rawData) {
+          try {
+            // PersistentStorage 包装了数据：{ value, timestamp, version, isDev }
+            const parsed = JSON.parse(rawData);
+            const oldTags = parsed.value || parsed; // 兼容直接存储和包装存储
+            console.log('📍 [TagService] Found in localStorage:', oldTags);
+            
+            if (oldTags && Array.isArray(oldTags) && oldTags.length > 0) {
+              console.log(`🔄 [TagService] Migrating ${oldTags.length} tags from localStorage (TagManager)...`);
+              this.tags = oldTags;
+              this.flatTags = this.flattenTags(oldTags);
+              
+              // 保存到 StorageManager
+              await this.saveTags();
+              console.log(`✅ [TagService] Migrated ${this.flatTags.length} tags to StorageManager`);
+            } else {
+              console.log('ℹ️ [TagService] No valid tags in localStorage, starting with empty tag list');
+              this.tags = [];
+              this.flatTags = [];
+            }
+          } catch (error) {
+            console.error('❌ [TagService] Failed to parse localStorage tags:', error);
+            console.log('ℹ️ [TagService] Starting with empty tag list');
+            this.tags = [];
+            this.flatTags = [];
+          }
         } else {
-          console.log('🏷️ [TagService] No tags found in localStorage, creating defaults...');
-          await this.createDefaultTags();
+          console.log('ℹ️ [TagService] No tags found, starting with empty tag list');
+          this.tags = [];
+          this.flatTags = [];
         }
       }
       
@@ -121,8 +163,9 @@ class TagServiceClass {
       console.log('✅ [TagService] Initialized successfully');
     } catch (error) {
       console.error('❌ [TagService] Failed to initialize:', error);
-      // 即使出错也要创建默认标签确保应用可用
-      await this.createDefaultTags();
+      // 出错时使用空标签列表
+      this.tags = [];
+      this.flatTags = [];
       this.initialized = true;
       this.notifyListeners();
     } finally {
@@ -189,18 +232,49 @@ class TagServiceClass {
       console.log('💾 [TagService] Saving tags to StorageManager...');
       console.log('📊 [TagService] Current tags structure:', this.tags);
       
-      // 扁平化标签
+      // 🔧 [FIX] 先迁移所有临时 ID，避免重复创建
+      const idMapping = new Map<string, string>(); // oldId -> newId
+      
+      // 递归替换 ID
+      const migrateIds = (tags: HierarchicalTag[]) => {
+        for (const tag of tags) {
+          if (!isValidId(tag.id, 'tag')) {
+            const oldId = tag.id;
+            const newId = generateTagId();
+            idMapping.set(oldId, newId);
+            tag.id = newId;
+            console.log(`🔄 [TagService] Migrated tag ID: ${oldId} → ${newId}`);
+          }
+          if (tag.children) {
+            migrateIds(tag.children);
+          }
+        }
+      };
+      
+      // 迁移 this.tags 中的所有 ID
+      migrateIds(this.tags);
+      
+      // 更新 parentId 引用
+      const updateParentIds = (tags: HierarchicalTag[]) => {
+        for (const tag of tags) {
+          if (tag.parentId && idMapping.has(tag.parentId)) {
+            tag.parentId = idMapping.get(tag.parentId);
+          }
+          if (tag.children) {
+            updateParentIds(tag.children);
+          }
+        }
+      };
+      
+      updateParentIds(this.tags);
+      
+      // 重新扁平化标签（ID 已更新）
       const flatTags = this.flattenTags(this.tags);
+      this.flatTags = flatTags; // 同步更新 flatTags
       console.log(`📊 [TagService] Flattened ${flatTags.length} tags:`, flatTags.map(t => t.name));
       
       // 批量保存到 StorageManager
       for (const tag of flatTags) {
-        // 生成 UUID ID（如果是旧 ID）
-        if (!isValidId(tag.id, 'tag')) {
-          const oldId = tag.id;
-          tag.id = generateTagId();
-          console.log(`🔄 [TagService] Migrated tag ID: ${oldId} → ${tag.id}`);
-        }
         
         const now = formatTimeForStorage(new Date());
         
@@ -210,6 +284,11 @@ class TagServiceClass {
           color: tag.color,
           emoji: tag.emoji,
           parentId: tag.parentId,
+          position: tag.position,
+          calendarMapping: tag.calendarMapping,
+          dailyAvgCheckins: tag.dailyAvgCheckins,
+          dailyAvgDuration: tag.dailyAvgDuration,
+          isRecurring: tag.isRecurring,
           createdAt: tag.createdAt || now,
           updatedAt: now,
           deletedAt: null,
@@ -248,8 +327,12 @@ class TagServiceClass {
           color: tag.color,
           emoji: tag.emoji,
           parentId: tag.parentId || parentId,
+          position: tag.position,
           level: level,
-          calendarMapping: tag.calendarMapping
+          calendarMapping: tag.calendarMapping,
+          dailyAvgCheckins: tag.dailyAvgCheckins,
+          dailyAvgDuration: tag.dailyAvgDuration,
+          isRecurring: tag.isRecurring
         });
         
         if (tag.children && tag.children.length > 0) {
@@ -310,9 +393,14 @@ class TagServiceClass {
         id: tag.id,
         name: tag.name,
         color: tag.color,
+        emoji: tag.emoji,
         parentId: tag.parentId,
+        position: tag.position,
         children: [],
-        calendarMapping: tag.calendarMapping
+        calendarMapping: tag.calendarMapping,
+        dailyAvgCheckins: tag.dailyAvgCheckins,
+        dailyAvgDuration: tag.dailyAvgDuration,
+        isRecurring: tag.isRecurring
       });
     });
 
@@ -329,6 +417,17 @@ class TagServiceClass {
         roots.push(node);
       }
     });
+
+    // 按 position 排序根标签和所有子标签
+    const sortByPosition = (tags: HierarchicalTag[]) => {
+      tags.sort((a, b) => (a.position || 0) - (b.position || 0));
+      tags.forEach(tag => {
+        if (tag.children && tag.children.length > 0) {
+          sortByPosition(tag.children);
+        }
+      });
+    };
+    sortByPosition(roots);
 
     return roots;
   }
@@ -354,7 +453,8 @@ class TagServiceClass {
       return [];
     }
     
-    return this.flatTags;
+    // 按 position 排序后返回
+    return [...this.flatTags].sort((a, b) => (a.position || 0) - (b.position || 0));
   }
 
   // 根据ID获取标签

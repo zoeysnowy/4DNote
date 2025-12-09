@@ -9,14 +9,21 @@ import { icons } from '../assets/icons';
 import './TagManager.css';
 
 import { logger } from '../utils/logger';
+import { generateTagId } from '../utils/idGenerator';
 
 const TagManagerLogger = logger.module('TagManager');
 // 标签数据持久化工具函数
-const saveTagsToStorage = (tags: ExtendedHierarchicalTag[]) => {
+const saveTagsToStorage = async (tags: ExtendedHierarchicalTag[]) => {
   try {
+    // 保存到 localStorage（兼容性）
     PersistentStorage.setItem(STORAGE_KEYS.HIERARCHICAL_TAGS, tags, PERSISTENT_OPTIONS.TAGS);
+    
+    // 🔧 同步到 TagService（保存到 StorageManager/IndexedDB）
+    const { TagService } = await import('../services/TagService');
+    TagService.updateTags(tags);
+    TagManagerLogger.log('✅ [TagManager] Synced tags to TagService');
   } catch (error) {
-    TagManagerLogger.error('? [TagManager] Failed to save tags:', error);
+    TagManagerLogger.error('❌ [TagManager] Failed to save tags:', error);
   }
 };
 
@@ -1206,7 +1213,7 @@ const TagManager: React.FC<TagManagerProps> = ({
   };
 
   const createNewTag = (level: number = 0, afterTagId?: string) => {
-    const newId = `new-${Date.now()}`;
+    const newId = generateTagId(); // 🔧 使用正式的 tag ID 格式
     
     setTags(prevTags => {
       let newPosition: number;
