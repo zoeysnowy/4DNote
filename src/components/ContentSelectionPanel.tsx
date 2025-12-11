@@ -6,8 +6,10 @@ import SearchIconSvg from '../assets/icons/Search.svg';
 import HideIconSvg from '../assets/icons/hide.svg';
 import UnhideIconSvg from '../assets/icons/unhide.svg';
 import DownIconSvg from '../assets/icons/down.svg';
+import RightIconSvg from '../assets/icons/right.svg';
 import PiechartIconSvg from '../assets/icons/piechart.svg';
 import NoticeIconSvg from '../assets/icons/Notice.svg';
+import PinIconSvg from '../assets/icons/Pin.svg';
 
 // 图标组件
 const SearchIcon = ({ className }: { className?: string }) => <img src={SearchIconSvg} alt="" className={className} style={{ width: '23px', height: '23px', opacity: 0.6 }} />;
@@ -18,19 +20,21 @@ const DownIcon = ({ isExpanded }: { isExpanded?: boolean }) => (
     src={DownIconSvg} 
     alt="" 
     style={{ 
-      width: '12px', 
-      height: '12px',
+      width: '20px', 
+      height: '20px',
       transition: 'transform 0.2s',
       transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)'
     }} 
   />
 );
+const RightIcon = ({ className }: { className?: string }) => <img src={RightIconSvg} alt="" className={className} style={{ width: '20px', height: '20px' }} />;
 const UnhideSmallIcon = ({ className }: { className?: string }) => <img src={UnhideIconSvg} alt="" className={className} style={{ width: '16px', height: '16px' }} />;
 const HideSmallIcon = ({ className }: { className?: string }) => <img src={HideIconSvg} alt="" className={className} style={{ width: '16px', height: '16px' }} />;
 const PiechartIcon = ({ color, className }: { color?: string; className?: string }) => (
   <img src={PiechartIconSvg} alt="" className={className} style={{ width: '14px', height: '14px' }} />
 );
 const NoticeIcon = ({ className }: { className?: string }) => <img src={NoticeIconSvg} alt="" className={className} style={{ width: '20px', height: '20px' }} />;
+const PinIcon = ({ className }: { className?: string }) => <img src={PinIconSvg} alt="" className={className} style={{ width: '16px', height: '16px' }} />;
 
 interface TaskNode {
   id: string;
@@ -62,6 +66,9 @@ interface Tag {
   name: string;
   color?: string;
   emoji?: string;
+  parentId?: string;
+  level?: number;
+  children?: Tag[];
 }
 
 interface ContentSelectionPanelProps {
@@ -74,6 +81,9 @@ interface ContentSelectionPanelProps {
   onDateSelect?: (date: Date) => void;
   onDateRangeChange?: (start: Date | null, end: Date | null) => void;
   onTagVisibilityChange?: (tagId: string, visible: boolean) => void;
+  isPanelVisible?: boolean;
+  onPanelVisibilityChange?: (visible: boolean) => void;
+  pageType?: 'plan' | 'timelog'; // plan页面支持snapshot模式，timelog页面仅作为导航
 }
 
 const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
@@ -86,31 +96,50 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   onDateSelect,
   onDateRangeChange,
   onTagVisibilityChange,
+  isPanelVisible = true,
+  onPanelVisibilityChange,
+  pageType = 'plan', // 默认为plan页面
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFilter, setActiveFilter] = useState<'tags' | 'tasks' | 'favorites' | 'new'>('tags');
   const [selectedDate, setSelectedDate] = useState(dateRange?.start || new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date(2025, 10, 1)); // November 2025
-  const [isCalendarVisible, setIsCalendarVisible] = useState(true);
+  
+  // Section 折叠状态 - 匹配Figma设计稿状态
+  const [isDateSectionExpanded, setIsDateSectionExpanded] = useState(true);
+  const [isCalendarExpanded, setIsCalendarExpanded] = useState(false);
+  const [isTagSectionExpanded, setIsTagSectionExpanded] = useState(true);
+  const [isEventSectionExpanded, setIsEventSectionExpanded] = useState(false);
   
   // 日期范围选择状态
   const [rangeStart, setRangeStart] = useState<Date | null>(dateRange?.start || null);
   const [rangeEnd, setRangeEnd] = useState<Date | null>(dateRange?.end || null);
   const [isSelecting, setIsSelecting] = useState(false);
   const [hoverDate, setHoverDate] = useState<Date | null>(null);
+  
+  // 标签节点展开/收起状态
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
 
   // 基于真实标签数据构建任务树
   const taskTree = useMemo(() => {
-    return tags.map(tag => {
+    // 首先创建所有节点的映射
+    const nodeMap = new Map<string, TaskNode>();
+    
+    tags.forEach(tag => {
       const isHidden = hiddenTags.has(tag.id);
-      return {
+      // 默认展开所有父标签，除非在expandedNodes中明确标记为收起
+      const hasChildren = tags.some(t => t.parentId === tag.id);
+      const isExpanded = hasChildren ? !expandedNodes.has(tag.id) : true;
+      
+      nodeMap.set(tag.id, {
         id: tag.id,
         title: `${tag.emoji || '#'}${tag.name}`,
         tag: tag.name,
         color: tag.color || '#6b7280',
-        isExpanded: !isHidden,
+        isExpanded,
         isHidden,
-        level: tag.level || 0, // ✅ 添加 level 字段用于缩进
+        level: tag.level || 0,
+        children: [], // 初始化空的children数组
         stats: {
           completed: snapshot?.details?.filter((log: any) => 
             log.operation === 'update' && 
@@ -124,11 +153,35 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
             (log.operation === 'create' || log.operation === 'update') &&
             (log.after?.tags?.includes(tag.id) || log.before?.tags?.includes(tag.id))
           ).length || 0,
-          hours: 0 // TODO: 从时间记录计算
+          hours: 0
         }
-      } as TaskNode;
+      });
     });
-  }, [tags, hiddenTags, snapshot]);
+    
+    // 构建树形结构
+    const rootNodes: TaskNode[] = [];
+    
+    tags.forEach(tag => {
+      const node = nodeMap.get(tag.id);
+      if (!node) return;
+      
+      if (tag.parentId) {
+        // 有父节点，添加到父节点的children中
+        const parent = nodeMap.get(tag.parentId);
+        if (parent && parent.children) {
+          parent.children.push(node);
+        } else {
+          // 父节点不存在，当作根节点
+          rootNodes.push(node);
+        }
+      } else {
+        // 没有父节点，是根节点
+        rootNodes.push(node);
+      }
+    });
+    
+    return rootNodes;
+  }, [tags, hiddenTags, snapshot, expandedNodes]);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
@@ -174,10 +227,6 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
 
   const handleNextMonth = () => {
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
-
-  const toggleCalendar = () => {
-    setIsCalendarVisible(!isCalendarVisible);
   };
 
   const renderCalendar = () => {
@@ -283,13 +332,45 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
     const hasChildren = node.children && node.children.length > 0;
     // ✅ 使用标签的 level 字段计算缩进（仅针对标签文本，不影响统计元素）
     const level = node.level || 0;
-    const indent = level * 8; // 每级增加8px缩进
+    const indent = level * 16; // 每级增加16px缩进（匹配Figma设计）
     
     return (
       <div key={node.id} className={`task-node task-node-depth-${level}`}>
         <div className="task-node-row">
-          {/* 可见性图标 - ✅ 跟随标签缩进 */}
-          <div className="task-visibility-container" style={{ marginLeft: `${indent}px` }}>
+          {/* 左侧：toggle按钮 */}
+          {hasChildren ? (
+            <button 
+              className="task-expand-btn"
+              onClick={() => toggleTaskNode(node.id)}
+              style={{ marginLeft: `${indent}px` }}
+            >
+              <img 
+                src={DownIconSvg} 
+                alt="" 
+                style={{ 
+                  width: '12px', 
+                  height: '12px',
+                  transition: 'transform 0.2s',
+                  transform: node.isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)'
+                }} 
+              />
+            </button>
+          ) : (
+            <div className="task-expand-spacer" style={{ marginLeft: `${indent}px` }} />
+          )}
+          
+          {/* 收藏图标 */}
+          {node.isFavorite && (
+            <span className="task-icon task-icon-favorite">⭐</span>
+          )}
+          
+          {/* 任务标题 - 左侧 */}
+          <div className="task-title" style={{ color: node.color }}>
+            {node.title}
+          </div>
+          
+          {/* 右侧：hide/unhide按钮 */}
+          <div className="task-visibility-container">
             {node.isHidden ? (
               <button 
                 className="task-visibility-btn task-visibility-btn-visible"
@@ -309,27 +390,7 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
             )}
           </div>
           
-          {/* 展开/收缩按钮 */}
-          {hasChildren && (
-            <button 
-              className="task-expand-btn"
-              onClick={() => toggleTaskNode(node.id)}
-            >
-              <DownIcon isExpanded={node.isExpanded} />
-            </button>
-          )}
-          
-          {/* 收藏图标 */}
-          {node.isFavorite && (
-            <span className="task-icon task-icon-favorite">⭐</span>
-          )}
-          
-          {/* 任务标题 - ✅ 不需要额外缩进，因为 hide/unhide 图标已经缩进了 */}
-          <div className="task-title" style={{ color: node.color }}>
-            {node.title}
-          </div>
-          
-          {/* 统计信息 - 不受缩进影响 */}
+          {/* 统计信息 - 右侦 */}
           {node.stats && (
             <div className="task-stats">
               <div className="task-stats-top">
@@ -343,16 +404,17 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
               </div>
               <div className="task-time-bar">
                 <div
-                  className="task-time-fill"
+                  className={`task-time-fill ${
+                    node.color.includes('#a589e6') || node.color.includes('#8b5cf6') || node.color.includes('purple') 
+                      ? 'purple' 
+                      : node.color.includes('#3b82f6') || node.color.includes('blue')
+                      ? 'blue'
+                      : node.color.includes('#10b981') || node.color.includes('green')
+                      ? 'green'
+                      : ''
+                  }`}
                   style={{
-                    width: `${(node.stats.completed / node.stats.total) * 100}%`,
-                    background: node.color === '#8b5cf6' 
-                      ? 'linear-gradient(to right, #a855f7, #9333ea)'
-                      : node.color === '#3b82f6'
-                      ? 'linear-gradient(to right, #3b82f6, #2563eb)'
-                      : node.color === '#10b981'
-                      ? 'linear-gradient(to right, #10b981, #059669)'
-                      : node.color,
+                    width: `${node.stats.total > 0 ? (node.stats.completed / node.stats.total) * 100 : 0}%`,
                   }}
                 />
               </div>
@@ -371,8 +433,17 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   };
 
   const toggleTaskNode = (nodeId: string) => {
-    // TODO: 实现标签展开/收起状态管理
-    console.log('Toggle task node:', nodeId);
+    setExpandedNodes(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(nodeId)) {
+        // 当前是收起状态，点击后展开（从Set中移除）
+        newSet.delete(nodeId);
+      } else {
+        // 当前是展开状态，点击后收起（添加到Set中）
+        newSet.add(nodeId);
+      }
+      return newSet;
+    });
   };
   
   // 日期范围判断辅助函数
@@ -438,43 +509,23 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   const isInSnapshotMode = dateRange !== null && dateRange !== undefined;
 
   return (
-    <div className="content-selection-panel">
-      {/* Section Header - 完全匹配计划清单结构 */}
-      <div className="section-header">
-        <div className="title-indicator" />
-        <h3>内容选取</h3>
-        <button className="panel-toggle-btn" onClick={toggleCalendar}>
-          <HideIcon />
-        </button>
-        {isInSnapshotMode ? (
-          <button className="panel-show-all-btn" onClick={handleExitSnapshot}>
-            退出Review模式
-          </button>
-        ) : (
-          <div className="panel-notice-icon-wrapper" title="选择日期进入Review模式">
-            <NoticeIcon className="panel-notice-icon" />
-          </div>
-        )}
-        {false && (<button className="panel-show-all-btn" onClick={handleExitSnapshot}>
-          {isInSnapshotMode ? (
-            <>
-              退出<br />Review模式
-            </>
-          ) : (
-            <>
-              选择日期<br />进入Review模式
-            </>
-          )}
-        </button>)}
-      </div>
+    <div className={`content-selection-panel ${isPanelVisible ? 'pinned' : 'unpinned'}`}>
+      {/* Pin按钮 */}
+      <button 
+        className="panel-pin-btn" 
+        onClick={() => onPanelVisibilityChange?.(!isPanelVisible)}
+        title={isPanelVisible ? "取消固定侧边栏" : "固定侧边栏"}
+      >
+        <PinIcon />
+      </button>
 
-      {/* Search Bar */}
-      <div className="search-container">
-        <div className="search-input-wrapper">
+      {/* Search Section - 独立搜索区域 */}
+      <div className="search-section">
+        <div className="search-input-wrapper-enhanced">
           <SearchIcon className="search-icon" />
           <input
             type="text"
-            className="search-input"
+            className="search-input-enhanced"
             placeholder='输入"上个月没完成的任务"试试'
             value={searchQuery}
             onChange={handleSearchChange}
@@ -482,42 +533,94 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
         </div>
       </div>
 
-      {/* Calendar */}
-      {isCalendarVisible && renderCalendar()}
-
-
-
-      {/* Filter Buttons */}
-      <div className="filter-buttons">
-        <button
-          className={`filter-btn ${activeFilter === 'tags' ? 'filter-btn-active' : ''}`}
-          onClick={() => handleFilterChange('tags')}
+      {/* 日期选择 Section */}
+      <div className={`collapsible-section ${!isDateSectionExpanded ? 'collapsed' : ''}`}>
+        <div 
+          className="section-header-simple" 
+          onClick={() => setIsDateSectionExpanded(!isDateSectionExpanded)}
         >
-          标签
-        </button>
-        <button
-          className={`filter-btn ${activeFilter === 'tasks' ? 'filter-btn-active' : ''}`}
-          onClick={() => handleFilterChange('tasks')}
-        >
-          事项
-        </button>
-        <button
-          className={`filter-btn ${activeFilter === 'favorites' ? 'filter-btn-active' : ''}`}
-          onClick={() => handleFilterChange('favorites')}
-        >
-          收藏
-        </button>
-        <button
-          className={`filter-btn ${activeFilter === 'new' ? 'filter-btn-active' : ''}`}
-          onClick={() => handleFilterChange('new')}
-        >
-          New
-        </button>
+          <h3 className="section-title">日期选择</h3>
+          <button className={`panel-toggle-btn ${isDateSectionExpanded ? 'expanded' : ''}`}>
+            <RightIcon />
+          </button>
+        </div>
+        <div className="collapsible-content">
+          {/* Snapshot模式提示 - 仅在plan页面显示 */}
+          {pageType === 'plan' && isInSnapshotMode && (
+            <div className="snapshot-mode-banner">
+              <div className="snapshot-mode-text">
+                <span className="snapshot-icon">📸</span>
+                <span>Snapshot Review 模式</span>
+              </div>
+              <button 
+                className="exit-snapshot-btn"
+                onClick={handleExitSnapshot}
+                title="返回当前时间线"
+              >
+                退出Review
+              </button>
+            </div>
+          )}
+          
+          {/* Calendar */}
+          {renderCalendar()}
+        </div>
       </div>
 
-      {/* Task Tree */}
-      <div className="task-tree">
-        {taskTree.map((node: TaskNode) => renderTaskNode(node))}
+      {/* 标签选择 Section */}
+      <div className={`collapsible-section ${!isTagSectionExpanded ? 'collapsed' : ''}`}>
+        <div 
+          className="section-header-simple" 
+          onClick={() => setIsTagSectionExpanded(!isTagSectionExpanded)}
+        >
+          <h3 className="section-title">标签选择</h3>
+          <button className={`panel-toggle-btn ${isTagSectionExpanded ? 'expanded' : ''}`}>
+            <DownIcon isExpanded={isTagSectionExpanded} />
+          </button>
+        </div>
+        <div className="collapsible-content">
+          {/* Task Tree */}
+          <div className="task-tree">
+            {taskTree.map((node: TaskNode) => renderTaskNode(node))}
+          </div>
+        </div>
+      </div>
+
+      {/* 事件选择 Section */}
+      <div className={`collapsible-section ${!isEventSectionExpanded ? 'collapsed' : ''}`}>
+        <div 
+          className="section-header-simple" 
+          onClick={() => setIsEventSectionExpanded(!isEventSectionExpanded)}
+        >
+          <h3 className="section-title">事件选择</h3>
+          <button className={`panel-toggle-btn ${isEventSectionExpanded ? 'expanded' : ''}`}>
+            <RightIcon />
+          </button>
+        </div>
+        <div className="collapsible-content">
+          {/* TODO: 事件选择内容 */}
+        </div>
+      </div>
+
+      {/* 日历选择 Section - 展示日历账户分组 */}
+      <div className={`collapsible-section ${!isCalendarExpanded ? 'collapsed' : ''}`}>
+        <div 
+          className="section-header-simple" 
+          onClick={() => setIsCalendarExpanded(!isCalendarExpanded)}
+        >
+          <h3 className="section-title">日历选择</h3>
+          <button className={`panel-toggle-btn ${isCalendarExpanded ? 'expanded' : ''}`}>
+            <RightIcon />
+          </button>
+        </div>
+        <div className="collapsible-content">
+          {/* TODO: 根据日历账户数量显示：
+               - 单账户：直接显示日历列表
+               - 多账户：显示 Outlook/Google/iCloud 标签页 */}
+          <div className="calendar-accounts-container">
+            <p className="placeholder-text">日历账户列表</p>
+          </div>
+        </div>
       </div>
     </div>
   );

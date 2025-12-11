@@ -306,6 +306,45 @@ export class StorageManager {
   }
 
   /**
+   * 🚀 获取单个事件（通过 ID）
+   * 优先从缓存读取，缓存未命中时从 IndexedDB 读取（不走全表扫描）
+   */
+  async getEvent(id: string): Promise<StorageEvent | null> {
+    await this.ensureInitialized();
+
+    // 1. 检查缓存
+    const cached = this.eventCache.get(id);
+    if (cached) {
+      return cached;
+    }
+
+    // 2. 从 IndexedDB 直接获取（通过主键，不是全表扫描）
+    if (this.indexedDBService) {
+      const event = await this.indexedDBService.getEvent(id);
+      if (event && !event.deletedAt) {
+        // 缓存结果
+        this.eventCache.set(id, event);
+        return event;
+      }
+    }
+
+    // 3. 降级到 SQLite（如果可用）
+    if (this.sqliteService) {
+      const result = await this.sqliteService.queryEvents({
+        filters: { eventIds: [id] },
+        limit: 1
+      });
+      if (result.items.length > 0) {
+        const event = result.items[0];
+        this.eventCache.set(id, event);
+        return event;
+      }
+    }
+
+    return null;
+  }
+
+  /**
    * 创建事件（双写：IndexedDB + SQLite）
    */
   async createEvent(event: StorageEvent): Promise<StorageEvent> {
@@ -320,6 +359,10 @@ export class StorageManager {
       if (this.sqliteService) {
         await this.sqliteService.createEvent(event);
       }
+      
+      // 🚀 [CACHE FIX] 创建后立即缓存，避免后续 getEvent 缓存未命中
+      this.eventCache.set(event.id, event);
+      
       console.log('[StorageManager] ✅ Event created:', event.id);
       return event;
     } catch (error) {
@@ -353,20 +396,17 @@ export class StorageManager {
         await this.sqliteService.updateEvent(id, updates);
       }
 
-      // 2. 更新缓存
-      const cachedEvent = this.eventCache.get(id);
-      if (cachedEvent) {
-        const updatedEvent = { ...cachedEvent, ...updates };
-        this.eventCache.set(id, updatedEvent);
-      }
-
-      // 3. 获取最新数据并验证 EventTree 字段
+      // 2. 🚀 [CACHE FIX] 获取最新数据并更新缓存
+      // 必须从数据库重新读取，确保拿到完整的最新数据
       const updatedEvent = await this.indexedDBService.getEvent(id);
       if (!updatedEvent) {
         throw new Error(`Event not found: ${id}`);
       }
 
-      // EventTree fields saved
+      // 3. 强制更新缓存（无论之前是否存在）
+      // 这确保后续的 getEvent(id) 能拿到最新的数据
+      this.eventCache.set(id, updatedEvent);
+
       return updatedEvent;
     } catch (error) {
       console.error('[StorageManager] ❌ Failed to update event:', error);

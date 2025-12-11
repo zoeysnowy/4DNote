@@ -144,6 +144,10 @@ function App() {
         console.error('❌ [App] Search index initialization failed:', err);
       }
       
+      // 🎯 UUID 迁移完成 (v2.17)
+      // 不再需要 EventIdPool 初始化，ID 生成器直接使用 UUID v4
+      console.log('✅ [App] Using UUID v4 for event ID generation (no pool needed)');
+      
       // 🧪 动态加载 SQLite 测试模块（仅 Electron 环境）
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
         import('./tests/test-storage-sqlite').catch(err => {
@@ -368,6 +372,9 @@ function App() {
 
   // 页面状态管✅
   const [currentPage, setCurrentPage] = useState<PageType>('home');
+  
+  // Panel可见性状态
+  const [isPanelVisible, setIsPanelVisible] = useState(true);
   
   // 🔧 优化：移除不必要的依赖，避免频繁重新创建函数
   const handlePageChange = useCallback((page: PageType) => {
@@ -1814,11 +1821,7 @@ function App() {
         break;
 
       case 'timelog':
-        content = (
-          <PageContainer title="时光日志" subtitle="事件回顾与日志记录" className="timelog-page-container">
-            <TimeLog />
-          </PageContainer>
-        );
+        content = <TimeLog isPanelVisible={isPanelVisible} onPanelVisibilityChange={setIsPanelVisible} />;
         break;
 
       case 'tag':
@@ -1887,6 +1890,8 @@ function App() {
         
         content = (
           <PlanManager
+            isPanelVisible={isPanelVisible}
+            onPanelVisibilityChange={setIsPanelVisible}
             availableTags={availableTagsForEdit.map(t => t.name)}
             microsoftService={microsoftService} // 🆕 传递 Microsoft 服务，支持 To Do Lists
           />
@@ -1956,6 +1961,8 @@ function App() {
         onSettingsClick={() => setShowSettingsModal(true)}
         globalTimer={globalTimer}
         onTimerClick={() => setCurrentPage('home')}
+        isPanelVisible={isPanelVisible}
+        onPanelToggle={() => setIsPanelVisible(!isPanelVisible)}
       >
       {renderCurrentPage}
 

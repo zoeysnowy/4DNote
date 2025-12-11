@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>BulletLevel 调试工具</title>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            padding: 20px; 
+            background: #f5f5f5;
+        }
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; border-bottom: 3px solid #2196F3; padding-bottom: 10px; }
+        h2 { color: #555; margin-top: 30px; }
+        button { 
+            padding: 12px 24px; 
+            margin: 5px; 
+            cursor: pointer; 
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        button:hover { background: #1976D2; }
+        button:active { background: #0D47A1; }
+        pre { 
+            background: #f9f9f9; 
+            padding: 15px; 
+            border-left: 4px solid #2196F3;
+            overflow-x: auto;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .event-item { 
+            margin: 10px 0; 
+            padding: 12px; 
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        .indent-0 { margin-left: 0; }
+        .indent-1 { margin-left: 30px; background: #e3f2fd; }
+        .indent-2 { margin-left: 60px; background: #bbdefb; }
+        .indent-3 { margin-left: 90px; background: #90caf9; }
+        .warning { color: #f44336; font-weight: bold; }
+        .success { color: #4caf50; font-weight: bold; }
+        .info { color: #2196F3; font-weight: bold; }
+        .event-id { font-family: monospace; color: #666; font-size: 11px; }
+        .event-title { font-weight: 500; color: #333; }
+        .event-meta { font-size: 12px; color: #888; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 BulletLevel 数据流调试工具</h1>
+        
+        <div>
+            <button onclick="checkBulletLevelData()">1️⃣ 检查数据库中的 EventTree 字段</button>
+            <button onclick="checkSlateState()">2️⃣ 检查 Slate 编辑器状态</button>
+            <button onclick="checkSortOrder()">3️⃣ 检查排序算法</button>
+            <button onclick="simulateRefresh()">4️⃣ 模拟刷新流程</button>
+            <button onclick="checkSerialization()">5️⃣ 检查序列化过程</button>
+            <button onclick="checkTempIdIssues()" style="background: #e74c3c; color: white;">🔥 6️⃣ 检查临时ID问题</button>
+            <button onclick="checkTempIdTracking()" style="background: #9b59b6; color: white;">🆕 7️⃣ 检查临时ID追踪系统（v2.15）</button>
+        </div>
+        
+        <h2>📊 检查结果：</h2>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const output = document.getElementById('output');
+        
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.innerHTML = `<span class="${type}">[${new Date().toLocaleTimeString()}]</span> ${message}`;
+            output.appendChild(div);
+        }
+        
+        function logPre(data) {
+            const pre = document.createElement('pre');
+            pre.textContent = JSON.stringify(data, null, 2);
+            output.appendChild(pre);
+        }
+        
+        function clearOutput() {
+            output.innerHTML = '';
+        }
+
+        // 1. 检查数据库中的 EventTree 字段
+        async function checkBulletLevelData() {
+            clearOutput();
+            log('🔍 正在检查数据库中的 EventTree 数据...', 'info');
+            
+            const storageManager = window.storageManagerInstance;
+            if (!storageManager) {
+                log('❌ StorageManager 未初始化', 'warning');
+                return;
+            }
+            
+            // 查询所有 Plan 事件
+            const result = await storageManager.queryEvents({ 
+                filters: { isPlan: true }, 
+                limit: 1000 
+            });
+            
+            const events = result.items;
+            log(`✅ 找到 ${events.length} 个 Plan 事件`, 'success');
+            
+            // 统计 EventTree 字段
+            const withParent = events.filter(e => e.parentEventId);
+            const withChildren = events.filter(e => e.childEventIds && e.childEventIds.length > 0);
+            const withBulletLevel = events.filter(e => e.bulletLevel !== undefined);
+            
+            log(`📊 统计数据：`, 'info');
+            logPre({
+                '总事件数': events.length,
+                '有 parentEventId': withParent.length,
+                '有 childEventIds': withChildren.length,
+                '有 bulletLevel': withBulletLevel.length,
+                '孤立事件（无父无子）': events.filter(e => !e.parentEventId && (!e.childEventIds || e.childEventIds.length === 0)).length
+            });
+            
+            // 显示前10个事件的 EventTree 数据
+            log(`\n📝 前10个事件的详细数据：`, 'info');
+            events.slice(0, 10).forEach((e, i) => {
+                const div = document.createElement('div');
+                div.className = `event-item indent-${e.bulletLevel || 0}`;
+                div.innerHTML = `
+                    <div class="event-title">${i + 1}. ${e.title?.simpleTitle || e.title || '(无标题)'}</div>
+                    <div class="event-id">ID: ${e.id}</div>
+                    <div class="event-meta">
+                        bulletLevel: ${e.bulletLevel ?? 'undefined'} | 
+                        parentEventId: ${e.parentEventId ? e.parentEventId.slice(-8) : 'null'} | 
+                        childEventIds: ${e.childEventIds ? e.childEventIds.length : 0}
+                    </div>
+                `;
+                output.appendChild(div);
+            });
+            
+            // 检查 ID 格式
+            const invalidIds = events.filter(e => !e.id || e.id.length !== 27);
+            if (invalidIds.length > 0) {
+                log(`⚠️ 发现 ${invalidIds.length} 个事件 ID 格式异常`, 'warning');
+                logPre(invalidIds.map(e => ({ id: e.id, length: e.id?.length })));
+            }
+            
+            // 检查父子关系完整性
+            log(`\n🔗 检查父子关系完整性：`, 'info');
+            const eventMap = new Map(events.map(e => [e.id, e]));
+            let brokenLinks = 0;
+            
+            events.forEach(e => {
+                if (e.parentEventId && !eventMap.has(e.parentEventId)) {
+                    brokenLinks++;
+                    log(`⚠️ 断裂链接: ${e.id.slice(-8)} 的父事件 ${e.parentEventId.slice(-8)} 不存在`, 'warning');
+                }
+            });
+            
+            if (brokenLinks === 0) {
+                log(`✅ 所有父子关系完整`, 'success');
+            } else {
+                log(`⚠️ 发现 ${brokenLinks} 个断裂的父子关系`, 'warning');
+            }
+        }
+
+        // 2. 检查 Slate 编辑器状态
+        function checkSlateState() {
+            clearOutput();
+            log('🔍 正在检查 Slate 编辑器状态...', 'info');
+            
+            const planEvents = window.__PLAN_EVENTS__;
+            if (!planEvents) {
+                log('❌ 找不到 __PLAN_EVENTS__，请在 Plan 页面运行此工具', 'warning');
+                return;
+            }
+            
+            log(`✅ 找到 ${planEvents.length} 个当前渲染的事件`, 'success');
+            
+            // 检查 bulletLevel 分布
+            const levelDistribution = {};
+            planEvents.forEach(e => {
+                const level = e.bulletLevel ?? 0;
+                levelDistribution[level] = (levelDistribution[level] || 0) + 1;
+            });
+            
+            log(`📊 层级分布：`, 'info');
+            logPre(levelDistribution);
+            
+            // 检查渲染顺序
+            log(`\n📝 当前渲染顺序（前15个）：`, 'info');
+            planEvents.slice(0, 15).forEach((e, i) => {
+                const div = document.createElement('div');
+                div.className = `event-item indent-${e.bulletLevel || 0}`;
+                div.innerHTML = `
+                    <div class="event-title">${i + 1}. ${e.title?.simpleTitle || '(无标题)'}</div>
+                    <div class="event-id">ID: ${e.id?.slice(-8)}</div>
+                    <div class="event-meta">
+                        bulletLevel: ${e.bulletLevel ?? 'undefined'} | 
+                        parentEventId: ${e.parentEventId?.slice(-8) || 'null'}
+                    </div>
+                `;
+                output.appendChild(div);
+            });
+        }
+
+        // 3. 检查排序算法
+        async function checkSortOrder() {
+            clearOutput();
+            log('🔍 正在测试排序算法...', 'info');
+            
+            const storageManager = window.storageManagerInstance;
+            const result = await storageManager.queryEvents({ 
+                filters: { isPlan: true }, 
+                limit: 1000 
+            });
+            
+            const events = result.items;
+            
+            // 模拟 PlanManager 的排序逻辑
+            const eventMap = new Map(events.map(e => [e.id, e]));
+            const visited = new Set();
+            const sortedEvents = [];
+            
+            // 递归添加函数
+            const addEventWithChildren = (event) => {
+                if (visited.has(event.id)) return;
+                
+                visited.add(event.id);
+                sortedEvents.push(event);
+                
+                const children = (event.childEventIds || [])
+                    .map(childId => eventMap.get(childId))
+                    .filter(child => !!child)
+                    .sort((a, b) => {
+                        const timeA = new Date(a.createdAt || 0).getTime();
+                        const timeB = new Date(b.createdAt || 0).getTime();
+                        return timeA - timeB;
+                    });
+                
+                children.forEach(child => addEventWithChildren(child));
+            };
+            
+            // 找出顶层事件
+            const topLevelEvents = events
+                .filter(e => !e.parentEventId || !eventMap.get(e.parentEventId))
+                .sort((a, b) => {
+                    const timeA = new Date(a.createdAt || 0).getTime();
+                    const timeB = new Date(b.createdAt || 0).getTime();
+                    return timeA - timeB;
+                });
+            
+            log(`✅ 找到 ${topLevelEvents.length} 个顶层事件`, 'success');
+            
+            // 执行排序
+            topLevelEvents.forEach(event => addEventWithChildren(event));
+            
+            // 检查遗漏事件
+            const orphaned = events.filter(e => !visited.has(e.id));
+            if (orphaned.length > 0) {
+                log(`⚠️ 发现 ${orphaned.length} 个孤立事件`, 'warning');
+                orphaned.forEach(e => sortedEvents.push(e));
+            }
+            
+            log(`\n📊 排序结果：`, 'info');
+            logPre({
+                '原始顺序': events.slice(0, 5).map(e => ({
+                    id: e.id.slice(-8),
+                    title: e.title?.simpleTitle?.slice(0, 20),
+                    bulletLevel: e.bulletLevel
+                })),
+                '排序后顺序': sortedEvents.slice(0, 5).map(e => ({
+                    id: e.id.slice(-8),
+                    title: e.title?.simpleTitle?.slice(0, 20),
+                    bulletLevel: e.bulletLevel
+                }))
+            });
+            
+            // 验证父子顺序
+            log(`\n🔗 验证父子顺序：`, 'info');
+            let orderErrors = 0;
+            sortedEvents.forEach((e, i) => {
+                if (e.parentEventId) {
+                    const parentIndex = sortedEvents.findIndex(p => p.id === e.parentEventId);
+                    if (parentIndex === -1) {
+                        log(`⚠️ 事件 ${e.id.slice(-8)} 的父事件不在列表中`, 'warning');
+                        orderErrors++;
+                    } else if (parentIndex > i) {
+                        log(`❌ 顺序错误: 子事件 ${e.id.slice(-8)} (位置${i}) 在父事件 ${e.parentEventId.slice(-8)} (位置${parentIndex}) 之前`, 'warning');
+                        orderErrors++;
+                    }
+                }
+            });
+            
+            if (orderErrors === 0) {
+                log(`✅ 所有父子顺序正确`, 'success');
+            } else {
+                log(`❌ 发现 ${orderErrors} 个顺序错误`, 'warning');
+            }
+        }
+
+        // 4. 模拟刷新流程
+        async function simulateRefresh() {
+            clearOutput();
+            log('🔄 模拟页面刷新流程...', 'info');
+            
+            // 导入 EventService
+            const EventService = window.EventService;
+            if (!EventService) {
+                log('❌ EventService 未加载', 'warning');
+                return;
+            }
+            
+            const storageManager = window.storageManagerInstance;
+            const result = await storageManager.queryEvents({ 
+                filters: { isPlan: true }, 
+                limit: 100 
+            });
+            
+            const events = result.items;
+            log(`✅ 加载了 ${events.length} 个事件`, 'success');
+            
+            // 计算 bulletLevel
+            log(`\n🔢 计算 bulletLevel...`, 'info');
+            const bulletLevels = EventService.calculateAllBulletLevels(events);
+            
+            log(`✅ 计算完成: ${bulletLevels.size} 个事件`, 'success');
+            
+            // 显示计算结果
+            const levelsArray = Array.from(bulletLevels.entries()).slice(0, 10);
+            logPre(levelsArray.map(([id, level]) => ({
+                id: id.slice(-8),
+                level,
+                event: events.find(e => e.id === id)?.title?.simpleTitle?.slice(0, 20)
+            })));
+            
+            // 附加 bulletLevel
+            const eventsWithLevels = events.map(e => ({
+                ...e,
+                bulletLevel: bulletLevels.get(e.id) || 0
+            }));
+            
+            log(`\n📊 bulletLevel 分布：`, 'info');
+            const distribution = {};
+            eventsWithLevels.forEach(e => {
+                distribution[e.bulletLevel] = (distribution[e.bulletLevel] || 0) + 1;
+            });
+            logPre(distribution);
+        }
+
+        // 5. 检查序列化过程
+        function checkSerialization() {
+            clearOutput();
+            log('🔍 检查序列化过程...', 'info');
+            
+            const planEvents = window.__PLAN_EVENTS__;
+            if (!planEvents) {
+                log('❌ 找不到 __PLAN_EVENTS__', 'warning');
+                return;
+            }
+            
+            log(`📝 检查序列化关键字段：`, 'info');
+            
+            planEvents.slice(0, 10).forEach((e, i) => {
+                const div = document.createElement('div');
+                div.className = `event-item indent-${e.bulletLevel || 0}`;
+                
+                const checks = [];
+                if (e.bulletLevel !== undefined) checks.push('✅ bulletLevel');
+                if (e.parentEventId) checks.push('✅ parentEventId');
+                if (e.childEventIds && e.childEventIds.length > 0) checks.push(`✅ childEventIds(${e.childEventIds.length})`);
+                
+                div.innerHTML = `
+                    <div class="event-title">${i + 1}. ${e.title?.simpleTitle || '(无标题)'}</div>
+                    <div class="event-meta">
+                        ${checks.join(' | ')}
+                    </div>
+                    <div class="event-id">bulletLevel: ${e.bulletLevel} | parentEventId: ${e.parentEventId?.slice(-8) || 'null'}</div>
+                `;
+                output.appendChild(div);
+            });
+            
+            // 检查是否有 bulletLevel 为 undefined 的事件
+            const missingLevel = planEvents.filter(e => e.bulletLevel === undefined);
+            if (missingLevel.length > 0) {
+                log(`\n⚠️ 发现 ${missingLevel.length} 个事件缺少 bulletLevel`, 'warning');
+            } else {
+                log(`\n✅ 所有事件都有 bulletLevel`, 'success');
+            }
+        }
+        
+        // 🔥 6. 检查临时ID问题（新增）
+        async function checkTempIdIssues() {
+            clearOutput();
+            log('🔥 开始检查临时ID问题...', 'info');
+            
+            try {
+                const db = await new Promise((resolve, reject) => {
+                    const request = indexedDB.open('4DNoteDB', 1);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                const tx = db.transaction(['events'], 'readonly');
+                const store = tx.objectStore('events');
+                const allEvents = await new Promise((resolve, reject) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                log(`✅ 成功读取 ${allEvents.length} 个事件`, 'success');
+                
+                // 检查1: 查找所有包含临时ID的 parentEventId
+                const tempIdParents = allEvents.filter(e => 
+                    e.parentEventId && e.parentEventId.startsWith('line-')
+                );
+                
+                if (tempIdParents.length > 0) {
+                    log(`\n❌ 发现 ${tempIdParents.length} 个事件的 parentEventId 是临时ID！`, 'warning');
+                    tempIdParents.forEach(e => {
+                        log(`  • 事件 ${e.id.slice(-8)}: parentEventId = ${e.parentEventId}`, 'warning');
+                        log(`    标题: ${e.title?.simpleTitle || e.content || '(空)'}`, 'info');
+                    });
+                } else {
+                    log(`\n✅ 没有发现临时ID作为 parentEventId`, 'success');
+                }
+                
+                // 检查2: 查找所有 childEventIds 中包含临时ID的事件
+                const tempIdChildren = allEvents.filter(e => 
+                    e.childEventIds && Array.isArray(e.childEventIds) && 
+                    e.childEventIds.some(id => id.startsWith('line-'))
+                );
+                
+                if (tempIdChildren.length > 0) {
+                    log(`\n❌ 发现 ${tempIdChildren.length} 个事件的 childEventIds 包含临时ID！`, 'warning');
+                    tempIdChildren.forEach(e => {
+                        const tempIds = e.childEventIds.filter(id => id.startsWith('line-'));
+                        log(`  • 事件 ${e.id.slice(-8)}: 临时子ID = ${tempIds.join(', ')}`, 'warning');
+                    });
+                } else {
+                    log(`\n✅ 没有发现 childEventIds 中包含临时ID`, 'success');
+                }
+                
+                // 检查3: 查找孤儿事件（parentEventId指向的父事件不存在）
+                const eventMap = new Map(allEvents.map(e => [e.id, e]));
+                const orphans = allEvents.filter(e => {
+                    if (!e.parentEventId) return false;
+                    return !eventMap.has(e.parentEventId);
+                });
+                
+                if (orphans.length > 0) {
+                    log(`\n⚠️ 发现 ${orphans.length} 个孤儿事件（父事件不存在）！`, 'warning');
+                    orphans.forEach(e => {
+                        log(`  • 事件 ${e.id.slice(-8)}: 父ID ${e.parentEventId?.slice(-8)} 不存在`, 'warning');
+                        log(`    标题: ${e.title?.simpleTitle || e.content || '(空)'}`, 'info');
+                    });
+                } else {
+                    log(`\n✅ 没有发现孤儿事件`, 'success');
+                }
+                
+                // 检查4: 检查双向关系一致性
+                let inconsistencies = 0;
+                allEvents.forEach(event => {
+                    if (event.childEventIds && Array.isArray(event.childEventIds)) {
+                        event.childEventIds.forEach(childId => {
+                            const child = eventMap.get(childId);
+                            if (child && child.parentEventId !== event.id) {
+                                log(`\n❌ 关系不一致: ${event.id.slice(-8)} → ${childId.slice(-8)}`, 'warning');
+                                inconsistencies++;
+                            }
+                        });
+                    }
+                });
+                
+                if (inconsistencies === 0) {
+                    log(`\n✅ EventTree 双向关系一致`, 'success');
+                } else {
+                    log(`\n❌ 发现 ${inconsistencies} 个关系不一致`, 'warning');
+                }
+                
+                // 检查5: 统计
+                const topLevel = allEvents.filter(e => !e.parentEventId).length;
+                const children = allEvents.filter(e => e.parentEventId).length;
+                log(`\n📊 EventTree 统计:`, 'info');
+                log(`  • 顶层事件: ${topLevel}`, 'info');
+                log(`  • 子事件: ${children}`, 'info');
+                
+                log(`\n✅ 临时ID检查完成`, 'success');
+                
+            } catch (error) {
+                log(`\n❌ 检查失败: ${error.message}`, 'warning');
+                console.error(error);
+            }
+        }
+        
+        // 🔥 新增：检查临时ID追踪系统（v2.15）
+        async function checkTempIdTracking() {
+            clearOutput();
+            log('🔥 检查临时ID追踪系统（v2.15新功能）...', 'info');
+            
+            try {
+                const db = await new Promise((resolve, reject) => {
+                    const request = indexedDB.open('4DNoteDB', 1);
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                // 检查1: 查询所有带有临时ID标记的事件
+                const tx = db.transaction(['events'], 'readonly');
+                const store = tx.objectStore('events');
+                const allEvents = await new Promise((resolve, reject) => {
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+                
+                const tempIdEvents = allEvents.filter(e => e._isTempId || e._originalTempId);
+                
+                if (tempIdEvents.length > 0) {
+                    log(`\n⚠️ 发现 ${tempIdEvents.length} 个事件仍带有临时ID标记：`, 'warning');
+                    tempIdEvents.forEach(e => {
+                        log(`  • ID: ${e.id} | 原始临时ID: ${e._originalTempId}`, 'info');
+                        log(`    标题: ${e.title?.simpleTitle || '(空)'}`, 'info');
+                    });
+                } else {
+                    log(`\n✅ 所有事件已正确转换为真实ID`, 'success');
+                }
+                
+                // 检查2: 查询EventHistory中的临时ID映射记录
+                // 注意：需要访问SQLite，这里简化为检查localStorage备份
+                log(`\n🔍 检查EventHistory中的临时ID映射记录...`, 'info');
+                log(`📝 提示：完整映射记录在SQLite数据库中，请查看控制台日志`, 'info');
+                
+                // 检查3: 验证父子关系是否已自动修复
+                const eventsWithParent = allEvents.filter(e => e.parentEventId);
+                let fixedCount = 0;
+                
+                eventsWithParent.forEach(e => {
+                    if (e.parentEventId && !e.parentEventId.startsWith('line-')) {
+                        fixedCount++;
+                    }
+                });
+                
+                log(`\n📊 父子关系验证:`, 'info');
+                log(`  • 有父事件的事件总数: ${eventsWithParent.length}`, 'info');
+                log(`  • 使用真实ID的事件: ${fixedCount}`, 'success');
+                log(`  • 仍使用临时ID的事件: ${eventsWithParent.length - fixedCount}`, eventsWithParent.length === fixedCount ? 'success' : 'warning');
+                
+                if (eventsWithParent.length === fixedCount) {
+                    log(`\n✅ 临时ID追踪系统工作正常！`, 'success');
+                } else {
+                    log(`\n⚠️ 还有事件未修复，请查看控制台日志`, 'warning');
+                }
+                
+            } catch (error) {
+                log(`\n❌ 检查失败: ${error.message}`, 'warning');
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>

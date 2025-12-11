@@ -40,6 +40,28 @@ const MAX_HISTORY_COUNT = 50000;
 // 全局 StorageManager 实例
 let storageManager: StorageManager | null = null;
 
+/**
+ * 🔧 自动获取 StorageManager 实例
+ * 如果未手动初始化，则从 EventService 获取 storageManager 单例
+ */
+async function getStorageManager(): Promise<StorageManager | null> {
+  if (storageManager) return storageManager;
+  
+  // 尝试从 EventService 获取全局 storageManager 单例
+  try {
+    const { storageManager: sm } = await import('./storage/StorageManager');
+    if (sm) {
+      storageManager = sm;
+      historyLogger.log('✅ EventHistoryService 自动获取 StorageManager 单例');
+      return sm;
+    }
+  } catch (error) {
+    historyLogger.error('❌ 无法获取 StorageManager 单例:', error);
+  }
+  
+  return null;
+}
+
 // 字段显示名称映射
 const FIELD_DISPLAY_NAMES: Record<string, string> = {
   title: '标题',
@@ -226,18 +248,85 @@ export class EventHistoryService {
     historyLogger.log('✅ [Checkin] 记录签到:', eventTitle);
     return log;
   }
+  
+  /**
+   * 🔥 v2.15: 记录临时ID到真实ID的映射关系
+   * @param tempId 临时ID（line-xxx格式）
+   * @param realId 真实ID（event_xxx格式）
+   */
+  static async recordTempIdMapping(tempId: string, realId: string): Promise<void> {
+    const log: EventChangeLog = {
+      id: this.generateLogId(),
+      eventId: realId,
+      operation: 'create',
+      timestamp: formatTimeForStorage(new Date()),
+      source: 'temp-id-mapping',
+      tempIdMapping: {
+        tempId,
+        realId,
+        timestamp: formatTimeForStorage(new Date())
+      },
+      metadata: {
+        type: 'temp-id-resolution',
+        description: `临时ID ${tempId} 转换为真实ID ${realId}`
+      }
+    };
+    
+    this.saveLog(log);
+    historyLogger.log('🔥 [TempId] 记录ID映射:', { tempId, realId });
+  }
+  
+  /**
+   * 🔥 v2.15: 查询临时ID对应的真实ID
+   * @param tempId 临时ID
+   * @returns 真实ID（如果找到）
+   */
+  static async resolveTempId(tempId: string): Promise<string | null> {
+    const sm = await getStorageManager();
+    if (!sm) {
+      historyLogger.error('❌ StorageManager 未初始化');
+      return null;
+    }
+    
+    try {
+      const logs = await sm.queryEventHistory({
+        limit: 1000,
+        operations: ['create']
+      });
+      
+      // 查找包含该临时ID映射的日志
+      const mappingLog = logs.find(log => 
+        log.tempIdMapping?.tempId === tempId
+      );
+      
+      if (mappingLog && mappingLog.tempIdMapping) {
+        historyLogger.log('🔥 [TempId] 找到ID映射:', {
+          tempId,
+          realId: mappingLog.tempIdMapping.realId
+        });
+        return mappingLog.tempIdMapping.realId;
+      }
+      
+      historyLogger.log('🔍 [TempId] 未找到ID映射:', { tempId });
+      return null;
+    } catch (error) {
+      historyLogger.error('❌ [TempId] 查询ID映射失败:', error);
+      return null;
+    }
+  }
 
   /**
    * 查询历史记录（异步，使用 SQLite）
    */
   static async queryHistory(options: HistoryQueryOptions = {}): Promise<EventChangeLog[]> {
-    if (!storageManager) {
+    const sm = await getStorageManager();
+    if (!sm) {
       historyLogger.error('❌ StorageManager 未初始化');
       return [];
     }
 
     try {
-      const logs = await storageManager.queryEventHistory({
+      const logs = await sm.queryEventHistory({
         eventIds: options.eventId ? [options.eventId] : undefined,
         operations: options.operations as any,
         startTime: options.startTime,
@@ -498,7 +587,7 @@ export class EventHistoryService {
    */
   static async checkAndCleanup(): Promise<void> {
     try {
-      const stats = await this.getStatistics();
+      const stats = await this.getBasicStatistics();
       
       // Silent return if StorageManager not initialized yet
       if (!stats) {
@@ -609,13 +698,14 @@ export class EventHistoryService {
    * 保存日志到 SQLite（异步）
    */
   private static async saveLogToStorage(log: EventChangeLog): Promise<void> {
-    if (!storageManager) {
+    const sm = await getStorageManager();
+    if (!sm) {
       historyLogger.error('❌ StorageManager 未初始化');
       return;
     }
 
     try {
-      await storageManager.createEventHistory({
+      await sm.createEventHistory({
         id: log.id,
         eventId: log.eventId,
         operation: log.operation,
@@ -637,7 +727,8 @@ export class EventHistoryService {
    * 自动清理历史记录（保留策略）
    */
   static async autoCleanup(): Promise<number> {
-    if (!storageManager) {
+    const sm = await getStorageManager();
+    if (!sm) {
       historyLogger.error('❌ StorageManager 未初始化');
       return 0;
     }
@@ -646,7 +737,7 @@ export class EventHistoryService {
       const cutoffDate = new Date();
       cutoffDate.setDate(cutoffDate.getDate() - DEFAULT_RETENTION_DAYS);
       
-      const deleted = await storageManager.cleanupEventHistory(
+      const deleted = await sm.cleanupEventHistory(
         formatTimeForStorage(cutoffDate)
       );
 
@@ -659,21 +750,22 @@ export class EventHistoryService {
   }
 
   /**
-   * 获取历史统计信息
+   * 获取基础历史统计信息（从 StorageManager）
    */
-  static async getStatistics(): Promise<{
+  static async getBasicStatistics(): Promise<{
     total: number;
     byOperation: Record<string, number>;
     oldestTimestamp: string | null;
     newestTimestamp: string | null;
   } | null> {
-    if (!storageManager) {
+    const sm = await getStorageManager();
+    if (!sm) {
       // Silent return during initialization phase
       return null;
     }
 
     try {
-      return await storageManager.getEventHistoryStats();
+      return await sm.getEventHistoryStats();
     } catch (error) {
       historyLogger.error('❌ 获取统计失败:', error);
       return null;

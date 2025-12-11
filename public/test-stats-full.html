@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4DNote 统计功能测试 - 标签与日历</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .header {
+      background: white;
+      border-radius: 16px;
+      padding: 24px 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+
+    .header h1 {
+      font-size: 28px;
+      color: #667eea;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header p {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .controls {
+      display: flex;
+      gap: 12px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: #f0f0f0;
+      color: #333;
+    }
+
+    .btn-secondary:hover {
+      background: #e0e0e0;
+    }
+
+    .date-range {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .date-range input {
+      padding: 6px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+      gap: 24px;
+      margin-bottom: 24px;
+    }
+
+    .stats-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+    }
+
+    .stats-card h2 {
+      font-size: 20px;
+      color: #333;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    .stats-summary {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .summary-item {
+      text-align: center;
+      padding: 16px;
+      background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+      border-radius: 12px;
+    }
+
+    .summary-value {
+      font-size: 28px;
+      font-weight: bold;
+      color: #667eea;
+      margin-bottom: 4px;
+    }
+
+    .summary-label {
+      font-size: 12px;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .chart-container {
+      margin-top: 20px;
+    }
+
+    .tag-item, .calendar-item {
+      display: flex;
+      align-items: center;
+      padding: 12px;
+      margin-bottom: 8px;
+      border-radius: 8px;
+      background: #f8f9fa;
+      transition: all 0.3s;
+      cursor: pointer;
+    }
+
+    .tag-item:hover, .calendar-item:hover {
+      background: #e9ecef;
+      transform: translateX(4px);
+    }
+
+    .tag-icon {
+      font-size: 24px;
+      margin-right: 12px;
+      min-width: 32px;
+      text-align: center;
+    }
+
+    .calendar-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      margin-right: 12px;
+    }
+
+    .item-info {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .item-name {
+      font-weight: 500;
+      color: #333;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .item-level {
+      font-size: 11px;
+      color: #999;
+      padding: 2px 6px;
+      background: white;
+      border-radius: 4px;
+    }
+
+    .item-stats {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+      color: #666;
+    }
+
+    .item-duration {
+      font-weight: 600;
+      color: #667eea;
+      margin-left: 12px;
+      white-space: nowrap;
+    }
+
+    .item-count {
+      font-size: 11px;
+      color: #999;
+      margin-left: 4px;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 4px;
+      background: #e9ecef;
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+
+    .trend-chart {
+      margin-top: 20px;
+      padding: 16px;
+      background: #f8f9fa;
+      border-radius: 8px;
+    }
+
+    .correlation-matrix {
+      display: grid;
+      gap: 8px;
+      margin-top: 16px;
+    }
+
+    .correlation-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .correlation-cell {
+      flex: 1;
+      padding: 8px;
+      text-align: center;
+      background: #f0f0f0;
+      border-radius: 4px;
+      font-size: 12px;
+      transition: all 0.3s;
+    }
+
+    .correlation-cell.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-weight: bold;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+    }
+
+    .empty-state-icon {
+      font-size: 48px;
+      margin-bottom: 12px;
+      opacity: 0.5;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #667eea;
+    }
+
+    .spinner {
+      display: inline-block;
+      width: 40px;
+      height: 40px;
+      border: 4px solid #f0f0f0;
+      border-top-color: #667eea;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 12px;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .tab-container {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+
+    .tab {
+      padding: 12px 24px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      color: #666;
+      transition: all 0.3s;
+      margin-bottom: -2px;
+    }
+
+    .tab.active {
+      color: #667eea;
+      border-bottom-color: #667eea;
+    }
+
+    .tab:hover {
+      color: #667eea;
+    }
+
+    .hierarchy-item {
+      margin-left: 20px;
+      margin-top: 8px;
+    }
+
+    .source-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #e3f2fd;
+      color: #1976d2;
+      margin-left: 8px;
+    }
+
+    .source-badge.outlook {
+      background: #e3f2fd;
+      color: #1976d2;
+    }
+
+    .source-badge.google {
+      background: #fce4ec;
+      color: #c2185b;
+    }
+
+    .source-badge.local {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+
+    /* 15分钟像素块样式 */
+    .pixel-container {
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+      overflow-x: auto;
+    }
+
+    .pixel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .pixel-legend {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 200px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #666;
+      padding: 4px 8px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .legend-item:hover {
+      background: #e9ecef;
+      transform: translateX(2px);
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+    }
+
+    .pixel-grid {
+      display: flex;
+      gap: 0;
+      position: relative;
+      padding: 40px 0;
+    }
+
+    .pixel-week-group {
+      display: flex;
+      gap: 2px;
+      padding-right: 12px;
+      border-right: 2px solid #dee2e6;
+      margin-right: 12px;
+    }
+
+    .pixel-week-group:last-child {
+      border-right: none;
+      margin-right: 0;
+    }
+
+    .pixel-day-column {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-width: 32px;
+      position: relative;
+      transition: all 0.2s;
+    }
+
+    .pixel-day-column:hover {
+      transform: translateY(-4px);
+      z-index: 100;
+    }
+
+    .pixel-day-column:hover .pixel-date-popup {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    .pixel-date-popup {
+      position: absolute;
+      top: -50px;
+      left: 50%;
+      transform: translateX(-50%) translateY(5px);
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: bold;
+      white-space: nowrap;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.2s;
+      pointer-events: none;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+    }
+
+    .pixel-date-popup::after {
+      content: '';
+      position: absolute;
+      bottom: -4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 4px solid rgba(0, 0, 0, 0.9);
+    }
+
+    .pixel-date-label {
+      font-size: 9px;
+      font-weight: bold;
+      color: transparent;
+      margin-bottom: 4px;
+      writing-mode: horizontal-tb;
+      text-align: center;
+      user-select: none;
+    }
+
+    .pixel-day-label {
+      font-size: 8px;
+      color: #999;
+      margin-bottom: 8px;
+    }
+
+    .pixel-timeline {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+      flex: 1;
+    }
+
+    /* AM 部分（向上） */
+    .pixel-am {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 1px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid #e9ecef;
+    }
+
+    /* PM 部分（向下） */
+    .pixel-pm {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding-top: 8px;
+      border-top: 2px solid #e9ecef;
+    }
+
+    .pixel-hour-group {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+
+    .pixel-block {
+      width: 28px;
+      height: 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .pixel-block:hover {
+      transform: scale(1.15);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+      z-index: 10;
+    }
+
+    .pixel-block.empty {
+      background: #f5f5f5;
+      opacity: 0.3;
+    }
+
+    /* 小时标签（左侧） */
+    .hour-labels {
+      position: absolute;
+      left: -75px;
+      top: 0;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 40px 0;
+    }
+
+    .hour-labels-am {
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 24px;
+      padding-bottom: 8px;
+    }
+
+    .hour-labels-pm {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      padding-top: 8px;
+    }
+
+    .hour-label {
+      font-size: 10px;
+      color: #999;
+      font-family: monospace;
+      text-align: right;
+      width: 65px;
+      overflow: visible;
+      white-space: nowrap;
+    }
+
+    .am-pm-badge {
+      position: absolute;
+      left: -75px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .am-badge {
+      top: 20%;
+      background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+      color: white;
+    }
+
+    .pm-badge {
+      bottom: 20%;
+      background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
+      color: white;
+    }
+
+    /* 折线图样式 */
+    .line-chart {
+      padding: 20px;
+      background: white;
+      border-radius: 12px;
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: 300px;
+    }
+
+    .chart-line {
+      fill: none;
+      stroke: #667eea;
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .chart-area {
+      fill: url(#gradient);
+      opacity: 0.3;
+    }
+
+    .chart-point {
+      fill: #667eea;
+      stroke: white;
+      stroke-width: 2;
+      fill: #764ba2;
+    }
+
+    .chart-grid {
+      stroke: #e9ecef;
+      stroke-width: 1;
+    }
+
+    .chart-label {
+      font-size: 11px;
+      fill: #666;
+    }
+
+    .chart-tooltip {
+      position: absolute;
+      padding: 8px 12px;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 1000;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>
+        <span>📊</span>
+        4DNote 统计功能测试
+      </h1>
+      <p>标签维度统计 + 日历分组统计（支持导入数据）</p>
+      
+      <div class="controls">
+        <button class="btn btn-primary" onclick="loadStats()">
+          <span>🔄</span> 刷新统计
+        </button>
+        <div class="date-range">
+          <label>开始日期:</label>
+          <input type="date" id="startDate" />
+          <label>结束日期:</label>
+          <input type="date" id="endDate" />
+        </div>
+        <button class="btn btn-secondary" onclick="setDateRange('today')">今天</button>
+        <button class="btn btn-secondary" onclick="setDateRange('week')">本周</button>
+        <button class="btn btn-secondary" onclick="setDateRange('month')">本月</button>
+        <button class="btn btn-secondary" onclick="setDateRange('all')">全部</button>
+      </div>
+    </div>
+
+    <!-- 总览统计 -->
+    <div class="stats-card" style="margin-bottom: 24px;">
+      <h2><span>📈</span> 总览</h2>
+      <div class="stats-summary" id="overview">
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>加载中...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div class="stats-card">
+      <div class="tab-container">
+        <button class="tab active" onclick="switchTab('tags')">
+          <span>🏷️</span> 标签统计
+        </button>
+        <button class="tab" onclick="switchTab('calendars')">
+          <span>📅</span> 日历统计
+        </button>
+        <button class="tab" onclick="switchTab('correlation')">
+          <span>🔗</span> 标签关联
+        </button>
+        <button class="tab" onclick="switchTab('trends')">
+          <span>📉</span> 趋势分析
+        </button>
+      </div>
+
+      <!-- 标签统计 -->
+      <div id="tab-tags" class="tab-content">
+        <div id="tagStats" class="chart-container">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>加载标签统计中...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 日历统计 -->
+      <div id="tab-calendars" class="tab-content" style="display: none;">
+        <div id="calendarStats" class="chart-container">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>加载日历统计中...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 标签关联 -->
+      <div id="tab-correlation" class="tab-content" style="display: none;">
+        <div id="correlationMatrix" class="chart-container">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>计算标签关联中...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 趋势分析 -->
+      <div id="tab-trends" class="tab-content" style="display: none;">
+        <!-- 趋势视图切换 -->
+        <div style="display: flex; gap: 8px; margin-bottom: 20px; padding: 8px; background: #f8f9fa; border-radius: 8px;">
+          <button class="btn btn-secondary" onclick="switchTrendView('pixels')" id="btn-trend-pixels">
+            <span>📊</span> 像素时间块
+          </button>
+          <button class="btn btn-secondary" onclick="switchTrendView('line')" id="btn-trend-line">
+            <span>📈</span> 折线图
+          </button>
+        </div>
+        
+        <div id="trendChart" class="chart-container">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>分析趋势中...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.js';
+    import { TagService } from '../src/services/TagService.js';
+
+    let currentTab = 'tags';
+    let currentTrendView = 'pixels'; // 趋势视图：'pixels' 或 'line'
+    let allEvents = [];
+    let allTags = [];
+    let calendarCache = new Map(); // 日历 ID -> 日历信息的缓存
+    let startDate = null;
+    let endDate = null;
+    let dailyStatsCache = []; // 缓存每日统计数据
+
+    // 加载日历缓存
+    async function loadCalendarCache() {
+      try {
+        // 尝试从 localStorage 加载日历缓存
+        const cacheStr = localStorage.getItem('4dnote-calendars-cache');
+        if (cacheStr) {
+          const calendars = JSON.parse(cacheStr);
+          console.log('📅 加载日历缓存:', calendars.length, '个');
+          calendars.forEach(cal => {
+            calendarCache.set(cal.id, {
+              id: cal.id,
+              name: cal.name || cal.id.substring(0, 20),
+              color: cal.hexColor || cal.color || cal.backgroundColor || getCalendarColor(cal.id, 'calendar')
+            });
+          });
+        }
+
+        // 也尝试从 MicrosoftCalendarService 获取
+        if (window.microsoftCalendarService) {
+          const service = window.microsoftCalendarService;
+          if (service.calendars && service.calendars.length > 0) {
+            console.log('📅 从 MicrosoftCalendarService 加载日历:', service.calendars.length, '个');
+            service.calendars.forEach(cal => {
+              calendarCache.set(cal.id, {
+                id: cal.id,
+                name: cal.name || cal.id.substring(0, 20),
+                color: cal.hexColor || cal.color || getCalendarColor(cal.id, 'outlook')
+              });
+            });
+          }
+        }
+
+        console.log('✅ 日历缓存加载完成:', calendarCache.size, '个日历');
+      } catch (error) {
+        console.warn('⚠️ 加载日历缓存失败:', error);
+      }
+    }
+
+    // 获取日历名称
+    function getCalendarName(calendarId) {
+      // 从缓存中查找
+      if (calendarCache.has(calendarId)) {
+        return calendarCache.get(calendarId).name;
+      }
+
+      // 如果是特殊前缀，返回更友好的名称
+      if (calendarId.startsWith('outlook-')) {
+        return 'Outlook 日历';
+      }
+      if (calendarId.startsWith('google-')) {
+        return 'Google 日历';
+      }
+      if (calendarId.startsWith('icloud-')) {
+        return 'iCloud 日历';
+      }
+
+      // 如果 ID 太长，截断显示
+      if (calendarId.length > 40) {
+        return calendarId.substring(0, 30) + '...';
+      }
+
+      return calendarId;
+    }
+
+    // 初始化
+    async function init() {
+      // 设置默认日期范围（本周）
+      setDateRange('week');
+      
+      // 等待服务初始化
+      await Promise.all([
+        EventService.waitForInitialization?.() || Promise.resolve(),
+        TagService.waitForInitialization?.() || Promise.resolve()
+      ]);
+
+      // 加载日历缓存
+      await loadCalendarCache();
+
+      // 加载数据
+      await loadStats();
+    }
+
+    // 扁平化标签（处理层级结构）
+    function flattenTags(tags) {
+      const result = [];
+      const flatten = (tagList, level = 0) => {
+        tagList.forEach(tag => {
+          result.push({
+            ...tag,
+            level
+          });
+          if (tag.children && tag.children.length > 0) {
+            flatten(tag.children, level + 1);
+          }
+        });
+      };
+      flatten(tags);
+      return result;
+    }
+
+    // 设置日期范围
+    window.setDateRange = function(range) {
+      const now = new Date();
+      const startInput = document.getElementById('startDate');
+      const endInput = document.getElementById('endDate');
+
+      switch (range) {
+        case 'today':
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+          break;
+        case 'week':
+          const dayOfWeek = now.getDay();
+          const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+          startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() + mondayOffset);
+          endDate = new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000 - 1);
+          break;
+        case 'month':
+          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+          endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+          break;
+        case 'all':
+          startDate = null;
+          endDate = null;
+          startInput.value = '';
+          endInput.value = '';
+          loadStats();
+          return;
+      }
+
+      startInput.value = startDate.toISOString().split('T')[0];
+      endInput.value = endDate.toISOString().split('T')[0];
+      loadStats();
+    };
+
+    // 日期输入变化
+    document.getElementById('startDate').addEventListener('change', (e) => {
+      startDate = e.target.value ? new Date(e.target.value) : null;
+      loadStats();
+    });
+
+    document.getElementById('endDate').addEventListener('change', (e) => {
+      endDate = e.target.value ? new Date(e.target.value + 'T23:59:59') : null;
+      loadStats();
+    });
+
+    // 加载统计数据
+    window.loadStats = async function() {
+      try {
+        // 获取所有事件
+        allEvents = await EventService.getAllEvents();
+        
+        // 过滤日期范围
+        const filteredEvents = filterEventsByDate(allEvents);
+        
+        // 获取所有标签（层级结构，需要扁平化）
+        const hierarchicalTags = TagService.getTags() || [];
+        allTags = flattenTags(hierarchicalTags);
+
+        // 渲染总览
+        renderOverview(filteredEvents);
+
+        // 渲染当前 tab 的内容
+        switch (currentTab) {
+          case 'tags':
+            renderTagStats(filteredEvents);
+            break;
+          case 'calendars':
+            renderCalendarStats(filteredEvents);
+            break;
+          case 'correlation':
+            renderCorrelation(filteredEvents);
+            break;
+          case 'trends':
+            renderTrends(filteredEvents);
+            break;
+        }
+
+        console.log('📊 统计数据加载完成', {
+          总事件数: allEvents.length,
+          过滤后事件数: filteredEvents.length,
+          标签数: allTags.length,
+          日期范围: { startDate, endDate }
+        });
+      } catch (error) {
+        console.error('❌ 加载统计失败:', error);
+        alert('加载统计失败: ' + error.message);
+      }
+    };
+
+    // 过滤日期范围
+    function filterEventsByDate(events) {
+      if (!startDate && !endDate) return events;
+
+      return events.filter(event => {
+        if (!event.startTime) return false;
+        const eventDate = new Date(event.startTime);
+        
+        if (startDate && eventDate < startDate) return false;
+        if (endDate && eventDate > endDate) return false;
+        
+        return true;
+      });
+    }
+
+    // 计算事件时长（毫秒）
+    function getEventDuration(event) {
+      if (!event.startTime || !event.endTime) return 0;
+      return new Date(event.endTime) - new Date(event.startTime);
+    }
+
+    // 格式化时长
+    function formatDuration(ms) {
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.floor((ms % 3600000) / 60000);
+      
+      if (hours > 0) {
+        return `${hours}h ${minutes}m`;
+      }
+      return `${minutes}m`;
+    }
+
+    // 渲染总览
+    function renderOverview(events) {
+      const totalDuration = events.reduce((sum, e) => sum + getEventDuration(e), 0);
+      const totalEvents = events.length;
+      
+      // 统计有标签和有日历的事件
+      const eventsWithTags = events.filter(e => e.tags && e.tags.length > 0).length;
+      const eventsWithCalendars = events.filter(e => e.calendarIds && e.calendarIds.length > 0).length;
+
+      const html = `
+        <div class="summary-item">
+          <div class="summary-value">${totalEvents}</div>
+          <div class="summary-label">总事件数</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">${formatDuration(totalDuration)}</div>
+          <div class="summary-label">总时长</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">${eventsWithTags}</div>
+          <div class="summary-label">有标签事件</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">${eventsWithCalendars}</div>
+          <div class="summary-label">有日历事件</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">${totalEvents - eventsWithTags - eventsWithCalendars}</div>
+          <div class="summary-label">无分组事件</div>
+        </div>
+        <div class="summary-item">
+          <div class="summary-value">${allTags.length}</div>
+          <div class="summary-label">标签总数</div>
+        </div>
+      `;
+
+      document.getElementById('overview').innerHTML = html;
+    }
+
+    // 渲染标签统计
+    function renderTagStats(events) {
+      const tagStatsMap = new Map();
+      
+      // 统计每个标签的时长和频次
+      events.forEach(event => {
+        const duration = getEventDuration(event);
+        
+        if (event.tags && event.tags.length > 0) {
+          event.tags.forEach(tagId => {
+            if (!tagStatsMap.has(tagId)) {
+              tagStatsMap.set(tagId, {
+                duration: 0,
+                count: 0,
+                events: []
+              });
+            }
+            const stats = tagStatsMap.get(tagId);
+            stats.duration += duration;
+            stats.count += 1;
+            stats.events.push(event.id);
+          });
+        }
+      });
+
+      // 获取标签详细信息并排序
+      const tagStats = Array.from(tagStatsMap.entries())
+        .map(([tagId, stats]) => {
+          const tag = allTags.find(t => t.id === tagId);
+          return {
+            id: tagId,
+            name: tag?.name || tagId,
+            emoji: tag?.emoji,
+            color: tag?.color || '#999',
+            level: tag?.level || 0,
+            duration: stats.duration,
+            count: stats.count,
+            percentage: 0
+          };
+        })
+        .sort((a, b) => b.duration - a.duration);
+
+      // 计算百分比
+      const totalDuration = tagStats.reduce((sum, t) => sum + t.duration, 0);
+      tagStats.forEach(tag => {
+        tag.percentage = totalDuration > 0 ? (tag.duration / totalDuration * 100) : 0;
+      });
+
+      // 渲染
+      if (tagStats.length === 0) {
+        document.getElementById('tagStats').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🏷️</div>
+            <p>暂无标签统计数据</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = tagStats.map(tag => `
+        <div class="tag-item" onclick="showTagDetail('${tag.id}')">
+          <div class="tag-icon">${tag.emoji || '📌'}</div>
+          <div class="item-info">
+            <div class="item-name">
+              ${tag.name}
+              <span class="item-level">L${tag.level}</span>
+            </div>
+            <div class="item-stats">
+              <span>${tag.count} 个事件</span>
+              <span>${tag.percentage.toFixed(1)}%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${tag.percentage}%"></div>
+            </div>
+          </div>
+          <div class="item-duration">${formatDuration(tag.duration)}</div>
+        </div>
+      `).join('');
+
+      document.getElementById('tagStats').innerHTML = html;
+    }
+
+    // 渲染日历统计
+    function renderCalendarStats(events) {
+      const calendarStatsMap = new Map();
+      
+      // 统计每个日历的时长和频次
+      events.forEach(event => {
+        const duration = getEventDuration(event);
+        
+        // 统计 calendarIds
+        if (event.calendarIds && event.calendarIds.length > 0) {
+          event.calendarIds.forEach(calId => {
+            if (!calendarStatsMap.has(calId)) {
+              calendarStatsMap.set(calId, {
+                duration: 0,
+                count: 0,
+                events: [],
+                source: 'calendar'
+              });
+            }
+            const stats = calendarStatsMap.get(calId);
+            stats.duration += duration;
+            stats.count += 1;
+            stats.events.push(event.id);
+          });
+        }
+
+        // 统计事件来源（没有 calendarIds 的情况）
+        if ((!event.calendarIds || event.calendarIds.length === 0) && event.source) {
+          const sourceKey = `source:${event.source}`;
+          if (!calendarStatsMap.has(sourceKey)) {
+            calendarStatsMap.set(sourceKey, {
+              duration: 0,
+              count: 0,
+              events: [],
+              source: event.source
+            });
+          }
+          const stats = calendarStatsMap.get(sourceKey);
+          stats.duration += duration;
+          stats.count += 1;
+          stats.events.push(event.id);
+        }
+      });
+
+      // 排序
+      const calendarStats = Array.from(calendarStatsMap.entries())
+        .map(([id, stats]) => {
+          let name, color;
+          
+          if (stats.source === 'calendar') {
+            // 从缓存获取日历名称
+            name = getCalendarName(id);
+            color = calendarCache.has(id) ? calendarCache.get(id).color : getCalendarColor(id, stats.source);
+          } else {
+            // 来源类型
+            const sourceNames = {
+              'outlook': 'Outlook 导入',
+              'google': 'Google 导入',
+              'icloud': 'iCloud 导入',
+              'local': '本地创建'
+            };
+            name = sourceNames[stats.source] || `${stats.source} 导入`;
+            color = getCalendarColor(id, stats.source);
+          }
+          
+          return {
+            id,
+            name,
+            color,
+            duration: stats.duration,
+            count: stats.count,
+            source: stats.source,
+            percentage: 0
+          };
+        })
+        .sort((a, b) => b.duration - a.duration);
+
+      // 计算百分比
+      const totalDuration = calendarStats.reduce((sum, c) => sum + c.duration, 0);
+      calendarStats.forEach(cal => {
+        cal.percentage = totalDuration > 0 ? (cal.duration / totalDuration * 100) : 0;
+      });
+
+      // 渲染
+      if (calendarStats.length === 0) {
+        document.getElementById('calendarStats').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📅</div>
+            <p>暂无日历统计数据</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = calendarStats.map(cal => `
+        <div class="calendar-item" onclick="showCalendarDetail('${cal.id}')">
+          <div class="calendar-icon" style="background: ${cal.color}"></div>
+          <div class="item-info">
+            <div class="item-name">
+              ${cal.name}
+              <span class="source-badge ${cal.source}">${cal.source}</span>
+            </div>
+            <div class="item-stats">
+              <span>${cal.count} 个事件</span>
+              <span>${cal.percentage.toFixed(1)}%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width: ${cal.percentage}%"></div>
+            </div>
+          </div>
+          <div class="item-duration">${formatDuration(cal.duration)}</div>
+        </div>
+      `).join('');
+
+      document.getElementById('calendarStats').innerHTML = html;
+    }
+
+    // 获取日历颜色
+    function getCalendarColor(id, source) {
+      if (source === 'outlook') return '#0078d4';
+      if (source === 'google') return '#ea4335';
+      if (source === 'local') return '#7b1fa2';
+      
+      // 根据 ID 生成颜色
+      const colors = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#43e97b', '#fa709a'];
+      const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+      return colors[hash % colors.length];
+    }
+
+    // 渲染标签关联分析
+    function renderCorrelation(events) {
+      // 计算标签共现矩阵
+      const coOccurrence = new Map();
+      
+      events.forEach(event => {
+        if (!event.tags || event.tags.length < 2) return;
+        
+        // 对于每对标签，记录共现
+        for (let i = 0; i < event.tags.length; i++) {
+          for (let j = i + 1; j < event.tags.length; j++) {
+            const tag1 = event.tags[i];
+            const tag2 = event.tags[j];
+            const key = [tag1, tag2].sort().join(':');
+            
+            if (!coOccurrence.has(key)) {
+              coOccurrence.set(key, 0);
+            }
+            coOccurrence.set(key, coOccurrence.get(key) + 1);
+          }
+        }
+      });
+
+      // 获取前10个最常关联的标签对
+      const topPairs = Array.from(coOccurrence.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([key, count]) => {
+          const [tag1Id, tag2Id] = key.split(':');
+          const tag1 = allTags.find(t => t.id === tag1Id);
+          const tag2 = allTags.find(t => t.id === tag2Id);
+          return {
+            tag1: tag1?.name || tag1Id,
+            tag2: tag2?.name || tag2Id,
+            count
+          };
+        });
+
+      if (topPairs.length === 0) {
+        document.getElementById('correlationMatrix').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">🔗</div>
+            <p>暂无标签关联数据（需要至少2个标签的事件）</p>
+          </div>
+        `;
+        return;
+      }
+
+      const html = `
+        <h3 style="margin-bottom: 16px;">标签共现频次 Top 10</h3>
+        ${topPairs.map(pair => `
+          <div class="correlation-row">
+            <div class="correlation-cell active" style="flex: 0 0 120px;">${pair.tag1}</div>
+            <div class="correlation-cell" style="flex: 0 0 40px;">+</div>
+            <div class="correlation-cell active" style="flex: 0 0 120px;">${pair.tag2}</div>
+            <div class="correlation-cell" style="flex: 1;">${pair.count} 次</div>
+          </div>
+        `).join('')}
+      `;
+
+      document.getElementById('correlationMatrix').innerHTML = html;
+    }
+
+    // 切换趋势视图
+    window.switchTrendView = function(view) {
+      currentTrendView = view;
+      
+      // 更新按钮样式
+      document.getElementById('btn-trend-pixels').classList.toggle('btn-primary', view === 'pixels');
+      document.getElementById('btn-trend-pixels').classList.toggle('btn-secondary', view !== 'pixels');
+      document.getElementById('btn-trend-line').classList.toggle('btn-primary', view === 'line');
+      document.getElementById('btn-trend-line').classList.toggle('btn-secondary', view !== 'line');
+      
+      // 重新渲染
+      if (dailyStatsCache.length > 0) {
+        renderTrendsView(dailyStatsCache);
+      }
+    };
+
+    // 渲染趋势分析
+    function renderTrends(events) {
+      // 按天分组统计（包含小时级数据用于像素块）
+      const dailyStats = new Map();
+      
+      events.forEach(event => {
+        if (!event.startTime) return;
+        
+        const date = event.startTime.split(' ')[0]; // YYYY-MM-DD
+        const timePart = event.startTime.split(' ')[1]; // HH:mm:ss
+        if (!timePart) return;
+        
+        const hour = parseInt(timePart.split(':')[0]);
+        const minute = parseInt(timePart.split(':')[1]);
+        const quarter = Math.floor(minute / 15); // 0, 1, 2, 3
+        
+        if (!dailyStats.has(date)) {
+          dailyStats.set(date, {
+            count: 0,
+            duration: 0,
+            tags: new Set(),
+            hours: {} // { '9': { quarters: [tag1, tag2, tag3, tag4] } }
+          });
+        }
+        
+        const stats = dailyStats.get(date);
+        stats.count += 1;
+        stats.duration += getEventDuration(event);
+        
+        if (event.tags) {
+          event.tags.forEach(tag => stats.tags.add(tag));
+        }
+        
+        // 记录时间块
+        if (!stats.hours[hour]) {
+          stats.hours[hour] = { quarters: [null, null, null, null] };
+        }
+        
+        // 优先使用日历 ID，其次使用标签
+        let blockType = null;
+        let blockColor = null;
+        
+        if (event.calendarIds && event.calendarIds.length > 0) {
+          // 使用日历 ID 作为类型
+          blockType = event.calendarIds[0];
+          blockColor = calendarCache.has(blockType) 
+            ? calendarCache.get(blockType).color 
+            : getCalendarColor(blockType, 'calendar');
+        } else if (event.tags && event.tags.length > 0) {
+          // 使用标签作为类型
+          const tag = allTags.find(t => t.id === event.tags[0]);
+          blockType = tag?.name?.toLowerCase() || 'tag';
+          blockColor = tag?.color || null;
+        } else {
+          // 默认类型
+          blockType = 'default';
+        }
+        
+        if (blockType) {
+          stats.hours[hour].quarters[quarter] = {
+            type: blockType,
+            color: blockColor,
+            title: event.title?.simpleTitle || '未命名',
+            eventId: event.id
+          };
+        }
+      });
+
+      // 排序
+      const sortedDays = Array.from(dailyStats.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
+      if (sortedDays.length === 0) {
+        document.getElementById('trendChart').innerHTML = `
+          <div class="empty-state">
+            <div class="empty-state-icon">📉</div>
+            <p>暂无趋势数据</p>
+          </div>
+        `;
+        return;
+      }
+
+      // 缓存数据
+      dailyStatsCache = sortedDays;
+      
+      // 根据当前视图渲染
+      renderTrendsView(sortedDays);
+    }
+
+    // 渲染趋势视图（像素块或折线图）
+    function renderTrendsView(sortedDays) {
+      if (currentTrendView === 'pixels') {
+        renderPixelView(sortedDays);
+      } else {
+        renderLineChart(sortedDays);
+      }
+    }
+
+    // 渲染15分钟像素块视图
+    function renderPixelView(sortedDays) {
+      // 获取块的颜色
+      const getBlockColor = (blockData) => {
+        if (!blockData) return '#f5f5f5';
+        
+        // 如果已经有颜色，直接使用
+        if (blockData.color) {
+          return blockData.color;
+        }
+        
+        // 默认颜色映射
+        const colorMap = {
+          work: '#667eea',
+          study: '#a78bfa',
+          life: '#fb923c',
+          meeting: '#f43f5e',
+          social: '#34d399',
+          default: '#94a3b8'
+        };
+        
+        // 从类型获取颜色
+        const type = blockData.type || blockData;
+        if (typeof type === 'string') {
+          // 检查是否是日历 ID
+          if (calendarCache.has(type)) {
+            return calendarCache.get(type).color;
+          }
+          
+          // 检查是否是标签
+          const tag = allTags.find(t => t.name?.toLowerCase() === type.toLowerCase());
+          if (tag && tag.color) {
+            return tag.color;
+          }
+          
+          // 使用默认颜色或生成
+          return colorMap[type] || hashToColor(type);
+        }
+        
+        return colorMap.default;
+      };
+
+      // 获取块的显示名称
+      const getBlockName = (blockData) => {
+        if (!blockData) return '空闲';
+        if (typeof blockData === 'string') return blockData;
+        
+        const type = blockData.type;
+        
+        // 从日历缓存获取名称
+        if (calendarCache.has(type)) {
+          return calendarCache.get(type).name;
+        }
+        
+        // 从标签获取名称
+        const tag = allTags.find(t => t.id === type || t.name?.toLowerCase() === type.toLowerCase());
+        if (tag) {
+          return tag.name;
+        }
+        
+        return type || '未知';
+      };
+
+      // 字符串转颜色
+      const hashToColor = (str) => {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+          hash = str.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash) % 360;
+        return `hsl(${hue}, 65%, 55%)`;
+      };
+
+      // 收集所有使用的日历和标签（用于图例）
+      const legendItems = new Map();
+      sortedDays.forEach(([_, stats]) => {
+        Object.values(stats.hours).forEach(hourData => {
+          hourData.quarters.forEach(blockData => {
+            if (blockData) {
+              const type = blockData.type || blockData;
+              if (!legendItems.has(type)) {
+                legendItems.set(type, {
+                  name: getBlockName(blockData),
+                  color: getBlockColor(blockData),
+                  count: 0
+                });
+              }
+              legendItems.get(type).count++;
+            }
+          });
+        });
+      });
+
+      // 按使用频次排序
+      const sortedLegend = Array.from(legendItems.entries())
+        .sort((a, b) => b[1].count - a[1].count);
+
+      // 按周分组
+      const weekGroups = [];
+      let currentWeek = [];
+      let currentWeekNumber = null;
+
+      // 获取周数的函数
+      function getWeekNumber(date) {
+        const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+        const dayNum = d.getUTCDay() || 7;
+        d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      }
+
+      sortedDays.forEach(([date, stats]) => {
+        const dateObj = new Date(date);
+        const weekNumber = getWeekNumber(dateObj);
+        
+        if (currentWeekNumber !== null && weekNumber !== currentWeekNumber) {
+          // 新的一周，保存当前周
+          weekGroups.push({
+            weekNumber: currentWeekNumber,
+            days: currentWeek
+          });
+          currentWeek = [];
+        }
+        
+        currentWeekNumber = weekNumber;
+        currentWeek.push([date, stats, dateObj]);
+      });
+      
+      // 保存最后一周
+      if (currentWeek.length > 0) {
+        weekGroups.push({
+          weekNumber: currentWeekNumber,
+          days: currentWeek
+        });
+      }
+
+      const html = `
+        <div class="pixel-container">
+          <div class="pixel-header">
+            <div style="flex: 1;">
+              <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+                <span>📊</span> Daily Pixels
+                <span style="font-size: 12px; color: #999; font-weight: normal;">（每块 = 15分钟）</span>
+              </h3>
+            </div>
+            <div class="pixel-legend">
+              ${sortedLegend.slice(0, 10).map(([type, info]) => `
+                <div class="legend-item">
+                  <div class="legend-color" style="background: ${info.color}"></div>
+                  <span>${info.name} (${info.count})</span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div style="position: relative; padding-left: 80px;">
+            <!-- 小时标签 -->
+            <div class="hour-labels">
+              <div class="hour-labels-am">
+                ${[11, 10, 9, 8, 7, 6].map(h => `
+                  <div class="hour-label">${h}:00</div>
+                `).join('')}
+              </div>
+              <div class="hour-labels-pm">
+                ${[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => `
+                  <div class="hour-label">${h}:00</div>
+                `).join('')}
+              </div>
+            </div>
+
+            <!-- AM/PM 标签 -->
+            <div class="am-pm-badge am-badge">AM</div>
+            <div class="am-pm-badge pm-badge">PM</div>
+
+            <!-- 日期列（按周分组） -->
+            <div class="pixel-grid">
+              ${weekGroups.map(week => `
+                <div class="pixel-week-group">
+                  ${week.days.map(([date, stats, dateObj]) => {
+                    const weekday = ['日', '一', '二', '三', '四', '五', '六'][dateObj.getDay()];
+                    const monthDay = date.substring(5); // MM-DD
+                    const year = dateObj.getFullYear();
+                    
+                    return `
+                      <div class="pixel-day-column">
+                        <!-- Hover 弹出信息 -->
+                        <div class="pixel-date-popup">
+                          ${year}年 第${week.weekNumber}周<br/>
+                          ${monthDay} 周${weekday}
+                        </div>
+                        
+                        <!-- 隐藏的日期标签（占位用） -->
+                        <div class="pixel-date-label">${monthDay}</div>
+                        <div class="pixel-day-label">${weekday}</div>
+                    
+                    <div class="pixel-timeline">
+                      <!-- AM 部分（6-11点，向上） -->
+                      <div class="pixel-am">
+                        ${[6, 7, 8, 9, 10, 11].map(hour => {
+                          const hourData = stats.hours[hour] || { quarters: [null, null, null, null] };
+                          return `
+                            <div class="pixel-hour-group">
+                              ${hourData.quarters.map((blockData, qIdx) => {
+                                const minutes = qIdx * 15;
+                                const time = `${hour}:${minutes.toString().padStart(2, '0')}`;
+                                if (!blockData) {
+                                  return `<div class="pixel-block empty" title="${time} - 空闲"></div>`;
+                                }
+                                const name = getBlockName(blockData);
+                                const title = blockData.title || name;
+                                return `
+                                  <div 
+                                    class="pixel-block" 
+                                    style="background: ${getBlockColor(blockData)};"
+                                    title="${time} - ${name}\n${title}"
+                                  ></div>
+                                `;
+                              }).join('')}
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
+
+                      <!-- PM 部分（12-23点，向下） -->
+                      <div class="pixel-pm">
+                        ${[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].map(hour => {
+                          const hourData = stats.hours[hour] || { quarters: [null, null, null, null] };
+                          return `
+                            <div class="pixel-hour-group">
+                              ${hourData.quarters.map((blockData, qIdx) => {
+                                const minutes = qIdx * 15;
+                                const displayHour = hour > 12 ? hour - 12 : hour;
+                                const time = `${displayHour}:${minutes.toString().padStart(2, '0')} PM`;
+                                if (!blockData) {
+                                  return `<div class="pixel-block empty" title="${time} - 空闲"></div>`;
+                                }
+                                const name = getBlockName(blockData);
+                                const title = blockData.title || name;
+                                return `
+                                  <div 
+                                    class="pixel-block" 
+                                    style="background: ${getBlockColor(blockData)};"
+                                    title="${time} - ${name}\n${title}"
+                                  ></div>
+                                `;
+                              }).join('')}
+                            </div>
+                          `;
+                        }).join('')}
+                      </div>
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          `).join('')}
+        </div>
+          </div>
+
+          <!-- 统计摘要 -->
+          <div style="margin-top: 24px; padding-top: 16px; border-top: 2px solid #e9ecef; text-align: center; color: #666; font-size: 12px;">
+            共 ${sortedDays.length} 天 | 
+            总时长: ${formatDuration(sortedDays.reduce((sum, [_, s]) => sum + s.duration, 0))} |
+            总事件: ${sortedDays.reduce((sum, [_, s]) => sum + s.count, 0)} 个
+          </div>
+        </div>
+      `;
+
+      document.getElementById('trendChart').innerHTML = html;
+    }
+
+    // 渲染折线图视图
+    function renderLineChart(sortedDays) {
+      const maxDuration = Math.max(...sortedDays.map(([_, s]) => s.duration), 1);
+      const maxCount = Math.max(...sortedDays.map(([_, s]) => s.count), 1);
+      
+      const width = 800;
+      const height = 300;
+      const padding = { top: 20, right: 40, bottom: 40, left: 60 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+
+      // 计算点的坐标
+      const points = sortedDays.map(([date, stats], idx) => {
+        const x = padding.left + (idx / (sortedDays.length - 1)) * chartWidth;
+        const y = padding.top + (1 - stats.duration / maxDuration) * chartHeight;
+        return { x, y, date, stats };
+      });
+
+      // 生成路径
+      const linePath = points.map((p, i) => 
+        `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+      ).join(' ');
+
+      // 生成填充区域路径
+      const areaPath = `
+        M ${padding.left} ${height - padding.bottom}
+        ${linePath.replace('M', 'L')}
+        L ${padding.left + chartWidth} ${height - padding.bottom}
+        Z
+      `;
+
+      const html = `
+        <div class="line-chart">
+          <h3 style="margin-bottom: 20px; display: flex; align-items: center; gap: 8px;">
+            <span>📈</span> 时长趋势图
+          </h3>
+          <div style="position: relative;">
+            <svg class="chart-svg" viewBox="0 0 ${width} ${height}">
+              <!-- 渐变定义 -->
+              <defs>
+                <linearGradient id="gradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                  <stop offset="0%" style="stop-color:#667eea;stop-opacity:0.8" />
+                  <stop offset="100%" style="stop-color:#764ba2;stop-opacity:0.2" />
+                </linearGradient>
+              </defs>
+              
+              <!-- 网格线 -->
+              ${[0, 0.25, 0.5, 0.75, 1].map(ratio => `
+                <line 
+                  x1="${padding.left}" 
+                  y1="${padding.top + ratio * chartHeight}" 
+                  x2="${width - padding.right}" 
+                  y2="${padding.top + ratio * chartHeight}" 
+                  class="chart-grid"
+                />
+              `).join('')}
+              
+              <!-- 填充区域 -->
+              <path d="${areaPath}" class="chart-area" />
+              
+              <!-- 折线 -->
+              <path d="${linePath}" class="chart-line" />
+              
+              <!-- 数据点 -->
+              ${points.map(p => `
+                <circle 
+                  cx="${p.x}" 
+                  cy="${p.y}" 
+                  r="4" 
+                  class="chart-point"
+                  data-date="${p.date}"
+                  data-duration="${formatDuration(p.stats.duration)}"
+                  data-count="${p.stats.count}"
+                />
+              `).join('')}
+              
+              <!-- X轴标签 -->
+              ${points.map((p, i) => {
+                if (sortedDays.length > 10 && i % Math.ceil(sortedDays.length / 7) !== 0) return '';
+                return `
+                  <text 
+                    x="${p.x}" 
+                    y="${height - padding.bottom + 20}" 
+                    class="chart-label" 
+                    text-anchor="middle"
+                  >
+                    ${p.date.substring(5)}
+                  </text>
+                `;
+              }).join('')}
+              
+              <!-- Y轴标签 -->
+              ${[0, 0.5, 1].map(ratio => `
+                <text 
+                  x="${padding.left - 10}" 
+                  y="${padding.top + (1 - ratio) * chartHeight}" 
+                  class="chart-label" 
+                  text-anchor="end"
+                  dominant-baseline="middle"
+                >
+                  ${formatDuration(maxDuration * ratio)}
+                </text>
+              `).join('')}
+            </svg>
+            <div class="chart-tooltip" id="chartTooltip"></div>
+          </div>
+        </div>
+      `;
+
+      document.getElementById('trendChart').innerHTML = html;
+
+      // 添加悬停交互
+      document.querySelectorAll('.chart-point').forEach(point => {
+        point.addEventListener('mouseenter', (e) => {
+          const tooltip = document.getElementById('chartTooltip');
+          tooltip.style.display = 'block';
+          tooltip.innerHTML = `
+            <strong>${e.target.dataset.date}</strong><br/>
+            时长: ${e.target.dataset.duration}<br/>
+            事件: ${e.target.dataset.count} 个
+          `;
+        });
+        
+        point.addEventListener('mousemove', (e) => {
+          const tooltip = document.getElementById('chartTooltip');
+          tooltip.style.left = (e.pageX + 10) + 'px';
+          tooltip.style.top = (e.pageY - 30) + 'px';
+        });
+        
+        point.addEventListener('mouseleave', () => {
+          document.getElementById('chartTooltip').style.display = 'none';
+        });
+      });
+    }
+
+    // 切换 Tab
+    window.switchTab = function(tab) {
+      currentTab = tab;
+      
+      // 更新 tab 样式
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelector(`.tab:nth-child(${['tags', 'calendars', 'correlation', 'trends'].indexOf(tab) + 1})`).classList.add('active');
+      
+      // 显示对应内容
+      document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+      document.getElementById(`tab-${tab}`).style.display = 'block';
+      
+      // 重新渲染
+      loadStats();
+    };
+
+    // 显示标签详情
+    window.showTagDetail = function(tagId) {
+      const events = allEvents.filter(e => e.tags && e.tags.includes(tagId));
+      console.log(`🏷️ 标签详情: ${tagId}`, {
+        事件数: events.length,
+        事件列表: events.map(e => ({
+          id: e.id,
+          title: e.title?.simpleTitle,
+          startTime: e.startTime,
+          duration: formatDuration(getEventDuration(e))
+        }))
+      });
+    };
+
+    // 显示日历详情
+    window.showCalendarDetail = function(calendarId) {
+      const events = allEvents.filter(e => 
+        (e.calendarIds && e.calendarIds.includes(calendarId)) ||
+        (calendarId.startsWith('source:') && e.source === calendarId.replace('source:', ''))
+      );
+      console.log(`📅 日历详情: ${calendarId}`, {
+        事件数: events.length,
+        事件列表: events.map(e => ({
+          id: e.id,
+          title: e.title?.simpleTitle,
+          startTime: e.startTime,
+          duration: formatDuration(getEventDuration(e))
+        }))
+      });
+    };
+
+    // 启动
+    init();
+  </script>
+</body>
+</html>

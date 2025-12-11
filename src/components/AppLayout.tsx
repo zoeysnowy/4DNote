@@ -1,8 +1,8 @@
 import React from 'react';
 import './AppLayout.css';
-import Logo from './Logo';
 import { icons } from '../assets/icons';
 import { formatTimeForStorage } from '../utils/timeUtils';
+import PanelIconSvg from '../assets/icons/Panel.svg';
 
 // 页面类型定义
 export type PageType = 'home' | 'timecalendar' | 'timelog' | 'tag' | 'plan' | 'sync' | 'ai-demo';
@@ -20,10 +20,12 @@ interface AppLayoutProps {
     startTime: number;
     elapsedTime: number;
     isPaused: boolean;
-    eventTitle?: string; // ✅ 事件标题（优先级高于 tagName）
+    eventTitle?: string; // ✅ 事件标题（优先级高于tag Name）
   } | null;
   onTimerClick?: () => void;
   onSettingsClick?: () => void;
+  isPanelVisible?: boolean;
+  onPanelToggle?: () => void;
 }
 
 // Header 组件
@@ -135,9 +137,10 @@ const Header: React.FC<HeaderProps> = ({ globalTimer, onTimerClick, onSettingsCl
 interface SidebarProps {
   currentPage: PageType;
   onPageChange: (page: PageType) => void;
+  onPanelToggle?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
+const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange, onPanelToggle }) => {
   const menuItems = [
     { id: 'home' as PageType, label: '首页', icon: 'home' },
     { id: 'timecalendar' as PageType, label: '时光', icon: 'time' },
@@ -173,10 +176,10 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange }) => {
 
   return (
     <aside className="app-sidebar">
-      {/* 🎨 Figma: Logo 在侧边栏顶部 */}
-      <div className="sidebar-logo">
-        <Logo />
-      </div>
+      {/* Panel 呼出按钮 */}
+      <button className="sidebar-panel-toggle" onClick={onPanelToggle}>
+        <img src={PanelIconSvg} alt="Panel" width="24" height="24" />
+      </button>
       
       <nav className="sidebar-nav">
         {menuItems.map((item) => (
@@ -461,7 +464,9 @@ const AppLayout: React.FC<AppLayoutProps> = ({
   children, 
   globalTimer, 
   onTimerClick,
-  onSettingsClick
+  onSettingsClick,
+  isPanelVisible,
+  onPanelToggle
 }) => {
   return (
     <div className="app-layout">
@@ -476,6 +481,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({
       <Sidebar 
         currentPage={currentPage} 
         onPageChange={onPageChange}
+        onPanelToggle={onPanelToggle}
       />
       
       {/* 主内容区 */}

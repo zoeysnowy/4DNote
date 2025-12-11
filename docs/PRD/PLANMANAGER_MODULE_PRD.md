@@ -2,8 +2,8 @@
 
 **模块路径**: `src/components/PlanManager.tsx`  
 **代码行数**: ~2992 lines  
-**架构版本**: v2.9 (EventTree 层级架构 + bulletLevel 计算优化)  
-**最后更新**: 2025-12-04  
+**架构版本**: v2.17 (EventTree 层级显示修复 + computeEditorItems 优化)  
+**最后更新**: 2025-12-11  
 **编写框架**: Copilot PRD Reverse Engineering Framework v1.1  
 **Figma 设计稿**: [ReMarkable-0.1 - 1450w default](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646&m=dev)  
 **侧边栏设计稿**: [PlanManager Sidepanels](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646)
@@ -11,6 +11,255 @@
 ---
 
 ## 📋 版本历史
+
+### v2.17 (2025-12-11) - EventTree 层级显示修复 + computeEditorItems 优化 ✅
+
+**核心突破**:
+- 🔥 **移除 position 排序**：`computeEditorItems()` 正常模式直接使用已排序的 `filteredItems`，不再错误地按 `position` 重新排序
+- ✅ **信任源数据顺序**：`items` 数组在初始化时已通过 DFS 遍历正确排序，过滤操作不改变顺序
+- ✅ **空标题事件过滤**：在 `eventsWithLevels` 创建时就过滤掉空标题占位符事件，防止破坏树结构
+- ✅ **调试日志增强**：新增 `sortedEvents 顺序检查`、`items 数组监控`、`setEditorItems 调用前` 等详细日志
+
+**问题背景**:
+- **现象**: PlanManager EventTree 视图显示层级错误，所有 L1 子事件混在一起，未按所属根事件分组
+- **影响**: 用户无法理解事件层级，UUID 迁移测试无法验证父子关系
+- **验证**: 数据库 `parentEventId` ↔ `childEventIds` 双向关系正确，`calculateAllBulletLevels()` 计算正确，DFS 遍历正确，`sortedEvents` 数组顺序正确
+- **根本原因**: `computeEditorItems()` 在 L2095-2102 处按 `position` 字段重新排序，破坏了 DFS 树结构顺序
+
+**数据流修复**:
+```
+✅ EventService.getAllEvents()
+  ↓
+✅ PlanManager.loadInitialData()
+  ↓
+✅ EventService.calculateAllBulletLevels() (DFS 算法)
+  ↓
+✅ addEventWithChildren() 递归遍历 (深度优先)
+  ↓
+✅ sortedEvents (完美 DFS 顺序: L0→L1→L2→...→L0→L1→...)
+  ↓
+✅ setItems(sortedEvents) (保持顺序)
+  ↓
+✅ filteredItems = useMemo([...items].filter(...)) (过滤不改变顺序)
+  ↓
+❌ computeEditorItems() → allItems.sort((a, b) => position - position)
+  ↓  🔥 v2.17 修复：移除 sort，直接使用 allItems
+✅ editorItems (保持 DFS 顺序)
+  ↓
+✅ PlanSlate UI 渲染 (正确显示树结构)
+```
+
+**关键代码位置**:
+
+**1. L594-610: 空标题事件过滤**
+```typescript
+// 在 eventsWithLevels 创建时就过滤掉空标题事件
+const eventsWithLevels = filtered
+  .filter(event => {
+    const titleStr = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '';
+    return titleStr.trim(); // 只保留非空标题的事件
+  })
+  .map(event => ({
+    ...event,
+    bulletLevel: bulletLevels.get(event.id!) || 0
+  })) as Event[];
+```
+
+**2. L742-760: sortedEvents 调试日志**
+```typescript
+console.log('[PlanManager] 🔍 sortedEvents 顺序检查（前30个）:');
+sortedEvents.slice(0, 30).forEach((e, idx) => {
+  const indent = '  '.repeat(e.bulletLevel || 0);
+  console.log(`[${idx}] ${indent}L${e.bulletLevel} ${e.title?.simpleTitle?.slice(0, 40)} (父:${e.parentEventId?.slice(-8) || 'ROOT'})`);
+});
+```
+
+**3. L773-777: items 状态监控**
+```typescript
+useEffect(() => {
+  if (items.length > 0) {
+    console.log('[PlanManager] 📋 items 数组已更新:', {
+      数量: items.length,
+      前5个ID: items.slice(0, 5).map(e => e.id?.slice(-8))
+    });
+  }
+}, [items]);
+```
+
+**4. L2093-2098: 🔥 CRITICAL FIX - 移除 position 排序**
+```typescript
+// ❌ 修复前（WRONG）:
+} else {
+  // 正常模式：简单排序
+  result = allItems
+    .filter(item => item.id)
+    .sort((a: any, b: any) => {
+      const pa = (a as any).position ?? allItems.indexOf(a);
+      const pb = (b as any).position ?? allItems.indexOf(b);
+      return pa - pb;  // ❌ position 值不反映树结构，完全打乱 DFS 顺序
+    });
+}
+
+// ✅ 修复后（CORRECT）:
+} else {
+  // 🔥 正常模式：直接使用 allItems（即 filteredItems）
+  // items 数组在初始化时已经按照 EventTree 结构排序（DFS），无需再次排序
+  // filteredItems 只是过滤操作（标签、搜索），不会改变顺序
+  result = allItems.filter(item => item.id);
+  console.log('[PlanManager] ✅ 正常模式：使用已排序的 items，共', result.length, '个事件');
+}
+```
+
+**5. L2117-2127: editorItems 调试日志**
+```typescript
+console.log('[PlanManager] 🎯 setEditorItems 调用前，result 前10个:', 
+  result.slice(0, 10).map((e, idx) => ({
+    idx,
+    id: e.id?.slice(-8),
+    level: (e as any).bulletLevel,
+    title: (e.title as any)?.simpleTitle?.slice(0, 30),
+    parentId: (e as any).parentEventId?.slice(-8)
+  }))
+);
+```
+
+**PlanSlate.tsx Shift+Tab 修复**:
+
+**位置**: `src/components/PlanSlate/PlanSlate.tsx`
+
+**问题**: `findParentEventLineAtLevel()` 函数错误地向上查找第一个同级事件作为新父事件，而非当前父事件的父事件（祖父事件）
+
+**修复前逻辑**（错误）:
+```typescript
+const findParentEventLineAtLevel = (currentPath: Path, targetLevel: number) => {
+  // ❌ 向上查找第一个 targetLevel 的事件
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    if (eventLine.level === targetLevel) {
+      return eventLine; // ❌ 返回同级事件，而非祖父事件
+    }
+  }
+};
+```
+
+**修复后逻辑**（正确）:
+```typescript
+const findParentEventLineAtLevel = (currentPath: Path, targetLevel: number) => {
+  // 1. 获取当前父事件 ID
+  const currentParentId = currentEventLine.metadata?.parentEventId;
+  
+  // 2. 向上查找当前父事件节点
+  const parentEventLine = /* 向上查找(currentParentId) */;
+  
+  // 3. 新父事件 = 当前父事件的父事件（祖父事件）
+  const newParentId = parentEventLine.metadata?.parentEventId;
+  
+  // 4. 返回祖父事件节点
+  return /* 向上查找(newParentId) */;
+};
+```
+
+**示例**:
+```
+原结构：
+L0 根事件A (id: aaa)
+  L1 子事件A1 (id: a1, parent: aaa)
+    L2 子事件A1-1 (id: a11, parent: a1) ← 当前选中
+  L1 子事件A2 (id: a2, parent: aaa)
+
+按 Shift+Tab 后：
+❌ 旧逻辑：向上找第一个 L1 → 子事件A1 (a1) → 错误！这是当前父事件
+✅ 新逻辑：当前父事件(a1) 的父事件 → 根事件A (aaa) → 正确！
+
+结果：
+L0 根事件A (id: aaa)
+  L1 子事件A1 (id: a1, parent: aaa)
+  L1 子事件A1-1 (id: a11, parent: aaa) ← 父事件从 a1 变为 aaa
+  L1 子事件A2 (id: a2, parent: aaa)
+```
+
+**调试日志增强**（L3044-3061）:
+```typescript
+console.log('[Shift+Tab] 🎯 Decreasing level:', {
+  eventId: currentEventId.slice(-8),
+  oldLevel: currentLevel,
+  newLevel: newLevel,
+  oldParentId: currentParentId?.slice(-8) || 'ROOT',
+  newParentId: newParentEventId?.slice(-8) || 'ROOT',
+  change: `${currentParentId?.slice(-8) || 'ROOT'} → ${newParentEventId?.slice(-8) || 'ROOT'}`
+});
+```
+
+**修复前后对比**:
+
+**修复前**:
+```
+□ UUID根事件1 15:49:00
+□ UUID根事件2 15:49:00          ← ❌ 根事件2 紧接根事件1
+  □ L1-子事件1 (父:4b77e376)     ← ❌ 根事件2 的子事件
+  □ L1-子事件1 (父:15bbe85f)     ← ❌ 根事件1 的子事件出现在这里
+  □ L1-子事件1 (父:a41eb6e7)     ← ❌ 根事件3 的子事件
+  ...完全混乱
+```
+
+**修复后**:
+```
+□ UUID根事件1 15:49:00
+  □ L1-子事件1 (父:15bbe85f)     ← ✅ 根事件1 的唯一子事件
+    □ L2-子事件1 (父:a2ea7c77)
+      □ L3-子事件1 (父:94a12676)
+        □ L4-子事件1 (父:6ff19272)
+          □ L5-子事件1 (父:4b835dbd)
+      □ L3-子事件2 (父:94a12676)
+        ...完美的树结构
+    □ L2-子事件2 (父:a2ea7c77)
+      ...
+□ UUID根事件2 15:49:00          ← ✅ 根事件1 的完整子树后才出现根事件2
+  □ L1-子事件1 (父:4b77e376)
+  □ L1-子事件2 (父:4b77e376)
+  □ L1-子事件3 (父:4b77e376)
+...
+```
+
+**技术细节**:
+1. **position vs DFS 排序**:
+   - `position` 字段：扁平列表的拖拽重排字段，值如 `[0, 10, 20, 5, 15]`
+   - EventTree DFS 顺序：深度优先遍历顺序，`根事件1 → L1子 → L2子 → L2子 → L1返回 → 根事件2 → ...`
+   - **冲突**：按 position 排序会完全打乱树结构
+
+2. **为什么直接使用 filteredItems 是正确的**:
+   - ✅ `items` 初始化时已经通过 `addEventWithChildren()` DFS 遍历排序
+   - ✅ `filteredItems` 的 `filter()` 操作不改变已有元素的相对顺序
+   - ✅ `pendingEmptyItems` 添加在末尾，不影响树结构
+   - ✅ Snapshot 模式有独立的时间戳排序，不受影响
+
+3. **调试日志策略**:
+   - `sortedEvents`: 验证 DFS 遍历是否正确
+   - `items`: 验证状态更新是否保持顺序
+   - `editorItems`: 验证传给 UI 的最终数据
+
+**性能影响**:
+- ✅ **性能提升**：移除了不必要的 `sort()` 操作
+- ✅ **内存不变**：仅移除排序，数据结构未变化
+- ✅ **渲染优化**：正确的顺序减少了 PlanSlate 的重新布局
+
+**测试验证**:
+- ✅ 107 个事件（3 个根事件 + 多层嵌套子事件）正确显示
+- ✅ 每个根事件的子树连续完整显示
+- ✅ 深度优先遍历顺序正确（先深入再横向）
+- ✅ 缩进层级正确（L0=0px, L1=24px, L2=48px, ...）
+- ✅ 父子关系正确（每个事件的 `(父:xxx)` 指向正确的父事件）
+
+**相关文档**:
+- 修复报告：`docs/EVENTTREE_HIERARCHY_FIX_REPORT.md`
+- EventTree 模块：`docs/PRD/EVENTTREE_MODULE_PRD.md`
+- UUID 迁移验证：`docs/UUID_MIGRATION_HIERARCHY_VERIFICATION.md`
+
+**核心教训**:
+- 🎯 **信任源数据的顺序**：如果数据在初始化时已经正确排序，不要轻易重新排序
+- ⚠️ **过滤不改变顺序**：`filter()` 操作不会改变已有元素的相对顺序
+- 🚫 **position 不适用于树结构**：扁平列表的排序字段不反映树形层级关系
+
+---
 
 ### v2.10 (2025-12-06) - 父子关系自动维护 + EditableEventTree 完整实现 ✅
 

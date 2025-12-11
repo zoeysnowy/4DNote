@@ -45,6 +45,12 @@ export interface EventChangeLog {
   changes?: ChangeDetail[];
   /** 额外元数据 */
   metadata?: Record<string, any>;
+  /** 🔥 临时ID映射（记录临时ID→真实ID的转换关系） */
+  tempIdMapping?: {
+    tempId: string;      // 原始临时ID（line-xxx格式）
+    realId: string;      // 转换后的真实ID（event_xxx格式）
+    timestamp: string;   // 转换时间戳
+  };
 }
 
 /**

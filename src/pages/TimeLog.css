@@ -8,11 +8,19 @@
 .timelog-page {
   display: flex;
   height: 100%;
-  width: 100%; /* 限制在视口宽度内 */
+  width: 100%;
   background: none; /* 🎨 Figma: 移除背景 */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', sans-serif;
   overflow: hidden; /* 防止内容溢出 */
-  gap: 8px; /* Reduced from 16px */
+  gap: 0; /* 移除gap，让侧边栏紧贴左侧 */
+  position: relative;
+  padding-left: 343px; /* 为ContentSelectionPanel留出空间（60px sidebar + 335px panel + 8px gap）*/
+  transition: padding-left 0.3s ease;
+}
+
+/* 当panel unpinned时，向左填补 */
+.timelog-page.panel-hidden {
+  padding-left: 68px; /* 60px sidebar + 8px gap */
 }
 
 /* ========================================
@@ -27,7 +35,8 @@
   align-self: flex-start; /* 与左侧对齐 */
   height: 100%; /* 占满容器高度 */
   min-width: 0; /* 允许flex子元素收缩 */
-  overflow: hidden; /* 防止内容溢出 */
+  overflow: visible; /* 允许阴影溢出 */
+  padding: 8px; /* 恢复之前的边距 */
 }
 
 /* ========================================
@@ -47,10 +56,11 @@
   min-width: 0; /* 允许flex子元素收缩 */
 }
 
-/* 有标签时，卡片左上角改为0，右上角保持圆角 */
+/* 有标签时，卡片左上角改为0，右上角保持圆角（无过渡动画，直接应用）*/
 .timelog-main-card.has-tabs {
-  border-top-left-radius: 0;
-  border-top-right-radius: 20px; /* 保持右上圆角 */
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 20px !important; /* 保持右上圆角 */
+  transition: none !important; /* 禁用所有过渡效果 */
 }
 
 /* 标签模式下：移除顶部内边距，让标签栏贴在卡片顶部 */

@@ -386,19 +386,41 @@ const handleShiftTabKey = async (event: React.KeyboardEvent) => {
   });
 };
 
-// 辅助函数：找到指定层级的父事件
+// 辅助函数：找到当前父事件的父事件（祖父事件）
+// 🔥 v2.17.1 修复：新父事件 = 祖父事件，而非向上第一个同级事件
 function findParentEventLineAtLevel(editor, currentPath, targetLevel) {
   const currentIndex = currentPath[0];
+  const currentNode = editor.children[currentIndex];
   
-  // 向上查找第一个层级等于 targetLevel 的事件
+  // 1. 获取当前父事件 ID
+  const currentParentId = currentNode.metadata?.parentEventId;
+  if (!currentParentId) return null; // 已是根事件
+  
+  // 2. 查找当前父事件节点
+  let parentEventLine = null;
   for (let i = currentIndex - 1; i >= 0; i--) {
     const node = editor.children[i];
-    if (node.type === 'event' && (node.bulletLevel || 0) === targetLevel) {
-      return node;
+    if (node.type === 'event' && node.eventId === currentParentId) {
+      parentEventLine = node;
+      break;
     }
   }
   
-  return null; // 没找到父事件，变为根事件
+  if (!parentEventLine) return null; // 父事件不存在
+  
+  // 3. 获取祖父事件 ID（当前父事件的父事件）
+  const newParentId = parentEventLine.metadata?.parentEventId;
+  if (!newParentId) return null; // 父事件是根事件，降级后也是根事件
+  
+  // 4. 查找祖父事件节点
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const node = editor.children[i];
+    if (node.type === 'event' && node.eventId === newParentId) {
+      return node; // ✅ 返回祖父事件
+    }
+  }
+  
+  return null; // 祖父事件不存在，变为根事件
 }
 ```
 

@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>池化ID系统诊断工具</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #2196F3;
+      padding-bottom: 10px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background: #2196F3;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #1976D2;
+    }
+    button.danger {
+      background: #f44336;
+    }
+    button.danger:hover {
+      background: #d32f2f;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 4px solid #2196F3;
+    }
+    .stat-card.warning {
+      border-left-color: #ff9800;
+    }
+    .stat-card.error {
+      border-left-color: #f44336;
+    }
+    .stat-card .label {
+      font-size: 14px;
+      color: #666;
+    }
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #333;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 14px;
+    }
+    .issue {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      border-left: 4px solid #ff9800;
+      background: #fff3cd;
+    }
+    .success {
+      color: #4caf50;
+      font-weight: bold;
+    }
+    .warning {
+      color: #ff9800;
+      font-weight: bold;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 EventIdPool 池化系统诊断工具</h1>
+  
+  <div class="section">
+    <h2>🎯 快速诊断</h2>
+    <button onclick="runDiagnosis()">🔍 运行完整诊断</button>
+    <button onclick="checkPoolStatus()">📊 检查ID池状态</button>
+    <button onclick="findTempIds()">⚠️ 查找临时ID</button>
+    <button onclick="checkPlaceholders()">🔎 检查占位事件</button>
+    <button class="danger" onclick="cleanupPool()">🧹 清理未使用的池化ID</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const log = (html) => {
+      document.getElementById('results').innerHTML += html + '\n';
+    };
+
+    const clear = () => {
+      document.getElementById('results').innerHTML = '';
+    };
+
+    async function getStorageManager() {
+      if (window.storageManagerInstance) {
+        return window.storageManagerInstance;
+      }
+      throw new Error('StorageManager未初始化，请在应用中打开此页面');
+    }
+
+    async function getEventIdPool() {
+      // 通过全局对象访问（如果暴露了）
+      if (window.EventIdPool) {
+        return window.EventIdPool;
+      }
+      throw new Error('EventIdPool未暴露到全局对象');
+    }
+
+    async function runDiagnosis() {
+      clear();
+      log('<div class="section"><h2>📋 诊断报告</h2>');
+      
+      try {
+        const storageManager = await getStorageManager();
+        const result = await storageManager.queryEvents({ filters: {}, limit: 10000 });
+        const events = result.items;
+        
+        // 统计数据
+        const stats = {
+          total: events.length,
+          tempIds: events.filter(e => e.id.startsWith('line-')).length,
+          placeholders: events.filter(e => e._isPlaceholder === true).length,
+          pooledIds: events.filter(e => e._isPooledId === true).length,
+          withParentEventId: events.filter(e => e.parentEventId).length,
+          withChildEventIds: events.filter(e => e.childEventIds && e.childEventIds.length > 0).length,
+          tempParentIds: events.filter(e => e.parentEventId && e.parentEventId.startsWith('line-')).length
+        };
+        
+        log('<div class="stats">');
+        log(`<div class="stat-card"><div class="label">总事件数</div><div class="value">${stats.total}</div></div>`);
+        log(`<div class="stat-card ${stats.tempIds > 0 ? 'error' : ''}"><div class="label">临时ID (line-)</div><div class="value">${stats.tempIds}</div></div>`);
+        log(`<div class="stat-card"><div class="label">占位事件</div><div class="value">${stats.placeholders}</div></div>`);
+        log(`<div class="stat-card"><div class="label">池化ID</div><div class="value">${stats.pooledIds}</div></div>`);
+        log(`<div class="stat-card"><div class="label">有父事件</div><div class="value">${stats.withParentEventId}</div></div>`);
+        log(`<div class="stat-card"><div class="label">有子事件</div><div class="value">${stats.withChildEventIds}</div></div>`);
+        log(`<div class="stat-card ${stats.tempParentIds > 0 ? 'warning' : ''}"><div class="label">临时父ID引用</div><div class="value">${stats.tempParentIds}</div></div>`);
+        log('</div>');
+        
+        // 问题检测
+        if (stats.tempIds > 0) {
+          log(`<div class="issue">⚠️ 发现 ${stats.tempIds} 个临时ID事件（应该使用池化ID）</div>`);
+        }
+        
+        if (stats.tempParentIds > 0) {
+          log(`<div class="issue">⚠️ 发现 ${stats.tempParentIds} 个事件引用了临时ID作为父事件</div>`);
+        }
+        
+        if (stats.tempIds === 0 && stats.tempParentIds === 0) {
+          log('<div class="success">✅ 未发现临时ID问题！系统正常使用池化ID。</div>');
+        }
+        
+      } catch (error) {
+        log(`<div class="error">❌ 诊断失败: ${error.message}</div>`);
+      }
+      
+      log('</div>');
+    }
+
+    async function checkPoolStatus() {
+      clear();
+      log('<div class="section"><h2>📊 ID池状态</h2>');
+      
+      try {
+        const storageManager = await getStorageManager();
+        const result = await storageManager.queryEvents({ 
+          filters: { _isPooledId: true }, 
+          limit: 100 
+        });
+        const poolEvents = result.items;
+        
+        const allocated = poolEvents.filter(e => !e._isPlaceholder).length;
+        const unallocated = poolEvents.filter(e => e._isPlaceholder === true).length;
+        
+        log(`<p>池化事件总数: <strong>${poolEvents.length}</strong></p>`);
+        log(`<p>已分配: <strong class="success">${allocated}</strong></p>`);
+        log(`<p>未分配（占位）: <strong class="warning">${unallocated}</strong></p>`);
+        
+        if (poolEvents.length > 0) {
+          log('<h3>池化事件列表（前20个）：</h3>');
+          log('<pre>' + JSON.stringify(poolEvents.slice(0, 20).map(e => ({
+            id: e.id,
+            title: e.title || '(empty)',
+            _isPlaceholder: e._isPlaceholder,
+            _pooledAt: e._pooledAt,
+            bulletLevel: e.bulletLevel,
+            parentEventId: e.parentEventId
+          })), null, 2) + '</pre>');
+        }
+        
+      } catch (error) {
+        log(`<div class="error">❌ 检查失败: ${error.message}</div>`);
+      }
+      
+      log('</div>');
+    }
+
+    async function findTempIds() {
+      clear();
+      log('<div class="section"><h2>⚠️ 临时ID检测</h2>');
+      
+      try {
+        const storageManager = await getStorageManager();
+        const result = await storageManager.queryEvents({ filters: {}, limit: 10000 });
+        const events = result.items;
+        
+        const tempIdEvents = events.filter(e => e.id.startsWith('line-'));
+        const tempParentRefs = events.filter(e => e.parentEventId && e.parentEventId.startsWith('line-'));
+        
+        log(`<p>临时ID事件: <strong class="${tempIdEvents.length > 0 ? 'error' : 'success'}">${tempIdEvents.length}</strong></p>`);
+        log(`<p>临时父ID引用: <strong class="${tempParentRefs.length > 0 ? 'warning' : 'success'}">${tempParentRefs.length}</strong></p>`);
+        
+        if (tempIdEvents.length > 0) {
+          log('<h3>临时ID事件列表：</h3>');
+          log('<pre>' + JSON.stringify(tempIdEvents.map(e => ({
+            id: e.id,
+            title: e.title,
+            isPlan: e.isPlan,
+            createdAt: e.createdAt
+          })), null, 2) + '</pre>');
+        }
+        
+        if (tempParentRefs.length > 0) {
+          log('<h3>临时父ID引用：</h3>');
+          log('<pre>' + JSON.stringify(tempParentRefs.map(e => ({
+            id: e.id,
+            title: e.title,
+            parentEventId: e.parentEventId
+          })), null, 2) + '</pre>');
+        }
+        
+        if (tempIdEvents.length === 0 && tempParentRefs.length === 0) {
+          log('<div class="success">✅ 没有发现临时ID！</div>');
+        }
+        
+      } catch (error) {
+        log(`<div class="error">❌ 检测失败: ${error.message}</div>`);
+      }
+      
+      log('</div>');
+    }
+
+    async function checkPlaceholders() {
+      clear();
+      log('<div class="section"><h2>🔎 占位事件检查</h2>');
+      
+      try {
+        const storageManager = await getStorageManager();
+        const result = await storageManager.queryEvents({ 
+          filters: { _isPlaceholder: true }, 
+          limit: 100 
+        });
+        const placeholders = result.items;
+        
+        log(`<p>占位事件总数: <strong>${placeholders.length}</strong></p>`);
+        
+        if (placeholders.length > 0) {
+          const ages = placeholders.map(e => {
+            const pooledAt = new Date(e._pooledAt || e.createdAt);
+            const now = new Date();
+            return Math.floor((now - pooledAt) / 1000);
+          });
+          
+          const avgAge = Math.floor(ages.reduce((a, b) => a + b, 0) / ages.length);
+          const oldestAge = Math.max(...ages);
+          
+          log(`<p>平均年龄: <strong>${avgAge}秒</strong></p>`);
+          log(`<p>最老的: <strong>${oldestAge}秒</strong></p>`);
+          
+          log('<h3>占位事件详情：</h3>');
+          log('<pre>' + JSON.stringify(placeholders.map(e => ({
+            id: e.id,
+            _pooledAt: e._pooledAt,
+            bulletLevel: e.bulletLevel,
+            parentEventId: e.parentEventId,
+            title: e.title || '(empty)'
+          })), null, 2) + '</pre>');
+        } else {
+          log('<div class="success">✅ 没有未使用的占位事件</div>');
+        }
+        
+      } catch (error) {
+        log(`<div class="error">❌ 检查失败: ${error.message}</div>`);
+      }
+      
+      log('</div>');
+    }
+
+    async function cleanupPool() {
+      if (!confirm('确定要清理未使用的池化ID吗？这将删除所有 _isPlaceholder=true 的事件。')) {
+        return;
+      }
+      
+      clear();
+      log('<div class="section"><h2>🧹 清理ID池</h2>');
+      
+      try {
+        const storageManager = await getStorageManager();
+        const result = await storageManager.queryEvents({ 
+          filters: { _isPlaceholder: true }, 
+          limit: 100 
+        });
+        const placeholders = result.items;
+        
+        log(`<p>找到 ${placeholders.length} 个占位事件...</p>`);
+        
+        let deleted = 0;
+        for (const event of placeholders) {
+          await storageManager.deleteEvent(event.id);
+          deleted++;
+          log(`<p>已删除: ${event.id}</p>`);
+        }
+        
+        log(`<div class="success">✅ 清理完成！删除了 ${deleted} 个占位事件。</div>`);
+        
+      } catch (error) {
+        log(`<div class="error">❌ 清理失败: ${error.message}</div>`);
+      }
+      
+      log('</div>');
+    }
+
+    // 页面加载时自动运行诊断
+    window.addEventListener('load', () => {
+      setTimeout(runDiagnosis, 500);
+    });
+  </script>
+</body>
+</html>

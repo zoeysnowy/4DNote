@@ -17,6 +17,7 @@ import {
   EventMetadata,  // 🆕 导入 EventMetadata 类型
 } from './types';
 import { TimeHub } from '../../services/TimeHub';  // 🆕 导入 TimeHub
+import { generateEventId } from '../../utils/idGenerator';  // 🆕 v2.17: UUID 生成器
 
 // ==================== PlanItem → Slate 节点 ====================
 
@@ -76,6 +77,10 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       // 🔥 EventTree 字段（用于 serialization 读取）
       parentEventId: item.parentEventId,
       childEventIds: item.childEventIds,
+      
+      // 🔥 Position 和 BulletLevel（用于排序和层级显示）
+      bulletLevel: item.bulletLevel,
+      position: item.position,
     } as any;
     
     // Title 行（始终创建，即使内容为空）
@@ -87,7 +92,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       type: 'event-line',
       eventId: item.eventId || item.id,
       lineId: item.id,
-      level: (item as any).bulletLevel ?? item.level ?? 0, // 🔥 优先使用 bulletLevel（从 EventTree 计算）
+      level: (item as any).bulletLevel ?? 0, // 🔥 使用 bulletLevel（从 EventTree 计算，PlanManager 已设置）
       mode: 'title',
       children: [
         {
@@ -139,7 +144,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
   // ✅ v1.5: 如果没有节点，创建一个临时空节点（供 Slate 编辑器使用）
   // 但在 slateNodesToPlanItems 转换时会被过滤掉
   if (nodes.length === 0) {
-    nodes.push(createEmptyEventLine());
+    nodes.push(createEmptyEventLine(0, undefined, undefined, true)); // isPlaceholder = true
   }
   
   return nodes;
@@ -341,13 +346,19 @@ function parseHtmlToParagraphs(html: string): ParagraphNode[] {
 
 /**
  * 创建空的 EventLine 节点
+ * 🆕 v2.17: 直接使用 UUID 生成事件ID（无需池管理）
+ * @param level 层级
+ * @param parentEventId 父事件ID
+ * @param position 位置权重
  */
-export function createEmptyEventLine(level: number = 0): EventLineNode {
-  const lineId = `line-${Date.now()}-${Math.random()}`;
+export function createEmptyEventLine(level: number = 0, parentEventId?: string, position?: number): EventLineNode {
+  // 🎯 v2.17: 直接生成 UUID 格式的事件 ID，无需池管理
+  const eventId = generateEventId();
+  
   return {
     type: 'event-line',
-    lineId,
-    eventId: lineId, // 🔧 新行的 eventId 与 lineId 相同
+    lineId: eventId, // lineId 与 eventId 相同
+    eventId,
     level,
     mode: 'title',
     children: [
@@ -358,6 +369,9 @@ export function createEmptyEventLine(level: number = 0): EventLineNode {
     ],
     metadata: {
       checkType: 'once', // 🆕 新建事件默认显示 checkbox
+      bulletLevel: level, // 🔥 同步 bulletLevel 到 metadata
+      parentEventId,      // 🆕 传入父事件ID
+      position,           // 🆕 传入位置权重
     },
   };
 }
@@ -391,10 +405,38 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         console.log('[Serialization] 🔍 Reading EventTree from metadata:', {
           baseId: baseId.slice(-8),
           parentEventId: metadata.parentEventId ? metadata.parentEventId.slice(-8) : metadata.parentEventId,
+          parentEventIdFull: metadata.parentEventId,  // 🆕 显示完整ID
+          parentEventIdLength: metadata.parentEventId?.length,  // 🆕 显示长度
           childEventIds: metadata.childEventIds,
           hasMetadata: !!node.metadata,
           metadataKeys: Object.keys(metadata)
         });
+      }
+      
+      // 🔥 [FIX] 过滤无效的 parentEventId
+      // bulletLevel === 0 的顶级事件不应该有父事件
+      // 🆕 v2.16: 不再过滤 line- 开头的ID（池化ID是真实ID）
+      if (metadata.parentEventId) {
+        const bulletLevel = metadata.bulletLevel ?? node.level ?? 0;
+        
+        if (bulletLevel === 0) {
+          console.warn('[Serialization] ⚠️ Level 0 event should not have parent，已清除:', {
+            eventId: baseId.slice(-8),
+            invalidParentId: metadata.parentEventId,
+            bulletLevel: 0,
+            action: '顶级事件不应该有父事件'
+          });
+          metadata.parentEventId = undefined;
+        }
+      }
+      
+      // 🔥 [FIX] childEventIds 清理（移除空数组）
+      // 🆕 v2.17: UUID迁移完成，所有ID都是真实的UUID格式
+      if (metadata.childEventIds && Array.isArray(metadata.childEventIds)) {
+        // 移除空数组
+        if (metadata.childEventIds.length === 0) {
+          metadata.childEventIds = undefined;
+        }
       }
       
       items.set(baseId, {
@@ -428,6 +470,10 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         // 🔥 EventTree 字段 - 从 metadata 读取（Tab 键更新的）
         parentEventId: metadata.parentEventId,
         childEventIds: metadata.childEventIds,
+        
+        // 🔥 Position 和 BulletLevel - 从 metadata 读取
+        bulletLevel: metadata.bulletLevel ?? 0,
+        position: metadata.position,
         
         calendarIds: metadata.calendarIds || [],
         todoListIds: metadata.todoListIds || [], // 🆕 To Do List IDs
@@ -519,6 +565,11 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
   
   // ✅ v1.5: 过滤掉空节点（临时占位节点）
   const result = Array.from(items.values()).filter(item => {
+    // 🔥 过滤占位符节点（ID 以 placeholder- 开头）
+    if (item.id?.startsWith('placeholder-') || item.eventId?.startsWith('placeholder-')) {
+      return false;
+    }
+    
     // 🔥 FIX: 检查 fullTitle 而不是 simpleTitle（因为 simpleTitle 在这里是 undefined）
     const hasTitle = item.title?.fullTitle?.trim() || 
                     item.title?.simpleTitle?.trim() || 

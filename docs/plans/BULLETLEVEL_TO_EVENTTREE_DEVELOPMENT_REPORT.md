@@ -61,7 +61,8 @@ static calculateAllBulletLevels(events: Event[]): Map<string, number>
 // 找到上一个 EventLine（用于 Tab 键）
 const findPreviousEventLine = useCallback((currentPath: Path): EventLineNode | null => ...
 
-// 找到指定层级的父事件（用于 Shift+Tab 键）
+// 找到当前父事件的父事件（用于 Shift+Tab 键）
+// 🔥 v2.17.1 修复：新父事件 = 祖父事件，而非向上第一个同级事件
 const findParentEventLineAtLevel = useCallback((currentPath: Path, targetLevel: number): EventLineNode | null => ...
 ```
 
@@ -91,13 +92,21 @@ EventService.updateEvent(currentEventId, { parentEventId: previousEventId }, fal
 #### 重写 Shift+Tab 键处理（L2642-2732）
 **核心逻辑**:
 1. 检查当前层级（level 0 时跳过）
-2. 计算新的父事件（`findParentEventLineAtLevel`）
+2. 🔥 **计算新父事件**（`findParentEventLineAtLevel`）：当前父事件的父事件（祖父事件）
 3. 乐观更新 + 异步持久化（与 Tab 键类似）
 
 **关键代码**:
 ```typescript
+// 🔥 v2.17.1 修复：新父事件 = 祖父事件
+const currentParentId = eventLine.metadata?.parentEventId;
 const newParentEventLine = findParentEventLineAtLevel(currentPath, newLevel);
 const newParentEventId = newParentEventLine?.eventId || undefined; // 可能变为根事件
+
+console.log('[Shift+Tab] 🎯 Decreasing level:', {
+  oldParentId: currentParentId?.slice(-8) || 'ROOT',
+  newParentId: newParentEventId?.slice(-8) || 'ROOT',
+  change: `${currentParentId?.slice(-8)} → ${newParentEventId?.slice(-8)}`
+});
 ```
 
 #### 优化 eventsUpdated 监听器（L868-895）

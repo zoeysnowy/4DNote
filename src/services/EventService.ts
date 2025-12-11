@@ -280,20 +280,16 @@ export class EventService {
       // 🔧 [FIX] 确保存储已初始化
       await this.ensureStorageReady();
       
-      const result = await storageManager.queryEvents({
-        filters: { eventIds: [eventId] },
-        limit: 1
-      });
+      // 🚀 [PERFORMANCE FIX] 直接通过 ID 获取，不要用 queryEvents 全表扫描
+      const storageEvent = await storageManager.getEvent(eventId);
       
-      if (result.items.length === 0) return null;
-      
-      const storageEvent = result.items[0];
+      if (!storageEvent) return null;
       
       // 检查 eventlog 是否为空或空数组
       const needsEventLogFix = !storageEvent.eventlog || 
                                (typeof storageEvent.eventlog === 'object' && storageEvent.eventlog.slateJson === '[]');
       
-      // 规范化 title 和 eventlog（传递 description 作为 fallback）
+      // 规范化 title（只处理格式，不做重量级转换）
       const normalizedTitle = this.normalizeTitle(storageEvent.title);
       
       // 🔍 调试日志：检查 title 规范化结果
@@ -306,10 +302,14 @@ export class EventService {
         });
       }
       
+      // 🚀 [PERFORMANCE FIX] 读取时不要调用 normalizeEventLog！
+      // eventlog 应该在保存时（createEvent/updateEvent）已经包含完整字段
+      // 如果缺失字段，说明数据有问题，应该用修复工具批量修复，而不是每次读取都转换
       const normalizedEvent = {
         ...storageEvent,
         title: normalizedTitle,
-        eventlog: this.normalizeEventLog(storageEvent.eventlog, storageEvent.description)
+        // 直接使用数据库中的 eventlog，不做转换
+        eventlog: storageEvent.eventlog
       };
       
       // 🔍 调试：验证 syncMode 是否从数据库正确读取
@@ -321,16 +321,22 @@ export class EventService {
         });
       }
       
-      // 🔧 如果 eventlog 被修复了（从空变成有内容），尝试更新回 StorageManager
-      if (needsEventLogFix && normalizedEvent.eventlog.slateJson !== '[]') {
-        eventLogger.log('🔧 [EventService] 自动修复空 eventlog，尝试更新到 StorageManager:', eventId);
-        try {
-          await storageManager.updateEvent(eventId, {
-            eventlog: normalizedEvent.eventlog as any
+      // ⚠️ [数据质量检查] 如果 eventlog 缺少 html/plainText，记录警告
+      // 不要自动修复，避免性能灾难（每次读取都转换）
+      if (storageEvent.eventlog && typeof storageEvent.eventlog === 'object') {
+        const eventlog = storageEvent.eventlog as any;
+        // 🔥 修复：检查字段是否 undefined，不是检查 falsy
+        // 空字符串 '' 是合法值
+        if (eventlog.html === undefined || eventlog.plainText === undefined) {
+          console.warn('[EventService] ⚠️ EventLog 缺少预生成字段，请运行修复工具:', {
+            eventId: eventId.slice(-8),
+            hasSlateJson: !!eventlog.slateJson,
+            hasHtml: eventlog.html !== undefined,
+            hasPlainText: eventlog.plainText !== undefined,
+            htmlValue: eventlog.html,
+            plainTextValue: eventlog.plainText,
+            fixTool: 'http://localhost:5173/fix-eventlog-fields.html'
           });
-          eventLogger.log('✅ [EventService] eventlog 修复已保存');
-        } catch (saveError: any) {
-          eventLogger.warn('⚠️ [EventService] eventlog fix not persisted:', saveError);
         }
       }
       
@@ -385,8 +391,7 @@ export class EventService {
         // 2. 排除 Plan 页面事件（isPlan=true）无时间的情况
         if (event.isPlan === true) {
           const hasTime = (event.startTime && event.startTime !== '') || 
-                         (event.endTime && event.endTime !== '') ||
-                         (event.checkTime && event.checkTime !== '');
+                         (event.endTime && event.endTime !== '');
           
           if (!hasTime) {
             // eventLogger.log('🔽 [EventService] 过滤无时间的 Plan 事件:', {
@@ -405,8 +410,7 @@ export class EventService {
         // 3. Task 事件必须有时间才显示
         if (event.isTask === true) {
           const hasTime = (event.startTime && event.startTime !== '') || 
-                         (event.endTime && event.endTime !== '') ||
-                         (event.checkTime && event.checkTime !== '');
+                         (event.endTime && event.endTime !== '');
           
           if (!hasTime) {
             // eventLogger.log('🔽 [EventService] 过滤无时间的 Task 事件:', {
@@ -564,8 +568,12 @@ export class EventService {
         eventLogger.warn('⚠️ [EventService] Event has no title and no tags:', event.id);
       }
 
-      // 🔥 v2.15.3: 中枢化架构 - 使用 normalizeEvent 统一处理所有字段
+      // 🔥 v2.15: 中枢化架构 - 使用 normalizeEvent 统一处理所有字段
       const normalizedEvent = this.normalizeEvent(event);
+      
+      // 🔥 v2.15: 临时ID追踪系统
+      const isTempId = event.id.startsWith('line-');
+      const originalTempId = isTempId ? event.id : undefined;
       
       // 确保必要字段
       // 🔧 [BUG FIX] skipSync=true时，强制设置syncStatus='local-only'，忽略event.syncStatus
@@ -573,6 +581,9 @@ export class EventService {
         ...normalizedEvent,
         fourDNoteSource: true,
         syncStatus: skipSync ? 'local-only' : (event.syncStatus || 'pending'),
+        // 🔥 v2.15: 添加临时ID标记
+        _isTempId: isTempId,
+        _originalTempId: originalTempId,
       };
 
       // 检查是否已存在（从 StorageManager 查询）
@@ -588,8 +599,32 @@ export class EventService {
 
       // 创建事件（双写到 IndexedDB + SQLite）
       const storageEvent = this.convertEventToStorageEvent(finalEvent);
+      console.log('[createEvent] 🔍 Saving storageEvent:', {
+        id: storageEvent.id?.slice(-8),
+        eventlogType: typeof storageEvent.eventlog,
+        eventlogKeys: storageEvent.eventlog && typeof storageEvent.eventlog === 'object' 
+          ? Object.keys(storageEvent.eventlog) 
+          : 'N/A',
+        eventlog: storageEvent.eventlog
+      });
       await storageManager.createEvent(storageEvent);
       eventLogger.log('💾 [EventService] Event saved to StorageManager');
+      
+      // 🔍 立即读取验证
+      const savedEvent = await storageManager.getEvent(storageEvent.id!);
+      if (savedEvent?.eventlog && typeof savedEvent.eventlog === 'object') {
+        const log = savedEvent.eventlog as any;
+        console.log('[createEvent] 🔍 Verified saved event:', {
+          id: savedEvent.id?.slice(-8),
+          eventlogType: typeof savedEvent.eventlog,
+          keys: Object.keys(savedEvent.eventlog),
+          hasHtml: 'html' in log,
+          htmlValue: log.html,
+          hasPlainText: 'plainText' in log,
+          plainTextValue: log.plainText,
+          slateJson: log.slateJson
+        });
+      }
       
       // 🆕 自动维护父子事件双向关联
       if (finalEvent.parentEventId) {
@@ -622,8 +657,28 @@ export class EventService {
         }
       }
       
-      // 🆕 记录到事件历史
-      EventHistoryService.logCreate(finalEvent, options?.source || 'user-edit');
+      // 🆕 v2.16: 记录到事件历史 (跳过池化占位事件)
+      if (!(finalEvent as any)._isPlaceholder) {
+        const historyLog = EventHistoryService.logCreate(finalEvent, options?.source || 'user-edit');
+      } else {
+        eventLogger.log('⏭️ [EventIdPool] 跳过占位事件的历史记录:', {
+          eventId: finalEvent.id.slice(-8),
+          _isPlaceholder: true
+        });
+      }
+      
+      // 🔥 v2.15: 如果是临时ID，记录映射关系到EventHistory
+      if (isTempId && originalTempId) {
+        await EventHistoryService.recordTempIdMapping(originalTempId, finalEvent.id);
+        eventLogger.log('🔥 [TempId] 记录临时ID映射:', {
+          tempId: originalTempId,
+          realId: finalEvent.id,
+          title: finalEvent.title?.simpleTitle
+        });
+        
+        // 🔥 v2.15: 自动替换所有引用该临时ID的父子关系
+        await this.resolveTempIdReferences(originalTempId, finalEvent.id);
+      }
       
       // ✨ 自动提取并保存联系人
       if (finalEvent.organizer || finalEvent.attendees) {
@@ -728,6 +783,17 @@ export class EventService {
     }
   ): Promise<{ success: boolean; event?: Event; error?: string }> {
     try {
+      // 🔍 DEBUG: 检查 parentEventId 的值
+      if (updates.parentEventId !== undefined) {
+        console.log('[EventService] 🔍 updateEvent parentEventId:', {
+          eventId: eventId,
+          eventIdLength: eventId.length,
+          parentEventId: updates.parentEventId,
+          parentEventIdLength: updates.parentEventId?.length,
+          originComponent: options?.originComponent
+        });
+      }
+      
       // 获取原始事件（从 StorageManager 查询）
       const originalEvent = await this.getEventById(eventId);
 
@@ -948,11 +1014,10 @@ export class EventService {
         // 🔧 如果值不是 undefined，直接包含
         // 🔧 如果值是 undefined 但 key 存在于 updatesWithSync（显式设置），也包含
         if (value !== undefined) {
-          filteredUpdates[typedKey] = value as any;
+          (filteredUpdates as any)[typedKey] = value;
         } else if (Object.prototype.hasOwnProperty.call(updatesWithSync, key)) {
           // 显式设置为 undefined（用于清除字段）
-          filteredUpdates[typedKey] = undefined as any;
-
+          (filteredUpdates as any)[typedKey] = undefined;
         }
       });
       
@@ -963,6 +1028,20 @@ export class EventService {
         id: eventId, // 确保ID不被覆盖
         updatedAt: formatTimeForStorage(new Date())
       };
+      
+      // 🆕 v2.16: 清除占位标志（池化ID的占位事件已被真实数据更新）
+      if ((originalEvent as any)._isPlaceholder && Object.keys(filteredUpdates).length > 0) {
+        delete (updatedEvent as any)._isPlaceholder;
+        delete (updatedEvent as any)._isPooledId;
+        delete (updatedEvent as any)._pooledAt;
+        console.log('[EventService] 🔄 清除占位标志（池化ID已转为真实事件）:', {
+          eventId: eventId.slice(-8),
+          updateFields: Object.keys(filteredUpdates).length,
+          fieldList: Object.keys(filteredUpdates),
+          hasTitle: 'title' in filteredUpdates,
+          titleValue: (filteredUpdates as any).title
+        });
+      }
 
       // 🆕 检测 parentEventId 变化，同步更新双向关联
       // 🔧 修复：即使 parentEventId 没有变化，也要确保父事件的 childEventIds 包含当前事件
@@ -1021,7 +1100,14 @@ export class EventService {
               });
             }
           } else {
-            eventLogger.warn('⚠️ [EventService] 新父事件不存在:', filteredUpdates.parentEventId);
+            eventLogger.warn('⚠️ [EventService] 新父事件不存在，清除 parentEventId:', {
+              childId: eventId.slice(-8),
+              invalidParentId: filteredUpdates.parentEventId,
+              action: 'clearing parentEventId'
+            });
+            // 🔥 [CRITICAL FIX] 清除无效的 parentEventId，避免数据不一致
+            delete filteredUpdates.parentEventId;
+            delete updatedEvent.parentEventId;
           }
         }
       }
@@ -1165,8 +1251,15 @@ export class EventService {
         canRestore: true,
       });
 
-      // 记录事件历史（软删除仍记录为删除操作）
-      EventHistoryService.logDelete(deletedEvent, 'user-edit');
+      // 🆕 v2.16: 记录事件历史（跳过池化占位事件）
+      if (!(deletedEvent as any)._isPlaceholder) {
+        EventHistoryService.logDelete(deletedEvent, 'user-edit');
+      } else {
+        eventLogger.log('⏭️ [EventIdPool] 跳过占位事件的删除历史记录:', {
+          eventId: eventId.slice(-8),
+          _isPlaceholder: true
+        });
+      }
 
       // 触发全局更新事件（标记为已删除）
       this.dispatchEventUpdate(eventId, { deleted: true, softDeleted: true });
@@ -2166,24 +2259,10 @@ export class EventService {
         console.warn('[EventService] 检查时间戳拆分时出错，使用原 eventlog:', error);
       }
       
-      // 🔧 确保所有必需字段都存在（从 slateJson 生成缺失的字段）
-      if (!eventLog.html || !eventLog.plainText) {
-        console.log('[EventService] EventLog 缺少 html/plainText，从 slateJson 生成');
-        try {
-          const slateNodes = jsonToSlateNodes(eventLog.slateJson);
-          const html = slateNodesToHtml(slateNodes);
-          const plainText = html.replace(/<[^>]*>/g, '');
-          
-          return {
-            ...eventLog,
-            html: eventLog.html || html,
-            plainText: eventLog.plainText || plainText,
-          };
-        } catch (error) {
-          console.error('[EventService] 从 slateJson 生成 html/plainText 失败:', error);
-          return eventLog; // 失败时返回原对象
-        }
-      }
+      // 🚀 [PERFORMANCE FIX] 不再自动生成缺失字段！
+      // 原逻辑会在每次 normalizeEventLog 调用时检查并转换，导致性能灾难
+      // 新逻辑：保存时预生成（convertSlateJsonToEventLog），读取时直接使用
+      // 如果数据缺失字段，应该用修复工具批量修复，而不是每次读取都转换
       
       return eventLog;
     }
@@ -2352,10 +2431,13 @@ export class EventService {
     const normalizedDescription = normalizedEventLog.plainText || event.description || '';
     
     return {
+      // 🔥 保留所有原始字段（包括 bulletLevel, position 等）
+      ...event,
+      
       // 基础标识
       id: event.id || `evt-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       
-      // 规范化字段
+      // 规范化字段（覆盖原始值）
       title: normalizedTitle,
       eventlog: normalizedEventLog,
       description: normalizedDescription,
@@ -3604,10 +3686,39 @@ export class EventService {
    * 将 Event 转换为 StorageEvent（存储层模型）
    */
   private static convertEventToStorageEvent(event: Event): StorageEvent {
+    // 🔥 确保 EventLog 包含完整的 html/plainText 字段
+    // 如果 eventlog.slateJson 存在但缺少 html/plainText,则自动生成
+    let processedEventlog = event.eventlog;
+    
+    // 🔍 调试日志
+    console.log('[convertEventToStorageEvent] Input eventlog:', {
+      exists: !!event.eventlog,
+      type: typeof event.eventlog,
+      slateJson: event.eventlog?.slateJson,
+      html: event.eventlog?.html,
+      plainText: event.eventlog?.plainText
+    });
+    
+    if (event.eventlog?.slateJson) {
+      // 🔥 检查字段是否 undefined (不存在)，而不是检查 falsy
+      // 空字符串 '' 是合法值，不应触发重新生成
+      const hasHtml = event.eventlog.html !== undefined;
+      const hasPlainText = event.eventlog.plainText !== undefined;
+      
+      console.log('[convertEventToStorageEvent] Field check:', { hasHtml, hasPlainText });
+      
+      if (!hasHtml || !hasPlainText) {
+        console.log('[convertEventToStorageEvent] Generating fields from slateJson...');
+        // 🔥 关键修复：传递 slateJson 字符串，不是整个 eventlog 对象
+        processedEventlog = this.convertSlateJsonToEventLog(event.eventlog.slateJson);
+        console.log('[convertEventToStorageEvent] Generated eventlog:', processedEventlog);
+      }
+    }
+    
     return {
       ...event,
       title: event.title,
-      eventlog: event.eventlog as any,
+      eventlog: processedEventlog as any,
     } as StorageEvent;
   }
 
@@ -3721,21 +3832,66 @@ export class EventService {
       }))
     });
     
+    // 🔥 关键修复：检查并加载缺失的父事件
+    // 如果子事件的 parentEventId 不在 eventMap 中，说明父事件被过滤掉了
+    // 但为了正确计算层级，我们需要知道父事件的完整层级链
+    const missingParentIds = new Set<string>();
+    events.forEach(event => {
+      if (event.parentEventId && !eventMap.has(event.parentEventId)) {
+        missingParentIds.add(event.parentEventId);
+      }
+    });
+    
+    if (missingParentIds.size > 0) {
+      console.log('[EventService] 🔍 检测到缺失的父事件:', {
+        missingCount: missingParentIds.size,
+        missingIds: Array.from(missingParentIds).slice(0, 5).map(id => id.slice(-8))
+      });
+      
+      // 注意：这里不能使用 async/await，因为这是同步函数
+      // 我们只能基于当前 eventMap 计算，无法动态加载
+      // 解决方案：如果父事件不存在，从数据库中的 bulletLevel 字段读取
+    }
+    
     events.forEach(event => {
       if (!event.id) return;
       
-      // 为每个事件单独创建 visited Set（避免互相干扰）
-      const visited = new Set<string>();
-      const level = this.calculateBulletLevel(event, eventMap, visited);
+      // 🔥 关键修复：如果父事件不在 eventMap 中，优先使用数据库中的 bulletLevel
+      // 这避免了因为父事件被过滤导致层级计算错误
+      let level: number;
       
-      // 🔍 DEBUG: 记录每个事件的计算结果
-      if (event.parentEventId) {
-        console.log('[EventService] 🔍 Calculated level:', {
-          eventId: event.id.slice(-8),
-          parentEventId: event.parentEventId.slice(-8),
-          calculatedLevel: level,
-          parentExists: eventMap.has(event.parentEventId)
-        });
+      if (event.parentEventId && !eventMap.has(event.parentEventId)) {
+        // 父事件被过滤掉了，使用数据库中保存的 bulletLevel
+        if (event.bulletLevel !== undefined && event.bulletLevel !== null) {
+          level = event.bulletLevel;
+          console.log('[EventService] 🔧 使用数据库 bulletLevel (父事件缺失):', {
+            eventId: event.id.slice(-8),
+            parentEventId: event.parentEventId.slice(-8),
+            bulletLevel: level,
+            title: event.title?.simpleTitle?.slice(0, 30)
+          });
+        } else {
+          // 数据库中也没有 bulletLevel，降级为根事件
+          level = 0;
+          console.warn('[EventService] ⚠️ 父事件缺失且无 bulletLevel，降级为根:', {
+            eventId: event.id.slice(-8),
+            parentEventId: event.parentEventId.slice(-8)
+          });
+        }
+      } else {
+        // 正常情况：父事件存在或无父事件，递归计算
+        const visited = new Set<string>();
+        level = this.calculateBulletLevel(event, eventMap, visited);
+        
+        // 🔍 DEBUG: 记录每个事件的计算结果
+        if (event.parentEventId) {
+          console.log('[EventService] 🔍 Calculated level:', {
+            eventId: event.id.slice(-8),
+            parentEventId: event.parentEventId.slice(-8),
+            calculatedLevel: level,
+            parentExists: eventMap.has(event.parentEventId)
+          });
+        }
       }
       
       levels.set(event.id, level);
@@ -4028,6 +4184,87 @@ export class EventService {
     }
   }
 
+  // ==================== 🔥 v2.15: 临时ID替换系统 ====================
+  
+  /**
+   * 解析并替换所有引用临时ID的父子关系
+   * @param tempId 临时ID（line-xxx）
+   * @param realId 真实ID（event_xxx）
+   */
+  private static async resolveTempIdReferences(tempId: string, realId: string): Promise<void> {
+    try {
+      // 查找所有引用该临时ID作为parentEventId的事件
+      const allEvents = await storageManager.queryEvents({ limit: 10000 });
+      const needsUpdate: Event[] = [];
+      
+      allEvents.items.forEach(event => {
+        let needUpdate = false;
+        const updates: Partial<Event> = {};
+        
+        // 检查 parentEventId
+        if (event.parentEventId === tempId) {
+          updates.parentEventId = realId;
+          needUpdate = true;
+          eventLogger.log('🔥 [TempId] 找到引用临时ID的parentEventId:', {
+            eventId: event.id.slice(-8),
+            oldParentId: tempId,
+            newParentId: realId
+          });
+        }
+        
+        // 检查 childEventIds
+        if (event.childEventIds && Array.isArray(event.childEventIds)) {
+          const index = event.childEventIds.indexOf(tempId);
+          if (index !== -1) {
+            const newChildIds = [...event.childEventIds];
+            newChildIds[index] = realId;
+            updates.childEventIds = newChildIds;
+            needUpdate = true;
+            eventLogger.log('🔥 [TempId] 找到引用临时ID的childEventIds:', {
+              eventId: event.id.slice(-8),
+              oldChildId: tempId,
+              newChildId: realId
+            });
+          }
+        }
+        
+        if (needUpdate) {
+          needsUpdate.push({ ...event, ...updates });
+        }
+      });
+      
+      // 批量更新
+      if (needsUpdate.length > 0) {
+        eventLogger.log(`🔥 [TempId] 批量更新 ${needsUpdate.length} 个事件的父子关系`);
+        
+        for (const event of needsUpdate) {
+          await this.updateEvent(
+            event.id,
+            {
+              parentEventId: event.parentEventId,
+              childEventIds: event.childEventIds
+            },
+            true, // skipSync
+            {
+              source: 'temp-id-resolution',
+              originComponent: 'EventService'
+            }
+          );
+        }
+        
+        eventLogger.log('✅ [TempId] 临时ID替换完成:', {
+          tempId,
+          realId,
+          updatedCount: needsUpdate.length
+        });
+      } else {
+        eventLogger.log('🔍 [TempId] 未找到引用该临时ID的事件');
+      }
+    } catch (error) {
+      eventLogger.error('❌ [TempId] 替换临时ID引用失败:', error);
+    }
+  }
+  
   /**
    * 判断事件是否应该显示在 EventTree 中
    * 排除系统自动生成的事件类型

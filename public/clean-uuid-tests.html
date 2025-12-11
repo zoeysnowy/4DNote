@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>🧹 清理 UUID 测试数据</title>
+  <style>
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+      color: #fff;
+    }
+    button:hover { background: linear-gradient(to bottom, #4a4a4a, #3a3a3a); }
+    button.danger {
+      background: linear-gradient(to bottom, #d32f2f, #c62828);
+      border-color: #b71c1c;
+    }
+    button.danger:hover {
+      background: linear-gradient(to bottom, #e53935, #d32f2f);
+    }
+    #output {
+      background: #252526;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .info { color: #4fc3f7; }
+    .success { color: #81c784; }
+    .warning { color: #ffb74d; }
+    .error { color: #e57373; }
+  </style>
+</head>
+<body>
+  <h1>🧹 清理 UUID 测试数据</h1>
+  <p>删除所有标题包含 "UUID根事件" 或 "L1-"、"L2-" 等的测试事件</p>
+  
+  <button onclick="scan()">1️⃣ 扫描测试数据</button>
+  <button onclick="cleanAll()" id="cleanBtn" class="danger" disabled>2️⃣ 删除所有测试数据</button>
+  
+  <div id="output"></div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.js';
+    import { EventHub } from '../src/services/EventHub.js';
+    window.EventService = EventService;
+    window.EventHub = EventHub;
+
+    let testEvents = [];
+
+    function log(msg, type = 'info') {
+      const output = document.getElementById('output');
+      const colors = {
+        info: '#4fc3f7',
+        success: '#81c784',
+        warning: '#ffb74d',
+        error: '#e57373'
+      };
+      const time = new Date().toLocaleTimeString();
+      output.innerHTML += `<span style="color: ${colors[type]}">[${time}] ${msg}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+      console.log(msg);
+    }
+
+    window.scan = async function() {
+      document.getElementById('output').innerHTML = '';
+      log('🔍 扫描测试数据...', 'info');
+
+      try {
+        const all = await EventService.getAllEvents();
+        log(`✅ 读取事件：${all.length} 个`, 'success');
+
+        // 找出所有 UUID 测试事件
+        testEvents = all.filter(e => {
+          const t = e.title?.simpleTitle || '';
+          return t.includes('UUID根事件') || 
+                 t.includes('L1-') || t.includes('L2-') || 
+                 t.includes('L3-') || t.includes('L4-');
+        });
+
+        log(`\n📊 发现 UUID 测试事件：${testEvents.length} 个`, 'warning');
+
+        // 按 bulletLevel 分组
+        const byLevel = {};
+        testEvents.forEach(e => {
+          const level = e.bulletLevel || 0;
+          if (!byLevel[level]) byLevel[level] = [];
+          byLevel[level].push(e);
+        });
+
+        Object.keys(byLevel).sort((a, b) => Number(a) - Number(b)).forEach(level => {
+          log(`  L${level}: ${byLevel[level].length} 个事件`, 'info');
+        });
+
+        // 显示时间分布
+        const byTime = {};
+        testEvents.forEach(e => {
+          const t = e.title?.simpleTitle || '';
+          const match = t.match(/(\d{2}:\d{2}:\d{2})/);
+          if (match) {
+            const time = match[1];
+            if (!byTime[time]) byTime[time] = 0;
+            byTime[time]++;
+          }
+        });
+
+        log(`\n⏰ 时间分布：`, 'info');
+        Object.entries(byTime).sort().forEach(([time, count]) => {
+          log(`  ${time}: ${count} 个事件`, 'info');
+        });
+
+        if (testEvents.length > 0) {
+          document.getElementById('cleanBtn').disabled = false;
+          log(`\n⚠️ 准备删除 ${testEvents.length} 个测试事件`, 'warning');
+        } else {
+          log(`\n✅ 没有找到测试数据`, 'success');
+        }
+
+      } catch (err) {
+        log(`\n❌ 扫描失败: ${err.message}`, 'error');
+        console.error(err);
+      }
+    };
+
+    window.cleanAll = async function() {
+      if (testEvents.length === 0) {
+        log('没有需要删除的数据', 'info');
+        return;
+      }
+
+      const confirm1 = confirm(`确认删除 ${testEvents.length} 个 UUID 测试事件？\n\n这将永久删除所有测试数据！`);
+      if (!confirm1) return;
+
+      const confirm2 = confirm(`再次确认：真的要删除 ${testEvents.length} 个事件吗？`);
+      if (!confirm2) return;
+
+      log(`\n🧹 开始删除 ${testEvents.length} 个事件...`, 'warning');
+      document.getElementById('cleanBtn').disabled = true;
+
+      let deleted = 0;
+      let failed = 0;
+
+      for (const event of testEvents) {
+        try {
+          await EventHub.deleteEvent(event.id, false);
+          deleted++;
+
+          if (deleted % 50 === 0) {
+            log(`  进度: ${deleted}/${testEvents.length}`, 'info');
+          }
+        } catch (err) {
+          failed++;
+          if (failed <= 5) {
+            log(`  ❌ 删除失败 [${event.id.slice(-8)}]: ${err.message}`, 'error');
+          }
+        }
+      }
+
+      log(`\n✅ 删除完成！`, 'success');
+      log(`  成功: ${deleted} 个`, 'success');
+      if (failed > 0) {
+        log(`  失败: ${failed} 个`, 'error');
+      }
+
+      log(`\n💡 建议：`, 'info');
+      log(`  1. 刷新 Plan 页面，验证事件已删除`, 'info');
+      log(`  2. 运行 test-uuid-migration.html 重新创建测试数据`, 'info');
+
+      testEvents = [];
+    };
+  </script>
+</body>
+</html>

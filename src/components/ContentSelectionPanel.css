@@ -1,48 +1,84 @@
-/* Content Selection Panel Styles */
+/* Content Selection Panel Styles - 毛玻璃效果 */
 .content-selection-panel {
-  width: 315px;
-  height: 823px;
-  background: white;
-  border-radius: 20px;
-  box-shadow: 5px 5px 10px 0px rgba(0, 0, 0, 0.05);
-  border: 1px solid #e5e7eb;
-  padding: 20px;
-  overflow: visible;
+  width: 335px;
+  height: 100vh;
+  background: rgba(243, 244, 246, 0.75);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.3);
+  padding: 12px;
+  padding-top: 24px; /* 与panel.svg按钮对齐 */
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
   font-family: 'Microsoft YaHei', Arial, sans-serif;
+  position: fixed;
+  top: 0;
+  left: 60px; /* 从sidebar后面开始 */
+  bottom: 0;
+  z-index: 1050; /* 中间层 - 附属于menubar，高于header */
+  transition: transform 0.3s ease, opacity 0.3s ease, visibility 0.3s;
+}
+
+/* 当unpinned时完全隐藏panel */
+.content-selection-panel.unpinned {
+  transform: translateX(-335px); /* 向左移出屏幕 */
+  opacity: 0;
+  visibility: hidden;
+}
+
+/* ==================== 可折叠Section容器 ==================== */
+.collapsible-section {
+  margin-bottom: 20px;
+  overflow: hidden;
+}
+
+.collapsible-section.collapsed .collapsible-content {
+  display: none;
+}
+
+.collapsible-content {
+  display: block;
+  animation: slideDown 0.2s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ==================== Section Header ==================== */
-/* 使用统一的 section-header 样式 - 完全复制 PlanManager.css + App.css */
-.content-selection-panel .section-header {
+.section-header-simple {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
+  justify-content: space-between;
+  margin-bottom: 8px;
   flex-shrink: 0;
-  justify-content: flex-start;
+  cursor: pointer;
+  user-select: none;
+  padding: 0;
 }
 
-.content-selection-panel .section-header:hover .panel-toggle-btn {
-  opacity: 0.6;
+.section-header-simple:hover {
+  opacity: 0.8;
 }
 
-.content-selection-panel .section-header .title-indicator {
-  width: 4px;
-  height: 20px;
-  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 75%);
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-
-.content-selection-panel .section-header h3 {
+.section-title {
   margin: 0;
   font-size: 18px;
-  font-weight: 600;
-  color: #111827;
-  line-height: 1.4;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
+  font-weight: 700;
+  color: #3b3c3c;
+  line-height: 28px;
+  font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', Arial, sans-serif;
   text-align: left;
 }
 
@@ -104,16 +140,57 @@
   background: none;
   border: none;
   cursor: pointer;
-  opacity: 0;
+  opacity: 0; /* 默认隐藏 */
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  margin-left: auto;
+}
+
+/* 鼠标悬浮section-header时显示 */
+.section-header-simple:hover .panel-toggle-btn {
+  opacity: 1;
+}
+
+.panel-toggle-btn:hover {
+  opacity: 0.7 !important;
+}
+
+.panel-toggle-btn img {
+  transition: transform 0.2s;
+}
+
+.panel-toggle-btn.expanded img {
+  transform: rotate(90deg);
+}
+
+/* Pin按钮 */
+.panel-pin-btn {
+  width: 16px;
+  height: 16px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.6;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: opacity 0.2s;
+  position: absolute;
+  top: 11px;
+  right: 11px;
 }
 
-.panel-toggle-btn:hover {
-  opacity: 1 !important;
+.panel-pin-btn:hover {
+  opacity: 1;
+}
+
+.panel-pin-btn img {
+  width: 16px;
+  height: 16px;
 }
 
 /* Search Container - 完全复制 UnifiedDateTimePicker 样式 */
@@ -197,12 +274,132 @@
   to { opacity: 1; }
 }
 
-/* Calendar */
+/* 精致搜索框 - 透明背景 + 渐变蒙版边框 */
+.search-input-wrapper-enhanced {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 10px 20px;
+  margin-bottom: 12px;
+  border-radius: 100px;
+  
+  /* 核心：透明背景 + 实线边框 + 渐变蒙版 */
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.5); /* 默认半透明白边框 */
+  
+  /* 硬件加速抗锯齿 */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.search-input-wrapper-enhanced:hover {
+  /* Hover时边框变为渐变色 */
+  border-image: linear-gradient(90deg, #a855f7 0%, #3b82f6 100%) 1;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+.search-input-wrapper-enhanced .search-icon {
+  width: 18px;
+  height: 18px;
+  opacity: 0.5;
+  margin-right: 10px;
+  flex-shrink: 0;
+  transition: opacity 0.3s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.search-input-wrapper-enhanced:hover .search-icon {
+  opacity: 0.7;
+}
+
+/* Search Section - 独立搜索区域 */
+.search-section {
+  margin-top: 16px;
+  margin-bottom: 12px;
+  padding: 0 4px; /* 给阴影留空间 */
+}
+
+.search-input-enhanced {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 15px;
+  color: #1f2937;
+  font-family: 'Microsoft YaHei', Arial, sans-serif;
+  position: relative;
+  z-index: 1;
+}
+
+.search-input-enhanced::placeholder {
+  color: rgba(156, 163, 175, 0.8);
+}
+
+/* Snapshot模式提示横幅 */
+.snapshot-mode-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(168, 85, 247, 0.1);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 12px;
+  margin-bottom: 8px;
+  animation: slideDown 0.3s ease-out;
+}
+
+.snapshot-mode-text {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #7c3aed;
+  font-weight: 500;
+  font-family: 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.snapshot-icon {
+  font-size: 14px;
+}
+
+.exit-snapshot-btn {
+  background: rgba(168, 85, 247, 0.15);
+  border: 1px solid rgba(168, 85, 247, 0.3);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #7c3aed;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: 'Microsoft YaHei', Arial, sans-serif;
+}
+
+.exit-snapshot-btn:hover {
+  background: rgba(168, 85, 247, 0.25);
+  border-color: rgba(168, 85, 247, 0.5);
+  transform: translateY(-1px);
+}
+
+.exit-snapshot-btn:active {
+  transform: translateY(0);
+}
+
+/* Calendar - 毛玻璃卡片效果 */
 .calendar-container {
-  background: rgba(255, 255, 255, 0.7);
+  background: transparent; /* 取消背景色 */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   padding: 8px;
   border-radius: 10px;
   margin-bottom: 20px;
+  border: none;
 }
 
 .calendar-header {
@@ -231,9 +428,9 @@
 }
 
 .calendar-title {
-  font-family: 'Roboto', 'Noto Sans JP', sans-serif;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 22px;
   color: #374151;
 }
@@ -273,9 +470,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: 'Roboto', sans-serif;
+  font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 22.4px;
   color: #374151;
   background: rgba(255, 255, 255, 0.5);
   border-radius: 6px;
@@ -292,11 +490,12 @@
 .calendar-day-empty {
   opacity: 0.3;
   cursor: default;
+  pointer-events: none;
 }
 
 .calendar-day-today {
-  background: rgba(59, 130, 246, 0.15) !important;
-  color: #3b82f6 !important;
+  background: rgba(255, 255, 255, 0.8) !important;
+  color: #374151 !important;
   font-weight: 700 !important;
   border: 2px solid rgba(59, 130, 246, 0.3) !important;
 }
@@ -337,46 +536,9 @@
   background: #bfdbfe !important;
 }
 
-/* Filter Buttons */
-.filter-buttons {
-  display: flex;
-  gap: 0;
-  background: rgba(255, 255, 255, 0.8);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  padding: 5px;
-}
+/* Filter Buttons - 已删除，不再使用 */
 
-.filter-btn {
-  flex: 1;
-  height: 24px;
-  border: none;
-  background: transparent;
-  font-family: 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
-  font-weight: 400;
-  line-height: normal;
-  color: #4b5563;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.filter-btn:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.filter-btn.active {
-  background: linear-gradient(to right, #22d3ee, #3b82f6);
-  color: white;
-  font-weight: 700;
-  font-size: 14px;
-}
-
-/* Task Tree */
+/* Task Tree - 标签列表毛玻璃容器 */
 .task-tree {
   flex: 1;
   overflow-y: auto;
@@ -384,10 +546,14 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 20px;
+  margin-top: 0;
   position: relative;
-  margin-left: -10px;
-  padding-left: 10px;
+  background: rgba(250, 250, 250, 0.5);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 8px;
+  border: 0.8px solid rgba(255, 255, 255, 0.6);
 }
 
 .task-node {
@@ -417,6 +583,7 @@
   justify-content: center;
   flex-shrink: 0;
   margin: 0;
+  margin-right: 6px; /* 向左移动6px */
   padding: 0;
 }
 
@@ -543,7 +710,7 @@
 .task-time-bar {
   width: 70px;
   height: 4px;
-  background: #e5e7eb;
+  background: rgba(229, 231, 235, 1);
   border-radius: 9999px;
   overflow: hidden;
 }
@@ -552,6 +719,19 @@
   height: 100%;
   border-radius: 9999px;
   transition: width 0.3s;
+}
+
+/* 渐变进度条颜色 - 匹配Figma设计 */
+.task-time-fill.purple {
+  background: linear-gradient(to right, #a855f7, #9333ea);
+}
+
+.task-time-fill.blue {
+  background: #3b82f6;
+}
+
+.task-time-fill.green {
+  background: #10b981;
 }
 
 .task-hours {

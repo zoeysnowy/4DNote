@@ -398,10 +398,11 @@ export function convertToCalendarEvent(
     isAllday: event.isAllDay || false,
     category: category,
     location: event.location || '',
-    // 颜色配置 - 使用事件颜色（标签颜色或日历颜色）
+    // 颜色配置
     color: '#ffffff',
     backgroundColor: eventColor,
     borderColor: eventColor,
+    dragBackgroundColor: eventColor,
     // 自定义数据（保留原始事件信息）
     raw: {
       remarkableEvent: event,
@@ -498,23 +499,28 @@ export function createCalendarsFromTags(tags: any[]): any[] {
   // 使用所有标签创建日历分组
   const eventTags = flatTags;
   
+  const defaultColor = '#3788d8';
+  
   return [
     {
       id: 'default',
       name: '默认日历',
       color: '#ffffff',
-      backgroundColor: '#3788d8',
-      borderColor: '#3788d8',
-      dragBackgroundColor: 'rgba(55, 136, 216, 0.3)'
+      backgroundColor: defaultColor,
+      borderColor: defaultColor,
+      dragBackgroundColor: defaultColor
     },
-    ...eventTags.map(tag => ({
-      id: tag.id,
-      name: tag.displayName || tag.name,
-      color: '#ffffff',
-      backgroundColor: tag.color || '#3788d8',
-      borderColor: tag.color || '#3788d8',
-      dragBackgroundColor: `${tag.color}33` || 'rgba(55, 136, 216, 0.3)' // 透明度20%
-    }))
+    ...eventTags.map(tag => {
+      const tagColor = tag.color || defaultColor;
+      return {
+        id: tag.id,
+        name: tag.displayName || tag.name,
+        color: '#ffffff',
+        backgroundColor: tagColor,
+        borderColor: tagColor,
+        dragBackgroundColor: tagColor
+      };
+    })
   ];
 }
 

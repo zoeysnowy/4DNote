@@ -4051,10 +4051,922 @@ graph TB
 
 ---
 
-**文档版本**: v0.2  
-**最后更新**: 2025-11-09  
-**状态**: ✅ 完整且准确
-- **Part 5**：UI 渲染、控制工具栏、TUI Calendar 配置、模板系统、自适应主题、模态框集成
+## 20. TUI Calendar 接口配置总结
 
-**下一步**: 开始编写 EventEditModal 模块 PRD 🚀
+### 20.1 EventObject 接口定义
+
+TUI Calendar 使用 `EventObject` 接口作为事件的标准数据格式，定义在 `src/lib/tui.calendar/apps/calendar/src/types/events.ts`：
+
+```typescript
+export interface EventObject {
+  // ========== 基础标识 ==========
+  /**
+   * 事件唯一ID（可选）
+   * 用于识别和查找事件，建议使用 UUID 或时间戳
+   */
+  id?: string;
+
+  /**
+   * 日历分组ID
+   * 对应 Calendar 配置中的 id 字段
+   * TimeCalendar 使用标签ID作为 calendarId
+   */
+  calendarId?: string;
+
+  // ========== 显示内容 ==========
+  /**
+   * 事件标题
+   * 显示在日历视图中的主要文本
+   */
+  title?: string;
+
+  /**
+   * 事件详情/描述
+   * 显示在详情弹窗或副标题中
+   */
+  body?: string;
+
+  /**
+   * 地点
+   * 显示事件发生的位置
+   */
+  location?: string;
+
+  /**
+   * 参与者列表
+   * 存储为字符串数组
+   */
+  attendees?: string[];
+
+  // ========== 时间字段 ==========
+  /**
+   * 是否为全天事件
+   * true: 显示在 allday 面板
+   * false: 显示在 time grid（按小时显示）
+   */
+  isAllday?: boolean;
+
+  /**
+   * 开始时间
+   * 支持 Date | string | number | TZDate
+   * TimeCalendar 使用 Date 对象
+   */
+  start?: DateType;
+
+  /**
+   * 结束时间
+   * 支持 Date | string | number | TZDate
+   * TimeCalendar 使用 Date 对象
+   */
+  end?: DateType;
+
+  /**
+   * 前往事件的路程时间（分钟）
+   * 显示在事件开始前的预留时间
+   */
+  goingDuration?: number;
+
+  /**
+   * 返回的路程时间（分钟）
+   * 显示在事件结束后的预留时间
+   */
+  comingDuration?: number;
+
+  // ========== 事件分类 ==========
+  /**
+   * 事件类型分类
+   * - 'milestone': 里程碑事件（显示在顶部 milestone 面板）
+   * - 'task': 任务事件（显示在 task 面板，带勾选框样式）
+   * - 'allday': 全天事件（显示在 allday 面板）
+   * - 'time': 时间事件（显示在时间网格中）
+   */
+  category?: 'milestone' | 'task' | 'allday' | 'time';
+
+  /**
+   * 工作时段分类（已废弃）
+   * TUI Calendar 保留字段，TimeCalendar 不使用
+   */
+  dueDateClass?: string;
+
+  // ========== 重复规则 ==========
+  /**
+   * 重复事件规则（RFC 5545 格式）
+   * 示例：'FREQ=WEEKLY;BYDAY=MO,WE,FR'
+   * TimeCalendar 暂不支持，由 Outlook 处理
+   */
+  recurrenceRule?: string;
+
+  // ========== 状态标记 ==========
+  /**
+   * 事件状态
+   * - 'Busy': 忙碌（默认）
+   * - 'Free': 空闲
+   */
+  state?: 'Busy' | 'Free';
+
+  /**
+   * 是否可见
+   * false 时事件在日历上隐藏
+   */
+  isVisible?: boolean;
+
+  /**
+   * 是否待定状态
+   * true 时显示半透明样式
+   */
+  isPending?: boolean;
+
+  /**
+   * 是否聚焦状态
+   * true 时高亮显示（点击时自动设置）
+   */
+  isFocused?: boolean;
+
+  /**
+   * 是否只读
+   * true 时禁止拖拽编辑和删除
+   */
+  isReadOnly?: boolean;
+
+  /**
+   * 是否私密事件
+   * true 时隐藏详细信息，仅显示占位
+   */
+  isPrivate?: boolean;
+
+  // ========== 样式配置 ==========
+  /**
+   * 文字颜色
+   * 支持十六进制、RGB、颜色名称
+   * TimeCalendar 默认使用 '#ffffff'
+   */
+  color?: string;
+
+  /**
+   * 背景颜色
+   * 事件卡片的主要颜色
+   * TimeCalendar 使用标签颜色
+   */
+  backgroundColor?: string;
+
+  /**
+   * 拖拽时的背景颜色
+   * 拖拽过程中显示的颜色
+   * TimeCalendar 使用标签颜色 + 30% 透明度
+   */
+  dragBackgroundColor?: string;
+
+  /**
+   * 左边框颜色
+   * 时间事件左侧的竖线颜色
+   * TimeCalendar 使用标签颜色
+   */
+  borderColor?: string;
+
+  /**
+   * 自定义内联样式
+   * 支持任意 CSS 属性对象
+   */
+  customStyle?: StyleProp;
+
+  // ========== 原始数据 ==========
+  /**
+   * 原始数据存储
+   * 用于保存 4DNote Event 完整对象
+   * TimeCalendar 在此存储：
+   * - remarkableEvent: 原始 Event 对象
+   * - externalId: Outlook 事件ID
+   * - syncStatus: 同步状态
+   * - tags: 标签数组
+   * - calendarIds: 日历ID数组
+   */
+  raw?: any;
+}
+```
+
+### 20.2 数据转换流程
+
+#### 4DNote Event → TUI Calendar EventObject
+
+**函数**: `convertToCalendarEvent()` (`src/utils/calendarUtils.ts` L241-397)
+
+**转换映射表**:
+
+| 4DNote Event 字段 | TUI EventObject 字段 | 转换逻辑 | 说明 |
+|-------------------|----------------------|---------|------|
+| `id` | `id` | 直接映射 | 保持唯一性 |
+| `tags[0]` | `calendarId` | 取第一个标签ID | 用于日历分组 |
+| `title.simpleTitle` | `title` | JSON解析 → 提取纯文本 | 支持Slate JSON格式 |
+| `description` | `body` | 直接映射 | 事件描述 |
+| `startTime` | `start` | `parseLocalTimeString()` | 字符串 → Date对象 |
+| `endTime` | `end` | `parseLocalTimeString()` | 字符串 → Date对象 |
+| `isAllDay` | `isAllday` | 直接映射 | 全天事件标记 |
+| `isDeadline` | `category='milestone'` | 布尔 → 枚举 | 里程碑类型 |
+| `isTask` | `category='task'` | 布尔 → 枚举 | 任务类型 |
+| `location` | `location` | 直接映射 | 地点信息 |
+| `tags[0]` → `tag.color` | `backgroundColor` | 标签查找 → 颜色 | 事件背景色 |
+| 同上 | `borderColor` | 同上 | 左边框颜色 |
+| 固定值 `'#ffffff'` | `color` | 固定白色 | 文字颜色 |
+| 完整 Event 对象 | `raw.remarkableEvent` | 完整保存 | 用于反向转换 |
+| `externalId` | `raw.externalId` | 直接映射 | Outlook ID |
+| `syncStatus` | `raw.syncStatus` | 直接映射 | 同步状态 |
+
+**特殊处理**:
+
+1. **Timer 事件标记**:
+   ```typescript
+   if (event.id === runningTimerEventId) {
+     displayTitle = `[专注中] ${displayTitle}`;
+   }
+   ```
+   - 正在运行的Timer事件添加 `[专注中]` 前缀
+   - Widget模式保持原标题（避免重复添加）
+
+2. **标题解析**:
+   ```typescript
+   // simpleTitle 可能是 Slate JSON 或纯文本
+   try {
+     const nodes = JSON.parse(simpleTitle);
+     displayTitle = extractTextFromSlate(nodes);
+   } catch {
+     displayTitle = simpleTitle; // 纯文本
+   }
+   ```
+   - 智能识别标题格式
+   - 提取纯文本用于日历显示
+
+3. **Fallback 机制**:
+   ```typescript
+   // 无标题时使用 eventlog 内容
+   if (!displayTitle && !event.tags?.length) {
+     displayTitle = extractTextFromEventLog(event.eventlog).substring(0, 50);
+   }
+   ```
+   - 确保事件始终有可显示的内容
+
+#### TUI Calendar EventObject → 4DNote Event
+
+**函数**: `convertFromCalendarEvent()` (`src/utils/calendarUtils.ts` L430-478)
+
+**转换映射表**:
+
+| TUI EventObject 字段 | 4DNote Event 字段 | 转换逻辑 | 说明 |
+|----------------------|-------------------|---------|------|
+| `id` | `id` | 直接映射 | 保持唯一性 |
+| `title` | `title` | 字符串 | 等待 EventService 规范化 |
+| `body` | `description` | 直接映射 | 事件描述 |
+| `start` | `startTime` | `formatTimeForStorage()` | Date → 本地时间字符串 |
+| `end` | `endTime` | `formatTimeForStorage()` | Date → 本地时间字符串 |
+| `isAllday` | `isAllDay` | 直接映射 | 全天事件标记 |
+| `location` | `location` | 直接映射 | 地点信息 |
+| `calendarId` | `tags[]` | 非'default'时添加到数组 | 标签ID |
+| `raw.remarkableEvent` | 完整对象 | 优先使用 | 保留原始数据 |
+| `raw.externalId` | `externalId` | 继承 | Outlook ID |
+| `raw.syncStatus` | `syncStatus` | 继承 | 同步状态 |
+
+**关键设计**:
+
+1. **简化转换逻辑**:
+   ```typescript
+   // ❌ 旧设计：自己创建 EventTitle 和 EventLog
+   // ✅ 新设计：只传字符串，让 EventService.normalizeEvent() 处理
+   return {
+     title: calendarEvent.title, // 简单字符串
+     description: calendarEvent.body, // 简单字符串
+     // EventService 会自动转换为 EventTitle 和 EventLog
+   };
+   ```
+
+2. **版本控制**:
+   ```typescript
+   localVersion: (originalEvent?.localVersion || 0) + 1
+   ```
+   - 每次转换自动递增版本号
+   - 用于同步冲突检测
+
+3. **时区安全**:
+   ```typescript
+   // 使用 dayjs 避免 UTC 转换问题
+   startTime: dayjs(calendarEvent.start).format('YYYY-MM-DD HH:mm:ss')
+   ```
+   - 确保时间不受时区影响
+   - 保持本地时间一致性
+
+### 20.3 TUI Calendar 配置接口
+
+#### Week 视图配置
+
+```typescript
+week: {
+  // 面板显示控制
+  taskView: ['milestone', 'task'] | false,
+  eventView: ['time', 'allday'] | ['time'],
+  
+  // 面板高度（像素）
+  milestoneHeight: number, // Deadline 面板高度
+  taskHeight: number,      // 任务面板高度
+  alldayHeight: number,    // 全天事件面板高度
+  
+  // 时间指示器
+  showNowIndicator: boolean,        // 显示"现在"时间线
+  showTimezoneCollapseButton: boolean, // 时区折叠按钮
+  
+  // 时间网格
+  hourStart: number,  // 起始小时（0-23）
+  hourEnd: number,    // 结束小时（0-23）
+}
+```
+
+**TimeCalendar 配置**:
+```typescript
+week: {
+  taskView: calendarSettings.showTask ? ['milestone', 'task'] : false,
+  eventView: calendarSettings.showAllDay ? ['time', 'allday'] : ['time'],
+  milestoneHeight: calendarSettings.deadlineHeight || 24,
+  taskHeight: calendarSettings.taskHeight || 24,
+  alldayHeight: calendarSettings.allDayHeight || 24,
+  showNowIndicator: true,
+  showTimezoneCollapseButton: false
+}
+```
+
+#### Month 视图配置
+
+```typescript
+month: {
+  // 星期名称
+  dayNames: string[], // ['日', '一', '二', ...]
+  
+  // 显示控制
+  visibleWeeksCount: number,  // 显示周数（0=自动，4=固定4周）
+  workweek: boolean,          // 仅显示工作日
+  narrowWeekend: boolean,     // 周末占更少空间
+  isAlways6Weeks: boolean,    // 始终显示6周
+  
+  // 事件显示
+  visibleEventCount: number,  // 每天最多显示事件数
+  
+  // 周起始日
+  startDayOfWeek: 0 | 1,     // 0=周日, 1=周一
+}
+```
+
+**TimeCalendar 配置**:
+```typescript
+month: {
+  dayNames: ['日', '一', '二', '三', '四', '五', '六'],
+  visibleWeeksCount: 4,  // 固定4周
+  workweek: false,       // 显示周末
+  narrowWeekend: false,  // 周末宽度正常
+  startDayOfWeek: 0,     // 周日开始
+  isAlways6Weeks: false, // 自适应高度
+  visibleEventCount: 6   // 最多6个事件
+}
+```
+
+#### Calendars 配置（日历分组）
+
+```typescript
+interface CalendarInfo {
+  id: string;               // 分组唯一ID
+  name: string;             // 分组名称
+  color: string;            // 文字颜色
+  backgroundColor: string;   // 背景颜色
+  borderColor: string;      // 边框颜色
+  dragBackgroundColor: string; // 拖拽背景色
+}
+```
+
+**TimeCalendar 配置**:
+```typescript
+// 从层级标签生成日历分组
+createCalendarsFromTags(hierarchicalTags) {
+  return [
+    {
+      id: 'default',
+      name: '默认日历',
+      backgroundColor: '#3788d8',
+      ...
+    },
+    ...tags.map(tag => ({
+      id: tag.id,
+      name: tag.displayName || tag.name,
+      backgroundColor: tag.color || '#3788d8',
+      borderColor: tag.color || '#3788d8',
+      dragBackgroundColor: `${tag.color}33` // 20% 透明度
+    }))
+  ];
+}
+```
+
+### 20.4 事件回调接口
+
+#### 事件交互回调
+
+```typescript
+interface TUICalendarCallbacks {
+  // ========== 点击事件 ==========
+  /**
+   * 点击事件卡片时触发
+   * @param eventInfo - { event: EventObject, nativeEvent: MouseEvent }
+   */
+  onClickEvent?: (eventInfo: { event: EventObject; nativeEvent: MouseEvent }) => void;
+
+  // ========== 选择时间段 ==========
+  /**
+   * 拖拽选择时间段时触发（用于创建新事件）
+   * @param selectionInfo - { start: TZDate, end: TZDate, isAllday: boolean }
+   */
+  onSelectDateTime?: (selectionInfo: { start: TZDate; end: TZDate; isAllday: boolean }) => void;
+
+  // ========== 创建事件前 ==========
+  /**
+   * 创建事件前触发（可阻止默认行为）
+   * @param eventData - 新事件数据
+   * @returns boolean - 返回 false 阻止创建
+   */
+  onBeforeCreateEvent?: (eventData: EventObject) => boolean | void;
+
+  // ========== 更新事件前 ==========
+  /**
+   * 拖拽修改事件时触发（可阻止默认行为）
+   * @param updateInfo - { event: EventObject, changes: Partial<EventObject> }
+   * @returns boolean - 返回 false 阻止更新
+   */
+  onBeforeUpdateEvent?: (updateInfo: {
+    event: EventObject;
+    changes: Partial<EventObject>;
+  }) => boolean | void;
+
+  // ========== 删除事件前 ==========
+  /**
+   * 删除事件前触发（可阻止默认行为）
+   * @param eventInfo - { event: EventObject }
+   * @returns boolean - 返回 false 阻止删除
+   */
+  onBeforeDeleteEvent?: (eventInfo: { event: EventObject }) => boolean | void;
+}
+```
+
+**TimeCalendar 实现**:
+
+1. **阻止默认创建**:
+   ```typescript
+   onBeforeCreateEvent={() => {
+     console.log('⚠️ beforeCreateEvent blocked');
+     return false; // 阻止 TUI Calendar 默认行为
+   }}
+   ```
+   - 禁用双击创建事件
+   - 改用 `onSelectDateTime` + 自定义 Modal
+
+2. **拖拽编辑处理**:
+   ```typescript
+   onBeforeUpdateEvent={async (updateInfo) => {
+     const { event, changes } = updateInfo;
+     const updatedEvent = { ...event, ...changes };
+     
+     // 转换为 4DNote Event
+     const remarkableEvent = convertFromCalendarEvent(updatedEvent);
+     
+     // 保存到 EventService
+     await EventHub.updateEvent(remarkableEvent.id, remarkableEvent);
+     
+     return true; // 允许 TUI Calendar 更新 UI
+   }}
+   ```
+
+3. **点击事件**:
+   ```typescript
+   onClickEvent={(eventInfo) => {
+     const event = eventInfo.event.raw?.remarkableEvent;
+     setEditingEvent(event);
+     setShowEventEditModal(true);
+   }}
+   ```
+
+### 20.5 模板系统接口
+
+#### 模板函数签名
+
+```typescript
+interface TUICalendarTemplates {
+  // ========== 月视图模板 ==========
+  /**
+   * 月视图日期格子头部
+   * @param model - { date: string, ymd: string, month: number, isToday: boolean }
+   */
+  monthGridHeader?: (model: {
+    date: string;
+    ymd: string;
+    month: number;
+    isToday: boolean;
+  }) => string;
+
+  /**
+   * 月视图更多事件弹窗
+   * @param model - { date: string, events: EventObject[] }
+   */
+  monthMoreTitleDate?: (model: { date: string }) => string;
+  monthMoreClose?: () => string;
+
+  // ========== 周视图模板 ==========
+  /**
+   * 周视图星期名称+日期
+   * @param model - { date: number, dateInstance: TZDate, isToday: boolean }
+   */
+  weekDayName?: (model: {
+    date: number;
+    dateInstance: TZDate;
+    isToday: boolean;
+  }) => string;
+
+  /**
+   * 周视图日期格子头部（仅日视图使用）
+   */
+  weekGridHeader?: (model: any) => string;
+
+  // ========== 事件模板 ==========
+  /**
+   * Task 事件渲染模板
+   * @param event - EventObject
+   */
+  task?: (event: EventObject) => string;
+
+  /**
+   * Time 事件渲染模板
+   * @param event - EventObject
+   */
+  time?: (event: EventObject) => string;
+
+  /**
+   * AllDay 事件渲染模板
+   * @param event - EventObject
+   */
+  allday?: (event: EventObject) => string;
+
+  /**
+   * Milestone 事件渲染模板
+   * @param event - EventObject
+   */
+  milestone?: (event: EventObject) => string;
+
+  // ========== 面板标题模板 ==========
+  /**
+   * Task 面板标题
+   */
+  taskTitle?: () => string;
+
+  /**
+   * Milestone 面板标题
+   */
+  milestoneTitle?: () => string;
+
+  /**
+   * AllDay 面板标题
+   */
+  alldayTitle?: () => string;
+}
+```
+
+**TimeCalendar 模板实现**:
+
+```typescript
+template={{
+  // 月视图日期：每月1号显示 "月/日"，其他只显示日期
+  monthGridHeader(model) {
+    const day = parseInt(model.date.split('-')[2], 10);
+    const month = model.month + 1;
+    const todayClass = model.isToday ? 'is-today' : '';
+    return day === 1 
+      ? `<span class="${todayClass}">${month}/${day}</span>`
+      : `<span class="${todayClass}">${day}</span>`;
+  },
+
+  // 周视图星期名：同样的1号标记逻辑
+  weekDayName(model) {
+    const todayClass = model.isToday ? 'is-today' : '';
+    if (model.date === 1) {
+      const month = model.dateInstance.getMonth() + 1;
+      return `<span class="${todayClass}">${month}/${model.date}</span>`;
+    }
+    return `<span class="${todayClass}">${model.date}</span>`;
+  },
+
+  // Task 事件：勾选框 + 时间 + 标题
+  task(event) {
+    const timeDisplay = formatTime(event.start);
+    const color = event.backgroundColor || '#3788d8';
+    return `
+      <span class="task-checkbox">☐</span>
+      <span style="color: ${color}">
+        <strong>${timeDisplay}</strong>&nbsp;${event.title}
+      </span>
+    `;
+  },
+
+  // Time 事件：时间 + 标题
+  time(event) {
+    const timeDisplay = formatTime(event.start);
+    return `<strong>${timeDisplay}</strong>&nbsp;${event.title}`;
+  },
+
+  // Milestone 面板标题：显示 "Deadline"
+  milestoneTitle() {
+    return '<span style="font-size: 11px;">Deadline</span>';
+  }
+}}
+```
+
+### 20.6 主题系统接口
+
+#### 主题配置结构
+
+```typescript
+interface TUICalendarTheme {
+  // ========== 通用样式 ==========
+  common: {
+    border: string;           // 日历边框
+    backgroundColor: string;  // 日历背景色
+    holiday: { color: string }; // 假日文字颜色
+    saturday: { color: string }; // 周六文字颜色
+    dayName: { color: string }; // 星期名称颜色
+  };
+
+  // ========== 月视图样式 ==========
+  month: {
+    // 星期名称栏
+    dayName: {
+      borderLeft: string;
+      borderBottom: string;
+      backgroundColor: string;
+      textAlign: string;
+      paddingLeft: string;
+    };
+    
+    // 非当月日期
+    holidayExceptThisMonth: { color: string };
+    dayExceptThisMonth: { color: string };
+    
+    // 周末背景
+    weekend: { backgroundColor: string };
+    
+    // 今天样式
+    today: {
+      color: string;
+      backgroundColor: string;
+    };
+    
+    // 更多事件弹窗
+    moreView: {
+      border: string;
+      boxShadow: string;
+      backgroundColor: string;
+      width: number;
+      height: number;
+    };
+  };
+
+  // ========== 周视图样式 ==========
+  week: {
+    // 今天样式
+    today: {
+      color: string;
+      backgroundColor: string;
+    };
+    
+    // 过去日期
+    pastDay: { color: string };
+    
+    // 星期名称栏
+    dayName: {
+      borderTop: string;
+      borderBottom: string;
+      borderLeft: string;
+      backgroundColor: string;
+      color: string;
+    };
+    
+    // 面板调整器
+    panelResizer: { border: string };
+    
+    // 日期网格
+    dayGrid: { borderRight: string };
+    dayGridLeft: {
+      width: string;
+      backgroundColor: string;
+      borderRight: string;
+      color: string;
+    };
+    
+    // 时间网格
+    timeGrid: { borderRight: string };
+    timeGridLeft: {
+      width: string;
+      backgroundColor: string;
+      borderRight: string;
+      color: string;
+    };
+    
+    // "现在"时间指示器
+    nowIndicatorLabel: { color: string };
+    nowIndicatorPast: { border: string };
+    nowIndicatorBullet: { backgroundColor: string };
+    nowIndicatorToday: { border: string };
+    nowIndicatorFuture: { border: string };
+    
+    // 时间颜色
+    pastTime: { color: string };
+    futureTime: { color: string };
+    
+    // 拖拽选择区域
+    gridSelection: {
+      backgroundColor: string;
+      border: string;
+    };
+  };
+}
+```
+
+**TimeCalendar 自适应主题**:
+
+```typescript
+// 根据背景色亮度计算自适应颜色
+const getAdaptiveColors = useMemo(() => {
+  const luminance = calculateLuminance(calendarBackgroundColor);
+  const isDark = luminance < 128;
+  
+  return {
+    isDark,
+    textPrimary: isDark ? '#ffffff' : '#333333',
+    textSecondary: isDark ? 'rgba(255,255,255,0.6)' : '#666666',
+    borderLight: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)',
+    accentColor: isDark ? '#60a5fa' : '#1976d2',
+    // ...更多颜色
+  };
+}, [calendarBackgroundColor]);
+
+theme={{
+  common: {
+    backgroundColor: bgRgba,
+    holiday: { color: getAdaptiveColors.holiday },
+    dayName: { color: getAdaptiveColors.textSecondary }
+  },
+  month: {
+    today: {
+      color: getAdaptiveColors.accentColor,
+      backgroundColor: getAdaptiveColors.accentLight
+    },
+    weekend: { backgroundColor: getAdaptiveColors.weekend }
+  },
+  week: {
+    nowIndicatorLabel: { color: getAdaptiveColors.holiday },
+    pastTime: { color: getAdaptiveColors.textDisabled },
+    futureTime: { color: getAdaptiveColors.textPrimary }
+  }
+}}
+```
+
+### 20.7 数据传输时序图
+
+```mermaid
+sequenceDiagram
+    participant User as 用户
+    participant TC as TimeCalendar
+    participant TUI as TUI Calendar
+    participant CU as calendarUtils
+    participant EH as EventHub
+    participant ES as EventService
+    participant LS as localStorage
+
+    %% 初始化加载
+    User->>TC: 打开日历页面
+    TC->>ES: loadEvents()
+    ES->>LS: getAllEvents()
+    LS-->>ES: Event[]
+    ES-->>TC: Event[]
+    TC->>CU: convertToCalendarEvent()
+    CU-->>TC: EventObject[]
+    TC->>TUI: setEvents(EventObject[])
+    TUI-->>User: 渲染日历视图
+
+    %% 拖拽创建事件
+    User->>TUI: 拖拽选择时间段
+    TUI->>TC: onSelectDateTime({ start, end })
+    TC->>TC: 打开 EventEditModal
+    User->>TC: 填写标题、标签
+    TC->>EH: createEvent(event)
+    EH->>ES: normalizeEvent() + saveEvent()
+    ES->>LS: setItem('events', [...])
+    LS-->>ES: 保存成功
+    ES-->>EH: 返回规范化事件
+    EH-->>TC: 事件已创建
+    TC->>CU: convertToCalendarEvent()
+    CU-->>TC: EventObject
+    TC->>TUI: addEvent(EventObject)
+    TUI-->>User: 显示新事件
+
+    %% 拖拽修改事件
+    User->>TUI: 拖拽事件卡片
+    TUI->>TC: onBeforeUpdateEvent({ event, changes })
+    TC->>CU: convertFromCalendarEvent()
+    CU-->>TC: Event
+    TC->>EH: updateEvent(id, event)
+    EH->>ES: normalizeEvent() + saveEvent()
+    ES->>LS: setItem('events', [...])
+    LS-->>ES: 更新成功
+    ES-->>EH: 返回更新事件
+    EH-->>TC: 事件已更新
+    TC->>TUI: 返回 true（允许UI更新）
+    TUI-->>User: 显示新位置
+
+    %% 点击事件
+    User->>TUI: 点击事件卡片
+    TUI->>TC: onClickEvent({ event })
+    TC->>TC: 提取 event.raw.remarkableEvent
+    TC->>TC: 打开 EventEditModal
+    TC-->>User: 显示编辑弹窗
+```
+
+### 20.8 关键设计模式
+
+#### 1. 双向数据转换
+
+```
+4DNote Event (业务数据)
+         ↓ convertToCalendarEvent
+TUI Calendar EventObject (UI数据)
+         ↓ onBeforeUpdateEvent
+         ↓ convertFromCalendarEvent
+4DNote Event (业务数据)
+```
+
+**设计原则**:
+- ✅ **保持原始数据**: 通过 `raw.remarkableEvent` 完整保存 Event 对象
+- ✅ **单一数据源**: localStorage 是唯一真相来源（Single Source of Truth）
+- ✅ **规范化处理**: 所有数据变更经过 `EventService.normalizeEvent()`
+
+#### 2. 事件回调拦截
+
+```typescript
+// 阻止默认行为 + 自定义处理
+onBeforeCreateEvent={() => false} // 阻止双击创建
+onSelectDateTime={(info) => {      // 自定义创建流程
+  openEventEditModal(info);
+}}
+
+onBeforeUpdateEvent={(info) => {   // 拦截拖拽编辑
+  saveToEventService(info);
+  return true; // 允许UI更新
+}}
+```
+
+**设计原则**:
+- ✅ **控制权转移**: 将事件生命周期控制权从 TUI Calendar 转移到 TimeCalendar
+- ✅ **数据一致性**: 所有修改先保存到 localStorage，再更新 UI
+- ✅ **用户体验**: 返回 true 让 TUI Calendar 更新 UI，避免闪烁
+
+#### 3. 模板系统定制
+
+```typescript
+template={{
+  task: (event) => `☐ ${formatTime(event.start)} ${event.title}`,
+  milestoneTitle: () => 'Deadline' // 替换默认标题
+}}
+```
+
+**设计原则**:
+- ✅ **UI 一致性**: 统一事件显示风格（勾选框、时间格式）
+- ✅ **业务语义**: 使用 "Deadline" 替代技术术语 "Milestone"
+- ✅ **性能优化**: 模板函数返回字符串，减少 React 渲染开销
+
+#### 4. 自适应主题
+
+```typescript
+const getAdaptiveColors = useMemo(() => {
+  const luminance = calculateLuminance(bgColor);
+  return luminance > 128 ? lightTheme : darkTheme;
+}, [bgColor]);
+```
+
+**设计原则**:
+- ✅ **自动适配**: 根据背景色亮度自动切换深色/浅色主题
+- ✅ **Widget 友好**: 支持透明背景和自定义颜色
+- ✅ **可读性保证**: 确保文字和背景始终有足够对比度
+
+---
+
+**文档版本**: v0.3  
+**最后更新**: 2025-12-11  
+**状态**: ✅ 完整且准确
+- **新增**: TUI Calendar 接口配置总结
+- **新增**: EventObject 完整接口定义
+- **新增**: 数据转换流程详解
+- **新增**: 事件回调接口说明
+- **新增**: 模板系统接口文档
+- **新增**: 主题系统接口配置
+- **新增**: 数据传输时序图
+- **新增**: 关键设计模式总结
+
+**下一步**: EventEditModal 模块 PRD 编写 🚀
 

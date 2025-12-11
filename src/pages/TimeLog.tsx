@@ -57,7 +57,12 @@ import TabIconSvg from '../assets/icons/tab.svg';
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
 
-const TimeLog: React.FC = () => {
+interface TimeLogProps {
+  isPanelVisible?: boolean;
+  onPanelVisibilityChange?: (visible: boolean) => void;
+}
+
+const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibilityChange }) => {
   // ⏱️ 性能监控：组件挂载时间
   const mountTimeRef = useRef(performance.now());
   
@@ -1407,9 +1412,12 @@ const TimeLog: React.FC = () => {
   }, [loadingEvents, events.length, eventsByDate.size, timelineSegments.length]);
 
   return (
-    <div className="timelog-page">
+    <div className={`timelog-page ${!isPanelVisible ? 'panel-hidden' : ''}`}>
       {/* 左侧内容选取区 - 完全复用 ContentSelectionPanel */}
       <ContentSelectionPanel
+        pageType="timelog"
+        isPanelVisible={isPanelVisible}
+        onPanelVisibilityChange={onPanelVisibilityChange}
         dateRange={dateRange}
         tags={allTags}
         hiddenTags={hiddenTags}
@@ -1473,9 +1481,9 @@ const TimeLog: React.FC = () => {
         )}
 
         {/* 白色背景卡片 */}
-        <div className={`timelog-main-card ${showTabManager ? 'has-tabs' : ''}`}>
+        <div className={`timelog-main-card ${tabManagerEvents.length > 0 ? 'has-tabs' : ''}`}>
           {/* 标题区：无tab时显示普通标题 */}
-          {!showTabManager && (
+          {tabManagerEvents.length === 0 && (
             <div className="timelog-header-section">
               <div className="timelog-header-border">
                 <div className="timelog-gradient-bar"></div>

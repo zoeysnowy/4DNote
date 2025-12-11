@@ -1,0 +1,173 @@
+/* TagInput Component Styles */
+
+.tag-input-container {
+  position: relative;
+  width: 100%;
+}
+
+.tag-input-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: text;
+  transition: all 0.2s ease;
+  min-height: auto;
+}
+
+.tag-input-field:hover {
+  background: transparent;
+}
+
+.tag-input-field:focus-within {
+  background: transparent;
+}
+
+/* 标签芯片 */
+.tag-input-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.tag-input-chip:hover {
+  background: rgba(168, 85, 247, 0.1);
+  transform: translateY(-1px);
+}
+
+.tag-emoji {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tag-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.1);
+  border: none;
+  border-radius: 50%;
+  color: currentColor;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tag-remove-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #dc2626;
+  transform: scale(1.1);
+}
+
+/* 标签分隔符 */
+.tag-separator {
+  color: #9ca3af;
+  font-size: 13px;
+  margin: 0 2px;
+}
+
+.tag-etc {
+  color: #9ca3af;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 隐形输入框 */
+.tag-input-invisible {
+  flex: 1;
+  min-width: 120px;
+  padding: 4px 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.tag-input-invisible::placeholder {
+  color: #9ca3af;
+}
+
+/* 搜索下拉框 */
+.tag-input-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow-y: auto;
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1),
+              0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  z-index: 1000;
+}
+
+.tag-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tag-dropdown-item:hover,
+.tag-dropdown-item.highlighted {
+  background: rgba(168, 85, 247, 0.08);
+}
+
+.tag-dropdown-item .tag-emoji {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tag-dropdown-item .tag-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.tag-dropdown-item .tag-level {
+  font-size: 12px;
+  color: #9ca3af;
+  flex-shrink: 0;
+}
+
+/* 滚动条样式 */
+.tag-input-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tag-input-dropdown::-webkit-scrollbar-track {
+  background: #f3f4f6;
+  border-radius: 3px;
+}
+
+.tag-input-dropdown::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 3px;
+}
+
+.tag-input-dropdown::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}

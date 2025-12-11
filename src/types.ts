@@ -381,6 +381,10 @@ export interface Event {
   isFuzzyTime?: boolean;  // 是否为模糊时间段（"上午"、"下午"、"晚上"等）
   fuzzyTimeName?: string; // 模糊时间段名称（用于显示，如"上午"）
   
+  // 🔥 v2.15: 临时ID追踪系统（用于解决bulletLevel临时ID问题）
+  _isTempId?: boolean;    // 标记当前ID是否为临时ID（line-xxx格式）
+  _originalTempId?: string; // 保存原始临时ID，用于EventHistory追踪和父子关系替换
+  
   // 🔧 Plan 相关字段（从 PlanItem 合并）
   // ⚠️ DEPRECATED: content 字段已废弃，使用 fullTitle 代替
   content?: string;      // 废弃：请使用 fullTitle
@@ -390,7 +394,7 @@ export interface Event {
   notes?: string;        // 备注
   priority?: 'low' | 'medium' | 'high' | 'urgent'; // 优先级
   isCompleted?: boolean; // 是否完成
-  level?: number;        // 层级缩进（用于 Plan 页面显示）
+  // ⚠️ DEPRECATED: level 字段已废弃，层级由 bulletLevel 动态计算（从 EventTree 关系推导）
   mode?: 'title' | 'eventlog'; // 显示模式（title或eventlog行）
   type?: 'todo' | 'task' | 'event'; // 事件类型（向后兼容）
   
@@ -426,6 +430,9 @@ export interface Event {
   // 🆕 Issue #12: EventTree 父子事件关联（刚性骨架）
   parentEventId?: string;      // 父事件 ID（所有类型子事件都用此字段）
   childEventIds?: string[];    // 子事件 ID 列表（包括 Timer、用户子任务、外部同步事件等）
+  
+  // 🆕 v2.16: 事件在同级中的显示位置（用于 Shift+Alt+↑/↓ 移动后保持顺序）
+  position?: number;           // 同级事件的排序权重（数字越小越靠前，默认按 createdAt 排序）
   
   // 🆕 Issue #13: 双向链接（柔性血管）
   /**

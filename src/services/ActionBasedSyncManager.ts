@@ -2748,7 +2748,7 @@ private getUserSettings(): any {
               const createdTask = await this.microsoftService.syncTaskToTodoList(todoListId, taskData);
               
               if (createdTask && createdTask.id) {
-                await this.eventService.updateEvent(action.entityId, {
+                await EventService.updateEvent(action.entityId, {
                   externalId: `todo-${createdTask.id}`,
                   syncStatus: 'synced'
                 }, true);
@@ -3351,7 +3351,7 @@ private getUserSettings(): any {
               const createdTask = await this.microsoftService.syncTaskToTodoList(todoListId, taskData);
               
               if (createdTask && createdTask.id) {
-                await this.eventService.updateEvent(action.entityId, {
+                await EventService.updateEvent(action.entityId, {
                   externalId: `todo-${createdTask.id}`,
                   syncStatus: 'synced'
                 }, true);
@@ -3387,7 +3387,7 @@ private getUserSettings(): any {
               const createdTask = await this.microsoftService.syncTaskToTodoList(todoListId, taskData);
               
               if (createdTask && createdTask.id) {
-                await this.eventService.updateEvent(action.entityId, {
+                await EventService.updateEvent(action.entityId, {
                   externalId: `todo-${createdTask.id}`,
                   syncStatus: 'synced'
                 }, true);

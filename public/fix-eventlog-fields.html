@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>🔧 修复 EventLog 缺失字段</title>
+  <style>
+    body {
+      font-family: system-ui;
+      padding: 20px;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px;
+      border-radius: 6px;
+      border: 1px solid #ccc;
+      background: linear-gradient(to bottom, #fff, #f0f0f0);
+    }
+    button:hover { background: linear-gradient(to bottom, #f0f0f0, #e0e0e0); }
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #log {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      max-height: 600px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      margin-top: 20px;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .info { background: #e3f2fd; color: #1565c0; }
+    .success { background: #e8f5e9; color: #2e7d32; }
+    .error { background: #ffebee; color: #c62828; }
+    .warning { background: #fff3e0; color: #ef6c00; }
+  </style>
+</head>
+<body>
+  <h1>🔧 EventLog 字段修复工具</h1>
+  
+  <div class="status info">
+    <p><strong>问题诊断</strong>：数据库中的事件缺少 html/plainText 字段</p>
+    <p>每次读取事件时都要从 slateJson 重新生成，导致严重性能问题：</p>
+    <ul>
+      <li>每次查询 1631 个事件耗时 27 秒</li>
+      <li>Plan 页面打开时触发 15+ 次重复查询</li>
+      <li>总耗时 400+ 秒，完全卡死</li>
+    </ul>
+  </div>
+
+  <div class="status warning">
+    <p><strong>修复方案</strong>：批量生成并保存 html/plainText 到数据库</p>
+    <p>预计耗时：~30 秒（一次性处理所有事件）</p>
+  </div>
+
+  <button id="diagnoseBtn" onclick="diagnose()">1️⃣ 诊断问题</button>
+  <button id="fixBtn" onclick="fixAllEvents()" disabled>2️⃣ 开始修复</button>
+  <button onclick="verifyFix()" disabled id="verifyBtn">3️⃣ 验证修复</button>
+
+  <div id="log"></div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.js';
+    import { jsonToSlateNodes, slateNodesToHtml } from '../src/utils/slate-to-html.js';
+    
+    window.EventService = EventService;
+    window.jsonToSlateNodes = jsonToSlateNodes;
+    window.slateNodesToHtml = slateNodesToHtml;
+
+    let logEl;
+    window.addEventListener('DOMContentLoaded', () => {
+      logEl = document.getElementById('log');
+      log('✅ 工具已加载，请点击 "诊断问题" 开始');
+    });
+
+    function log(msg, color = '#d4d4d4') {
+      const time = new Date().toLocaleTimeString();
+      logEl.innerHTML += `<span style="color: ${color}">[${time}] ${msg}</span>\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+      console.log(msg);
+    }
+
+    window.diagnose = async function() {
+      log('📊 开始诊断...', '#4fc3f7');
+      const diagnoseBtn = document.getElementById('diagnoseBtn');
+      diagnoseBtn.disabled = true;
+
+      try {
+        const all = await EventService.getAllEvents();
+        log(`✅ 读取事件：${all.length} 个`, '#81c784');
+
+        let missingCount = 0;
+        let sampleEvents = [];
+
+        for (const event of all) {
+          const eventlog = event.eventlog;
+          
+          if (!eventlog || typeof eventlog !== 'object') continue;
+
+          const missing = !eventlog.html || !eventlog.plainText;
+          if (missing) {
+            missingCount++;
+            if (sampleEvents.length < 5) {
+              sampleEvents.push({
+                id: event.id.slice(-8),
+                title: event.title?.simpleTitle || '(无标题)',
+                hasSlateJson: !!eventlog.slateJson,
+                hasHtml: !!eventlog.html,
+                hasPlainText: !!eventlog.plainText
+              });
+            }
+          }
+        }
+
+        log('\n📋 诊断结果:', '#ffb74d');
+        log(`  总事件数: ${all.length}`, '#fff');
+        log(`  缺失字段: ${missingCount} 个 (${(missingCount/all.length*100).toFixed(1)}%)`, '#ff7043');
+        
+        if (missingCount > 0) {
+          log('\n🔍 示例事件（前5个）:', '#ba68c8');
+          sampleEvents.forEach(e => {
+            log(`  - ${e.id}: ${e.title}`, '#fff');
+            log(`    slateJson: ${e.hasSlateJson ? '✅' : '❌'}, html: ${e.hasHtml ? '✅' : '❌'}, plainText: ${e.hasPlainText ? '✅' : '❌'}`, '#9e9e9e');
+          });
+
+          log(`\n⚠️ 发现 ${missingCount} 个事件需要修复`, '#ff9800');
+          document.getElementById('fixBtn').disabled = false;
+        } else {
+          log('\n✅ 所有事件字段完整，无需修复', '#4caf50');
+        }
+
+      } catch (err) {
+        log(`\n❌ 诊断失败: ${err.message}`, '#f44336');
+        console.error(err);
+      } finally {
+        diagnoseBtn.disabled = false;
+      }
+    };
+
+    window.fixAllEvents = async function() {
+      if (!confirm('确认要修复所有缺失字段的事件？\n这会批量更新数据库，预计耗时 30 秒。')) {
+        return;
+      }
+
+      log('\n🔧 开始批量修复...', '#4fc3f7');
+      const fixBtn = document.getElementById('fixBtn');
+      fixBtn.disabled = true;
+
+      const startTime = Date.now();
+      let fixed = 0;
+      let skipped = 0;
+      let failed = 0;
+
+      try {
+        const all = await EventService.getAllEvents();
+        log(`📥 加载了 ${all.length} 个事件`, '#81c784');
+
+        for (let i = 0; i < all.length; i++) {
+          const event = all[i];
+          const eventlog = event.eventlog;
+
+          if (!eventlog || typeof eventlog !== 'object') {
+            skipped++;
+            continue;
+          }
+
+          const needsFix = !eventlog.html || !eventlog.plainText;
+          if (!needsFix) {
+            skipped++;
+            continue;
+          }
+
+          try {
+            // 从 slateJson 生成 html 和 plainText
+            const slateNodes = typeof eventlog.slateJson === 'string' 
+              ? JSON.parse(eventlog.slateJson)
+              : eventlog.slateJson;
+
+            const nodes = jsonToSlateNodes(slateNodes);
+            const html = slateNodesToHtml(nodes);
+            const plainText = html.replace(/<[^>]*>/g, '');
+
+            // 更新 eventlog
+            const updatedEventlog = {
+              ...eventlog,
+              html: eventlog.html || html,
+              plainText: eventlog.plainText || plainText
+            };
+
+            // 静默更新到数据库（不触发 eventsUpdated）
+            await EventService.updateEvent(event.id, { eventlog: updatedEventlog }, false);
+
+            fixed++;
+
+            if (fixed % 100 === 0) {
+              const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+              const speed = (fixed / (Date.now() - startTime) * 1000).toFixed(1);
+              log(`  进度: ${fixed}/${all.length - skipped} (${speed} 事件/秒, 已用 ${elapsed}s)`, '#90caf9');
+            }
+
+          } catch (err) {
+            failed++;
+            log(`  ❌ 修复失败 [${event.id.slice(-8)}]: ${err.message}`, '#f44336');
+          }
+        }
+
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        log(`\n✅ 修复完成！`, '#4caf50');
+        log(`  耗时: ${totalTime} 秒`, '#fff');
+        log(`  已修复: ${fixed} 个`, '#81c784');
+        log(`  已跳过: ${skipped} 个 (无需修复)`, '#9e9e9e');
+        if (failed > 0) {
+          log(`  失败: ${failed} 个`, '#f44336');
+        }
+
+        document.getElementById('verifyBtn').disabled = false;
+
+      } catch (err) {
+        log(`\n❌ 修复失败: ${err.message}`, '#f44336');
+        console.error(err);
+      } finally {
+        fixBtn.disabled = false;
+      }
+    };
+
+    window.verifyFix = async function() {
+      log('\n🔍 验证修复结果...', '#4fc3f7');
+      const verifyBtn = document.getElementById('verifyBtn');
+      verifyBtn.disabled = true;
+
+      try {
+        const all = await EventService.getAllEvents();
+        let stillMissing = 0;
+
+        for (const event of all) {
+          const eventlog = event.eventlog;
+          if (!eventlog || typeof eventlog !== 'object') continue;
+
+          if (!eventlog.html || !eventlog.plainText) {
+            stillMissing++;
+          }
+        }
+
+        if (stillMissing === 0) {
+          log(`✅ 验证通过！所有事件字段完整`, '#4caf50');
+          log(`\n🎉 现在可以关闭此页面，刷新 Plan 页面测试性能`, '#4fc3f7');
+        } else {
+          log(`⚠️ 仍有 ${stillMissing} 个事件缺少字段`, '#ff9800');
+        }
+
+      } catch (err) {
+        log(`❌ 验证失败: ${err.message}`, '#f44336');
+        console.error(err);
+      } finally {
+        verifyBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>

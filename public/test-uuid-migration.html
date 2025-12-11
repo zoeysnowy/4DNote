@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UUID 迁移测试 - v2.17</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 3px solid #3498db;
+      padding-bottom: 15px;
+    }
+    h2 {
+      color: #34495e;
+      margin-top: 30px;
+    }
+    button {
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      margin: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #2980b9;
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    .success { background: #27ae60; }
+    .success:hover { background: #229954; }
+    .warning { background: #f39c12; }
+    .warning:hover { background: #e67e22; }
+    .error { background: #e74c3c; }
+    .error:hover { background: #c0392b; }
+    
+    pre {
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      margin: 8px 0;
+      padding: 10px;
+      border-left: 4px solid #3498db;
+      background: #ecf0f1;
+      border-radius: 4px;
+      font-family: monospace;
+      font-size: 13px;
+    }
+    .log-success {
+      border-left-color: #27ae60;
+      background: #d5f4e6;
+    }
+    .log-error {
+      border-left-color: #e74c3c;
+      background: #fadbd8;
+    }
+    .log-warning {
+      border-left-color: #f39c12;
+      background: #fef5e7;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      margin: 10px 0;
+    }
+    .stat-label {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎯 UUID 迁移测试工具 (v2.17)</h1>
+    
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-label">已生成UUID数量</div>
+        <div class="stat-value" id="generatedCount">0</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+        <div class="stat-label">nanoid事件数量</div>
+        <div class="stat-value" id="nanoidCount">-</div>
+      </div>
+      <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+        <div class="stat-label">UUID事件数量</div>
+        <div class="stat-value" id="uuidCount">-</div>
+      </div>
+    </div>
+
+    <h2>📋 基本测试</h2>
+    <button onclick="testUUIDGeneration()">1️⃣ 测试UUID生成</button>
+    <button onclick="testUUIDFormat()" class="success">2️⃣ 验证UUID格式</button>
+    <button onclick="testUUIDUniqueness()" class="warning">3️⃣ 测试UUID唯一性</button>
+    <button onclick="testPerformance()">4️⃣ 性能测试</button>
+
+    <h2>🗄️ 数据库测试</h2>
+    <button onclick="scanDatabase()">5️⃣ 扫描数据库ID格式</button>
+    <button onclick="testEventCreation()" class="success">6️⃣ 测试创建事件</button>
+    <button onclick="testHierarchyFields()" class="success">7️⃣ 测试层级结构字段</button>
+    <button onclick="clearTestData()" class="error">🗑️ 清理测试数据</button>
+
+    <h2>📊 测试结果</h2>
+    <div id="output"></div>
+  </div>
+
+  <script type="module">
+    import { generateEventId } from './src/utils/idGenerator.js';
+    
+    const output = document.getElementById('output');
+    let generatedUUIDs = [];
+    
+    function log(message, type = 'info') {
+      const div = document.createElement('div');
+      div.className = `log-entry log-${type}`;
+      div.innerHTML = `<strong>[${new Date().toLocaleTimeString()}]</strong> ${message}`;
+      output.appendChild(div);
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    function clearOutput() {
+      output.innerHTML = '';
+      generatedUUIDs = [];
+    }
+
+    // 1. 测试UUID生成
+    window.testUUIDGeneration = () => {
+      clearOutput();
+      log('开始测试UUID生成...', 'info');
+      
+      try {
+        const uuid1 = generateEventId();
+        const uuid2 = generateEventId();
+        const uuid3 = generateEventId();
+        
+        log(`✅ 生成UUID 1: <code>${uuid1}</code>`, 'success');
+        log(`✅ 生成UUID 2: <code>${uuid2}</code>`, 'success');
+        log(`✅ 生成UUID 3: <code>${uuid3}</code>`, 'success');
+        
+        generatedUUIDs.push(uuid1, uuid2, uuid3);
+        document.getElementById('generatedCount').textContent = generatedUUIDs.length;
+        
+        log('✅ UUID生成测试通过', 'success');
+      } catch (error) {
+        log(`❌ UUID生成失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 2. 验证UUID格式
+    window.testUUIDFormat = () => {
+      clearOutput();
+      log('开始验证UUID格式...', 'info');
+      
+      const uuidRegex = /^event_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      
+      for (let i = 0; i < 10; i++) {
+        const uuid = generateEventId();
+        const isValid = uuidRegex.test(uuid);
+        
+        if (isValid) {
+          log(`✅ UUID ${i+1}: ${uuid} - 格式正确`, 'success');
+        } else {
+          log(`❌ UUID ${i+1}: ${uuid} - 格式错误`, 'error');
+        }
+        
+        generatedUUIDs.push(uuid);
+      }
+      
+      document.getElementById('generatedCount').textContent = generatedUUIDs.length;
+      log('✅ UUID格式验证完成', 'success');
+    };
+
+    // 3. 测试UUID唯一性
+    window.testUUIDUniqueness = () => {
+      clearOutput();
+      log('开始测试UUID唯一性（生成10000个UUID）...', 'info');
+      
+      const startTime = performance.now();
+      const uuids = new Set();
+      let duplicates = 0;
+      
+      for (let i = 0; i < 10000; i++) {
+        const uuid = generateEventId();
+        if (uuids.has(uuid)) {
+          duplicates++;
+          log(`❌ 发现重复UUID: ${uuid}`, 'error');
+        } else {
+          uuids.add(uuid);
+        }
+      }
+      
+      const endTime = performance.now();
+      const elapsed = (endTime - startTime).toFixed(2);
+      
+      if (duplicates === 0) {
+        log(`✅ 生成10000个UUID，无重复`, 'success');
+        log(`✅ 唯一性测试通过`, 'success');
+      } else {
+        log(`❌ 发现 ${duplicates} 个重复UUID`, 'error');
+      }
+      
+      log(`⏱️ 耗时: ${elapsed}ms`, 'info');
+      
+      generatedUUIDs = Array.from(uuids);
+      document.getElementById('generatedCount').textContent = generatedUUIDs.length;
+    };
+
+    // 4. 性能测试
+    window.testPerformance = () => {
+      clearOutput();
+      log('开始性能测试...', 'info');
+      
+      const iterations = [100, 1000, 10000, 100000];
+      
+      iterations.forEach(count => {
+        const startTime = performance.now();
+        
+        for (let i = 0; i < count; i++) {
+          generateEventId();
+        }
+        
+        const endTime = performance.now();
+        const elapsed = (endTime - startTime).toFixed(2);
+        const avgTime = (elapsed / count).toFixed(4);
+        
+        log(`✅ 生成 ${count.toLocaleString()} 个UUID: ${elapsed}ms (平均 ${avgTime}ms/个)`, 'success');
+      });
+      
+      log('✅ 性能测试完成', 'success');
+    };
+
+    // 5. 扫描数据库ID格式
+    window.scanDatabase = async () => {
+      clearOutput();
+      log('开始扫描数据库...', 'info');
+      
+      try {
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open('4DNoteDB', 2); // v2: Added event_history store
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        
+        const tx = db.transaction(['events'], 'readonly');
+        const store = tx.objectStore('events');
+        const allEvents = await new Promise((resolve, reject) => {
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        
+        log(`✅ 找到 ${allEvents.length} 个事件`, 'success');
+        
+        const nanoidRegex = /^event_[A-Za-z0-9_-]{21}$/;
+        const uuidRegex = /^event_[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+        const tempIdRegex = /^line-/;
+        const outlookRegex = /^outlook-/;
+        const googleRegex = /^google-/;
+        
+        let nanoidCount = 0;
+        let uuidCount = 0;
+        let tempIdCount = 0;
+        let outlookCount = 0;
+        let googleCount = 0;
+        let otherCount = 0;
+        
+        allEvents.forEach(event => {
+          if (tempIdRegex.test(event.id)) {
+            tempIdCount++;
+            log(`⚠️ 临时ID: ${event.id}`, 'warning');
+          } else if (outlookRegex.test(event.id)) {
+            outlookCount++;
+          } else if (googleRegex.test(event.id)) {
+            googleCount++;
+          } else if (nanoidRegex.test(event.id)) {
+            nanoidCount++;
+          } else if (uuidRegex.test(event.id)) {
+            uuidCount++;
+          } else {
+            otherCount++;
+            log(`⚠️ 未知格式: ${event.id}`, 'warning');
+          }
+        });
+        
+        log(`\n📊 ID格式统计:`, 'info');
+        log(`  • 4DNote nanoid格式: ${nanoidCount} 个`, 'info');
+        log(`  • 4DNote UUID格式: ${uuidCount} 个`, 'success');
+        log(`  • Outlook日历事件: ${outlookCount} 个`, 'info');
+        log(`  • Google日历事件: ${googleCount} 个`, 'info');
+        log(`  • 临时ID: ${tempIdCount} 个`, tempIdCount > 0 ? 'warning' : 'info');
+        log(`  • 其他格式: ${otherCount} 个`, otherCount > 0 ? 'warning' : 'info');
+        
+        document.getElementById('nanoidCount').textContent = nanoidCount;
+        document.getElementById('uuidCount').textContent = uuidCount;
+        
+        if (tempIdCount > 0) {
+          log(`\n⚠️ 警告: 发现 ${tempIdCount} 个临时ID，建议清理`, 'warning');
+        } else {
+          log(`\n✅ 数据库中无临时ID`, 'success');
+        }
+        
+      } catch (error) {
+        log(`❌ 扫描数据库失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 6. 测试创建事件
+    window.testEventCreation = async () => {
+      clearOutput();
+      log('测试创建事件...', 'info');
+      
+      try {
+        const EventService = (await import('./src/services/EventService.js')).EventService;
+        
+        const testEventId = generateEventId();
+        const testEvent = {
+          id: testEventId,
+          title: {
+            simpleTitle: 'UUID测试事件 ' + new Date().toLocaleTimeString(),
+            slateContent: null
+          },
+          isPlan: true,
+          isTask: true,
+          fourDNoteSource: true
+        };
+        
+        log(`创建测试事件: ${testEventId}`, 'info');
+        
+        const result = await EventService.createEvent(testEvent);
+        
+        if (!result.success) {
+          log(`❌ 事件创建失败: ${result.error}`, 'error');
+          return;
+        }
+        
+        const created = result.event;
+        log(`✅ 事件创建成功: ${created.id}`, 'success');
+        log(`  • 标题: ${created.title?.simpleTitle || created.title}`, 'info');
+        log(`  • 创建时间: ${created.createdAt}`, 'info');
+        log(`  • UUID格式: ${/^event_[0-9a-f-]{36}$/.test(created.id) ? '✅' : '❌'}`, created.id.includes('-') ? 'success' : 'error');
+        
+        // 验证事件已保存
+        const retrieved = await EventService.getEventById(created.id);
+        if (retrieved) {
+          log(`✅ 事件保存验证通过`, 'success');
+          log(`  • 从数据库读取标题: ${retrieved.title?.simpleTitle || retrieved.title}`, 'info');
+        } else {
+          log(`❌ 事件保存验证失败`, 'error');
+        }
+        
+      } catch (error) {
+        log(`❌ 创建事件失败: ${error.message}`, 'error');
+        console.error('Full error:', error);
+      }
+    };
+
+    // 7. 清理测试数据
+    window.clearTestData = async () => {
+      if (!confirm('确定要删除所有测试事件吗？')) return;
+      
+      clearOutput();
+      log('开始清理测试数据...', 'warning');
+      
+      try {
+        const EventService = (await import('./src/services/EventService.js')).EventService;
+        const allEvents = await EventService.getAllEvents();
+        
+        // 匹配所有UUID测试事件（包括层级结构测试）
+        const testEvents = allEvents.filter(e => {
+          const titleStr = e.title?.simpleTitle || e.title || '';
+          return titleStr.includes('UUID') && (
+            titleStr.includes('测试事件') || 
+            titleStr.includes('根事件') || 
+            titleStr.includes('父事件') || 
+            titleStr.includes('子事件')
+          );
+        });
+        
+        log(`找到 ${testEvents.length} 个测试事件`, 'info');
+        
+        let deletedCount = 0;
+        for (const event of testEvents) {
+          try {
+            await EventService.deleteEvent(event.id);
+            deletedCount++;
+            log(`✅ 已删除: ${event.title?.simpleTitle || event.id}`, 'success');
+          } catch (err) {
+            log(`❌ 删除失败: ${event.id} - ${err.message}`, 'error');
+          }
+        }
+        
+        log(`✅ 清理完成，共删除 ${deletedCount} / ${testEvents.length} 个测试事件`, 'success');
+        
+      } catch (error) {
+        log(`❌ 清理失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 8. 测试层级结构字段（多级嵌套）
+    window.testHierarchyFields = async () => {
+      clearOutput();
+      log('测试多层级结构字段...', 'info');
+      log('将创建3个一级事件，每个下面有2-5级的随机层级结构', 'info');
+      
+      try {
+        const EventService = (await import('./src/services/EventService.js')).EventService;
+        
+        const allCreatedEvents = [];
+        const timestamp = new Date().toLocaleTimeString();
+        
+        // 创建3个一级事件
+        for (let rootIndex = 0; rootIndex < 3; rootIndex++) {
+          const rootId = generateEventId();
+          const now = new Date();
+          const startTime = new Date(now.getTime() + rootIndex * 3600000); // 每个根事件间隔1小时
+          const endTime = new Date(startTime.getTime() + 1800000); // 30分钟时长
+          
+          const rootEvent = {
+            id: rootId,
+            title: { simpleTitle: `UUID根事件${rootIndex + 1} ${timestamp}`, slateContent: null },
+            isPlan: true,
+            isTask: true,
+            fourDNoteSource: true,
+            bulletLevel: 0,
+            position: rootIndex * 10000,
+            startTime: startTime.toISOString().replace('T', ' ').substring(0, 19),
+            endTime: endTime.toISOString().replace('T', ' ').substring(0, 19)
+          };
+          
+          log(`\n📌 创建根事件 ${rootIndex + 1}: ${rootId.slice(-8)}`, 'info');
+          const rootResult = await EventService.createEvent(rootEvent);
+          
+          if (!rootResult.success) {
+            log(`❌ 根事件${rootIndex + 1}创建失败: ${rootResult.error}`, 'error');
+            continue;
+          }
+          
+          const actualRootId = rootResult.event.id; // 使用实际返回的ID
+          log(`✅ 根事件${rootIndex + 1}创建成功`, 'success');
+          log(`  • 传入ID: ${rootId}`, 'info');
+          log(`  • 返回ID: ${actualRootId}`, 'info');
+          log(`  • ID相同: ${rootId === actualRootId}`, actualRootId === rootId ? 'success' : 'warning');
+          allCreatedEvents.push({ id: actualRootId, level: 0, title: rootEvent.title.simpleTitle });
+          
+          // 为每个根事件创建随机层级结构 (2-5级)
+          const maxLevel = 2 + Math.floor(Math.random() * 4); // 2-5
+          let parentsByLevel = { 0: [actualRootId] }; // 使用实际返回的ID
+          
+          log(`  └─ 将创建深度为 ${maxLevel} 的层级结构`, 'info');
+          
+          for (let level = 1; level <= maxLevel; level++) {
+            const parentsAtPrevLevel = parentsByLevel[level - 1] || [];
+            parentsByLevel[level] = [];
+            
+            for (const parentId of parentsAtPrevLevel) {
+              // 每个父节点随机创建1-3个子节点
+              const childCount = 1 + Math.floor(Math.random() * 3);
+              
+              for (let childIdx = 0; childIdx < childCount; childIdx++) {
+                const childId = generateEventId();
+                const childEvent = {
+                  id: childId,
+                  title: { 
+                    simpleTitle: `L${level}-子事件${childIdx + 1} (父:${parentId.slice(-8)})`, 
+                    slateContent: null 
+                  },
+                  isPlan: true,
+                  isTask: true,
+                  fourDNoteSource: true,
+                  parentEventId: parentId,
+                  bulletLevel: level,
+                  position: (level * 10000) + (childIdx * 1000) + Math.random() * 100
+                };
+                
+                const childResult = await EventService.createEvent(childEvent);
+                
+                if (childResult.success) {
+                  const actualId = childResult.event.id; // 使用实际返回的ID
+                  parentsByLevel[level].push(actualId);
+                  allCreatedEvents.push({ 
+                    id: actualId,  // 保存实际ID
+                    level, 
+                    parentId,
+                    title: childEvent.title.simpleTitle 
+                  });
+                  // 显示完整ID的最后12位（包含连字符）
+                  const displayId = actualId.length > 12 ? actualId.slice(-12) : actualId;
+                  log(`  ${'  '.repeat(level)}└─ L${level} 子事件: ${displayId}`, 'success');
+                } else {
+                  log(`  ${'  '.repeat(level)}✗ L${level} 创建失败: ${childResult.error}`, 'error');
+                }
+              }
+            }
+            
+            log(`  └─ 第${level}级: 创建了 ${parentsByLevel[level].length} 个事件`, 'info');
+          }
+        }
+        
+        log(`\n📊 层级结构统计:`, 'success');
+        log(`  • 总事件数: ${allCreatedEvents.length}`, 'info');
+        
+        for (let level = 0; level <= 5; level++) {
+          const count = allCreatedEvents.filter(e => e.level === level).length;
+          if (count > 0) {
+            log(`  • ${level}级事件: ${count} 个`, 'info');
+          }
+        }
+        
+        // 随机抽取几个事件验证字段
+        log(`\n🔍 验证层级字段持久化:`, 'info');
+        
+        const samplesToVerify = allCreatedEvents
+          .filter(e => e.level > 0) // 只验证有父级的事件
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 5); // 随机抽取5个
+        
+        let verifySuccessCount = 0;
+        let verifyFailCount = 0;
+        
+        // 先检查第一个样本的ID格式
+        if (samplesToVerify.length > 0) {
+          const firstSample = samplesToVerify[0];
+          log(`  🔍 调试第一个样本:`, 'info');
+          log(`    • ID: ${firstSample.id}`, 'info');
+          log(`    • ID类型: ${typeof firstSample.id}`, 'info');
+          log(`    • ID长度: ${firstSample.id?.length}`, 'info');
+          log(`    • 是否包含event_: ${firstSample.id?.includes('event_')}`, 'info');
+        }
+        
+        for (const sample of samplesToVerify) {
+          const retrieved = await EventService.getEventById(sample.id);
+          
+          if (!retrieved) {
+            log(`  ❌ 无法读取事件: ${sample.id}`, 'error');
+            verifyFailCount++;
+            continue;
+          }
+          
+          const parentIdMatch = retrieved.parentEventId === sample.parentId;
+          const levelMatch = retrieved.bulletLevel === sample.level;
+          const hasPosition = retrieved.position !== undefined;
+          
+          if (parentIdMatch && levelMatch && hasPosition) {
+            log(`  ✅ ${sample.title}: 字段正确`, 'success');
+            log(`    • parentId: ${retrieved.parentEventId?.slice(-8)}`, 'info');
+            log(`    • bulletLevel: ${retrieved.bulletLevel}`, 'info');
+            log(`    • position: ${retrieved.position?.toFixed(2)}`, 'info');
+            verifySuccessCount++;
+          } else {
+            log(`  ❌ ${sample.title}: 字段错误`, 'error');
+            log(`    • parentId: ${parentIdMatch ? '✅' : '❌'} ${retrieved.parentEventId?.slice(-8)}`, 'warning');
+            log(`    • bulletLevel: ${levelMatch ? '✅' : '❌'} ${retrieved.bulletLevel}`, 'warning');
+            log(`    • position: ${hasPosition ? '✅' : '❌'} ${retrieved.position}`, 'warning');
+            verifyFailCount++;
+          }
+        }
+        
+        log(`\n📈 验证结果:`, verifySuccessCount === samplesToVerify.length ? 'success' : 'warning');
+        log(`  • 验证成功: ${verifySuccessCount} / ${samplesToVerify.length}`, 'success');
+        if (verifyFailCount > 0) {
+          log(`  • 验证失败: ${verifyFailCount} / ${samplesToVerify.length}`, 'error');
+        }
+        
+        // 验证双向关联
+        log(`\n🔗 验证双向关联:`, 'info');
+        const rootEvents = allCreatedEvents.filter(e => e.level === 0);
+        
+        for (const rootEvent of rootEvents) {
+          const retrieved = await EventService.getEventById(rootEvent.id);
+          if (retrieved && retrieved.childEventIds && retrieved.childEventIds.length > 0) {
+            log(`  ✅ ${rootEvent.title}: 有 ${retrieved.childEventIds.length} 个子事件`, 'success');
+          }
+        }
+        
+        if (verifySuccessCount === samplesToVerify.length) {
+          log(`\n✅ 多层级结构测试完全通过！`, 'success');
+          log(`✅ UUID迁移在复杂层级结构中完全正常`, 'success');
+        } else {
+          log(`\n⚠️ 部分字段验证失败，请检查`, 'warning');
+        }
+        
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`, 'error');
+        console.error('Full error:', error);
+      }
+    };
+
+    // 自动运行基本测试
+    log('🚀 UUID迁移测试工具已就绪', 'success');
+    log('点击按钮开始测试...', 'info');
+  </script>
+</body>
+</html>

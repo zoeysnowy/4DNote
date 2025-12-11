@@ -92,7 +92,7 @@ import { LocationInput } from '../common/LocationInput';
 import { CalendarPicker } from '../../features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor } from '../../utils/calendarUtils';
+import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../../utils/calendarUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../ModalSlate';
 import { TitleSlate } from '../ModalSlate/TitleSlate';
@@ -467,7 +467,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     // 新建事件时的默认值
     console.log('🆕 [formData 初始化] 新建事件，使用默认值');
     return {
-      id: `event-${Date.now()}`,
+      id: generateEventId(),
       title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
       tags: [],
       isTask: false,
@@ -495,7 +495,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     if (isOpen && !eventId) {
       // 新建事件：重置为空表单
       setFormData({
-        id: `event-${Date.now()}`,
+        id: generateEventId(),
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
         isTask: false,
@@ -1112,7 +1112,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       } else if (formData.id && formData.id.trim() !== '') {
         eventId = formData.id;
       } else {
-        eventId = `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        eventId = generateEventId();
         console.log('🆕 [EventEditModalV2] Generated new eventId:', eventId);
       }
       

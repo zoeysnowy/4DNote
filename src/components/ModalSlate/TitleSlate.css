@@ -22,7 +22,7 @@
   white-space: nowrap;
   overflow: visible; /* 允许显示完整内容 */
   text-overflow: clip;
-  text-align: center; /* 居中对齐 */
+  text-align: left; /* 左对齐 */
 }
 
 .title-slate-editable:focus {

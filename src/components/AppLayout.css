@@ -67,7 +67,8 @@
   border-bottom: none;
   box-shadow: none;
   position: relative;
-  z-index: 1000;
+  z-index: 1000; /* 最低层 */
+  pointer-events: none; /* 让整个header不拦截点击，在子元素中选择性启用 */
 }
 
 .header-content {
@@ -76,6 +77,9 @@
   justify-content: flex-end; /* 🎨 Figma: 工具栏在右侧 */
   height: 100%;
   padding: 0 29px;
+  pointer-events: auto; /* 确保右侧工具栏可点击 */
+  position: relative;
+  z-index: 2;
 }
 
 /* Logo 移至侧边栏，不再需要这些样式 */
@@ -85,6 +89,7 @@
   display: flex;
   align-items: center;
   gap: 16px;
+  pointer-events: auto; /* 重新启用工具栏的点击事件 */
 }
 
 /* 全局计时器显示 */
@@ -289,29 +294,49 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  z-index: 1000; /* 🎨 Figma: 提升z-index确保覆盖header */
+  z-index: 1100; /* 最高层 - menubar */
   -webkit-app-region: no-drag;
   pointer-events: auto;
   user-select: none;
   -webkit-user-select: none;
 }
 
-/* 🎨 Figma: Logo在侧边栏顶部 */
-.sidebar-logo {
+/* Panel toggle button在侧边栏顶部 */
+.sidebar-panel-toggle {
   width: 60px;
   height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 12px;
-  margin-top: 6px; /* 向下移动 */
-  margin-bottom: 7px; /* 🎨 Figma: spacing before first icon (Home at 73px) */
+  margin-top: 6px;
+  margin-bottom: 7px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
 }
 
-.sidebar-logo img {
-  width: 30px;
-  height: 30px;
+.sidebar-panel-toggle:hover {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 12px;
+}
+
+.sidebar-panel-toggle:active {
+  transform: scale(0.95);
+}
+
+.sidebar-panel-toggle img {
+  width: 24px;
+  height: 24px;
   object-fit: contain;
+  opacity: 0.7;
+  transition: opacity 0.2s ease;
+}
+
+.sidebar-panel-toggle:hover img {
+  opacity: 1;
 }
 
 .sidebar-nav {

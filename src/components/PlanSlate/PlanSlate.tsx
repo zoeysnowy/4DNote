@@ -61,6 +61,8 @@ import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePic
 import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
 import { SlateErrorBoundary } from './ErrorBoundary';
 import { EventService } from '../../services/EventService';
+import { EventHub } from '../../services/EventHub';
+// 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
 import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
 import {
   planItemsToSlateNodes,
@@ -654,7 +656,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     vlog('🔍 [诊断] enhancedValue 重新计算:', {
       items数量: items.length,
       itemsHash: itemsHash.substring(0, 50) + '...',
-      时间戳: new Date().toISOString()
+      时间戳: formatTimeForStorage(new Date())
     });
     
     const baseNodes = planItemsToSlateNodes(items);
@@ -865,7 +867,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   useEffect(() => {
     if (!isInitializedRef.current) return;
     
-    const handleEventUpdated = (e: any) => {
+    const handleEventUpdated = async (e: any) => {
       const { eventId, isDeleted, isNewEvent, updateId, isLocalUpdate, originComponent } = e.detail || {};
       
       console.log('%c[📡 eventsUpdated] 收到事件', 'background: #9C27B0; color: white; padding: 2px 6px;', {
@@ -990,7 +992,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       if (nodesToUpdate.length === 0) return;
       
       // 🔥 直接从 EventService 获取最新数据
-      const updatedEvent = EventService.getEventById(eventId);
+      const updatedEvent = await EventService.getEventById(eventId);
       if (!updatedEvent) return;
       
       console.log(`%c[📝 增量更新] Event: ${eventId}`, 'background: #2196F3; color: white; padding: 2px 6px;');
@@ -1882,7 +1884,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                     targetDate = now;
                 }
                 
-                const startDate = targetDate.toISOString().slice(0, 19).replace('T', ' ');
+                const startDate = formatTimeForStorage(targetDate);
                 insertDateMention(editor, startDate, undefined, false, eventId, item.title);
               }
               break;
@@ -2024,6 +2026,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
           });
+          
+          // 🆕 v2.16: 移动后更新 position 和 parentEventId
+          updateEventPositionAndParent(titleLine.node.eventId, [targetIndex]);
         }, 10);
       });
       
@@ -2086,6 +2091,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
           });
+          
+          // 🆕 v2.16: 移动后更新 position 和 parentEventId
+          updateEventPositionAndParent(titleLine.node.eventId, [targetIndex]);
         }, 10);
       });
       
@@ -2206,6 +2214,121 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     }
   };
   
+  // ==================== Position 计算工具函数 ====================
+  
+  /**
+   * 🆕 v2.16: 计算两个 position 之间的中间值（用于插入）
+   */
+  const calculatePositionBetween = (before: number | undefined, after: number | undefined): number => {
+    const POSITION_GAP = 1000; // 默认间隔
+    
+    if (before === undefined && after === undefined) {
+      return POSITION_GAP; // 第一个事件
+    }
+    if (before === undefined) {
+      return after! - POSITION_GAP; // 在最前面插入
+    }
+    if (after === undefined) {
+      return before + POSITION_GAP; // 在最后面插入
+    }
+    return (before + after) / 2; // 中间位置
+  };
+  
+  /**
+   * 🆕 v2.16: 更新事件的 position 和 parentEventId（移动后调用）
+   */
+  const updateEventPositionAndParent = async (eventId: string, newPath: number[]) => {
+    try {
+      const newIndex = newPath[0];
+      const allNodes = Array.from(Editor.nodes(editor, {
+        at: [],
+        match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
+      }));
+      
+      const titleNodes = allNodes.map(([node, path]) => ({
+        node: node as unknown as EventLineNode,
+        path: path as number[],
+        index: (path as number[])[0]
+      }));
+      
+      // 找到当前事件
+      const currentNode = titleNodes.find(n => n.index === newIndex);
+      if (!currentNode) return;
+      
+      const currentLevel = currentNode.node.level || 0;
+      
+      // 计算新的 parentEventId（向上查找同级或上一级事件）
+      let newParentEventId: string | undefined = undefined;
+      
+      if (currentLevel > 0) {
+        // 向上查找父事件（level 比当前小 1 的最近事件）
+        for (let i = newIndex - 1; i >= 0; i--) {
+          const prevNode = titleNodes.find(n => n.index === i);
+          if (prevNode && (prevNode.node.level || 0) === currentLevel - 1) {
+            newParentEventId = prevNode.node.eventId;
+            break;
+          }
+        }
+      }
+      
+      // 计算新的 position（在同级事件中的位置）
+      // 找到同级事件（相同 parentEventId 和 level）
+      const siblings = titleNodes.filter(n => 
+        n.node.eventId !== eventId &&
+        (n.node.level || 0) === currentLevel &&
+        (n.node.metadata?.parentEventId || undefined) === newParentEventId
+      );
+      
+      // 找到前后位置的同级事件
+      const beforeSibling = siblings.filter(n => n.index < newIndex).pop();
+      const afterSibling = siblings.find(n => n.index > newIndex);
+      
+      const beforePos = beforeSibling?.node.metadata?.position;
+      const afterPos = afterSibling?.node.metadata?.position;
+      const newPosition = calculatePositionBetween(beforePos, afterPos);
+      
+      console.log('[updateEventPositionAndParent] 📍 计算新位置:', {
+        eventId: eventId.slice(-8),
+        newIndex,
+        currentLevel,
+        newParentEventId: newParentEventId?.slice(-8),
+        beforePos,
+        afterPos,
+        newPosition,
+        siblingsCount: siblings.length
+      });
+      
+      // 更新数据库
+      await EventService.updateEvent(eventId, {
+        parentEventId: newParentEventId,
+        position: newPosition
+      });
+      
+      // 更新 Slate 节点的 metadata
+      Editor.withoutNormalizing(editor, () => {
+        Transforms.setNodes(
+          editor,
+          {
+            metadata: {
+              ...currentNode.node.metadata,
+              parentEventId: newParentEventId,
+              position: newPosition
+            }
+          } as any,
+          { at: newPath }
+        );
+      });
+      
+      console.log('[updateEventPositionAndParent] ✅ 已更新:', {
+        eventId: eventId.slice(-8),
+        parentEventId: newParentEventId?.slice(-8) || 'ROOT',
+        position: newPosition
+      });
+    } catch (error) {
+      console.error('[updateEventPositionAndParent] ❗ 更新失败:', error);
+    }
+  };
+
   // ==================== BulletLevel → EventTree 辅助函数 ====================
   
   /**
@@ -2252,9 +2375,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     for (let i = currentIndex - 1; i >= 0; i--) {
       try {
         const [node] = Editor.node(editor, [i]);
-        const eventLine = node as unknown as EventLineNode;
-        if (eventLine.type === 'event-line' && eventLine.mode === 'title') {
-          return eventLine;
+        if (node.type === 'event-line' && node.mode === 'title') {
+          return node as unknown as EventLineNode;
         }
       } catch (e) {
         // 节点不存在，继续向上查找
@@ -2266,18 +2388,60 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   /**
    * 找到指定层级的父事件（用于 Shift+Tab 键查找新父事件）
+   * 🔥 修复逻辑：新父事件应该是当前父事件的父事件（祖父事件），而非向上第一个同级事件
    */
   const findParentEventLineAtLevel = useCallback((currentPath: Path, targetLevel: number): EventLineNode | null => {
     const currentIndex = currentPath[0];
     
-    // 向上查找第一个层级等于 targetLevel 的 EventLine
+    // 🔍 获取当前事件的父事件 ID
+    const [currentNode] = Editor.node(editor, currentPath);
+    const currentEventLine = currentNode as unknown as EventLineNode;
+    const currentParentId = currentEventLine.metadata?.parentEventId;
+    
+    if (!currentParentId) {
+      // 当前事件已经是根事件，Shift+Tab 后仍为根事件
+      return null;
+    }
+    
+    // 🔍 向上查找当前父事件节点
+    let parentEventLine: EventLineNode | null = null;
     for (let i = currentIndex - 1; i >= 0; i--) {
       try {
         const [node] = Editor.node(editor, [i]);
         const eventLine = node as unknown as EventLineNode;
         if (eventLine.type === 'event-line' && 
             eventLine.mode === 'title' && 
-            (eventLine.level || 0) === targetLevel) {
+            eventLine.eventId === currentParentId) {
+          parentEventLine = eventLine;
+          break;
+        }
+      } catch (e) {
+        // 节点不存在，继续向上查找
+      }
+    }
+    
+    if (!parentEventLine) {
+      // 未找到当前父事件（数据不一致），变为根事件
+      console.warn('[Shift+Tab] ⚠️ Parent event not found in editor, setting to root');
+      return null;
+    }
+    
+    // 🔥 新父事件 = 当前父事件的父事件（祖父事件）
+    const newParentId = parentEventLine.metadata?.parentEventId;
+    
+    if (!newParentId) {
+      // 当前父事件是根事件，降级后也变为根事件
+      return null;
+    }
+    
+    // 🔍 向上查找祖父事件节点
+    for (let i = currentIndex - 1; i >= 0; i--) {
+      try {
+        const [node] = Editor.node(editor, [i]);
+        const eventLine = node as unknown as EventLineNode;
+        if (eventLine.type === 'event-line' && 
+            eventLine.mode === 'title' && 
+            eventLine.eventId === newParentId) {
           return eventLine;
         }
       } catch (e) {
@@ -2285,7 +2449,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
     }
     
-    return null; // 没找到，将变为根事件
+    // 未找到祖父事件（数据不一致），变为根事件
+    console.warn('[Shift+Tab] ⚠️ Grandparent event not found in editor, setting to root');
+    return null;
   }, [editor]);
   
   // ==================== 键盘事件处理 ====================
@@ -2527,7 +2693,42 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         }, 'background: #2196F3; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;');
         
         // 创建新的 title 行（新 event）
-        newLine = createEmptyEventLine(eventLine.level);
+        // 🆕 v2.16: 计算新行的 position（在同级事件中的位置）
+        const parentEventId = eventLine.metadata?.parentEventId;
+        const currentLevel = eventLine.level || 0;
+        
+        // 获取所有同级事件
+        const allTitleNodes = Array.from(Editor.nodes(editor, {
+          at: [],
+          match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
+        }));
+        
+        const siblings = allTitleNodes.filter(([node, path]) => {
+          const n = node as any;
+          return (n.level || 0) === currentLevel &&
+                 (n.metadata?.parentEventId || undefined) === parentEventId;
+        });
+        
+        // 新行插入在当前行之后，找到当前位置和下一个同级的 position
+        const currentSibling = siblings.find(([node, path]) => (path as number[])[0] === currentPath[0]);
+        const currentSiblingIndex = currentSibling ? siblings.indexOf(currentSibling) : -1;
+        const nextSibling = currentSiblingIndex >= 0 ? siblings[currentSiblingIndex + 1] : undefined;
+        
+        const beforePos = (eventLine.metadata?.position) || undefined;
+        const afterPos = nextSibling ? (nextSibling[0] as any).metadata?.position : undefined;
+        const newPosition = calculatePositionBetween(beforePos, afterPos);
+        
+        console.log('[Enter] 🆕 计算新行位置:', {
+          currentLevel,
+          parentEventId: parentEventId?.slice(-8),
+          beforePos,
+          afterPos,
+          newPosition,
+          siblingsCount: siblings.length
+        });
+        
+        // 🆕 v2.16: createEmptyEventLine 现在接受 parentEventId 和 position 参数
+        newLine = createEmptyEventLine(currentLevel, parentEventId, newPosition);
         
         logOperation('Enter (title) - 创建新 title 行', {
           currentLine: currentPath[0],
@@ -2612,63 +2813,45 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       // 🎯 步骤 1: 找到上一行（潜在父事件）
       const previousEventLine = findPreviousEventLine(currentPath);
-      
-      if (!previousEventLine || !previousEventLine.eventId) {
-        console.warn('[Tab] ⚠️ No previous event line, cannot indent');
-        return;
-      }
-      
-      let currentEventId = eventLine.eventId;
-      if (!currentEventId) {
-        console.warn('[Tab] ⚠️ Current event has no eventId, cannot create relationship');
-        return;
-      }
-      
-      let previousEventId = previousEventLine.eventId;
-      const previousLevel = previousEventLine.level || 0;
-      const newBulletLevel = previousLevel + 1;
-      
-      // 🔧 FIX: previousEventId 可能是旧的临时 ID，但数据库中已经是真实 ID
-      // 使用异步 IIFE 处理数据库查询
-      (async () => {
-        // 如果 previousEventId 看起来像临时 ID，尝试从数据库查找真实 ID
-        if (previousEventId.startsWith('line-')) {
-          console.log('[Tab] 🔍 Previous event has temp ID, checking database...');
-          const allEvents = await EventService.getAllEvents();
-          // 查找标题匹配的事件（因为临时 ID 可能已被替换）
-          const previousNode = previousEventLine;
-          const previousTitleSlateJson = previousNode.children?.[0]?.children;
-          if (previousTitleSlateJson && Array.isArray(previousTitleSlateJson)) {
-            const previousTitle = previousTitleSlateJson.map((n: any) => n.text || '').join('').trim();
-            
-            if (previousTitle) {
-              const matchingEvent = allEvents.find(e => 
-                e.isPlan && 
-                e.title?.simpleTitle?.trim() === previousTitle
-              );
-              
-              if (matchingEvent && matchingEvent.id.startsWith('event_')) {
-                console.log('[Tab] ✅ Resolved real ID from database:', {
-                  tempId: previousEventId.slice(-8),
-                  realId: matchingEvent.id.slice(-8),
-                  title: previousTitle
-                });
-                previousEventId = matchingEvent.id;
-              }
-            }
-          }
+        
+        if (!previousEventLine || !previousEventLine.eventId) {
+          console.warn('[Tab] ⚠️ No previous event line, cannot indent');
+          return;
         }
+      
+        let currentEventId = eventLine.eventId;
+        if (!currentEventId) {
+          console.warn('[Tab] ⚠️ Current event has no eventId, cannot create relationship');
+          return;
+        }
+        
+        // 🔥 v2.15: 详细调试 - 检查当前行和上一行的完整信息
+        console.log('[Tab] 🔍 Current line info:', {
+          eventId: currentEventId,
+          lineId: eventLine.lineId,
+          level: eventLine.level,
+          mode: eventLine.mode,
+          metadata: eventLine.metadata,
+          isTempId: currentEventId.startsWith('line-'),
+          isRealId: currentEventId.startsWith('event_')
+        });
+        
+        const previousEventId = previousEventLine.eventId;
+        const previousLevel = previousEventLine.level || 0;
+        const newBulletLevel = previousLevel + 1;
         
         // 🔍 调试：打印详细的行信息
         console.log('[Tab] 📋 Parent-Child relationship details:', {
           current: {
-            id: currentEventId.slice(-8),
+            id: currentEventId,
+            idSuffix: currentEventId.slice(-8),
             currentLevel: eventLine.level || 0,
             newLevel: newBulletLevel,
             path: currentPath
           },
           parent: {
-            id: previousEventId.slice(-8),
+            id: previousEventId,
+            idSuffix: previousEventId.slice(-8),
             level: previousLevel,
             isTemp: previousEventId.startsWith('line-')
           }
@@ -2682,185 +2865,73 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         
         // 🔧 先定义 executeTabIndent 函数（必须在调用前定义）
         const executeTabIndent = async (
-        currentEventId: string,
-        previousEventId: string,
-        newBulletLevel: number,
-        currentPath: Path,
-        oldLevel: number
-      ) => {
-        // ⚡ 乐观更新 - 立即修改 Slate Editor 状态
-        // 🔥 同时更新 metadata，让 serialization 能读取到 parentEventId
-        Editor.withoutNormalizing(editor, () => {
-          const currentNode = Node.get(editor, currentPath) as EventLineNode;
-          const updatedMetadata = {
-            ...(currentNode.metadata || {}),
-            parentEventId: previousEventId, // 🆕 添加到 metadata
-          };
-          
-          console.log('[Tab] 🔥 Updating Slate metadata:', {
-            currentEventId: currentEventId.slice(-8),
-            previousEventId: previousEventId.slice(-8),
-            oldMetadata: currentNode.metadata?.parentEventId,
-            newMetadata: updatedMetadata.parentEventId
-          });
-          
-          Transforms.setNodes(
-            editor,
-            { 
-              level: newBulletLevel,
-              metadata: updatedMetadata // 🆕 同步更新 metadata
-            } as unknown as Partial<Node>,
-            { at: currentPath }
-          );
-        });
-        
-        console.log('[Tab] ⚡ Optimistic update complete (Slate metadata updated)');
-        
-        // 📡 如果事件已存在（真实 ID），需要调用 updateEvent 更新 parentEventId
-        if (!currentEventId.startsWith('line-')) {
-          console.log('[Tab] 📤 Updating existing event parentEventId:', {
-            eventId: currentEventId.slice(-8),
-            parentEventId: previousEventId.slice(-8)
-          });
-          
-          EventService.updateEvent(
-            currentEventId,
-            {
-              parentEventId: previousEventId,
-              isPlan: true
-            },
-            false,
-            {
-              originComponent: 'PlanManager',
-              source: 'user-edit'
-            }
-          ).then(() => {
-            console.log('[Tab] ✅ parentEventId updated successfully');
-          }).catch((error) => {
-            console.error('[Tab] ❌ Failed to update parentEventId:', error);
-          });
-        } else {
-          console.log('[Tab] ⏭️ Skipping updateEvent (temp ID, will be set during creation)');
-        }
-      };
-      
-      // 🔧 步骤 2.5: 检查临时 ID，触发保存并等待真实 ID
-      const isCurrentTempId = currentEventId.startsWith('line-');
-      const isPreviousTempId = previousEventId.startsWith('line-');
-      
-      if (isCurrentTempId || isPreviousTempId) {
-        console.log('[Tab] 🔄 Detected temporary ID, saving to get real IDs:', {
-          currentTempId: isCurrentTempId,
-          previousTempId: isPreviousTempId
-        });
-        
-        // 🎯 立即保存当前行和上一行，获取真实 ID
-        (async () => {
-          try {
-            // 序列化当前编辑器内容
-            const currentContent = Array.from(Editor.nodes(editor, {
-              at: [],
-              match: n => !Editor.isEditor(n) && (n as any).type === 'event-line'
-            }));
+          currentEventId: string,
+          previousEventId: string,
+          newBulletLevel: number,
+          currentPath: Path,
+          oldLevel: number
+        ) => {
+          // ⚡ 乐观更新 - 立即修改 Slate Editor 状态
+          // 🔥 同时更新 metadata，让 serialization 能读取到 parentEventId
+          Editor.withoutNormalizing(editor, () => {
+            const currentNode = Node.get(editor, currentPath) as EventLineNode;
+            const updatedMetadata = {
+              ...(currentNode.metadata || {}),
+              parentEventId: previousEventId, // 🆕 添加到 metadata
+              bulletLevel: newBulletLevel, // 🔥 同步更新 bulletLevel
+            };
             
-            // 找到需要保存的事件
-            const currentIndex = currentPath[0];
-            const eventsToSave: any[] = [];
-            
-            // 保存上一行（如果是临时 ID）
-            if (isPreviousTempId && currentIndex > 0) {
-              const [prevNode] = currentContent[currentIndex - 1];
-              eventsToSave.push({ node: prevNode, path: [currentIndex - 1] });
-            }
-            
-            // 保存当前行（如果是临时 ID）
-            if (isCurrentTempId) {
-              eventsToSave.push({ node: eventLine, path: currentPath });
-            }
-            
-            // 执行保存并获取真实 ID
-            const idMapping: Record<string, string> = {};
-            
-            for (const { node, path } of eventsToSave) {
-              const tempId = (node as any).eventId;
-              
-              // 🔧 判断是否是当前事件（需要设置 parentEventId）
-              const isCurrentEvent = path[0] === currentPath[0];
-              
-              // 创建事件（EventService 会生成真实 ID）
-              const event: any = {
-                id: tempId,
-                title: '',
-                isPlan: true,
-                isTask: true,
-                type: 'todo',
-                // 🆕 如果是当前事件，直接设置 parentEventId
-                ...(isCurrentEvent && { parentEventId: previousEventId })
-              };
-              
-              console.log('[Tab] 🆕 Creating event with parentEventId:', {
-                tempId: tempId.slice(-8),
-                isCurrentEvent,
-                parentEventId: isCurrentEvent ? previousEventId.slice(-8) : 'N/A'
-              });
-              
-              const createdEvent = await EventHub.createEvent(event);
-              
-              // 🔧 [OPTIMIZATION] EventHub.createEvent returns the event with real ID directly
-              const recentPlanEvents = [createdEvent];
-              
-              const realId = recentPlanEvents[0]?.id || tempId;
-              
-              idMapping[tempId] = realId;
-              
-              // 更新 Slate 节点的 eventId
-              Editor.withoutNormalizing(editor, () => {
-                Transforms.setNodes(
-                  editor,
-                  { eventId: realId } as any,
-                  { at: path }
-                );
-              });
-              
-              console.log('[Tab] ✅ ID updated:', {
-                tempId: tempId.slice(-8),
-                realId: realId.slice(-8)
-              });
-            }
-            
-            // 🔧 FIX: previousEventId 可能是已经转换过的真实 ID，但 Slate 节点还未更新
-            // 需要从数据库查询真实 ID，不能依赖 Slate 节点的 eventId
-            let resolvedPreviousEventId = previousEventId;
-            if (previousEventId.startsWith('line-')) {
-              // 临时 ID，使用映射
-              resolvedPreviousEventId = idMapping[previousEventId] || previousEventId;
-            } else if (previousEventId.startsWith('event_')) {
-              // 真实 ID，直接使用
-              resolvedPreviousEventId = previousEventId;
-            }
-            
-            // 获取更新后的真实 ID
-            if (isCurrentTempId) {
-              currentEventId = idMapping[currentEventId] || currentEventId;
-            }
-            
-            // 继续执行 Tab 操作
-            console.log('[Tab] 🎯 Using real IDs:', {
-              current: currentEventId.slice(-8),
-              previous: resolvedPreviousEventId.slice(-8),
-              previousWasTemp: previousEventId.startsWith('line-')
+            console.log('[Tab] 🔥 Updating Slate metadata:', {
+              currentEventId: currentEventId.slice(-8),
+              previousEventId: previousEventId.slice(-8),
+              oldMetadata: currentNode.metadata?.parentEventId,
+              newMetadata: updatedMetadata.parentEventId
             });
             
-            executeTabIndent(currentEventId, resolvedPreviousEventId, newBulletLevel, currentPath, eventLine.level || 0);
+            Transforms.setNodes(
+              editor,
+              { 
+                level: newBulletLevel,
+                metadata: updatedMetadata // 🆕 同步更新 metadata
+              } as unknown as Partial<Node>,
+              { at: currentPath }
+            );
+          });
+          
+          console.log('[Tab] ⚡ Optimistic update complete (Slate metadata updated)');
+          
+          // 🔍 验证metadata是否真的被更新
+          const verifyNode = Node.get(editor, currentPath) as EventLineNode;
+          console.log('[Tab] 🔬 Verify metadata after update:', {
+            eventId: verifyNode.eventId?.slice(-8),
+            metadataParentId: verifyNode.metadata?.parentEventId,
+            metadataParentIdFull: verifyNode.metadata?.parentEventId,
+            metadataParentIdLength: verifyNode.metadata?.parentEventId?.length
+          });
+          
+          // 📡 Tab 缩进后触发完整序列化保存（包含 title）
+          // 不再直接调用 EventService.updateEvent，而是触发 onChange
+          if (!currentEventId.startsWith('line-')) {
+            console.log('[Tab] 📤 Triggering full serialization to save all fields including title:', {
+              eventId: currentEventId.slice(-8),
+              parentEventId: previousEventId.slice(-8)
+            });
             
-          } catch (error) {
-            console.error('[Tab] ❌ Failed to save and get real IDs:', error);
+            // 触发 onChange，会完整序列化所有字段（包括 title）
+            // debounced 自动保存会在 800ms 后执行
+            setTimeout(() => {
+              if (editor.selection) {
+                editor.onChange();
+              }
+            }, 10);
+          } else {
+            console.log('[Tab] ⏭️ Skipping save (temp ID, will be saved during creation)');
           }
-        })();
+        };
         
-        return; // 异步执行
-      }
-      
+        // 🆕 v2.16: 池化ID系统 - 所有事件都使用真实ID
+        // createEmptyEventLine 已经从池中分配了真实ID，无需检测临时ID
+        
         // 真实 ID，直接执行
         console.log('[Tab] 🎯 Creating parent-child relationship:', {
           child: currentEventId.slice(-8),
@@ -2869,9 +2940,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           newLevel: newBulletLevel
         });
         
-        // 使用立即执行异步函数
-        executeTabIndent(currentEventId, previousEventId, newBulletLevel, currentPath, eventLine.level || 0);
-      })(); // Close async IIFE
+      // 使用立即执行异步函数
+      executeTabIndent(currentEventId, previousEventId, newBulletLevel, currentPath, eventLine.level || 0);
       
       return;
     }
@@ -2886,10 +2956,18 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     ) => {
       // ⚡ 乐观更新 - 立即修改视觉层级
       Editor.withoutNormalizing(editor, () => {
+        const currentNode = Node.get(editor, currentPath) as EventLineNode;
+        const updatedMetadata = {
+          ...(currentNode.metadata || {}),
+          parentEventId: newParentEventId, // 🔥 更新父事件ID
+          bulletLevel: newLevel, // 🔥 同步更新 bulletLevel
+        };
+        
         Transforms.setNodes(
           editor,
           { 
-            level: newLevel
+            level: newLevel,
+            metadata: updatedMetadata // 🔥 同步更新 metadata
           } as unknown as Partial<Node>,
           { at: currentPath }
         );
@@ -2897,16 +2975,41 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       console.log('[Shift+Tab] ⚡ Optimistic update complete');
       
-      // 📡 异步持久化 - 解除父子关系或设置新父事件
-      console.log('[Shift+Tab] 🔍 New parent:', {
+      // 🆕 v2.16: 计算新的 position（在新同级中的位置）
+      const allTitleNodes = Array.from(Editor.nodes(editor, {
+        at: [],
+        match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
+      }));
+      
+      const currentIndex = currentPath[0];
+      const newSiblings = allTitleNodes.filter(([node, path]) => {
+        const n = node as any;
+        const idx = (path as number[])[0];
+        return idx !== currentIndex &&
+          (n.level || 0) === newLevel &&
+          (n.metadata?.parentEventId || undefined) === newParentEventId;
+      });
+      
+      const siblingBefore = newSiblings.filter(([node, path]) => (path as number[])[0] < currentIndex).pop();
+      const siblingAfter = newSiblings.find(([node, path]) => (path as number[])[0] > currentIndex);
+      const beforePos = siblingBefore ? (siblingBefore[0] as any).metadata?.position : undefined;
+      const afterPos = siblingAfter ? (siblingAfter[0] as any).metadata?.position : undefined;
+      const newPosition = calculatePositionBetween(beforePos, afterPos);
+      
+      // 📡 异步持久化 - 解除父子关系或设置新父事件 + 更新position
+      console.log('[Shift+Tab] 🔍 New parent and position:', {
         newParentEventId: newParentEventId?.slice(-8) || 'ROOT',
-        newLevel
+        newLevel,
+        newPosition,
+        beforePos,
+        afterPos
       });
       
       EventService.updateEvent(
         currentEventId,
         {
           parentEventId: newParentEventId, // 可能变为根事件（undefined）
+          position: newPosition,  // 🆕 v2.16: 更新position
           isPlan: true
         },
         false,
@@ -2917,7 +3020,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       ).then(() => {
         console.log('[Shift+Tab] 📡 Persisted:', {
           child: currentEventId.slice(-8),
-          newParent: newParentEventId?.slice(-8) || 'ROOT'
+          newParent: newParentEventId?.slice(-8) || 'ROOT',
+          position: newPosition
         });
       }).catch((error) => {
         console.error('[Shift+Tab] ❌ Failed to persist:', error);
@@ -2974,95 +3078,21 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       const newLevel = currentLevel - 1;
       
-      // 🔧 检查临时 ID
+      // 🔧 获取当前父事件 ID
+      const currentParentId = eventLine.metadata?.parentEventId;
+      
+      // 🔥 查找新父事件（当前父事件的父事件，即祖父事件）
       const newParentEventLine = findParentEventLineAtLevel(currentPath, newLevel);
       let newParentEventId = newParentEventLine?.eventId || undefined;
       
-      const isCurrentTempId = currentEventId.startsWith('line-');
-      const isNewParentTempId = newParentEventId && newParentEventId.startsWith('line-');
-      
-      if (isCurrentTempId || isNewParentTempId) {
-        console.log('[Shift+Tab] 🔄 Detected temporary ID, saving to get real IDs:', {
-          currentTempId: isCurrentTempId,
-          newParentTempId: isNewParentTempId
-        });
-        
-        // 🎯 立即保存并获取真实 ID
-        (async () => {
-          try {
-            const eventsToSave: any[] = [];
-            
-            // 保存当前行
-            if (isCurrentTempId) {
-              eventsToSave.push({ node: eventLine, path: currentPath, id: currentEventId });
-            }
-            
-            // 保存新父行
-            if (isNewParentTempId && newParentEventLine) {
-              const parentPath = findPathForEventLine(newParentEventLine);
-              if (parentPath) {
-                eventsToSave.push({ node: newParentEventLine, path: parentPath, id: newParentEventId! });
-              }
-            }
-            
-            // 执行保存
-            const idMapping: Record<string, string> = {};
-            
-            for (const { node, path, id } of eventsToSave) {
-              const event: any = {
-                id,
-                title: '',
-                isPlan: true,
-                isTask: true,
-                type: 'todo'
-              };
-              
-              const createdEvent = await EventHub.createEvent(event);
-              
-              // 🔧 [OPTIMIZATION] EventHub.createEvent returns the event with real ID directly
-              const recentPlanEvents = [createdEvent];
-              
-              const realId = recentPlanEvents[0]?.id || id;
-              
-              idMapping[id] = realId;
-              
-              Editor.withoutNormalizing(editor, () => {
-                Transforms.setNodes(
-                  editor,
-                  { eventId: realId } as any,
-                  { at: path }
-                );
-              });
-              
-              console.log('[Shift+Tab] ✅ ID updated:', {
-                tempId: id.slice(-8),
-                realId: realId.slice(-8)
-              });
-            }
-            
-            // 更新 ID
-            if (isCurrentTempId) {
-              currentEventId = idMapping[currentEventId] || currentEventId;
-            }
-            if (isNewParentTempId && newParentEventId) {
-              newParentEventId = idMapping[newParentEventId] || newParentEventId;
-            }
-            
-            executeShiftTabOutdent(currentEventId, newParentEventId, newLevel, currentPath, currentLevel);
-            
-          } catch (error) {
-            console.error('[Shift+Tab] ❌ Failed to save and get real IDs:', error);
-          }
-        })();
-        
-        return;
-      }
-      
-      // 真实 ID，直接执行
+      // 🆕 v2.17: 详细日志显示父子关系变化
       console.log('[Shift+Tab] 🎯 Decreasing level:', {
         eventId: currentEventId.slice(-8),
         oldLevel: currentLevel,
-        newLevel: newLevel
+        newLevel: newLevel,
+        oldParentId: currentParentId?.slice(-8) || 'ROOT',
+        newParentId: newParentEventId?.slice(-8) || 'ROOT',
+        change: `${currentParentId?.slice(-8) || 'ROOT'} → ${newParentEventId?.slice(-8) || 'ROOT'}`
       });
       
       // 使用立即执行异步函数

@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini SearchBox Design Test</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes spin-slow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-slow {
+      animation: spin-slow 10s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-gray-100 p-8">
+  
+  <div class="max-w-4xl mx-auto space-y-8">
+    
+    <!-- 标题 -->
+    <div class="text-center mb-12">
+      <h1 class="text-3xl font-bold text-gray-900 mb-2">Gemini SearchBox Design Test</h1>
+      <p class="text-gray-600">测试卡片式搜索框设计效果</p>
+    </div>
+
+    <!-- 原始设计 -->
+    <div class="bg-white p-8 rounded-2xl shadow-lg">
+      <h2 class="text-xl font-semibold mb-6 text-gray-800">原始设计 (Original Design)</h2>
+      
+      <div class="flex justify-center items-center h-40 bg-gray-50 rounded-xl">
+        
+        <!-- 核心卡片组件开始 -->
+        <button 
+          class="
+            group
+            flex items-center gap-3 
+            w-full max-w-[300px] 
+            p-3 
+            bg-white 
+            border border-gray-200 
+            rounded-xl 
+            text-left
+            cursor-pointer
+            shadow-[0_1px_2px_rgba(0,0,0,0.05)]
+            hover:bg-gray-50 hover:border-gray-300
+            transition-all duration-200 ease-in-out
+          "
+        >
+          <!-- 左侧图标容器 -->
+          <div class="
+            flex-shrink-0
+            flex items-center justify-center 
+            w-10 h-10 
+            bg-[#3B82F6]
+            rounded-lg
+            shadow-sm
+          ">
+            <!-- React Logo SVG (简化版) -->
+            <svg 
+              viewBox="-10.5 -9.45 21 18.9" 
+              class="w-6 h-6 text-white animate-spin-slow" 
+              fill="none" 
+              stroke="currentColor" 
+              stroke-width="1.5"
+            >
+              <circle cx="0" cy="0" r="2" fill="currentColor" stroke="none"></circle>
+              <ellipse rx="10" ry="4.5"></ellipse>
+              <ellipse rx="10" ry="4.5" transform="rotate(60)"></ellipse>
+              <ellipse rx="10" ry="4.5" transform="rotate(120)"></ellipse>
+            </svg>
+          </div>
+
+          <!-- 右侧文字区域 -->
+          <div class="flex-1 min-w-0">
+            <h3 class="
+              text-[15px] 
+              font-semibold 
+              text-gray-900 
+              truncate 
+              leading-tight
+            ">
+              Task Detail Control Card
+            </h3>
+            <p class="
+              text-[13px] 
+              text-gray-500 
+              mt-0.5
+              group-hover:text-gray-600
+            ">
+              Click to preview
+            </p>
+          </div>
+        </button>
+        <!-- 核心卡片组件结束 -->
+
+      </div>
+    </div>
+
+    <!-- 搜索框变体 1: 带搜索图标 -->
+    <div class="bg-white p-8 rounded-2xl shadow-lg">
+      <h2 class="text-xl font-semibold mb-6 text-gray-800">变体 1: 搜索框样式 (Search Box Style)</h2>
+      
+      <div class="flex justify-center items-center h-40 bg-gray-50 rounded-xl">
+        <button 
+          class="
+            group
+            flex items-center gap-3 
+            w-full max-w-[400px] 
+            p-3 
+            bg-white 
+            border border-gray-200 
+            rounded-xl 
+            text-left
+            cursor-pointer
+            shadow-[0_1px_2px_rgba(0,0,0,0.05)]
+            hover:bg-gray-50 hover:border-blue-300
+            transition-all duration-200 ease-in-out
+          "
+        >
+          <!-- 搜索图标 -->
+          <div class="flex-shrink-0 flex items-center justify-center w-10 h-10">
+            <svg class="w-5 h-5 text-gray-400 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+          </div>
+
+          <!-- 文字区域 -->
+          <div class="flex-1 min-w-0">
+            <input 
+              type="text" 
+              placeholder="输入上个月尚未完成的任务"
+              class="w-full text-[15px] text-gray-900 placeholder-gray-400 bg-transparent border-none outline-none"
+            />
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 变体 2: 更大的搜索框 -->
+    <div class="bg-white p-8 rounded-2xl shadow-lg">
+      <h2 class="text-xl font-semibold mb-6 text-gray-800">变体 2: 大尺寸搜索框 (Large Search Box)</h2>
+      
+      <div class="flex justify-center items-center h-40 bg-gray-50 rounded-xl">
+        <button 
+          class="
+            group
+            flex items-center gap-4 
+            w-full max-w-[500px] 
+            p-4 
+            bg-white 
+            border border-gray-200 
+            rounded-2xl 
+            text-left
+            cursor-pointer
+            shadow-md
+            hover:shadow-lg hover:border-blue-400
+            transition-all duration-200 ease-in-out
+          "
+        >
+          <!-- 搜索图标容器 -->
+          <div class="
+            flex-shrink-0
+            flex items-center justify-center 
+            w-12 h-12 
+            bg-blue-50
+            rounded-xl
+            group-hover:bg-blue-100
+            transition-colors
+          ">
+            <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+          </div>
+
+          <!-- 文字区域 -->
+          <div class="flex-1 min-w-0">
+            <div class="text-[16px] font-medium text-gray-900">
+              输入上个月尚未完成的任务
+            </div>
+            <div class="text-[13px] text-gray-500 mt-1">
+              搜索任务、标签或事件
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 变体 3: 毛玻璃效果 -->
+    <div class="bg-gradient-to-br from-blue-50 to-purple-50 p-8 rounded-2xl">
+      <h2 class="text-xl font-semibold mb-6 text-gray-800">变体 3: 毛玻璃效果 (Glassmorphism)</h2>
+      
+      <div class="flex justify-center items-center h-40">
+        <button 
+          class="
+            group
+            flex items-center gap-3 
+            w-full max-w-[400px] 
+            p-3 
+            bg-white/70
+            backdrop-blur-md
+            border border-white/50
+            rounded-xl 
+            text-left
+            cursor-pointer
+            shadow-lg
+            hover:bg-white/80 hover:shadow-xl
+            transition-all duration-200 ease-in-out
+          "
+        >
+          <!-- 搜索图标 -->
+          <div class="
+            flex-shrink-0
+            flex items-center justify-center 
+            w-10 h-10 
+            bg-blue-500/20
+            backdrop-blur-sm
+            rounded-lg
+          ">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+          </div>
+
+          <!-- 文字区域 -->
+          <div class="flex-1 min-w-0">
+            <div class="text-[15px] font-medium text-gray-900 truncate">
+              输入上个月尚未完成的任务
+            </div>
+            <div class="text-[13px] text-gray-600 mt-0.5">
+              快速搜索
+            </div>
+          </div>
+        </button>
+      </div>
+    </div>
+
+    <!-- 变体 4: 极简风格 -->
+    <div class="bg-white p-8 rounded-2xl shadow-lg">
+      <h2 class="text-xl font-semibold mb-6 text-gray-800">变体 4: 极简风格 (Minimalist)</h2>
+      
+      <div class="flex justify-center items-center h-40 bg-gray-50 rounded-xl">
+        <button 
+          class="
+            group
+            flex items-center gap-3 
+            w-full max-w-[400px] 
+            p-3 
+            bg-white 
+            border-2 border-transparent
+            rounded-lg 
+            text-left
+            cursor-pointer
+            hover:border-blue-200 hover:bg-blue-50/50
+            transition-all duration-200 ease-in-out
+          "
+        >
+          <!-- 搜索图标 -->
+          <svg class="w-5 h-5 text-gray-400 flex-shrink-0 group-hover:text-blue-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+
+          <!-- 文字 -->
+          <div class="flex-1 min-w-0 text-[15px] text-gray-600 group-hover:text-gray-900 transition-colors">
+            输入上个月尚未完成的任务
+          </div>
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Figma设计稿样式 -->
+  <div class="bg-white p-8 rounded-2xl shadow-lg">
+    <h2 class="text-xl font-semibold mb-6 text-gray-800">Figma设计稿样式 (Figma Design)</h2>
+    
+    <div class="flex justify-center items-center h-40 bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl">
+      <div class="
+        relative
+        w-full max-w-[400px]
+        transition-all duration-300 ease-in-out
+        hover:shadow-lg
+        group
+      " style="
+        background: white;
+        background-clip: padding-box;
+        border: 2px solid white;
+        border-radius: 100px;
+        padding: 10px 24px;
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        background: rgba(255, 255, 255, 0.3);
+      ">
+        <!-- 渐变边框层 -->
+        <div class="
+          absolute inset-[-2px]
+          rounded-[100px]
+          opacity-0
+          group-hover:opacity-100
+          transition-opacity duration-300
+          pointer-events-none
+        " style="
+          background: linear-gradient(90deg, #a855f7 0%, #3b82f6 100%);
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          padding: 2px;
+        "></div>
+        
+        <div class="flex items-center gap-3">
+          <!-- 搜索图标 -->
+          <svg class="w-5 h-5 text-gray-400 group-hover:text-gray-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          
+          <!-- 输入框 -->
+          <input 
+            type="text" 
+            placeholder="输入上个月尚未完成的任务"
+            class="
+              flex-1
+              bg-transparent
+              border-none
+              outline-none
+              text-[15px]
+              text-gray-700
+              placeholder-gray-400
+              font-['Microsoft_YaHei']
+            "
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Figma样式变体 - 更精致的毛玻璃 -->
+  <div class="bg-gradient-to-br from-purple-50 to-blue-50 p-8 rounded-2xl">
+    <h2 class="text-xl font-semibold mb-6 text-gray-800">精致毛玻璃版本 (Enhanced Glassmorphism)</h2>
+    
+    <div class="flex justify-center items-center h-40">
+      <div class="
+        relative
+        w-full max-w-[450px]
+        transition-all duration-300 ease-in-out
+        shadow-[0_1px_2px_rgba(0,0,0,0.05)]
+        hover:shadow-[0_8px_30px_rgba(0,0,0,0.12)]
+        group
+      " style="
+        background: rgba(255, 255, 255, 0.4);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border: 2px solid rgba(255, 255, 255, 0.5);
+        border-radius: 100px;
+        padding: 12px 24px;
+      ">
+        <!-- 渐变边框层 -->
+        <div class="
+          absolute inset-[-2px]
+          rounded-[100px]
+          opacity-0
+          group-hover:opacity-100
+          transition-all duration-300
+          pointer-events-none
+        " style="
+          background: linear-gradient(90deg, #a855f7 0%, #3b82f6 100%);
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          padding: 2px;
+        "></div>
+        
+        <div class="flex items-center gap-3">
+          <!-- 搜索图标 -->
+          <svg class="w-5 h-5 text-gray-500 group-hover:text-gray-700 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          
+          <!-- 输入框 -->
+          <input 
+            type="text" 
+            placeholder="输入上个月尚未完成的任务试试"
+            class="
+              flex-1
+              bg-transparent
+              border-none
+              outline-none
+              text-[15px]
+              text-gray-800
+              placeholder-gray-400
+              font-['Microsoft_YaHei']
+            "
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Figma样式变体 - 紧凑版 -->
+  <div class="bg-white p-8 rounded-2xl shadow-lg">
+    <h2 class="text-xl font-semibold mb-6 text-gray-800">紧凑版 (Compact Version)</h2>
+    
+    <div class="flex justify-center items-center h-40 bg-gray-50 rounded-xl">
+      <div class="
+        relative
+        w-full max-w-[350px]
+        transition-all duration-200 ease-in-out
+        group
+      " style="
+        background: rgba(255, 255, 255, 0.35);
+        backdrop-filter: blur(15px);
+        -webkit-backdrop-filter: blur(15px);
+        border: 2px solid rgba(255, 255, 255, 0.8);
+        border-radius: 100px;
+        padding: 8px 20px;
+      ">
+        <!-- 渐变边框层 -->
+        <div class="
+          absolute inset-[-2px]
+          rounded-[100px]
+          opacity-0
+          group-hover:opacity-100
+          transition-opacity duration-200
+          pointer-events-none
+        " style="
+          background: linear-gradient(90deg, #a855f7 0%, #8b5cf6 50%, #3b82f6 100%);
+          -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+          -webkit-mask-composite: xor;
+          mask-composite: exclude;
+          padding: 2px;
+        "></div>
+        
+        <div class="flex items-center gap-2.5">
+          <svg class="w-4.5 h-4.5 text-gray-400 group-hover:text-blue-500 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+          
+          <input 
+            type="text" 
+            placeholder="输入上个月尚未完成的任务"
+            class="
+              flex-1
+              bg-transparent
+              border-none
+              outline-none
+              text-[14px]
+              text-gray-700
+              placeholder-gray-400
+              font-['Microsoft_YaHei']
+            "
+          />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+  <script>
+    // 添加点击反馈
+    document.querySelectorAll('button').forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        // 创建涟漪效果
+        const ripple = document.createElement('span');
+        const rect = this.getBoundingClientRect();
+        const size = Math.max(rect.width, rect.height);
+        const x = e.clientX - rect.left - size / 2;
+        const y = e.clientY - rect.top - size / 2;
+        
+        ripple.style.width = ripple.style.height = size + 'px';
+        ripple.style.left = x + 'px';
+        ripple.style.top = y + 'px';
+        ripple.style.position = 'absolute';
+        ripple.style.borderRadius = '50%';
+        ripple.style.background = 'rgba(59, 130, 246, 0.3)';
+        ripple.style.transform = 'scale(0)';
+        ripple.style.animation = 'ripple 0.6s ease-out';
+        ripple.style.pointerEvents = 'none';
+        
+        this.style.position = 'relative';
+        this.style.overflow = 'hidden';
+        this.appendChild(ripple);
+        
+        setTimeout(() => ripple.remove(), 600);
+      });
+    });
+    
+    // 添加ripple动画
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes ripple {
+        to {
+          transform: scale(2);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  </script>
+
+</body>
+</html>

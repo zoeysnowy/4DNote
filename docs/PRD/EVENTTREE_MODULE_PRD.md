@@ -1,9 +1,38 @@
 # 🌳 EventTree 模块 PRD
 
-**版本**: v1.0  
+**版本**: v1.1  
 **创建日期**: 2025-12-02  
+**最后更新**: 2025-12-11  
 **维护者**: GitHub Copilot  
 **状态**: ✅ 生产环境
+
+---
+
+## 📊 版本历史
+
+### v1.1 (2025-12-11) - 层级显示最佳实践 + 常见问题修复指南 ✅
+
+**新增章节**:
+- 🆕 **层级显示常见问题**: 记录 PlanManager v2.17 层级显示修复案例
+- 🆕 **position vs DFS 排序**: 解释为什么 position 字段不适用于树结构
+- 🆕 **最佳实践指南**: 如何正确处理已排序的树结构数据
+
+**修复文档**:
+- 详细的问题诊断流程
+- 根本原因分析方法
+- 数据流验证检查清单
+
+**相关报告**:
+- `docs/EVENTTREE_HIERARCHY_FIX_REPORT.md`: 完整的修复报告
+- `docs/PRD/PLANMANAGER_MODULE_PRD.md` v2.17: computeEditorItems 修复
+
+### v1.0 (2025-12-02) - 统一 childEventIds 设计 ✅
+
+**核心设计**:
+- 🌳 统一字段管理所有子事件（childEventIds）
+- 🔗 刚性骨架（父子关系）vs 柔性血管（双向链接）
+- 🎨 Canvas 渲染 + EditableEventTree 编辑器
+- ⚡ EventService 自动维护父子关系
 
 ---
 
@@ -636,6 +665,251 @@ async function getEventTreeBatch(rootId: string): Promise<EventTreeNode> {
 
 ---
 
+## 🐛 层级显示常见问题
+
+### 问题：EventTree 显示顺序错乱（PlanManager v2.17 案例）
+
+**现象**:
+- 所有 L1 子事件混在一起，未按所属根事件分组
+- 树结构完全无法理解，用户体验极差
+
+**诊断流程**:
+
+**1. 验证数据库完整性** ✅
+```typescript
+// 检查 parentEventId ↔ childEventIds 双向关系
+const parent = await EventService.getEventById(parentId);
+const child = await EventService.getEventById(childId);
+
+console.log('父事件的 childEventIds:', parent.childEventIds);
+console.log('子事件的 parentEventId:', child.parentEventId);
+
+// 应该满足：parent.childEventIds.includes(child.id) && child.parentEventId === parent.id
+```
+
+**2. 验证 bulletLevel 计算** ✅
+```typescript
+// 检查 calculateAllBulletLevels() 是否正确
+const bulletLevels = await EventService.calculateAllBulletLevels();
+
+console.log('根事件的 bulletLevel:', bulletLevels.get(rootEventId)); // 应该是 0
+console.log('L1 子事件的 bulletLevel:', bulletLevels.get(l1ChildId)); // 应该是 1
+console.log('L2 子事件的 bulletLevel:', bulletLevels.get(l2ChildId)); // 应该是 2
+```
+
+**3. 验证 DFS 遍历算法** ✅
+```typescript
+// 检查 addEventWithChildren() 深度优先遍历
+const sortedEvents = [];
+const visited = new Set<string>();
+
+function addEventWithChildren(event: Event) {
+  if (visited.has(event.id!)) return;
+  visited.add(event.id!);
+  sortedEvents.push(event);
+  
+  if (event.childEventIds) {
+    for (const childId of event.childEventIds) {
+      const child = eventMap.get(childId);
+      if (child) addEventWithChildren(child);
+    }
+  }
+}
+
+// 日志输出前 30 个事件，检查是否按树结构排序
+console.log('sortedEvents 顺序检查（前30个）:');
+sortedEvents.slice(0, 30).forEach((e, idx) => {
+  const indent = '  '.repeat(e.bulletLevel || 0);
+  console.log(`[${idx}] ${indent}L${e.bulletLevel} ${e.title} (父:${e.parentEventId?.slice(-8) || 'ROOT'})`);
+});
+
+// 应该看到：L0 → L1 → L2 → ... → L2 → L1 → L0 → ...（深度优先）
+```
+
+**4. 验证 items 状态更新** ✅
+```typescript
+// 检查 setItems(sortedEvents) 是否保持顺序
+useEffect(() => {
+  if (items.length > 0) {
+    console.log('[PlanManager] items 数组已更新:', {
+      数量: items.length,
+      前5个ID: items.slice(0, 5).map(e => e.id?.slice(-8))
+    });
+  }
+}, [items]);
+
+// items 应该与 sortedEvents 顺序完全一致
+```
+
+**5. 验证 filteredItems useMemo** ✅
+```typescript
+// filter() 操作不会改变已有元素的相对顺序
+const filteredItems = useMemo(() => {
+  return items.filter(item => {
+    // 标签过滤、搜索过滤等
+    return matchesFilter(item);
+  });
+}, [items, filters]);
+
+// filteredItems 应该保持 items 的相对顺序
+```
+
+**6. ❌ 发现问题：computeEditorItems 错误排序**
+```typescript
+// ❌ 错误代码（PlanManager v2.16 及之前）
+function computeEditorItems() {
+  // ...
+  result = allItems.sort((a, b) => {
+    const pa = (a as any).position ?? allItems.indexOf(a);
+    const pb = (b as any).position ?? allItems.indexOf(b);
+    return pa - pb;  // ❌ position 值不反映树结构，完全打乱 DFS 顺序！
+  });
+}
+```
+
+**根本原因**:
+- `position` 字段：扁平列表的拖拽重排字段，值如 `[0, 10, 20, 5, 15]`
+- EventTree DFS 顺序：深度优先遍历顺序，`根事件1 → L1子 → L2子 → L2子 → L1返回 → 根事件2 → ...`
+- **冲突**：按 `position` 排序会完全打乱树结构
+
+**修复方案（PlanManager v2.17）**:
+```typescript
+// ✅ 修复后代码
+function computeEditorItems() {
+  // ...
+  
+  if (currentSnapshot) {
+    // Snapshot 模式：按时间戳排序
+    result = allItems.sort((a, b) => {
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      return timeB - timeA;
+    });
+  } else {
+    // 🔥 正常模式：直接使用 allItems（即 filteredItems）
+    // items 数组在初始化时已经按照 EventTree 结构排序（DFS），无需再次排序
+    // filteredItems 只是过滤操作（标签、搜索），不会改变顺序
+    result = allItems.filter(item => item.id);
+    console.log('[PlanManager] ✅ 正常模式：使用已排序的 items，共', result.length, '个事件');
+  }
+  
+  // 添加 pendingEmptyItems（空标题占位符，添加在末尾）
+  result.push(...pendingEmptyItems.values());
+  
+  return result;
+}
+```
+
+**关键教训**:
+- 🎯 **信任源数据的顺序**：如果数据在初始化时已经正确排序，不要轻易重新排序
+- ⚠️ **过滤不改变顺序**：`filter()` 操作不会改变已有元素的相对顺序
+- 🚫 **position 不适用于树结构**：扁平列表的排序字段不反映树形层级关系
+
+**验证方法**:
+```typescript
+// 对比 sortedEvents 和 editorItems 的顺序
+console.log('[DEBUG] sortedEvents vs editorItems 顺序对比:');
+for (let i = 0; i < Math.min(10, sortedEvents.length); i++) {
+  console.log(`sortedEvents[${i}]:`, sortedEvents[i].id?.slice(-8), 'L' + sortedEvents[i].bulletLevel);
+  console.log(`editorItems[${i}]:`, editorItems[i].id?.slice(-8), 'L' + (editorItems[i] as any).bulletLevel);
+}
+
+// 应该完全一致！
+```
+
+**相关文档**:
+- 完整修复报告：`docs/EVENTTREE_HIERARCHY_FIX_REPORT.md`
+- PlanManager v2.17 PRD：`docs/PRD/PLANMANAGER_MODULE_PRD.md`
+
+---
+
+## 📚 最佳实践指南
+
+### 1. 树结构数据流管理
+
+**DO ✅**: 信任已排序的源数据
+```typescript
+// 初始化时 DFS 遍历排序
+const sortedEvents = dfsTraversal(rootEvents);
+setItems(sortedEvents);
+
+// 过滤操作（不改变顺序）
+const filteredItems = items.filter(matchesFilter);
+
+// 直接使用，不要再次排序
+setEditorItems(filteredItems);
+```
+
+**DON'T ❌**: 错误地重新排序
+```typescript
+// ❌ 错误：按 position 排序会打乱树结构
+const editorItems = filteredItems.sort((a, b) => a.position - b.position);
+
+// ❌ 错误：按 created_at 排序（除非是 Snapshot 模式）
+const editorItems = filteredItems.sort((a, b) => 
+  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+);
+```
+
+### 2. 调试日志策略
+
+**分层验证数据流**:
+```typescript
+// L1: 数据库查询
+const events = await EventService.getAllEvents();
+console.log('[Layer 1] 数据库查询结果:', events.length, '个事件');
+
+// L2: bulletLevel 计算
+const bulletLevels = await EventService.calculateAllBulletLevels();
+console.log('[Layer 2] bulletLevel 计算完成:', bulletLevels.size, '个事件');
+
+// L3: DFS 遍历
+console.log('[Layer 3] 🔍 sortedEvents 顺序检查（前30个）:');
+sortedEvents.slice(0, 30).forEach((e, idx) => {
+  const indent = '  '.repeat(e.bulletLevel || 0);
+  console.log(`[${idx}] ${indent}L${e.bulletLevel} ${e.title} (父:${e.parentEventId?.slice(-8) || 'ROOT'})`);
+});
+
+// L4: 状态更新
+useEffect(() => {
+  console.log('[Layer 4] 📋 items 数组已更新:', items.length, '个事件');
+}, [items]);
+
+// L5: 最终渲染
+console.log('[Layer 5] 🎯 setEditorItems 调用前:', result.length, '个事件');
+```
+
+### 3. position vs DFS 排序
+
+**position 字段适用场景**:
+- ✅ 扁平列表拖拽重排（Kanban Board）
+- ✅ 无层级关系的事件列表
+- ✅ 用户手动排序的待办列表
+
+**DFS 遍历适用场景**:
+- ✅ EventTree 层级显示
+- ✅ 父子关系可视化
+- ✅ 缩进层级编辑器（PlanManager）
+
+**永远不要混用**:
+```typescript
+// ❌ 错误：在树结构中使用 position 排序
+if (isTreeView) {
+  items.sort((a, b) => a.position - b.position); // ❌ 会打乱树结构
+}
+
+// ✅ 正确：根据模式选择排序方式
+if (isTreeView) {
+  // 使用已经 DFS 排序的 items，不要再次排序
+  return items;
+} else if (isFlatListView) {
+  // 扁平列表可以按 position 排序
+  return items.sort((a, b) => a.position - b.position);
+}
+```
+
+---
+
 ## 🧪 测试覆盖
 
 ### 单元测试
@@ -666,6 +940,24 @@ describe('EventTree Management', () => {
     
     expect(updatedA.linkedEventIds).toContain(eventB.id);
     expect(updatedB.backlinks).toContain(eventA.id);
+  });
+  
+  test('DFS 遍历顺序正确性', async () => {
+    // 创建树结构：Root → L1-A → L2-A1, L2-A2, L1-B
+    const root = await createEvent({ title: 'Root' });
+    const l1A = await createEvent({ title: 'L1-A', parentEventId: root.id });
+    const l2A1 = await createEvent({ title: 'L2-A1', parentEventId: l1A.id });
+    const l2A2 = await createEvent({ title: 'L2-A2', parentEventId: l1A.id });
+    const l1B = await createEvent({ title: 'L1-B', parentEventId: root.id });
+    
+    const sortedEvents = await EventService.getAllEventsSorted();
+    const ids = sortedEvents.map(e => e.id);
+    
+    // 验证 DFS 顺序：Root → L1-A → L2-A1 → L2-A2 → L1-B
+    expect(ids.indexOf(root.id!)).toBeLessThan(ids.indexOf(l1A.id!));
+    expect(ids.indexOf(l1A.id!)).toBeLessThan(ids.indexOf(l2A1.id!));
+    expect(ids.indexOf(l2A1.id!)).toBeLessThan(ids.indexOf(l2A2.id!));
+    expect(ids.indexOf(l2A2.id!)).toBeLessThan(ids.indexOf(l1B.id!));
   });
 });
 ```

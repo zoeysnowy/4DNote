@@ -5,8 +5,14 @@
   gap: 8px;
   height: 100%;
   width: 100%;
-  background: none;
   padding: 8px;
+  padding-left: 343px; /* 为ContentSelectionPanel留出空间（60px sidebar + 335px panel + 8px gap）*/
+  transition: padding-left 0.3s ease;
+}
+
+/* 当panel unpinned时，向左填补 */
+.plan-manager-container.panel-hidden {
+  padding-left: 68px; /* 60px sidebar + 8px gap */
 }
 
 /* 中间主内容区 */

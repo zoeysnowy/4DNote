@@ -5886,8 +5886,300 @@ console.log(`✅ [SyncRemote] Completed: ${successCount} updated, ${skippedCount
 
 ---
 
-**文档版本**: v1.10  
-**最后更新**: 2025-11-28  
+### 9. 关键 Bug 修复记录 (2025-12-09)
+
+#### 9.1 ActionBasedSyncManager 未初始化服务调用 ❌→✅
+
+**问题**: 代码中使用 `this.eventService.updateEvent()` 但 `eventService` 从未在构造函数中初始化  
+**错误信息**: `TypeError: Cannot read properties of undefined (reading 'updateEvent')`  
+**影响**: To Do 任务同步失败，所有 Calendar → To Do 迁移场景和创建新 To Do 任务场景都会报错
+
+**修复位置**:
+- `src/services/ActionBasedSyncManager.ts:2751` - Calendar → To Do 迁移场景
+- `src/services/ActionBasedSyncManager.ts:3354` - Calendar → To Do 迁移场景  
+- `src/services/ActionBasedSyncManager.ts:3390` - 创建新 To Do 任务场景
+
+**解决方案**:
+```typescript
+// ❌ 旧代码 - 使用未初始化的实例属性
+await this.eventService.updateEvent(localEvent.id, {
+  calendarIds: localEvent.calendarIds.filter(id => id !== fromCalendarId)
+});
+
+// ✅ 新代码 - 使用静态方法
+await EventService.updateEvent(localEvent.id, {
+  calendarIds: localEvent.calendarIds.filter(id => id !== fromCalendarId)
+});
+```
+
+**根本原因**: 
+- EventService 是静态类（类似单例模式），所有方法都是 `static`
+- 构造函数中只初始化了 `this.microsoftService = microsoftService`（L106）
+- 从未初始化 `this.eventService`，导致 `this.eventService.updateEvent()` 调用时报 `undefined` 错误
+- 代码中其他地方都正确使用了静态方法 `EventService.xxx()`，只有这 3 处错误使用实例调用
+
+**架构设计原则**:
+- ✅ EventService/TagService/TimeHub/EventHub/StorageManager 都是静态类，永远使用 `ClassName.method()` 调用
+- ✅ microsoftService 是实例类，在构造函数中初始化，使用 `this.microsoftService.method()` 调用
+- ❌ 绝不应该将静态类作为实例属性使用（如 `this.eventService`）
+
+---
+
+#### 9.2 PlanManager 丢失 EventTree 字段 ❌→✅
+
+**问题**: 分级事件（一级标题 → 二级标题 → 三级标题）页面刷新后父子关系丢失，全部变成独立根事件  
+**症状**: 
+- UI 创建时正确（bulletLevel 0, 1, 2），parentEventId 正确设置
+- 页面刷新后：所有 bulletLevel 变成 0，所有 parentEventId 变成 null
+- 数据库中没有保存 parentEventId 和 childEventIds 字段
+
+**根本原因**:
+`PlanManager.executeBatchUpdate` 函数创建 eventItem 对象时使用了展开运算符，但后续显式字段赋值覆盖了 EventTree 相关字段：
+
+```typescript
+// ❌ 旧代码 - EventTree 字段被覆盖丢失
+const eventItem: Event = {
+  ...(existingItem || {}),
+  ...updatedItem,
+  id: updatedItem.id,
+  title: updatedItem.title,
+  // ... 其他 20+ 个显式字段赋值
+  // ⚠️ parentEventId 和 childEventIds 没有显式保留，被后续字段覆盖
+};
+
+// 🔍 问题分析：
+// 1. { ...existingItem, ...updatedItem } 包含了 parentEventId
+// 2. 但后续显式赋值 20+ 个字段时，JS 对象字面量后定义的属性覆盖前面的
+// 3. 如果显式字段列表中没有 parentEventId，则展开运算符中的值被丢弃
+```
+
+**解决方案**:
+```typescript
+// ✅ 新代码 - 显式保留 EventTree 字段
+const eventItem: Event = {
+  ...(existingItem || {}),
+  ...updatedItem,
+  id: updatedItem.id,
+  title: updatedItem.title,
+  // ... 其他字段 ...
+  
+  // 🔥 [FIX] 显式保留 EventTree 字段（优先使用 updatedItem，fallback 到 existingItem）
+  parentEventId: updatedItem.parentEventId ?? existingItem?.parentEventId,
+  childEventIds: updatedItem.childEventIds ?? existingItem?.childEventIds,
+};
+```
+
+**修复位置**: `src/components/PlanManager.tsx:1210-1237`
+
+**数据流验证**:
+1. ✅ **Tab 键创建子事件**: PlanSlate 正确设置 `event.metadata.parentEventId` (L2700-2715)
+2. ✅ **序列化读取**: `serializeLine` 从 `metadata.parentEventId` 读取到 `event.parentEventId` (L427)
+3. ✅ **保存持久化**: PlanManager 显式保留 `parentEventId` 和 `childEventIds` 到数据库 (L1235-1236)
+4. ✅ **页面刷新**: 从数据库加载事件，EventTree 字段完整保留
+
+**EventTree 架构完整性**:
+- EventTree 使用 `parentEventId` 和 `childEventIds` 表示父子关系（v2.16 统一字段架构）
+- EventService 自动维护双向关联：创建/更新/删除子事件时自动更新父事件的 childEventIds
+- PlanManager 必须在保存时显式保留这些字段，确保数据完整性
+
+---
+
+#### 9.3 PlanSlate Tab 键使用临时 ID 作为 parentEventId ❌→✅
+
+**问题**: Tab 键创建子事件时，parentEventId 使用上一行的临时 ID (line-xxx)，而不是真实 ID  
+**错误信息**: `⚠️ [EventService] 父事件不存在: {parentId: 'line-1765286724173-0.14171832823437325', childId: 'event_xxx'}`  
+**影响**: 子事件创建失败，父子关系无法建立，EventService.getChildEvents() 查询为空
+
+**根本原因**:
+Tab 键保存逻辑按顺序保存事件：
+1. 先保存上一行（父事件），从临时 ID (line-xxx) 获得真实 ID (event_xxx)
+2. 将映射关系存入 `idMapping[line-xxx] = event_xxx`
+3. 但创建子事件时直接使用 `previousEventId` (还是 line-xxx)，而不是从 idMapping 读取真实 ID
+
+```typescript
+// ❌ 旧代码 - 使用临时 ID 作为 parentEventId
+const previousEventId = previousLine.event.id; // line-1765286724173-0.xxx
+const isPreviousTempId = previousEventId.startsWith('line-');
+
+// 🔥 问题：这里 previousEventId 还是临时 ID
+await createEventWithParent({
+  ...eventToSave,
+  metadata: {
+    ...eventToSave.metadata,
+    parentEventId: previousEventId // ⚠️ line-xxx，而不是 event_xxx
+  }
+});
+```
+
+**解决方案**:
+```typescript
+// ✅ 新代码 - 从 idMapping 获取真实 ID
+let resolvedParentId = previousEventId;
+if (isCurrentEvent && isPreviousTempId) {
+  // 上一行已经保存，从 idMapping 获取真实 ID
+  resolvedParentId = idMapping[previousEventId] || previousEventId;
+  console.log(`🔍 [Tab] 解析父事件 ID: ${previousEventId} → ${resolvedParentId}`);
+}
+
+await createEventWithParent({
+  ...eventToSave,
+  metadata: {
+    ...eventToSave.metadata,
+    parentEventId: resolvedParentId // ✅ event_xxx
+  }
+});
+```
+
+**修复位置**: `src/components/PlanSlate/PlanSlate.tsx:2783-2810`
+
+**保存顺序说明**:
+```typescript
+// Tab 键保存流程：
+// 1. 检测上一行是临时 ID，需要先保存
+if (isPreviousTempId) {
+  const savedId = await saveEventToService(previousLine.event);
+  idMapping[previousEventId] = savedId; // ✅ 保存映射关系
+}
+
+// 2. 解析父事件真实 ID
+const resolvedParentId = idMapping[previousEventId] || previousEventId;
+
+// 3. 创建子事件，使用真实 ID
+await createEventWithParent({
+  metadata: { parentEventId: resolvedParentId }
+});
+```
+
+**EventService 验证逻辑**:
+```typescript
+// EventService.createEvent 中的父事件检查
+if (finalEvent.parentEventId) {
+  const parent = existingEvents.find(e => e.id === finalEvent.parentEventId);
+  if (!parent) {
+    console.warn(`⚠️ [EventService] 父事件不存在: ${finalEvent.parentEventId}`);
+    // ❌ 旧代码：使用 line-xxx 无法找到父事件
+    // ✅ 新代码：使用 event_xxx 正确建立父子关系
+  }
+}
+```
+
+---
+
+#### 9.4 全局架构安全检查 ✅
+
+**检查范围**: 整个代码库所有类似模式
+
+**检查结果**:
+- ✅ `this.eventService` - 0 matches（已全部修复）
+- ✅ `this.*Service` - 仅 `this.microsoftService`（构造函数正确初始化）
+- ✅ `EventService.` - 所有调用都是正确的静态方法
+- ✅ `new EventService(` - 0 matches（正确，静态类不应实例化）
+- ✅ `new (TagService|TimeHub|EventHub)` - 0 matches（正确）
+- ✅ `await this.*.(create|update|delete|get)` - 仅 `this.microsoftService.*`（正确）
+
+**结论**: ✅ 代码库中不存在类似问题，所有静态服务调用符合架构规范
+
+---
+
+#### 9.5 开发者指南：避免类似 Bug
+
+**关键原则**:
+
+1. **静态服务类永远使用静态方法**:
+   ```typescript
+   // ✅ 正确
+   await EventService.updateEvent(id, updates);
+   await TagService.getAllTags();
+   await TimeHub.getSnapshot(eventId);
+   
+   // ❌ 错误
+   await this.eventService.updateEvent(id, updates);
+   const service = new EventService(); // 静态类不应实例化
+   ```
+
+2. **展开运算符后的显式字段赋值要保留关键字段**:
+   ```typescript
+   // ❌ 错误 - EventTree 字段被丢弃
+   const eventItem = {
+     ...existingItem,
+     ...updatedItem,
+     id: updatedItem.id,
+     title: updatedItem.title
+     // ⚠️ parentEventId 丢失
+   };
+   
+   // ✅ 正确 - 显式保留 EventTree 字段
+   const eventItem = {
+     ...existingItem,
+     ...updatedItem,
+     id: updatedItem.id,
+     title: updatedItem.title,
+     parentEventId: updatedItem.parentEventId ?? existingItem?.parentEventId,
+     childEventIds: updatedItem.childEventIds ?? existingItem?.childEventIds
+   };
+   ```
+
+3. **使用临时 ID 创建关联关系前先解析真实 ID**:
+   ```typescript
+   // ❌ 错误 - 使用临时 ID
+   const parentId = previousEvent.id; // line-xxx
+   await createChild({ parentEventId: parentId });
+   
+   // ✅ 正确 - 解析真实 ID
+   let parentId = previousEvent.id;
+   if (parentId.startsWith('line-')) {
+     parentId = idMapping[parentId] || parentId;
+   }
+   await createChild({ parentEventId: parentId });
+   ```
+
+4. **构造函数中初始化的实例属性才能用 `this.xxx` 调用**:
+   ```typescript
+   class ActionBasedSyncManager {
+     private microsoftService: MicrosoftService; // ✅ 实例属性
+     
+     constructor(microsoftService: MicrosoftService) {
+       this.microsoftService = microsoftService; // ✅ 显式初始化
+     }
+     
+     async someMethod() {
+       // ✅ 正确 - microsoftService 已初始化
+       await this.microsoftService.getEvents();
+       
+       // ✅ 正确 - EventService 是静态类
+       await EventService.updateEvent(id, updates);
+     }
+   }
+   ```
+
+**架构层次**:
+```
+┌─────────────────────────────────────┐
+│   UI 层 (EventEditModal/PlanSlate) │
+├─────────────────────────────────────┤
+│  状态管理层 (EventHub/TimeHub)      │ ← 静态类，使用 ClassName.method()
+├─────────────────────────────────────┤
+│  持久化层 (EventService)            │ ← 静态类，使用 ClassName.method()
+├─────────────────────────────────────┤
+│  存储抽象层 (StorageManager)        │ ← 单例类，使用 storageManagerInstance
+├─────────────────────────────────────┤
+│  同步管理层 (ActionBasedSyncManager)│ ← 实例类，在构造函数中初始化依赖
+│  ├── microsoftService (实例)       │
+│  └── 静态服务 (EventService/TagService) │
+└─────────────────────────────────────┘
+```
+
+**测试清单**:
+- [ ] 所有静态服务调用使用 `ClassName.method()` 格式
+- [ ] 构造函数中初始化所有 `this.xxx` 实例属性
+- [ ] 展开运算符后显式赋值时保留关键字段（parentEventId/childEventIds）
+- [ ] 使用临时 ID 创建关联前从 idMapping 解析真实 ID
+- [ ] 父子关系创建时验证父事件存在（EventService 会自动检查）
+
+---
+
+**文档版本**: v1.11  
+**最后更新**: 2025-12-09  
 **维护者**: GitHub Copilot  
 **变更记录**:
 - v1.0 (2025-11-06): 初始版本
@@ -5899,3 +6191,4 @@ console.log(`✅ [SyncRemote] Completed: ${successCount} updated, ${skippedCount
 - v1.8 (2025-11-24): **EventLog 保存架构优化**，统一由 EventService 负责 Slate JSON → EventLog 对象转换，修复 Timer eventlog 保存问题
 - v1.9 (2025-11-25): **EventLog 与 Description 字段转换机制详解**，包含完整的双向同步逻辑、数据流向图、最佳实践和测试清单
 - v1.10 (2025-11-28): **ActionBasedSyncManager 架构合规性修复**，所有事件更新必须通过 EventService 执行，禁止直接操作 localStorage
+- v1.11 (2025-12-09): **关键 Bug 修复记录**，包含 ActionBasedSyncManager 未初始化服务调用、PlanManager EventTree 字段丢失、PlanSlate Tab 键临时 ID 问题的完整分析和解决方案

@@ -80,5 +80,7 @@
   // 终端优化
   "terminal.integrated.rendererType": "dom",
   "terminal.integrated.gpuAcceleration": "off",
-  "mcpFigma.aiAssistant": "github-copilot"
+  "mcpFigma.aiAssistant": "github-copilot",
+  "mcpFigma.autoStartWebSocket": true,
+  "mcpFigma.websocketPort": 3845
 }

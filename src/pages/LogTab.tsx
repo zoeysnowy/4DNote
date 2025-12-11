@@ -94,7 +94,7 @@ import { LocationInput } from '../components/common/LocationInput';
 import { CalendarPicker } from '../features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor } from '../utils/calendarUtils';
+import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../utils/calendarUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../components/ModalSlate';
 import { TitleSlate } from '../components/ModalSlate/TitleSlate';
@@ -127,6 +127,13 @@ import ddlWarnIcon from '../assets/icons/ddl_warn.svg';
 import linkColorIcon from '../assets/icons/link_color.svg';
 import backIcon from '../assets/icons/back.svg';
 import remarkableLogo from '../assets/icons/LOGO.svg';
+import notetreeIcon from '../assets/icons/Notetree.svg';
+import rightIcon from '../assets/icons/right.svg';
+import syncIcon from '../assets/icons/Sync.svg';
+import tagIcon from '../assets/icons/Tag.svg';
+
+// Import TagInput component
+import { TagInput } from '../components/common/TagInput';
 
 interface MockEvent {
   id: string;
@@ -139,8 +146,8 @@ interface MockEvent {
   childEventIds?: string[];
   linkedEventIds?: string[];
   backlinks?: string[];
-  startTime: string | null; // ISO 8601 string
-  endTime: string | null;   // ISO 8601 string
+  startTime: string | null; // TimeSpec format: "YYYY-MM-DD HH:mm:ss"
+  endTime: string | null;   // TimeSpec format: "YYYY-MM-DD HH:mm:ss"
   allDay: boolean;
   location?: string;
   organizer?: Contact;
@@ -466,7 +473,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     // 新建事件时的默认值
     console.log('🆕 [formData 初始化] 新建事件，使用默认值');
     return {
-      id: `event-${Date.now()}`,
+      id: generateEventId(),
       title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
       tags: [],
       isTask: false,
@@ -494,7 +501,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     if (!eventId) {
       // 新建事件：重置为空表单
       setFormData({
-        id: `event-${Date.now()}`,
+        id: generateEventId(),
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
         isTask: false,
@@ -611,6 +618,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   const [showSourceCalendarPicker, setShowSourceCalendarPicker] = useState(false);
   const [showSyncCalendarPicker, setShowSyncCalendarPicker] = useState(false);
   const [showSourceSyncModePicker, setShowSourceSyncModePicker] = useState(false);
+  
+  // 📑 目录窗口状态
+  const [showToc, setShowToc] = useState(false); // 悬浮显示
+  const [tocPinned, setTocPinned] = useState(false); // 固定状态
+  const [showTocMenu, setShowTocMenu] = useState(false); // 菜单显示
   const [showSyncSyncModePicker, setShowSyncSyncModePicker] = useState(false);
   const [isDetailView, setIsDetailView] = useState(true);
   const [tagPickerPosition, setTagPickerPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -1106,7 +1118,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       } else if (formData.id && formData.id.trim() !== '') {
         eventId = formData.id;
       } else {
-        eventId = `event-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        eventId = generateEventId();
         console.log('🆕 [EventEditModalV2] Generated new eventId:', eventId);
       }
       
@@ -2067,12 +2079,14 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
   /**
    * 格式化时间显示
+   * 遵循 TIME_ARCHITECTURE: 处理 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
    */
   const formatTimeDisplay = (startTime: string | null, endTime: string | null) => {
     if (!startTime) return null;
     
-    const start = new Date(startTime);
-    const end = endTime ? new Date(endTime) : null;
+    // TimeSpec 格式转换: 空格 → T (ISO 8601)
+    const start = new Date(startTime.replace(' ', 'T'));
+    const end = endTime ? new Date(endTime.replace(' ', 'T')) : null;
     
     // 格式化日期和星期
     const dateStr = start.toLocaleDateString('zh-CN', { 
@@ -2131,11 +2145,13 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
   /**
    * 计算 Timer 事件的时长（毫秒）
+   * 遵循 TIME_ARCHITECTURE: 处理 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
    */
   const calculateTimerDuration = (timerEvent: Event): number => {
     if (!timerEvent.startTime || !timerEvent.endTime) return 0;
-    const start = new Date(timerEvent.startTime).getTime();
-    const end = new Date(timerEvent.endTime).getTime();
+    // TimeSpec 格式转换: 空格 → T (ISO 8601)
+    const start = new Date(timerEvent.startTime.replace(' ', 'T')).getTime();
+    const end = new Date(timerEvent.endTime.replace(' ', 'T')).getTime();
     return end - start;
   };
 
@@ -2317,6 +2333,172 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
   // ==================== 渲染函数 ====================
 
+  // 获取同步模式图标
+  const getSyncModeIcon = (syncMode: string | undefined) => {
+    // 暂时统一使用 syncIcon，后续可以添加更多图标
+    return syncIcon;
+  };
+
+  // 渲染信息区域（上方）
+  const renderInfoSection = () => {
+    // 获取标签服务
+    const allTags = TagService.getFlatTags();
+    
+    return (
+      <div className="logtab-info-section">
+        {/* Title 行 */}
+        <div className="info-title-row">
+          {/* Emoji */}
+          <div 
+            className="info-emoji" 
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
+            {getDisplayEmoji(formData)}
+          </div>
+          
+          {/* Emoji Picker */}
+          {showEmojiPicker && (
+            <div className="emoji-picker-overlay" onClick={() => setShowEmojiPicker(false)}>
+              <div className="emoji-picker-wrapper" onClick={(e) => e.stopPropagation()}>
+                <Picker
+                  data={data}
+                  onEmojiSelect={handleTitleEmojiSelect}
+                  theme="light"
+                  locale="zh"
+                  perLine={8}
+                  emojiSize={24}
+                  previewPosition="none"
+                  skinTonePosition="none"
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* TitleSlate */}
+          <div className="info-title-slate">
+            <TitleSlate
+              key={`title-slate-${formData.id}`}
+              eventId={formData.id}
+              content={titleContent}
+              onChange={handleTitleChange}
+              placeholder={titlePlaceholder}
+              className="title-input"
+              readOnly={false}
+              autoFocus={false}
+              hideEmoji={true}
+            />
+          </div>
+        </div>
+
+        {/* Metadata 两列布局 */}
+        <div className="info-metadata-grid">
+          {/* 左列 */}
+          <div className="info-metadata-col">
+            {/* Tags */}
+            <div className="info-meta-row info-tags-wrapper">
+              <img src={tagIcon} alt="tag" className="info-meta-icon" />
+              <TagInput
+                selectedTagIds={formData.tags}
+                onSelectionChange={(newTagIds) => {
+                  setFormData(prev => ({
+                    ...prev,
+                    tags: newTagIds
+                  }));
+                }}
+                availableTags={allTags}
+                className="info-tags-input"
+              />
+            </div>
+
+            {/* Attendee */}
+            <div className="info-meta-row">
+              <img src={attendeeIcon} alt="attendee" className="info-meta-icon" />
+              <span className="info-meta-label">参会人</span>
+              <div className="info-meta-content">
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                  {formData.attendees && formData.attendees.length > 0 
+                    ? `${formData.attendees.length} 人`
+                    : '添加参会人'}
+                </span>
+              </div>
+            </div>
+
+            {/* Location */}
+            <div className="info-meta-row">
+              <img src={locationIcon} alt="location" className="info-meta-icon" />
+              <span className="info-meta-label">地点</span>
+              <div className="info-meta-content">
+                <span className="info-location-text">
+                  {formData.location || '添加地点'}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 右列 */}
+          <div className="info-metadata-col">
+            {/* Notetree */}
+            <div className="info-meta-row" onClick={() => setShowEventTree(true)}>
+              <img src={notetreeIcon} alt="notetree" className="info-meta-icon" />
+              <span className="info-meta-label">笔记树</span>
+              <div className="info-meta-content">
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                  {formData.parentEventId ? '有父事件' : 
+                   (formData.childEventIds && formData.childEventIds.length > 0) 
+                     ? `${formData.childEventIds.length} 个子事件` 
+                     : '独立事件'}
+                </span>
+              </div>
+              <img src={rightIcon} alt="expand" className="info-meta-arrow" />
+            </div>
+
+            {/* Time */}
+            <div className="info-meta-row" onClick={() => setShowTimePicker(true)}>
+              <img src={datetimeIcon} alt="time" className="info-meta-icon" />
+              <div className="info-meta-content" style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1 }}>
+                {(() => {
+                  const timeInfo = formatTimeDisplay(formData.startTime, formData.endTime);
+                  if (!timeInfo) {
+                    return <span style={{ color: '#9ca3af', fontSize: '13px' }}>添加时间...</span>;
+                  }
+                  
+                  return (
+                    <>
+                      <span style={{ fontSize: '13px' }}>{timeInfo.dateStr} ({timeInfo.weekday}) {timeInfo.startTimeStr}</span>
+                      {timeInfo.endTimeStr && timeInfo.duration && (
+                        <>
+                          <div className="time-arrow-section">
+                            <span className="duration-text">{timeInfo.duration}</span>
+                            <img src={arrowBlueIcon} alt="" className="arrow-icon" />
+                          </div>
+                          <span style={{ fontSize: '13px' }}>{timeInfo.endTimeStr}</span>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Sync Mode */}
+            <div className="info-meta-row">
+              <img src={getSyncModeIcon(formData.syncMode)} alt="sync" className="info-meta-icon" />
+              <span className="info-meta-label">同步</span>
+              <div className="info-meta-content">
+                <span style={{ fontSize: '14px', color: '#6b7280' }}>
+                  {formData.syncMode === 'bidirectional' ? '双向同步' :
+                   formData.syncMode === 'send-only' ? '仅发送' :
+                   formData.syncMode === 'receive-only' ? '仅接收' :
+                   '本地存储'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // 🔍 DEBUG: 检查 formData 初始化状态
   console.log('🎨 [LogTab] 准备渲染，formData 状态:', {
     id: formData.id,
@@ -2325,24 +2507,101 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     eventlogLength: formData.eventlog?.length
   });
 
-  // 📦 渲染主内容（embedded和modal模式共享）
+  // 📑 渲染目录窗口（右侧悬浮/固定的大纲导航）
+  const renderToc = () => {
+    if (!showToc && !tocPinned) return null;
+    
+    return (
+      <div className={`logtab-toc ${tocPinned ? 'pinned' : 'floating'}`}>
+        {/* 目录头部 */}
+        <div className="logtab-toc-header">
+          <span className="logtab-toc-title">目录</span>
+          <div className="logtab-toc-actions">
+            {/* Pin/Unpin 按钮 */}
+            <button 
+              className="logtab-toc-pin-btn"
+              onClick={() => setTocPinned(!tocPinned)}
+              title={tocPinned ? '取消固定' : '固定目录'}
+            >
+              📌
+            </button>
+            {/* 菜单按钮 */}
+            <button 
+              className="logtab-toc-menu-btn"
+              onClick={() => setShowTocMenu(!showTocMenu)}
+            >
+              ⋮
+            </button>
+          </div>
+          
+          {/* 菜单下拉 */}
+          {showTocMenu && (
+            <div className="logtab-toc-menu">
+              <div className="logtab-toc-menu-item" onClick={() => { /* 折叠 */ setShowTocMenu(false); }}>
+                折叠全部
+              </div>
+              <div className="logtab-toc-menu-item" onClick={() => { /* 展开 */ setShowTocMenu(false); }}>
+                展开全部
+              </div>
+              <div className="logtab-toc-menu-divider" />
+              <div className="logtab-toc-menu-item" onClick={() => { /* 跳到页首 */ setShowTocMenu(false); }}>
+                跳到页首
+              </div>
+              <div className="logtab-toc-menu-item" onClick={() => { /* 跳到页尾 */ setShowTocMenu(false); }}>
+                跳到页尾
+              </div>
+              <div className="logtab-toc-menu-divider" />
+              <div className="logtab-toc-menu-item" onClick={() => { setShowToc(false); setTocPinned(false); setShowTocMenu(false); }}>
+                关闭目录
+              </div>
+            </div>
+          )}
+        </div>
+        
+        {/* 目录内容（从 EventLog 提取的标题大纲）*/}
+        <div className="logtab-toc-content">
+          {/* TODO: 实际目录项，从 ModalSlate 提取标题层级
+              格式：
+              - H1 标题
+                - H2 子标题
+                  - H3 子标题
+              点击跳转到对应位置
+          */}
+          <div className="logtab-toc-empty">
+            <div className="logtab-toc-empty-icon">📝</div>
+            <div className="logtab-toc-empty-text">暂无标题</div>
+            <div className="logtab-toc-empty-hint">在编辑器中添加标题后会自动显示</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // 📦 渲染主内容（Figma 新布局：上方信息区 + 下方编辑区）
   const renderModalContent = () => (
         <>
-          <div className="modal-content">
-            {/* 左侧：Event Overview */}
-            <div className="event-overview">
-              {/* 上 Section - 事件标识区 */}
-                <div className="section-identity">
-                  {/* Emoji (大图标) */}
-                  <div 
-                    className="emoji-large" 
-                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                  >
-                    {getDisplayEmoji(formData)}
-                  </div>
+          <div className="logtab-container">
+            {/* 上方：信息区 */}
+            {renderInfoSection()}
+            
+            {/* 下方：EventLog 编辑区 */}
+            <div 
+              className={`logtab-eventlog-section ${tocPinned ? 'has-toc' : ''}`}
+              onMouseEnter={() => !tocPinned && setShowToc(true)}
+              onMouseLeave={() => !tocPinned && setShowToc(false)}
+            >
+              {/* 编辑器区域暂时保持原有结构，待迁移 ModalSlate */}
+              
+              {/* 📑 目录窗口（在 eventlog-section 内部）*/}
+              {renderToc()}
+            </div>
+          </div>
 
-                  {/* Emoji Picker */}
-                  {showEmojiPicker && (
+          {/* === 原有结构（临时隐藏，待完全迁移后删除）=== */}
+          <div className="modal-content" style={{display: 'none'}}>
+            <div className="event-overview">
+              <div className="section-identity">
+                {showEmojiPicker && (
                     <div className="emoji-picker-overlay" onClick={() => setShowEmojiPicker(false)}>
                       <div className="emoji-picker-wrapper" onClick={(e) => e.stopPropagation()}>
                         <Picker
@@ -3618,94 +3877,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
             </div>
             {/* event-overview 结束 */}
           {/* modal-content 结束 */}
-
-          {/* 底部按钮 */}
-          {isDetailView ? (
-              <div className="detail-footer">
-                <button 
-                  className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-delete"
-                  onClick={() => {
-                    if (window.confirm('确定要删除这个事件吗？此操作无法撤销。')) {
-                      onDelete?.(formData.id);
-                      onClose();
-                    }
-                  }}
-                >
-                  删除
-                </button>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-cancel"
-                    onClick={handleCancel}
-                    title="取消修改并回滚到初始状态"
-                  >
-                    取消
-                  </button>
-                  <button 
-                    className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-save"
-                    onClick={handleSave}
-                    disabled={isSaveDisabled}
-                    style={{
-                      opacity: isSaveDisabled ? 0.5 : 1,
-                      cursor: isSaveDisabled ? 'not-allowed' : 'pointer'
-                    }}
-                    title={isSaveDisabled ? '请输入标题或选择标签' : ''}
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="compact-footer">
-                <button 
-                  className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-delete"
-                  onClick={() => {
-                    if (window.confirm('确定要删除这个事件吗？此操作无法撤销。')) {
-                      onDelete?.(formData.id);
-                      onClose();
-                    }
-                  }}
-                >
-                  删除
-                </button>
-                <button 
-                  className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-expand" 
-                  onClick={() => setIsDetailView(true)}
-                >
-                  📝 展开日志
-                </button>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <button 
-                    className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-cancel"
-                    onClick={handleCancel}
-                    title="取消修改并回滚到初始状态"
-                  >
-                    取消
-                  </button>
-                  <button 
-                    className="eventmodal-v2-footer-btn eventmodal-v2-footer-btn-save"
-                    onClick={handleSave}
-                    disabled={isSaveDisabled}
-                    style={{
-                      opacity: isSaveDisabled ? 0.5 : 1,
-                      cursor: isSaveDisabled ? 'not-allowed' : 'pointer'
-                    }}
-                    title={isSaveDisabled ? '请输入标题或选择标签' : ''}
-                  >
-                    保存
-                  </button>
-                </div>
-              </div>
-            )}
         </>
   );
 
   // 📄 LogTab 模式：直接渲染内容，无遮罩层
-  return (
-    <div className={`event-edit-modal-v2 logtab-view ${isDetailView ? 'detail-view' : 'compact-view'}`}>
-      {renderModalContent()}
-    </div>
-  );
+  return renderModalContent();
 };
 
 // 导出为 LogTab

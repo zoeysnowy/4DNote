@@ -47,7 +47,7 @@
 }
 
 .page-container.timelog-page-container {
-  padding: 8px; /* 🔧 TimeLog页面：极简边距 */
+  padding: 0; /* 🔧 TimeLog页面：无边距，让侧边栏延伸到顶部 */
 }
 
 .page-container.home-page-container {

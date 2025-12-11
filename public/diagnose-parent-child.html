@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>🔍 父子关系诊断工具</title>
+  <style>
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+      color: #fff;
+    }
+    button:hover { background: linear-gradient(to bottom, #4a4a4a, #3a3a3a); }
+    #output {
+      background: #252526;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    .info { color: #4fc3f7; }
+    .success { color: #81c784; }
+    .warning { color: #ffb74d; }
+    .error { color: #e57373; }
+  </style>
+</head>
+<body>
+  <h1>🔍 父子关系诊断工具</h1>
+  <p>检查 UUID 测试事件的层级结构和父子关系</p>
+  
+  <button onclick="diagnose()">开始诊断</button>
+  <button onclick="fixBrokenRefs()" id="fixBtn" disabled>修复断裂关系</button>
+  
+  <div id="output"></div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.js';
+    window.EventService = EventService;
+
+    let brokenRefs = [];
+    let allEvents = [];
+
+    function log(msg, type = 'info') {
+      const output = document.getElementById('output');
+      const colors = {
+        info: '#4fc3f7',
+        success: '#81c784',
+        warning: '#ffb74d',
+        error: '#e57373'
+      };
+      const time = new Date().toLocaleTimeString();
+      output.innerHTML += `<span style="color: ${colors[type]}">[${time}] ${msg}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+      console.log(msg);
+    }
+
+    window.diagnose = async function() {
+      document.getElementById('output').innerHTML = '';
+      log('🔍 开始诊断...', 'info');
+
+      try {
+        allEvents = await EventService.getAllEvents();
+        log(`✅ 读取事件：${allEvents.length} 个`, 'success');
+
+        // 找出所有 UUID 测试事件
+        const uuidEvents = allEvents.filter(e => {
+          const t = e.title?.simpleTitle || '';
+          return t.includes('UUID根事件') || t.includes('L1-') || t.includes('L2-') || 
+                 t.includes('L3-') || t.includes('L4-');
+        });
+
+        log(`\n📊 UUID 测试事件统计`, 'info');
+        log(`总数: ${uuidEvents.length}`, 'info');
+
+        // 按 bulletLevel 分组
+        const byLevel = {};
+        uuidEvents.forEach(e => {
+          const level = e.bulletLevel || 0;
+          if (!byLevel[level]) byLevel[level] = [];
+          byLevel[level].push(e);
+        });
+
+        Object.keys(byLevel).sort((a, b) => Number(a) - Number(b)).forEach(level => {
+          log(`  L${level}: ${byLevel[level].length} 个事件`, 'info');
+        });
+
+        // 检查根事件的 childEventIds
+        log(`\n🔗 根事件检查`, 'info');
+        const roots = uuidEvents.filter(e => !e.parentEventId);
+        log(`根事件: ${roots.length} 个`, 'info');
+
+        roots.forEach((root, idx) => {
+          log(`\n📌 根事件 ${idx + 1}: ${root.title?.simpleTitle}`, 'info');
+          log(`  ID: ${root.id}`, 'info');
+          log(`  bulletLevel: ${root.bulletLevel}`, 'info');
+          log(`  childEventIds: ${root.childEventIds?.length || 0} 个`, 
+              root.childEventIds?.length > 0 ? 'success' : 'warning');
+
+          if (!root.childEventIds || root.childEventIds.length === 0) {
+            log(`  ⚠️ 根事件没有 childEventIds，可能是数据问题！`, 'warning');
+          }
+        });
+
+        // 检查父子关系完整性
+        log(`\n🔄 父子关系完整性检查`, 'info');
+        brokenRefs = [];
+        
+        const children = uuidEvents.filter(e => e.parentEventId);
+        log(`子事件: ${children.length} 个 (包含所有层级的后代)`, 'info');
+        log(`注意: childEventIds 只记录直接子节点，不包含递归后代`, 'info');
+
+        children.forEach(child => {
+          const parent = allEvents.find(e => e.id === child.parentEventId);
+          
+          if (!parent) {
+            brokenRefs.push({
+              type: 'missing-parent',
+              childId: child.id,
+              childTitle: child.title?.simpleTitle,
+              missingParentId: child.parentEventId
+            });
+          } else if (!parent.childEventIds || !parent.childEventIds.includes(child.id)) {
+            brokenRefs.push({
+              type: 'missing-child-ref',
+              childId: child.id,
+              childTitle: child.title?.simpleTitle,
+              parentId: parent.id,
+              parentTitle: parent.title?.simpleTitle
+            });
+          }
+        });
+
+        if (brokenRefs.length > 0) {
+          log(`\n⚠️ 发现 ${brokenRefs.length} 个断裂的父子关系：`, 'error');
+          brokenRefs.forEach((ref, idx) => {
+            if (ref.type === 'missing-parent') {
+              log(`  ${idx + 1}. 子事件 ${ref.childTitle}`, 'error');
+              log(`     → 父事件不存在: ${ref.missingParentId.slice(-8)}`, 'error');
+            } else {
+              log(`  ${idx + 1}. 子事件 ${ref.childTitle}`, 'warning');
+              log(`     → 父事件 ${ref.parentTitle} 的 childEventIds 中缺少此子事件`, 'warning');
+            }
+          });
+          document.getElementById('fixBtn').disabled = false;
+        } else {
+          log(`\n✅ 所有父子关系完整 (每个子事件都在其父事件的 childEventIds 中)`, 'success');
+          
+          // 显示层级树示例
+          if (roots.length > 0) {
+            log(`\n🌲 层级树示例 (第1个根事件):`, 'info');
+            const root = roots[0];
+            const directL1 = uuidEvents.filter(e => e.parentEventId === root.id);
+            log(`  L0: ${root.title?.simpleTitle} (${root.childEventIds?.length || 0} 个直接子节点)`, 'info');
+            
+            directL1.slice(0, 2).forEach(l1 => {
+              const directL2 = uuidEvents.filter(e => e.parentEventId === l1.id);
+              log(`    ├─ L1: ${l1.title?.simpleTitle} (${l1.childEventIds?.length || 0} 个直接子节点)`, 'info');
+              
+              directL2.slice(0, 2).forEach(l2 => {
+                const directL3 = uuidEvents.filter(e => e.parentEventId === l2.id);
+                log(`    │  ├─ L2: ${l2.title?.simpleTitle} (${l2.childEventIds?.length || 0} 个直接子节点)`, 'info');
+                
+                if (directL3.length > 0) {
+                  log(`    │  │  └─ L3: ${directL3[0].title?.simpleTitle} ...`, 'info');
+                }
+              });
+            });
+          }
+        }
+
+        // 检查层级计算
+        log(`\n📏 层级计算验证`, 'info');
+        const filtered = uuidEvents.filter(e => e.isPlan || e.checkType);
+        const calculated = EventService.calculateAllBulletLevels(filtered);
+
+        const mismatches = [];
+        filtered.forEach(e => {
+          const dbLevel = e.bulletLevel || 0;
+          const calcLevel = calculated.get(e.id) || 0;
+          if (dbLevel !== calcLevel) {
+            mismatches.push({
+              id: e.id.slice(-8),
+              title: e.title?.simpleTitle?.slice(0, 40),
+              dbLevel,
+              calcLevel,
+              parentId: e.parentEventId?.slice(-8)
+            });
+          }
+        });
+
+        if (mismatches.length > 0) {
+          log(`\n⚠️ 发现 ${mismatches.length} 个层级不一致：`, 'warning');
+          mismatches.slice(0, 10).forEach((m, idx) => {
+            log(`  ${idx + 1}. ${m.title}`, 'warning');
+            log(`     ID: ${m.id}, 父: ${m.parentId || '无'}`, 'info');
+            log(`     数据库 L${m.dbLevel} → 计算 L${m.calcLevel}`, 'warning');
+          });
+        } else {
+          log(`\n✅ 所有事件的层级计算正确`, 'success');
+        }
+
+        log(`\n=== 诊断完成 ===`, 'info');
+
+      } catch (err) {
+        log(`\n❌ 诊断失败: ${err.message}`, 'error');
+        console.error(err);
+      }
+    };
+
+    window.fixBrokenRefs = async function() {
+      if (brokenRefs.length === 0) {
+        log('没有需要修复的问题', 'info');
+        return;
+      }
+
+      if (!confirm(`确认修复 ${brokenRefs.length} 个断裂的父子关系？`)) {
+        return;
+      }
+
+      log(`\n🔧 开始修复...`, 'info');
+      let fixed = 0;
+
+      for (const ref of brokenRefs) {
+        if (ref.type === 'missing-child-ref') {
+          try {
+            const parent = allEvents.find(e => e.id === ref.parentId);
+            if (parent) {
+              const childIds = parent.childEventIds || [];
+              if (!childIds.includes(ref.childId)) {
+                await EventService.updateEvent(parent.id, {
+                  childEventIds: [...childIds, ref.childId]
+                }, true); // skipSync=true
+                
+                fixed++;
+                log(`  ✅ 已修复: ${ref.parentTitle} → ${ref.childTitle}`, 'success');
+              }
+            }
+          } catch (err) {
+            log(`  ❌ 修复失败: ${ref.childTitle} - ${err.message}`, 'error');
+          }
+        }
+      }
+
+      log(`\n✅ 修复完成：${fixed}/${brokenRefs.length}`, 'success');
+      log(`请点击 "开始诊断" 重新验证`, 'info');
+      document.getElementById('fixBtn').disabled = true;
+    };
+  </script>
+</body>
+</html>

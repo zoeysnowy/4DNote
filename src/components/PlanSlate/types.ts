@@ -72,6 +72,14 @@ export interface EventMetadata {
   createdAt?: string;
   updatedAt?: string;
   
+  // 🔥 EventTree 字段
+  parentEventId?: string;
+  childEventIds?: string[];
+  
+  // 🔥 Position 和 BulletLevel（用于排序和层级显示）
+  bulletLevel?: number;
+  position?: number;
+  
   // 扩展字段（允许其他未列出的字段）
   [key: string]: any;
 }
