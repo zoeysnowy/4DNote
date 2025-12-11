@@ -403,13 +403,16 @@ if (hasExpandedDate) {
 ```typescript
 interface Event {
   // === 日志字段（核心） ===
-  eventlog?: string;        // 🔥 Slate JSON 字符串
+  eventlog?: EventLog;      // 🔥 EventLog 对象（v2.0+）
                             // - 用户在 TimeLog/EventEditModal/PlanManager 中编辑
+                            // - slateJson: Slate JSON 字符串（主数据源）
+                            // - html: HTML 字符串（同步用）
+                            // - plainText: 纯文本（搜索用）
                             // - 包含 timestamp 分隔线（自动插入）
                             // - 支持富文本、附件、标签提及
   
-  description?: string;     // 🔥 HTML 字符串（自动生成）
-                            // - 从 eventlog 自动转换（Slate JSON → HTML）
+  description?: string;     // 🔥 HTML 字符串（自动生成，已废弃）
+                            // - 从 eventlog.html 自动转换
                             // - 仅用于 Outlook 同步
                             // - ❌ 用户界面永远不显示此字段
   
@@ -437,7 +440,10 @@ interface Event {
 ```
 用户编辑（TimeLog/EventEditModal/PlanManager）
               ↓
-    Event.eventlog (Slate JSON) ← 🔥 唯一数据源
+    Event.eventlog (EventLog 对象) ← 🔥 唯一数据源
+         ├─ slateJson: Slate JSON string (主数据)
+         ├─ html: HTML string (同步用)
+         └─ plainText: 纯文本 (搜索用)
               ↓
       自动转换（后台）
               ↓

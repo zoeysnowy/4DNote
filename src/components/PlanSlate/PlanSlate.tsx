@@ -589,6 +589,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   // 🆕 增强的 value：始终在末尾添加一个 placeholder 提示行
   // 🛡️ PERFORMANCE FIX: 添加深度比较避免不必要的重计算
+  const prevItemsHashRef = useRef<string>('');
+  
   const itemsHash = useMemo(() => {
     const hash = items.map((item, index) => {
       // 🔧 修复：正确处理 EventTitle 对象
@@ -599,24 +601,23 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // 🔧 包含更多字段，确保 eventlog、tags、时间 变化也能触发更新
       const tagsStr = (item.tags || []).join(',');
       
-      // 🔍 诊断：详细记录 eventlog 处理
+      // 🔧 修复：稳定的 EventLog 序列化策略
       const eventlog = (item as any).eventlog;
       const eventlogType = typeof eventlog;
       const isObject = eventlogType === 'object' && eventlog !== null;
-      const plainText = isObject ? eventlog.plainText : undefined;
+      
+      // 策略：使用 slateJson 长度作为 hash key（更稳定）
       const eventlogStr = isObject 
-        ? (plainText?.substring(0, 50) || '')
-        : (eventlog?.substring(0, 50) || '');
+        ? `obj:${(eventlog.slateJson || '[]').length}:${(eventlog.plainText || '').substring(0, 20)}`
+        : `str:${(eventlog || '').length}:${(eventlog || '').substring(0, 20)}`;
       
       if (index < 5) {  // 只记录前5个事件
         console.log(`[itemsHash] Event[${index}] ${titleStr}:`, {
           eventlogType,
           isObject,
-          hasPlainText: !!plainText,
-          plainTextLength: plainText?.length || 0,
-          plainTextPreview: plainText?.substring(0, 30) || 'N/A',
-          eventlogStr,
-          eventlogStrLength: eventlogStr.length
+          slateJsonLength: isObject ? eventlog.slateJson?.length : 0,
+          plainTextLength: isObject ? eventlog.plainText?.length : 0,
+          eventlogStr
         });
       }
       
@@ -632,7 +633,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           id: item.id.slice(-10),
           titleStr,
           tagsStr,
-          eventlogStr: `[${eventlogStr.length}] ${eventlogStr}`,
+          eventlogStr,
           timeStr,
           updatedAt: item.updatedAt
         });
@@ -641,13 +642,21 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       return itemHash;
     }).join('|');
     
+    // 🛡️ 优化：如果 hash 未变化，返回之前的引用（避免触发 useEffect）
+    if (hash === prevItemsHashRef.current) {
+      console.log('%c[⏭️ itemsHash 未变化，使用缓存]', 'background: #2196F3; color: white; padding: 2px 6px;');
+      return prevItemsHashRef.current;
+    }
+    
     console.log('%c[🔍 itemsHash 重新计算]', 'background: #9C27B0; color: white; padding: 2px 6px;', {
       itemsLength: items.length,
       hashLength: hash.length,
       hashPreview: hash.substring(0, 100) + '...',
-      event3Position: hash.indexOf('line-1764340875831-0.9592671205692446')
+      hasChanged: hash !== prevItemsHashRef.current,
+      changedCount: hash.split('|').filter((h, i) => h !== prevItemsHashRef.current.split('|')[i]).length
     });
     
+    prevItemsHashRef.current = hash;
     return hash;
   }, [items]);
   
@@ -2222,16 +2231,27 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   const calculatePositionBetween = (before: number | undefined, after: number | undefined): number => {
     const POSITION_GAP = 1000; // 默认间隔
     
+    let result: number;
     if (before === undefined && after === undefined) {
-      return POSITION_GAP; // 第一个事件
+      result = POSITION_GAP; // 第一个事件
+    } else if (before === undefined) {
+      result = after! - POSITION_GAP; // 在最前面插入
+    } else if (after === undefined) {
+      result = before + POSITION_GAP; // 在最后面插入
+    } else {
+      result = (before + after) / 2; // 中间位置
     }
-    if (before === undefined) {
-      return after! - POSITION_GAP; // 在最前面插入
-    }
-    if (after === undefined) {
-      return before + POSITION_GAP; // 在最后面插入
-    }
-    return (before + after) / 2; // 中间位置
+    
+    console.log('[📍 Position] calculatePositionBetween:', {
+      before,
+      after,
+      result,
+      场景: before === undefined && after === undefined ? '第一个' : 
+            before === undefined ? '最前面' : 
+            after === undefined ? '最后面' : '中间'
+    });
+    
+    return result;
   };
   
   /**
@@ -2694,8 +2714,35 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         
         // 创建新的 title 行（新 event）
         // 🆕 v2.16: 计算新行的 position（在同级事件中的位置）
-        const parentEventId = eventLine.metadata?.parentEventId;
         const currentLevel = eventLine.level || 0;
+        
+        // 🔧 FIX: 根据 level 查找正确的父事件（不能直接复制 metadata.parentEventId）
+        // 新行与当前行同级，所以父事件也应该相同
+        // 但要确保父事件是真实存在的（向上查找 level-1 的最近事件）
+        let parentEventId = eventLine.metadata?.parentEventId;
+        
+        if (currentLevel > 0) {
+          // 向上查找 level-1 的最近事件作为父事件
+          for (let i = currentPath[0] - 1; i >= 0; i--) {
+            const prevNode = value[i];
+            if (prevNode.type === 'event-line' && prevNode.mode === 'title') {
+              const prevLevel = prevNode.level || 0;
+              if (prevLevel === currentLevel - 1) {
+                parentEventId = prevNode.eventId;
+                console.log('[Enter] 🔍 找到父事件:', {
+                  currentLevel,
+                  parentLevel: prevLevel,
+                  parentEventId: parentEventId?.slice(-8),
+                  searchedLines: currentPath[0] - i
+                });
+                break;
+              }
+            }
+          }
+        } else {
+          // 顶层事件，没有父事件
+          parentEventId = undefined;
+        }
         
         // 获取所有同级事件
         const allTitleNodes = Array.from(Editor.nodes(editor, {
@@ -2729,6 +2776,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         
         // 🆕 v2.16: createEmptyEventLine 现在接受 parentEventId 和 position 参数
         newLine = createEmptyEventLine(currentLevel, parentEventId, newPosition);
+        
+        console.log('[🆕 Position] 创建新事件:', {
+          eventId: newLine.eventId.slice(-8),
+          level: currentLevel,
+          parentEventId: parentEventId?.slice(-8),
+          position: newPosition,
+          metadata_position: newLine.metadata?.position,
+          确认position存入metadata: newLine.metadata?.position === newPosition
+        });
         
         logOperation('Enter (title) - 创建新 title 行', {
           currentLine: currentPath[0],

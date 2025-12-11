@@ -454,6 +454,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   // Timestamp 相关状态
   const timestampServiceRef = useRef<EventLogTimestampService | null>(null);
   const [pendingTimestamp, setPendingTimestamp] = useState<boolean>(false);
+  const [isFocused, setIsFocused] = useState(false); // 追踪编辑器聚焦状态
   const contentLoadedRef = useRef<boolean>(false);
   
   // @ Mention Menu 状态
@@ -743,19 +744,19 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
               minHeight: needsPreline ? '20px' : 'auto'
             }}
           >
-            {needsPreline && (
+            {needsPreline && isFocused && (
               <div
                 className="paragraph-preline"
                 contentEditable={false}
                 style={{
                   position: 'absolute',
                   left: '8px',
-                  top: '-28px', // 向上延伸到 timestamp 文字顶部（padding-top 8px + 文字行高约 20px）
-                  bottom: isLastContentParagraph ? '-8px' : '0', // 最后段落向下延伸一点，其他段落到底部
-                  width: '1px', // 改为 1px，比 event timeline 更细
-                  background: '#e5e7eb',
+                  top: '-20px', // 向上延伸到 timestamp（调整为更自然的位置）
+                  bottom: isLastContentParagraph ? '-8px' : '0',
+                  width: '1px',
+                  background: '#d1d5db',
                   zIndex: 0,
-                  pointerEvents: 'none' // 防止 preline 拦截点击事件
+                  pointerEvents: 'none'
                 }}
               />
             )}
@@ -835,6 +836,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
    * 处理编辑器聚焦 - 检查并插入 timestamp
    */
   const handleFocus = useCallback(() => {
+    setIsFocused(true);
     if (enableTimestamp && timestampServiceRef.current && parentEventId) {
       // 🔧 检查光标是否在已有 timestamp 的段落组中
       const { selection } = editor;
@@ -913,6 +915,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
    * 处理编辑器失焦 - 清理空的 timestamp 并立即保存
    */
   const handleBlur = useCallback(() => {
+    setIsFocused(false); // 清除聚焦状态
     // Step 1: 清理空 timestamp
     if (pendingTimestamp && timestampServiceRef.current) {
       console.log('[ModalSlate] 失焦时检查是否需要清理空 timestamp');

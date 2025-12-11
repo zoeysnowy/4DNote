@@ -522,6 +522,24 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
       {/* Search Section - 独立搜索区域 */}
       <div className="search-section">
         <div className="search-input-wrapper-enhanced">
+          {/* SVG 渐变边框 - 完美对称 */}
+          <svg className="search-border-svg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="searchBorderGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#a855f7" />
+                <stop offset="100%" stopColor="#3b82f6" />
+              </linearGradient>
+            </defs>
+            <rect 
+              className="search-border-rect"
+              x="1" y="1" 
+              rx="20"
+              ry="20"
+              fill="none" 
+              stroke="rgba(255, 255, 255, 0.5)" 
+              strokeWidth="2"
+            />
+          </svg>
           <SearchIcon className="search-icon" />
           <input
             type="text"

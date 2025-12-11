@@ -105,35 +105,59 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
     nodes.push(titleNode);
     
     // EventLog 行（只有 eventlog 字段存在且不为空时才创建）
-    // 🆕 v1.8: 使用 eventlog (富文本)
-    // 🔧 v1.8.1: 支持 EventLog 对象格式
-    // ⚠️ 不回退到 description - description 是后台同步用的纯文本，不在UI显示
-    let descriptionContent = '';
+    // 🆕 v2.0: 优先从 EventLog.slateJson 读取，回退到 HTML（兼容旧数据）
+    let eventlogParagraphs: any[] = [];
+    
     if (item.eventlog) {
       if (typeof item.eventlog === 'object' && item.eventlog !== null) {
         // 新格式：EventLog 对象
-        descriptionContent = item.eventlog.html || item.eventlog.plainText || '';
+        if (item.eventlog.slateJson) {
+          try {
+            eventlogParagraphs = JSON.parse(item.eventlog.slateJson);
+          } catch (err) {
+            console.warn('[planItemsToSlateNodes] 无法解析 slateJson，回退到 HTML:', err);
+            // 回退到 HTML
+            const html = item.eventlog.html || item.eventlog.plainText || '';
+            if (html) {
+              const paragraphsWithLevel = parseHtmlToParagraphsWithLevel(html);
+              eventlogParagraphs = paragraphsWithLevel.map(pwl => ({
+                type: 'paragraph',
+                children: pwl.paragraph.children,
+              }));
+            }
+          }
+        } else {
+          // 只有 HTML，没有 slateJson
+          const html = item.eventlog.html || item.eventlog.plainText || '';
+          if (html) {
+            const paragraphsWithLevel = parseHtmlToParagraphsWithLevel(html);
+            eventlogParagraphs = paragraphsWithLevel.map(pwl => ({
+              type: 'paragraph',
+              children: pwl.paragraph.children,
+            }));
+          }
+        }
       } else {
-        // 旧格式：字符串
-        descriptionContent = item.eventlog;
+        // 旧格式：字符串（HTML）
+        const paragraphsWithLevel = parseHtmlToParagraphsWithLevel(item.eventlog);
+        eventlogParagraphs = paragraphsWithLevel.map(pwl => ({
+          type: 'paragraph',
+          children: pwl.paragraph.children,
+        }));
       }
     }
-    // 注意：不使用 description 字段！它是后台字段，仅用于 Outlook 同步
     
-    if (descriptionContent && descriptionContent.trim()) {
-      // 🆕 v1.8.3: 解析 HTML，为每个不同 level 的段落创建独立的 EventLineNode
-      const paragraphsWithLevel = parseHtmlToParagraphsWithLevel(descriptionContent);
-      
-      // 为每个段落创建独立的 EventLineNode
+    // 为每个段落创建独立的 EventLineNode
+    if (eventlogParagraphs.length > 0) {
       let lineIndex = 0;
-      paragraphsWithLevel.forEach((pwl, index) => {
+      eventlogParagraphs.forEach((para, index) => {
         const descNode: EventLineNode = {
           type: 'event-line',
           eventId: item.eventId || item.id,
           lineId: index === 0 ? `${item.id}-desc` : `${item.id}-desc-${Date.now()}-${lineIndex++}`,
-          level: pwl.level,
+          level: item.level || 0,
           mode: 'eventlog',
-          children: [pwl.paragraph],
+          children: [para],
           metadata,  // 🆕 透传元数据（eventlog 行共享 metadata）
         };
         nodes.push(descNode);
@@ -528,38 +552,76 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         }
       }
     } else {
-      // 🆕 v1.8: Eventlog 模式：遍历所有 paragraph，保存为 HTML 数组
-      const paragraphsHtml = paragraphs.map((para, idx) => {
-        const fragment = para.children || [];
-        const html = slateFragmentToHtml(fragment);
-        
-        // 🔧 包括 bullet 属性和 level (缩进)
-        const bullet = (para as any).bullet;
-        const bulletLevel = (para as any).bulletLevel || 0;
-        // 🔥 使用 bulletLevel 作为 level（它们应该同步）
-        const level = bullet ? bulletLevel : (node.level || 0);
-        
-        // 🐛 调试日志：检查 bullet 属性
-        if (bullet) {
-          console.log(`[Serialization] Paragraph ${idx} has bullet:`, { bullet, bulletLevel, level, html });
-        }
-        
-        if (bullet) {
-          return `<p data-bullet="true" data-bullet-level="${bulletLevel}" data-level="${level}">${html}</p>`;
-        } else {
-          return `<p data-level="${level}">${html}</p>`;
-        }
+      // 🆕 v2.0: Eventlog 模式：保存为 Slate JSON（而不是 HTML）
+      // 🔧 累积所有 eventlog 段落的 Slate 节点
+      if (!item.eventlogSlateNodes) {
+        item.eventlogSlateNodes = [];
+      }
+      
+      console.log(`[💾 Serialization] EventLog 段落累积 - Event: ${baseId.slice(-10)}`, {
+        已累积: item.eventlogSlateNodes.length,
+        新增段落数: paragraphs.length,
+        lineId: node.lineId,
+        mode: node.mode
       });
       
-      const lineHtml = paragraphsHtml.join('');
+      paragraphs.forEach((para, idx) => {
+        // 保留完整的段落节点（包括 bullet、bulletLevel 等属性）
+        const paragraphNode = {
+          type: 'paragraph',
+          bullet: (para as any).bullet,
+          bulletLevel: (para as any).bulletLevel || 0,
+          children: para.children || [{ text: '' }],
+        };
+        
+        item.eventlogSlateNodes!.push(paragraphNode);
+      });
+      
+      // 🔧 同时保存纯文本到 description（用于搜索和同步）
       const linePlainText = paragraphs.map(para => {
         const fragment = para.children || [];
         return extractPlainText(fragment);
       }).join('\n');
       
-      // 🔥 累积所有 eventlog 行的内容（不要覆盖）
-      item.eventlog = (item.eventlog || '') + lineHtml;
       item.description = (item.description || '') + (item.description ? '\n' : '') + linePlainText;
+    }
+  });
+  
+  // 🔧 v2.0: 将累积的 eventlogSlateNodes 转换为 EventLog 对象
+  items.forEach(item => {
+    if (item.eventlogSlateNodes && item.eventlogSlateNodes.length > 0) {
+      const slateJson = JSON.stringify(item.eventlogSlateNodes);
+      const html = item.eventlogSlateNodes.map((para: any) => {
+        const fragment = para.children || [];
+        const htmlContent = slateFragmentToHtml(fragment);
+        if (para.bullet) {
+          return `<p data-bullet="true" data-bullet-level="${para.bulletLevel || 0}">${htmlContent}</p>`;
+        } else {
+          return `<p>${htmlContent}</p>`;
+        }
+      }).join('');
+      
+      console.log(`[✅ Serialization] EventLog 对象生成 - Event: ${item.id.slice(-10)}`, {
+        段落数: item.eventlogSlateNodes.length,
+        slateJsonLength: slateJson.length,
+        htmlLength: html.length,
+        plainTextLength: (item.description || '').length,
+        slateJsonPreview: slateJson.substring(0, 100)
+      });
+      
+      item.eventlog = {
+        slateJson,
+        html,
+        plainText: item.description || '',
+      };
+      
+      // 清理临时字段
+      delete (item as any).eventlogSlateNodes;
+    } else if (item.eventlogSlateNodes && item.eventlogSlateNodes.length === 0) {
+      console.log(`[⚠️ Serialization] EventLog 为空 - Event: ${item.id.slice(-10)}`);
+      // 清空 eventlog
+      item.eventlog = undefined;
+      delete (item as any).eventlogSlateNodes;
     }
   });
   
@@ -574,10 +636,16 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
     const hasTitle = item.title?.fullTitle?.trim() || 
                     item.title?.simpleTitle?.trim() || 
                     item.title?.colorTitle?.trim();
+    
+    // 🔧 修复: eventlog 现在是对象，不是字符串
+    const hasEventlog = item.eventlog && typeof item.eventlog === 'object' 
+      ? !!(item.eventlog.slateJson || item.eventlog.html || item.eventlog.plainText)
+      : !!(item.eventlog && typeof item.eventlog === 'string' && item.eventlog.trim());
+    
     const isEmpty = !hasTitle && 
                    !item.content?.trim() && 
                    !item.description?.trim() &&
-                   !item.eventlog?.trim() && // 🆕 也检查 eventlog
+                   !hasEventlog && // 🆕 使用修复后的检查
                    (!item.tags || item.tags.length === 0);
     return !isEmpty;  // 只保留非空节点
   });

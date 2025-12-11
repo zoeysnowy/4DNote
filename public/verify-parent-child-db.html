@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>🔍 验证数据库父子关系</title>
+  <style>
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    button {
+      padding: 12px 24px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px;
+      border-radius: 6px;
+      border: 1px solid #555;
+      background: linear-gradient(to bottom, #3a3a3a, #2a2a2a);
+      color: #fff;
+    }
+    button:hover { background: linear-gradient(to bottom, #4a4a4a, #3a3a3a); }
+    #output {
+      background: #252526;
+      padding: 15px;
+      border-radius: 6px;
+      margin-top: 20px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      max-height: 800px;
+      overflow-y: auto;
+    }
+    .info { color: #4fc3f7; }
+    .success { color: #81c784; }
+    .warning { color: #ffb74d; }
+    .error { color: #e57373; }
+    .row { margin: 8px 0; padding: 8px; background: #2d2d30; border-left: 3px solid #4fc3f7; }
+    .parent { border-left-color: #81c784; }
+    .child { border-left-color: #ffb74d; }
+  </style>
+</head>
+<body>
+  <h1>🔍 验证数据库父子关系</h1>
+  <p>直接从数据库读取事件，验证 parentEventId 和 childEventIds 是否正确保存</p>
+  
+  <button onclick="verifyDatabase()">验证数据库</button>
+  <button onclick="showRecentEvents()">显示最近创建的事件</button>
+  <button onclick="clearOutput()">清空</button>
+  
+  <div id="output"></div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.js';
+    import { storageManager } from '../src/services/storage/index.js';
+    
+    window.EventService = EventService;
+    window.storageManager = storageManager;
+
+    function log(msg, type = 'info') {
+      const output = document.getElementById('output');
+      const colors = {
+        info: '#4fc3f7',
+        success: '#81c784',
+        warning: '#ffb74d',
+        error: '#e57373'
+      };
+      const time = new Date().toLocaleTimeString();
+      output.innerHTML += `<span style="color: ${colors[type]}">[${time}] ${msg}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+
+    window.clearOutput = function() {
+      document.getElementById('output').innerHTML = '';
+    };
+
+    window.verifyDatabase = async function() {
+      log('🔍 开始验证数据库...', 'info');
+      
+      try {
+        // 直接从 StorageManager 读取所有事件
+        const result = await storageManager.queryEvents({
+          limit: 1000
+        });
+        
+        const events = result.items;
+        log(`✅ 从数据库读取了 ${events.length} 个事件`, 'success');
+        
+        // 统计有父子关系的事件
+        const hasParent = events.filter(e => e.parentEventId);
+        const hasChildren = events.filter(e => e.childEventIds && e.childEventIds.length > 0);
+        
+        log(`\n📊 父子关系统计:`, 'info');
+        log(`  有 parentEventId: ${hasParent.length} 个`, 'info');
+        log(`  有 childEventIds: ${hasChildren.length} 个`, 'info');
+        
+        // 验证双向关系一致性
+        let consistent = 0;
+        let inconsistent = 0;
+        const issues = [];
+        
+        hasParent.forEach(child => {
+          const parent = events.find(e => e.id === child.parentEventId);
+          
+          if (!parent) {
+            inconsistent++;
+            issues.push({
+              type: 'missing_parent',
+              child: child.id.slice(-8),
+              childTitle: child.title?.simpleTitle || 'Untitled',
+              missingParentId: child.parentEventId?.slice(-8)
+            });
+          } else {
+            // 检查父事件的 childEventIds 是否包含子事件
+            if (parent.childEventIds && parent.childEventIds.includes(child.id)) {
+              consistent++;
+            } else {
+              inconsistent++;
+              issues.push({
+                type: 'parent_missing_child',
+                parent: parent.id.slice(-8),
+                parentTitle: parent.title?.simpleTitle || 'Untitled',
+                child: child.id.slice(-8),
+                childTitle: child.title?.simpleTitle || 'Untitled',
+                parentChildIds: parent.childEventIds || []
+              });
+            }
+          }
+        });
+        
+        log(`\n🔍 双向关系一致性检查:`, 'info');
+        log(`  ✅ 一致: ${consistent} 个`, 'success');
+        log(`  ❌ 不一致: ${inconsistent} 个`, inconsistent > 0 ? 'error' : 'info');
+        
+        if (issues.length > 0) {
+          log(`\n⚠️ 发现的问题:`, 'warning');
+          issues.forEach((issue, index) => {
+            if (issue.type === 'missing_parent') {
+              log(`  ${index + 1}. 子事件 ${issue.child} "${issue.childTitle}" 引用了不存在的父事件 ${issue.missingParentId}`, 'error');
+            } else if (issue.type === 'parent_missing_child') {
+              log(`  ${index + 1}. 父事件 ${issue.parent} "${issue.parentTitle}" 的 childEventIds 不包含子事件 ${issue.child} "${issue.childTitle}"`, 'warning');
+              log(`     当前 childEventIds: [${issue.parentChildIds.map(id => id.slice(-8)).join(', ')}]`, 'info');
+            }
+          });
+        } else {
+          log(`\n🎉 数据库父子关系完全一致！`, 'success');
+        }
+        
+      } catch (error) {
+        log(`❌ 验证失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    window.showRecentEvents = async function() {
+      log('🔍 查询最近创建的事件...', 'info');
+      
+      try {
+        const result = await storageManager.queryEvents({
+          limit: 20,
+          sortBy: 'createdAt',
+          sortOrder: 'desc'
+        });
+        
+        const events = result.items;
+        log(`✅ 找到 ${events.length} 个最近创建的事件\n`, 'success');
+        
+        events.forEach((event, index) => {
+          const baseId = event.id.slice(-8);
+          const title = event.title?.simpleTitle || 'Untitled';
+          const level = event.bulletLevel || 0;
+          const parentId = event.parentEventId ? event.parentEventId.slice(-8) : 'null';
+          const childIds = event.childEventIds ? event.childEventIds.map(id => id.slice(-8)).join(', ') : '[]';
+          const createdAt = new Date(event.createdAt).toLocaleString();
+          
+          log(`${index + 1}. [${baseId}] "${title}"`, 'info');
+          log(`   Level: ${level} | Parent: ${parentId} | Children: [${childIds}]`, 'info');
+          log(`   Created: ${createdAt}`, 'info');
+          
+          // 验证关系
+          if (event.parentEventId) {
+            const parent = events.find(e => e.id === event.parentEventId);
+            if (parent) {
+              const hasChild = parent.childEventIds?.includes(event.id);
+              log(`   ✓ 父事件存在: ${parent.title?.simpleTitle || 'Untitled'} | 包含子事件: ${hasChild ? '✅' : '❌'}`, 
+                  hasChild ? 'success' : 'error');
+            } else {
+              log(`   ✗ 父事件不在最近20个事件中（可能是更早的事件）`, 'warning');
+            }
+          }
+          log('', 'info');
+        });
+        
+      } catch (error) {
+        log(`❌ 查询失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+    
+    // 自动执行一次验证
+    setTimeout(() => {
+      log('🚀 自动执行数据库验证...\n', 'info');
+      verifyDatabase();
+    }, 500);
+  </script>
+</body>
+</html>

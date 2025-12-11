@@ -1265,11 +1265,16 @@ const handleEventUpdated = (updatedEventId: string, originInfo?: any) => {
 #### 2. 空白事件清理优化
 ```typescript
 // 修复空白检测误删测试事件的问题
+// 🔧 v2.0: eventlog 现在是 EventLog 对象，不是字符串
+const hasEventlog = updatedItem.eventlog && typeof updatedItem.eventlog === 'object'
+  ? !!(updatedItem.eventlog.slateJson || updatedItem.eventlog.html || updatedItem.eventlog.plainText)
+  : !!(updatedItem.eventlog && typeof updatedItem.eventlog === 'string' && updatedItem.eventlog.trim());
+
 const isEmpty = (
   !updatedItem.title?.trim() && 
   !updatedItem.content?.trim() && 
   !updatedItem.description?.trim() &&
-  !updatedItem.eventlog?.trim() && 
+  !hasEventlog && 
   !updatedItem.startTime &&
   !updatedItem.endTime &&
   !updatedItem.dueDate &&

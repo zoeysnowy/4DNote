@@ -403,12 +403,21 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         attendees: event.attendees || [],
         eventlog: (() => {
           // 处理 eventlog 字段的多种格式，统一转换为 Descendant[] 对象
+          console.log('🔍🔍🔍 [LogTab] eventlog 原始数据:', {
+            eventId: event.id,
+            eventlogExists: !!event.eventlog,
+            eventlogType: typeof event.eventlog,
+            eventlog: event.eventlog
+          });
+          
           if (!event.eventlog) return [];
           
           if (typeof event.eventlog === 'string') {
             // 如果是字符串（Slate JSON），解析为对象
             try {
-              return JSON.parse(event.eventlog);
+              const parsed = JSON.parse(event.eventlog);
+              console.log('🔍 [LogTab] eventlog 解析（string）:', { eventId: event.id, nodes: parsed });
+              return parsed;
             } catch (error) {
               console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
               return [];
@@ -418,9 +427,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
           // 如果是 EventLog 对象，提取 slateJson 字段并解析
           if (event.eventlog.slateJson) {
             try {
-              return typeof event.eventlog.slateJson === 'string' 
+              const parsed = typeof event.eventlog.slateJson === 'string' 
                 ? JSON.parse(event.eventlog.slateJson) 
                 : event.eventlog.slateJson;
+              console.log('🔍 [LogTab] eventlog 解析（EventLog）:', { eventId: event.id, nodes: parsed, types: parsed.map((n: any) => n.type) });
+              return parsed;
             } catch (error) {
               console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
               return [];
@@ -429,6 +440,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
           
           // 如果是数组，直接返回（已经是 Descendant[]）
           if (Array.isArray(event.eventlog)) {
+            console.log('🔍 [LogTab] eventlog 解析（array）:', { eventId: event.id, nodes: event.eventlog, types: event.eventlog.map((n: any) => n.type) });
             return event.eventlog;
           }
           
@@ -721,8 +733,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   
   // 🔧 [已删除] 调试日志 useEffect - 导致频繁 re-render，如需调试可在关键位置手动添加日志
 
-  // TimeLog 相关状态 - 直接使用 formData.eventlog（现在是对象或空数组）
-  const timelogContent = formData.eventlog || [];
+  // TimeLog 相关状态 - 将 formData.eventlog（Descendant[] 数组）转换为 JSON 字符串供 ModalSlate 使用
+  const timelogContent = useMemo(() => {
+    const eventlog = formData.eventlog || [];
+    return Array.isArray(eventlog) ? JSON.stringify(eventlog) : eventlog;
+  }, [formData.eventlog]);
   
   const [activePickerIndex, setActivePickerIndex] = useState(-1);
   const [isSubPickerOpen, setIsSubPickerOpen] = useState(false); // 🆕 追踪子选择器（颜色选择器）是否打开
@@ -2590,7 +2605,78 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               onMouseEnter={() => !tocPinned && setShowToc(true)}
               onMouseLeave={() => !tocPinned && setShowToc(false)}
             >
-              {/* 编辑器区域暂时保持原有结构，待迁移 ModalSlate */}
+              {/* 📝 ModalSlate 编辑器 */}
+              <div className="logtab-editor-wrapper">
+                <ModalSlate
+                  ref={slateEditorRef}
+                  key={`editor-${formData.id}`}
+                  content={timelogContent}
+                  parentEventId={formData.id || 'new-event'}
+                  enableTimestamp={true}
+                  placeholder="记录时间轴..."
+                  onChange={handleTimelogChange}
+                  className="eventlog-editor"
+                />
+              </div>
+
+              {/* 🎨 HeadlessFloatingToolbar - 格式化工具栏 */}
+              {floatingToolbar.mode !== 'hidden' && (
+                <HeadlessFloatingToolbar
+                  position={floatingToolbar.position}
+                  mode={floatingToolbar.mode}
+                  config={{ 
+                    features: floatingToolbar.mode === 'text_floatingbar' 
+                      ? ['bold', 'italic', 'textColor', 'bgColor', 'strikethrough', 'clearFormat', 'bullet']
+                      : ['tag', 'emoji', 'dateRange', 'addTask', 'textStyle'],
+                    mode: 'basic' as any
+                  }}
+                  editorMode="eventlog"
+                  slateEditorRef={slateEditorRef}
+                  activePickerIndex={activePickerIndex}
+                  onActivePickerIndexConsumed={() => setActivePickerIndex(-1)}
+                  onSubPickerStateChange={(isOpen: boolean, activePicker?: string | null) => {
+                    setIsSubPickerOpen(isOpen);
+                    setCurrentActivePicker(activePicker || null);
+                  }}
+                  onTextFormat={(command, value) => {
+                    console.log('[LogTab] onTextFormat called:', { command, value, hasRef: !!slateEditorRef.current });
+                    
+                    // 🔧 对于 bullet 相关命令，使用 ModalSlate 的内部方法
+                    if (command === 'toggleBulletList' || command === 'increaseBulletLevel' || command === 'decreaseBulletLevel') {
+                      if (slateEditorRef.current?.applyTextFormat) {
+                        console.log('[LogTab] 调用 ModalSlate.applyTextFormat');
+                        slateEditorRef.current.applyTextFormat(command);
+                      } else {
+                        console.error('[LogTab] slateEditorRef.current.applyTextFormat 不存在');
+                      }
+                    } else {
+                      // 其他命令使用 helpers.ts 的 applyTextFormat
+                      if (slateEditorRef.current?.editor) {
+                        applyTextFormat(slateEditorRef.current.editor, command, value);
+                      }
+                    }
+                  }}
+                  onTagSelect={(tagIds) => {
+                    const tagId = Array.isArray(tagIds) ? tagIds[0] : tagIds;
+                    handleTagSelect(tagId);
+                    floatingToolbar.hideToolbar();
+                  }}
+                  onEmojiSelect={(emoji) => {
+                    handleEmojiSelect(emoji);
+                    floatingToolbar.hideToolbar();
+                  }}
+                  onDateRangeSelect={(start, end) => {
+                    // ✅ 使用 formatTimeForStorage 而不是 toISOString()
+                    const formattedTime = start ? formatTimeForStorage(start) : '';
+                    handleDateRangeSelect(formattedTime);
+                    floatingToolbar.hideToolbar();
+                  }}
+                  onRequestClose={floatingToolbar.hideToolbar}
+                  availableTags={hierarchicalTags}
+                  currentTags={formData.tags}
+                  eventId={formData.id}
+                />
+              )}
               
               {/* 📑 目录窗口（在 eventlog-section 内部）*/}
               {renderToc()}

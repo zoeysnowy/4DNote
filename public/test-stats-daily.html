@@ -213,6 +213,26 @@
       gap: 12px;
     }
 
+    /* Tooltip样式 */
+    .pie-tooltip {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 10000;
+      opacity: 0;
+      transition: opacity 0.2s;
+      white-space: pre-line;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .pie-tooltip.show {
+      opacity: 1;
+    }
+
     .legend-item {
       display: flex;
       align-items: center;
@@ -285,6 +305,9 @@
   </style>
 </head>
 <body>
+  <!-- Tooltip元素 -->
+  <div class="pie-tooltip" id="pieTooltip"></div>
+  
   <div class="container">
     <div class="header">
       <h1>📊 每日时间统计</h1>
@@ -648,57 +671,148 @@
       const totalMinutes = categoryStats.reduce((sum, stat) => sum + stat.minutes, 0);
       const totalHours = totalMinutes / 60;
       const busyPercentage = Math.round((totalMinutes / (24 * 60)) * 100);
-      const gapAngle = 2; // 色块之间的间隙角度
+      const gapAngle = 4; // 色块之间的间隙角度
 
-      categoryStats.forEach(stat => {
+      // 过滤掉占比太小的色块（<0.5%），避免渲染问题
+      const minPercentage = 0.5;
+      const visibleStats = categoryStats.filter(stat => (stat.minutes / totalMinutes * 100) >= minPercentage);
+
+      visibleStats.forEach((stat, index) => {
         const angle = (stat.minutes / totalMinutes) * 360;
-        const path = createArcPath(centerX, centerY, radius, innerRadius, currentAngle, currentAngle + angle - gapAngle);
+        // 除了最后一个色块，其他都减去间隙角度
+        const endAngle = index === visibleStats.length - 1 ? currentAngle + angle : currentAngle + angle - gapAngle;
+        
+        // 计算色块的实际弧长（外圆）
+        const actualAngle = endAngle - currentAngle;
+        const arcLength = (actualAngle * Math.PI / 180) * radius;
+        
+        // 圆角半径必须小于弧长的一半
+        const maxCornerRadius = arcLength / 2;
+        let cornerRadius = Math.min(10, maxCornerRadius * 0.8); // 最多使用弧长的40%（两端各20%）
+        
+        // 确保最小圆角为2px
+        cornerRadius = Math.max(2, cornerRadius);
+        
+        const path = createArcPath(centerX, centerY, radius, innerRadius, currentAngle, endAngle, cornerRadius);
         
         const pathElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         pathElement.setAttribute('d', path);
         pathElement.setAttribute('fill', stat.color);
         pathElement.setAttribute('opacity', '0.9');
+        pathElement.style.cursor = 'pointer';
+        pathElement.style.transition = 'opacity 0.2s';
+        
+        // 添加hover效果和tooltip
+        const hours = Math.floor(stat.minutes / 60);
+        const mins = Math.round(stat.minutes % 60);
+        const timeStr = hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+        const tooltipText = `${stat.name}\n${timeStr}\n${(stat.minutes / totalMinutes * 100).toFixed(1)}%`;
+        
+        pathElement.addEventListener('mouseenter', function(e) {
+          this.setAttribute('opacity', '1');
+          showTooltip(e, tooltipText);
+        });
+        pathElement.addEventListener('mousemove', function(e) {
+          updateTooltipPosition(e);
+        });
+        pathElement.addEventListener('mouseleave', function() {
+          this.setAttribute('opacity', '0.9');
+          hideTooltip();
+        });
         
         svg.appendChild(pathElement);
         
         currentAngle += angle;
       });
 
-      percentage.textContent = `${busyPercentage}%`;
+      percentage.innerHTML = `
+        <div style="font-size: 20px; font-weight: 700;">${Math.floor(totalHours)}h ${Math.round(totalMinutes % 60)}m</div>
+        <div style="font-size: 11px; color: #999; margin-top: 2px;">${categoryStats.length} 项</div>
+      `;
     }
 
-    function createArcPath(cx, cy, radius, innerRadius, startAngle, endAngle) {
+    function createArcPath(cx, cy, radius, innerRadius, startAngle, endAngle, cornerRadius = 10) {
       const startRad = (startAngle - 90) * Math.PI / 180;
       const endRad = (endAngle - 90) * Math.PI / 180;
-      const cornerRadius = 12; // 增大圆角半径，更圆润
-
-      const x1 = cx + radius * Math.cos(startRad);
-      const y1 = cy + radius * Math.sin(startRad);
-      const x2 = cx + radius * Math.cos(endRad);
-      const y2 = cy + radius * Math.sin(endRad);
-
-      const x3 = cx + innerRadius * Math.cos(endRad);
-      const y3 = cy + innerRadius * Math.sin(endRad);
-      const x4 = cx + innerRadius * Math.cos(startRad);
-      const y4 = cy + innerRadius * Math.sin(startRad);
+      
+      // 计算基础端点
+      const outerStart = {
+        x: cx + radius * Math.cos(startRad),
+        y: cy + radius * Math.sin(startRad)
+      };
+      const outerEnd = {
+        x: cx + radius * Math.cos(endRad),
+        y: cy + radius * Math.sin(endRad)
+      };
+      const innerEnd = {
+        x: cx + innerRadius * Math.cos(endRad),
+        y: cy + innerRadius * Math.sin(endRad)
+      };
+      const innerStart = {
+        x: cx + innerRadius * Math.cos(startRad),
+        y: cy + innerRadius * Math.sin(startRad)
+      };
 
       const largeArc = endAngle - startAngle > 180 ? 1 : 0;
 
-      // 计算圆角的控制点，使用更大的偏移创建更明显的圆角
-      const outerCornerOffset = cornerRadius * 0.5522; // 贝塞尔曲线魔数，近似圆形
-      const innerCornerOffset = cornerRadius * 0.5522;
+      // 计算切向量方向（垂直于半径）
+      const startTangentX = -Math.sin(startRad);
+      const startTangentY = Math.cos(startRad);
+      const endTangentX = -Math.sin(endRad);
+      const endTangentY = Math.cos(endRad);
 
-      // 创建四个圆角
+      // 在起点和终点处向内偏移圆角距离
+      const outerStartOffset = {
+        x: outerStart.x + cornerRadius * startTangentX,
+        y: outerStart.y + cornerRadius * startTangentY
+      };
+      const innerStartOffset = {
+        x: innerStart.x + cornerRadius * startTangentX,
+        y: innerStart.y + cornerRadius * startTangentY
+      };
+      const outerEndOffset = {
+        x: outerEnd.x - cornerRadius * endTangentX,
+        y: outerEnd.y - cornerRadius * endTangentY
+      };
+      const innerEndOffset = {
+        x: innerEnd.x - cornerRadius * endTangentX,
+        y: innerEnd.y - cornerRadius * endTangentY
+      };
+
+      // 计算径向方向
+      const startRadialX = Math.cos(startRad);
+      const startRadialY = Math.sin(startRad);
+      const endRadialX = Math.cos(endRad);
+      const endRadialY = Math.sin(endRad);
+
+      // 内外圆之间连接线的圆角控制点
+      const startOuterCorner = {
+        x: outerStart.x - cornerRadius * startRadialX,
+        y: outerStart.y - cornerRadius * startRadialY
+      };
+      const startInnerCorner = {
+        x: innerStart.x + cornerRadius * startRadialX,
+        y: innerStart.y + cornerRadius * startRadialY
+      };
+      const endOuterCorner = {
+        x: outerEnd.x - cornerRadius * endRadialX,
+        y: outerEnd.y - cornerRadius * endRadialY
+      };
+      const endInnerCorner = {
+        x: innerEnd.x + cornerRadius * endRadialX,
+        y: innerEnd.y + cornerRadius * endRadialY
+      };
+
       return `
-        M ${x1 + cornerRadius * Math.cos(startRad)} ${y1 + cornerRadius * Math.sin(startRad)}
-        L ${x2 - cornerRadius * Math.cos(endRad)} ${y2 - cornerRadius * Math.sin(endRad)}
-        Q ${x2} ${y2} ${x2 + cornerRadius * Math.cos(endRad + Math.PI/2)} ${y2 + cornerRadius * Math.sin(endRad + Math.PI/2)}
-        L ${x3 - cornerRadius * Math.cos(endRad + Math.PI/2)} ${y3 - cornerRadius * Math.sin(endRad + Math.PI/2)}
-        Q ${x3} ${y3} ${x3 - cornerRadius * Math.cos(endRad)} ${y3 - cornerRadius * Math.sin(endRad)}
-        A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${x4 + cornerRadius * Math.cos(startRad)} ${y4 + cornerRadius * Math.sin(startRad)}
-        Q ${x4} ${y4} ${x4 + cornerRadius * Math.cos(startRad - Math.PI/2)} ${y4 + cornerRadius * Math.sin(startRad - Math.PI/2)}
-        L ${x1 - cornerRadius * Math.cos(startRad - Math.PI/2)} ${y1 - cornerRadius * Math.sin(startRad - Math.PI/2)}
-        Q ${x1} ${y1} ${x1 + cornerRadius * Math.cos(startRad)} ${y1 + cornerRadius * Math.sin(startRad)}
+        M ${outerStartOffset.x} ${outerStartOffset.y}
+        A ${radius} ${radius} 0 ${largeArc} 1 ${outerEndOffset.x} ${outerEndOffset.y}
+        Q ${outerEnd.x} ${outerEnd.y} ${endOuterCorner.x} ${endOuterCorner.y}
+        L ${endInnerCorner.x} ${endInnerCorner.y}
+        Q ${innerEnd.x} ${innerEnd.y} ${innerEndOffset.x} ${innerEndOffset.y}
+        A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStartOffset.x} ${innerStartOffset.y}
+        Q ${innerStart.x} ${innerStart.y} ${startInnerCorner.x} ${startInnerCorner.y}
+        L ${startOuterCorner.x} ${startOuterCorner.y}
+        Q ${outerStart.x} ${outerStart.y} ${outerStartOffset.x} ${outerStartOffset.y}
         Z
       `;
     }
@@ -754,6 +868,44 @@
         busyHours > 0 ? `${busyHours}h ${busyMinutes}m` : `${busyMinutes}m`;
       document.getElementById('totalFree').textContent = 
         `${freeHours}h`;
+    }
+
+    // Tooltip 辅助函数
+    function showTooltip(event, text) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.textContent = text;
+      tooltip.classList.add('show');
+      updateTooltipPosition(event);
+    }
+
+    function updateTooltipPosition(event) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.style.left = (event.pageX + 15) + 'px';
+      tooltip.style.top = (event.pageY + 15) + 'px';
+    }
+
+    function hideTooltip() {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.classList.remove('show');
+    }
+
+    // Tooltip 辅助函数
+    function showTooltip(event, text) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.textContent = text;
+      tooltip.classList.add('show');
+      updateTooltipPosition(event);
+    }
+
+    function updateTooltipPosition(event) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.style.left = (event.pageX + 15) + 'px';
+      tooltip.style.top = (event.pageY + 15) + 'px';
+    }
+
+    function hideTooltip() {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.classList.remove('show');
     }
 
     // 启动应用

@@ -82,13 +82,13 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
         </div>
       )}
       
-      {/* Eventlog 模式：添加占位符，与标题行的前缀等宽 */}
+      {/* Eventlog 模式：添加占位符，与标题行的 checkbox + gap 等宽，确保文字对齐 */}
       {isEventlogMode && (
         <div 
           className="event-line-prefix-spacer" 
           contentEditable={false}
           style={{
-            width: '28px', // checkbox(16px) + marginRight(4px) + gap(8px)
+            width: '24px', // checkbox(16px) + gap(8px) = 24px，确保与标题行首字符对齐
             flexShrink: 0,
           }}
         />

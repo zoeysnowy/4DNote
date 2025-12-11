@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>修复 Plan 页面 Position 排序</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 10px;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    #output {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .success { color: #28a745; font-weight: bold; }
+    .warning { color: #ffc107; font-weight: bold; }
+    .error { color: #dc3545; font-weight: bold; }
+    .info { color: #17a2b8; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Plan 页面 Position 修复工具</h1>
+    <p class="subtitle">只诊断和修复会显示在 Plan 页面的事件</p>
+    
+    <div>
+      <button onclick="diagnose()">🔍 1. 诊断</button>
+      <button onclick="fix()">✅ 2. 修复Position</button>
+      <button onclick="autoFixParentChild()">🔧 3. 修复父子关系</button>
+      <button onclick="verify()">🧪 4. 验证</button>
+    </div>
+    
+    <div id="output"></div>
+  </div>
+
+  <script>
+    const POSITION_GAP = 1000;
+    const output = document.getElementById('output');
+    
+    function updateStatus(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      output.innerHTML += `<span class="${type}">[${timestamp}] ${message}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('4DNoteDB', 2);
+        request.onsuccess = () => {
+          const db = request.result;
+          updateStatus(`✅ 数据库打开成功，版本：${db.version}`, 'info');
+          updateStatus(`📋 Object stores: ${Array.from(db.objectStoreNames).join(', ')}`, 'info');
+          resolve(db);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
+    function getAllEvents(store) {
+      return new Promise((resolve, reject) => {
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
+    // 判断事件是否会显示在 Plan 页面
+    function isPlanEvent(event) {
+      return event.isPlan === true || 
+             (event.checkType && event.checkType !== 'none') || 
+             event.isTimeCalendar === true;
+    }
+    
+    // 🆕 模拟 PlanSlate Tab 键自动修复 parentId/childIds
+    async function autoFixParentChild() {
+      output.innerHTML = '';
+      updateStatus('🔧 开始自动修复 parentId/childIds 关系...', 'info');
+      
+      const db = await openDatabase();
+      
+      if (!db.objectStoreNames.contains('events')) {
+        updateStatus('❌ 数据库中没有 events store！', 'error');
+        return;
+      }
+      
+      const tx = db.transaction('events', 'readwrite');
+      const store = tx.objectStore('events');
+      const allEvents = await getAllEvents(store);
+      
+      const planEvents = allEvents.filter(isPlanEvent);
+      
+      updateStatus(`📋 找到 ${planEvents.length} 个 Plan 页面事件`, 'info');
+      
+      // 按 position 排序（模拟 Plan 页面的显示顺序）
+      planEvents.sort((a, b) => {
+        const posA = a.position ?? Infinity;
+        const posB = b.position ?? Infinity;
+        if (posA !== posB) return posA - posB;
+        
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeA - timeB;
+      });
+      
+      updateStatus('\n🔍 按显示顺序分析层级关系:', 'info');
+      
+      // 根据 bulletLevel 推导 parentId/childIds
+      const levelStack = []; // 存储每个层级的最后一个事件
+      let fixedCount = 0;
+      
+      for (let i = 0; i < planEvents.length; i++) {
+        const event = planEvents[i];
+        const level = event.bulletLevel ?? 0;
+        const title = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '(无标题)';
+        
+        // 截断到当前层级
+        levelStack.length = level;
+        
+        // 找到父事件（level - 1 的最后一个事件）
+        const expectedParentId = level > 0 ? levelStack[level - 1]?.id : null;
+        const actualParentId = event.parentEventId || null;
+        
+        if (expectedParentId !== actualParentId) {
+          updateStatus(`  🔧 修复 "${title.substring(0, 30)}"`, 'warning');
+          updateStatus(`     bulletLevel=${level}, 预期父事件=${expectedParentId ? expectedParentId.slice(-8) : 'null'}, 实际=${actualParentId ? actualParentId.slice(-8) : 'null'}`, 'warning');
+          
+          event.parentEventId = expectedParentId;
+          
+          // 同时修复父事件的 childIds
+          if (expectedParentId) {
+            const parentEvent = planEvents.find(e => e.id === expectedParentId);
+            if (parentEvent) {
+              parentEvent.childEventIds = parentEvent.childEventIds || [];
+              if (!parentEvent.childEventIds.includes(event.id)) {
+                parentEvent.childEventIds.push(event.id);
+              }
+            }
+          }
+          
+          fixedCount++;
+        }
+        
+        // 记录当前层级的最后一个事件
+        levelStack[level] = event;
+      }
+      
+      // 批量保存到数据库
+      if (fixedCount > 0) {
+        updateStatus(`\n💾 保存 ${fixedCount} 个事件的修复结果...`, 'info');
+        
+        for (const event of planEvents) {
+          await store.put(event);
+        }
+        
+        await tx.complete;
+        
+        updateStatus(`\n✅ 修复完成！共修复 ${fixedCount} 个事件的父子关系`, 'success');
+        updateStatus(`   提示：请刷新页面查看效果`, 'info');
+      } else {
+        updateStatus('\n✅ 所有事件的父子关系都正确', 'success');
+      }
+    }
+    
+    async function diagnose() {
+      output.innerHTML = '';
+      updateStatus('开始诊断 Position 字段...', 'info');
+      
+      const db = await openDatabase();
+      
+      // 检查 events store 是否存在
+      if (!db.objectStoreNames.contains('events')) {
+        updateStatus('❌ 数据库中没有 events store！', 'error');
+        updateStatus('可能原因：数据库刚清空，还未初始化', 'warning');
+        updateStatus('解决方案：刷新页面，等待应用初始化完成', 'info');
+        return;
+      }
+      
+      const tx = db.transaction('events', 'readonly');
+      const store = tx.objectStore('events');
+      const allEvents = await getAllEvents(store);
+      
+      updateStatus(`✅ 找到 ${allEvents.length} 个事件`, 'success');
+      
+      // � 搜索"2.2"相关事件
+      const event22 = allEvents.filter(e => {
+        const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '';
+        return title.includes('2.2');
+      });
+      
+      if (event22.length > 0) {
+        updateStatus(`\n🔍 找到 ${event22.length} 个包含 "2.2" 的事件:`, 'info');
+        event22.forEach(e => {
+          const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+          const isPlan = isPlanEvent(e);
+          updateStatus(`  - "${title}"`, isPlan ? 'info' : 'warning');
+          updateStatus(`    isPlan=${e.isPlan} | checkType=${e.checkType} | isTimeCalendar=${e.isTimeCalendar}`, 'info');
+          updateStatus(`    position=${e.position} | ${isPlan ? '✅ 会显示在 Plan 页面' : '❌ 不会显示在 Plan 页面'}`, isPlan ? 'success' : 'error');
+        });
+      }
+      
+      // �🔧 只诊断会显示在 Plan 页面的事件
+      const planEvents = allEvents.filter(isPlanEvent);
+      
+      updateStatus(`📋 其中 ${planEvents.length} 个事件会显示在 Plan 页面`, 'info');
+      updateStatus(`   (${allEvents.length - planEvents.length} 个事件不在 Plan 页面，跳过诊断)`, 'info');
+      
+      const withPosition = planEvents.filter(e => e.position !== undefined && e.position !== null);
+      const withoutPosition = planEvents.filter(e => e.position === undefined || e.position === null);
+      
+      updateStatus('\n📊 Plan 页面事件统计:', 'info');
+      updateStatus(`  - 有 position: ${withPosition.length} 个`, 'info');
+      updateStatus(`  - 无 position: ${withoutPosition.length} 个`, withoutPosition.length === 0 ? 'success' : 'warning');
+      
+      // 详细分析
+      if (withPosition.length > 0) {
+        updateStatus('\n✅ 有 position 的事件:', 'info');
+        withPosition.slice(0, 5).forEach(e => {
+          const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+          const childIds = e.childIds ? `[${e.childIds.join(', ')}]` : '[]';
+          updateStatus(`  - ${title.substring(0, 40)}`, 'info');
+          updateStatus(`    position=${e.position} | isPlan=${e.isPlan} | checkType=${e.checkType}`, 'info');
+          updateStatus(`    parentId=${e.parentId || 'null'} | childIds=${childIds}`, 'info');
+          updateStatus(`    created=${new Date(e.createdAt).toLocaleString()}`, 'info');
+        });
+      }
+      
+      if (withoutPosition.length > 0) {
+        updateStatus('\n⚠️ 无 position 的事件:', 'warning');
+        withoutPosition.forEach(e => {
+          const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+          const childIds = e.childIds ? `[${e.childIds.join(', ')}]` : '[]';
+          updateStatus(`  - ${title.substring(0, 40)}`, 'warning');
+          updateStatus(`    isPlan=${e.isPlan} | checkType=${e.checkType} | isTimeCalendar=${e.isTimeCalendar}`, 'warning');
+          updateStatus(`    parentId=${e.parentId || 'null'} | childIds=${childIds}`, 'warning');
+          updateStatus(`    created=${new Date(e.createdAt).toLocaleString()}`, 'warning');
+        });
+        updateStatus('\n   点击 "修复" 按钮自动分配 position', 'info');
+      } else {
+        updateStatus('\n✅ 所有 Plan 页面事件都有 position 字段', 'success');
+      }
+    }
+    
+    async function fix() {
+      output.innerHTML = '';
+      updateStatus('开始修复 Position 字段...', 'info');
+      
+      const db = await openDatabase();
+      const tx = db.transaction('events', 'readwrite');
+      const store = tx.objectStore('events');
+      const allEvents = await getAllEvents(store);
+      
+      // 🔧 只修复会显示在 Plan 页面的事件
+      const planEvents = allEvents.filter(isPlanEvent);
+      
+      updateStatus(`📋 找到 ${planEvents.length} 个 Plan 页面事件（共 ${allEvents.length} 个）`, 'info');
+      
+      // 按 createdAt 排序（最早的排在前面）
+      planEvents.sort((a, b) => {
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeA - timeB;
+      });
+      
+      updateStatus(`✅ 按创建时间排序完成`, 'info');
+      
+      // 为每个事件分配 position（1000, 2000, 3000...）
+      let fixedCount = 0;
+      for (let i = 0; i < planEvents.length; i++) {
+        const event = planEvents[i];
+        const newPosition = (i + 1) * POSITION_GAP;
+        
+        // 只修复没有 position 的事件
+        if (event.position === undefined || event.position === null) {
+          event.position = newPosition;
+          await store.put(event);
+          fixedCount++;
+          
+          if (fixedCount <= 10) {
+            const title = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '(无标题)';
+            updateStatus(`  ✅ ${title.substring(0, 30)} → position = ${newPosition}`, 'success');
+          } else if (fixedCount === 11) {
+            updateStatus(`  ... (只显示前 10 个)`, 'info');
+          }
+        }
+      }
+      
+      await tx.complete;
+      
+      updateStatus(`\n✅ 修复完成！共修复 ${fixedCount} 个 Plan 页面事件`, 'success');
+      updateStatus(`   跳过了 ${allEvents.length - planEvents.length} 个非 Plan 页面事件`, 'info');
+      updateStatus(`   提示：请刷新页面查看效果`, 'info');
+    }
+    
+    async function verify() {
+      output.innerHTML = '';
+      updateStatus('开始验证排序结果...', 'info');
+      
+      const db = await openDatabase();
+      
+      if (!db.objectStoreNames.contains('events')) {
+        updateStatus('❌ 数据库中没有 events store！', 'error');
+        return;
+      }
+      
+      const tx = db.transaction('events', 'readonly');
+      const store = tx.objectStore('events');
+      const allEvents = await getAllEvents(store);
+      
+      // 🔧 只验证 Plan 页面的事件
+      const planEvents = allEvents.filter(isPlanEvent);
+      
+      updateStatus(`📋 验证 ${planEvents.length} 个 Plan 页面事件`, 'info');
+      
+      // Position 排序
+      const byPosition = [...planEvents].sort((a, b) => {
+        const posA = a.position ?? Infinity;
+        const posB = b.position ?? Infinity;
+        return posA - posB;
+      });
+      
+      // 时间排序
+      const byTime = [...planEvents].sort((a, b) => {
+        const timeA = new Date(a.createdAt || 0).getTime();
+        const timeB = new Date(b.createdAt || 0).getTime();
+        return timeA - timeB;
+      });
+      
+      // 对比两种排序
+      let mismatchCount = 0;
+      for (let i = 0; i < planEvents.length; i++) {
+        if (byPosition[i].id !== byTime[i].id) {
+          mismatchCount++;
+          if (mismatchCount <= 5) {
+            const posTitle = typeof byPosition[i].title === 'string' ? byPosition[i].title : byPosition[i].title?.simpleTitle || '(无标题)';
+            const timeTitle = typeof byTime[i].title === 'string' ? byTime[i].title : byTime[i].title?.simpleTitle || '(无标题)';
+            updateStatus(`  ⚠️ 第${i+1}位不匹配:`, 'warning');
+            updateStatus(`     Position排序: ${posTitle.substring(0, 30)}`, 'warning');
+            updateStatus(`     时间排序: ${timeTitle.substring(0, 30)}`, 'warning');
+          }
+        }
+      }
+      
+      if (mismatchCount === 0) {
+        updateStatus('\n✅ 验证通过！Plan 页面的 Position 排序与时间排序完全一致', 'success');
+      } else {
+        updateStatus(`\n⚠️ 发现 ${mismatchCount} 处不匹配`, 'warning');
+        updateStatus('   建议重新执行修复', 'info');
+      }
+    }
+  </script>
+</body>
+</html>

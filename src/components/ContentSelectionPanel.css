@@ -274,7 +274,7 @@
   to { opacity: 1; }
 }
 
-/* 精致搜索框 - 透明背景 + 渐变蒙版边框 */
+/* 精致搜索框 - 透明背景 + SVG 渐变边框 */
 .search-input-wrapper-enhanced {
   position: relative;
   width: 100%;
@@ -282,24 +282,40 @@
   align-items: center;
   padding: 10px 20px;
   margin-bottom: 12px;
-  border-radius: 100px;
-  
-  /* 核心：透明背景 + 实线边框 + 渐变蒙版 */
+  border-radius: 20px;
   background: transparent;
-  border: 2px solid rgba(255, 255, 255, 0.5); /* 默认半透明白边框 */
+  
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: box-shadow 0.3s ease;
   
   /* 硬件加速抗锯齿 */
   transform: translateZ(0);
   backface-visibility: hidden;
-  
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
 }
 
 .search-input-wrapper-enhanced:hover {
-  /* Hover时边框变为渐变色 */
-  border-image: linear-gradient(90deg, #a855f7 0%, #3b82f6 100%) 1;
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+
+/* SVG 边框层 - 绝对定位覆盖 */
+.search-border-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.search-border-rect {
+  width: calc(100% - 2px);
+  height: calc(100% - 2px);
+  transition: stroke 0.3s ease;
+}
+
+/* Hover 时切换到渐变边框 */
+.search-input-wrapper-enhanced:hover .search-border-rect {
+  stroke: url(#searchBorderGradient);
 }
 
 .search-input-wrapper-enhanced .search-icon {

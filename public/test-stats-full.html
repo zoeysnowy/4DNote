@@ -246,6 +246,26 @@
       transition: width 0.6s ease;
     }
 
+    /* Tooltip样式 */
+    .pie-tooltip {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      pointer-events: none;
+      z-index: 10000;
+      opacity: 0;
+      transition: opacity 0.2s;
+      white-space: pre-line;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .pie-tooltip.show {
+      opacity: 1;
+    }
+
     .trend-chart {
       margin-top: 20px;
       padding: 16px;
@@ -677,6 +697,9 @@
   </style>
 </head>
 <body>
+  <!-- Tooltip元素 -->
+  <div class="pie-tooltip" id="pieTooltip"></div>
+  
   <div class="container">
     <div class="header">
       <h1>
@@ -936,6 +959,25 @@
       loadStats();
     });
 
+    // Tooltip 辅助函数
+    function showTooltip(event, text) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.textContent = text;
+      tooltip.classList.add('show');
+      updateTooltipPosition(event);
+    }
+
+    function updateTooltipPosition(event) {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.style.left = (event.pageX + 15) + 'px';
+      tooltip.style.top = (event.pageY + 15) + 'px';
+    }
+
+    function hideTooltip() {
+      const tooltip = document.getElementById('pieTooltip');
+      tooltip.classList.remove('show');
+    }
+
     document.getElementById('endDate').addEventListener('change', (e) => {
       endDate = e.target.value ? new Date(e.target.value + 'T23:59:59') : null;
       loadStats();
@@ -1056,6 +1098,156 @@
       document.getElementById('overview').innerHTML = html;
     }
 
+    // 通用饼图渲染函数（带圆角）
+    function renderPieChart(svgId, data) {
+      const svg = document.getElementById(svgId);
+      if (!svg) return;
+      
+      svg.innerHTML = '';
+
+      if (!data || data.length === 0) return;
+
+      const radius = 80;
+      const innerRadius = 60;
+      const centerX = 100;
+      const centerY = 100;
+      const gapAngle = 4; // 间隙角度
+
+      let currentAngle = 0;
+      const totalDuration = data.reduce((sum, item) => sum + item.duration, 0);
+
+      // 过滤掉占比太小的色块（<0.5%），避免渲染问题
+      const minPercentage = 0.5;
+      const visibleData = data.filter(item => (item.duration / totalDuration * 100) >= minPercentage);
+
+      visibleData.forEach((item, index) => {
+        const angle = (item.duration / totalDuration) * 360;
+        // 除了最后一个色块，其他都减去间隙角度
+        const endAngle = index === visibleData.length - 1 ? currentAngle + angle : currentAngle + angle - gapAngle;
+        
+        // 计算色块的实际弧长（外圆）
+        const actualAngle = endAngle - currentAngle;
+        const arcLength = (actualAngle * Math.PI / 180) * radius;
+        
+        // 圆角半径必须小于弧长的一半
+        const maxCornerRadius = arcLength / 2;
+        let cornerRadius = Math.min(10, maxCornerRadius * 0.8); // 最多使用弧长的40%（两端各20%）
+        
+        // 确保最小圆角为2px
+        cornerRadius = Math.max(2, cornerRadius);
+        
+        const path = createRoundedArcPath(centerX, centerY, radius, innerRadius, currentAngle, endAngle, cornerRadius);
+        
+        const pathElement = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathElement.setAttribute('d', path);
+        pathElement.setAttribute('fill', item.color);
+        pathElement.setAttribute('opacity', '0.9');
+        pathElement.style.cursor = 'pointer';
+        pathElement.style.transition = 'opacity 0.2s';
+        
+        // 添加hover效果和tooltip
+        const tooltipText = `${item.name}\n${formatDuration(item.duration)}\n${(item.duration / totalDuration * 100).toFixed(1)}%`;
+        
+        pathElement.addEventListener('mouseenter', function(e) {
+          this.setAttribute('opacity', '1');
+          showTooltip(e, tooltipText);
+        });
+        pathElement.addEventListener('mousemove', function(e) {
+          updateTooltipPosition(e);
+        });
+        pathElement.addEventListener('mouseleave', function() {
+          this.setAttribute('opacity', '0.9');
+          hideTooltip();
+        });
+        
+        svg.appendChild(pathElement);
+        
+        currentAngle += angle;
+      });
+    }
+
+    // 创建圆角圆环路径
+    function createRoundedArcPath(cx, cy, radius, innerRadius, startAngle, endAngle, cornerRadius = 10) {
+      const startRad = (startAngle - 90) * Math.PI / 180;
+      const endRad = (endAngle - 90) * Math.PI / 180;
+      
+      const outerStart = {
+        x: cx + radius * Math.cos(startRad),
+        y: cy + radius * Math.sin(startRad)
+      };
+      const outerEnd = {
+        x: cx + radius * Math.cos(endRad),
+        y: cy + radius * Math.sin(endRad)
+      };
+      const innerEnd = {
+        x: cx + innerRadius * Math.cos(endRad),
+        y: cy + innerRadius * Math.sin(endRad)
+      };
+      const innerStart = {
+        x: cx + innerRadius * Math.cos(startRad),
+        y: cy + innerRadius * Math.sin(startRad)
+      };
+
+      const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+
+      const startTangentX = -Math.sin(startRad);
+      const startTangentY = Math.cos(startRad);
+      const endTangentX = -Math.sin(endRad);
+      const endTangentY = Math.cos(endRad);
+
+      const outerStartOffset = {
+        x: outerStart.x + cornerRadius * startTangentX,
+        y: outerStart.y + cornerRadius * startTangentY
+      };
+      const innerStartOffset = {
+        x: innerStart.x + cornerRadius * startTangentX,
+        y: innerStart.y + cornerRadius * startTangentY
+      };
+      const outerEndOffset = {
+        x: outerEnd.x - cornerRadius * endTangentX,
+        y: outerEnd.y - cornerRadius * endTangentY
+      };
+      const innerEndOffset = {
+        x: innerEnd.x - cornerRadius * endTangentX,
+        y: innerEnd.y - cornerRadius * endTangentY
+      };
+
+      const startRadialX = Math.cos(startRad);
+      const startRadialY = Math.sin(startRad);
+      const endRadialX = Math.cos(endRad);
+      const endRadialY = Math.sin(endRad);
+
+      const startOuterCorner = {
+        x: outerStart.x - cornerRadius * startRadialX,
+        y: outerStart.y - cornerRadius * startRadialY
+      };
+      const startInnerCorner = {
+        x: innerStart.x + cornerRadius * startRadialX,
+        y: innerStart.y + cornerRadius * startRadialY
+      };
+      const endOuterCorner = {
+        x: outerEnd.x - cornerRadius * endRadialX,
+        y: outerEnd.y - cornerRadius * endRadialY
+      };
+      const endInnerCorner = {
+        x: innerEnd.x + cornerRadius * endRadialX,
+        y: innerEnd.y + cornerRadius * endRadialY
+      };
+
+      return `
+        M ${outerStartOffset.x} ${outerStartOffset.y}
+        A ${radius} ${radius} 0 ${largeArc} 1 ${outerEndOffset.x} ${outerEndOffset.y}
+        Q ${outerEnd.x} ${outerEnd.y} ${endOuterCorner.x} ${endOuterCorner.y}
+        L ${endInnerCorner.x} ${endInnerCorner.y}
+        Q ${innerEnd.x} ${innerEnd.y} ${innerEndOffset.x} ${innerEndOffset.y}
+        A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${innerStartOffset.x} ${innerStartOffset.y}
+        Q ${innerStart.x} ${innerStart.y} ${startInnerCorner.x} ${startInnerCorner.y}
+        L ${startOuterCorner.x} ${startOuterCorner.y}
+        Q ${outerStart.x} ${outerStart.y} ${outerStartOffset.x} ${outerStartOffset.y}
+        Z
+      `;
+    }
+
     // 渲染标签统计
     function renderTagStats(events) {
       const tagStatsMap = new Map();
@@ -1115,27 +1307,57 @@
         return;
       }
 
-      const html = tagStats.map(tag => `
-        <div class="tag-item" onclick="showTagDetail('${tag.id}')">
-          <div class="tag-icon">${tag.emoji || '📌'}</div>
-          <div class="item-info">
-            <div class="item-name">
-              ${tag.name}
-              <span class="item-level">L${tag.level}</span>
+      const totalEvents = tagStats.reduce((sum, t) => sum + t.count, 0);
+
+      const html = `
+        <div style="display: grid; grid-template-columns: 300px 1fr; gap: 24px; align-items: start;">
+          <!-- 饼图 -->
+          <div style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h3 style="font-size: 16px; margin-bottom: 20px; text-align: center; color: #666;">标签占比</h3>
+            <div style="display: flex; justify-content: center;">
+              <div style="position: relative; width: 200px; height: 200px;">
+                <svg width="200" height="200" id="tagPieChart"></svg>
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                  <div style="font-size: 24px; font-weight: 700; color: #1f2937;">${formatDuration(totalDuration)}</div>
+                  <div style="font-size: 12px; color: #999; margin-top: 4px;">${totalEvents} 个事件</div>
+                </div>
+              </div>
             </div>
-            <div class="item-stats">
-              <span>${tag.count} 个事件</span>
-              <span>${tag.percentage.toFixed(1)}%</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" style="width: ${tag.percentage}%"></div>
-            </div>
+            <div style="text-align: center; margin-top: 12px; color: #666; font-size: 12px;">${tagStats.length} 个标签</div>
           </div>
-          <div class="item-duration">${formatDuration(tag.duration)}</div>
+          
+          <!-- 列表 -->
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${tagStats.map(tag => `
+              <div class="tag-item" onclick="showTagDetail('${tag.id}')" style="padding: 12px 16px;">
+                <div class="tag-icon" style="width: 32px; height: 32px; font-size: 18px;">${tag.emoji || '📌'}</div>
+                <div class="item-info" style="flex: 1; min-width: 0;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div class="item-name" style="margin: 0;">
+                      ${tag.name}
+                      <span class="item-level">L${tag.level}</span>
+                    </div>
+                    <div style="font-size: 14px; font-weight: 600; color: #667eea;">${formatDuration(tag.duration)}</div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; color: #666;">
+                    <span>${tag.count} 个事件</span>
+                    <span>•</span>
+                    <span>${tag.percentage.toFixed(1)}%</span>
+                    <div class="progress-bar" style="flex: 1; margin: 0;">
+                      <div class="progress-fill" style="width: ${tag.percentage}%"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
-      `).join('');
+      `;
 
       document.getElementById('tagStats').innerHTML = html;
+      
+      // 渲染饼图
+      renderPieChart('tagPieChart', tagStats);
     }
 
     // 渲染日历统计
@@ -1232,27 +1454,57 @@
         return;
       }
 
-      const html = calendarStats.map(cal => `
-        <div class="calendar-item" onclick="showCalendarDetail('${cal.id}')">
-          <div class="calendar-icon" style="background: ${cal.color}"></div>
-          <div class="item-info">
-            <div class="item-name">
-              ${cal.name}
-              <span class="source-badge ${cal.source}">${cal.source}</span>
+      const totalEvents = calendarStats.reduce((sum, c) => sum + c.count, 0);
+
+      const html = `
+        <div style="display: grid; grid-template-columns: 300px 1fr; gap: 24px; align-items: start;">
+          <!-- 饼图 -->
+          <div style="background: white; border-radius: 16px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+            <h3 style="font-size: 16px; margin-bottom: 20px; text-align: center; color: #666;">日历占比</h3>
+            <div style="display: flex; justify-content: center;">
+              <div style="position: relative; width: 200px; height: 200px;">
+                <svg width="200" height="200" id="calendarPieChart"></svg>
+                <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                  <div style="font-size: 24px; font-weight: 700; color: #1f2937;">${formatDuration(totalDuration)}</div>
+                  <div style="font-size: 12px; color: #999; margin-top: 4px;">${totalEvents} 个事件</div>
+                </div>
+              </div>
             </div>
-            <div class="item-stats">
-              <span>${cal.count} 个事件</span>
-              <span>${cal.percentage.toFixed(1)}%</span>
-            </div>
-            <div class="progress-bar">
-              <div class="progress-fill" style="width: ${cal.percentage}%"></div>
-            </div>
+            <div style="text-align: center; margin-top: 12px; color: #666; font-size: 12px;">${calendarStats.length} 个日历</div>
           </div>
-          <div class="item-duration">${formatDuration(cal.duration)}</div>
+          
+          <!-- 列表 -->
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${calendarStats.map(cal => `
+              <div class="calendar-item" onclick="showCalendarDetail('${cal.id}')" style="padding: 12px 16px;">
+                <div class="calendar-icon" style="background: ${cal.color}; width: 32px; height: 32px;"></div>
+                <div class="item-info" style="flex: 1; min-width: 0;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                    <div class="item-name" style="margin: 0;">
+                      ${cal.name}
+                      <span class="source-badge ${cal.source}">${cal.source}</span>
+                    </div>
+                    <div style="font-size: 14px; font-weight: 600; color: #667eea;">${formatDuration(cal.duration)}</div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 12px; font-size: 12px; color: #666;">
+                    <span>${cal.count} 个事件</span>
+                    <span>•</span>
+                    <span>${cal.percentage.toFixed(1)}%</span>
+                    <div class="progress-bar" style="flex: 1; margin: 0;">
+                      <div class="progress-fill" style="width: ${cal.percentage}%"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
         </div>
-      `).join('');
+      `;
 
       document.getElementById('calendarStats').innerHTML = html;
+      
+      // 渲染饼图
+      renderPieChart('calendarPieChart', calendarStats);
     }
 
     // 获取日历颜色

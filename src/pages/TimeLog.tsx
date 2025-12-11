@@ -402,31 +402,31 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       
       setLoadingEvents(true);
       try {
-        // 计算初始加载范围：今天前后45天（确保覆盖30天前的内容）
+        // 🚀 [PERFORMANCE] 计算初始加载范围：今天前后7天（足够显示，配合双向无限滚动）
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         const initialStartDate = new Date(today);
-        initialStartDate.setDate(initialStartDate.getDate() - 45); // 从30天改为45天
+        initialStartDate.setDate(initialStartDate.getDate() - 7); // 优化：从45天减少到7天
         
         const initialEndDate = new Date(today);
-        initialEndDate.setDate(initialEndDate.getDate() + 45); // 从30天改为45天
+        initialEndDate.setDate(initialEndDate.getDate() + 7); // 优化：从45天减少到7天
         initialEndDate.setHours(23, 59, 59, 999);
         
-        console.log('📅 [TimeLog] Initial load range (Today ±45 days):', {
+        console.log('📅 [TimeLog] Initial load range (Today ±7 days):', {
           start: formatTimeForStorage(initialStartDate),
           end: formatTimeForStorage(initialEndDate)
         });
         
         const dbQueryStartTime = performance.now();
-        // 加载今天前后45天的事件（使用 getTimelineEvents 过滤）
+        // 加载今天前后7天的事件（使用 getTimelineEvents 过滤）
         const events = await EventService.getTimelineEvents(
           formatTimeForStorage(initialStartDate),
           formatTimeForStorage(initialEndDate)
         );
         const dbQueryTime = performance.now() - dbQueryStartTime;
         
-        console.log(`✅ [TimeLog] Loaded ${events.length} timeline events (Today ±45 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
+        console.log(`✅ [TimeLog] Loaded ${events.length} timeline events (Today ±7 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
         setAllEvents(events);
         allEventsRef.current = events;
         
@@ -524,17 +524,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
   // 初始滚动到今天的位置（移到 getTodayDateKey 定义之后）
 
-  // 获取事件列表（按时间排序，不过滤日期）
+  // 🚀 [PERFORMANCE] 获取事件列表（按时间排序）
+  // EventService.getTimelineEvents 已经完成过滤，这里只需排序
   const events = useMemo(() => {
     const startTime = performance.now();
     
-    // 过滤：只显示有时间的事件（startTime, endTime, 或 createdAt）
-    const timeBasedEvents = allEvents.filter(event => 
-      event.startTime || event.endTime || event.createdAt
-    );
-
     // 按时间正序排序（最早的在前）
-    const sorted = timeBasedEvents.sort((a, b) => {
+    const sorted = [...allEvents].sort((a, b) => {
       const timeA = a.startTime || a.endTime || a.createdAt || '';
       const timeB = b.startTime || b.endTime || b.createdAt || '';
       
@@ -545,7 +541,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       const valB = isNaN(dateB) ? 0 : dateB;
       
       // 强制正序：最早的时间在前 (Ascending)
-      // 例如：09:00 (小) - 10:00 (大) = 负数 -> 09:00 排在前面
       return valA - valB;
     });
     
@@ -1493,9 +1488,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           )}
 
           {/* 内容区域：根据激活标签显示不同内容 */}
-          {activeTabId === 'timelog' ? (
-            /* 时光日志列表 */
-            <div className="timelog-events-list" ref={timelineContainerRef}>
+          {/* 时光日志列表 - 使用 CSS 隐藏而非条件渲染，保留滚动状态 */}
+          <div 
+            className="timelog-events-list" 
+            ref={timelineContainerRef}
+            style={{ display: activeTabId === 'timelog' ? 'block' : 'none' }}
+          >
             {loadingEvents ? (
             <div className="timelog-empty">
               <p>加载中...</p>
@@ -2395,9 +2393,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             })
           )}
             </div>
-          ) : (
-            /* LogTab 事件详情页面 */
-            <div className="timelog-tab-content">
+            
+            {/* LogTab 事件详情页面 - 使用 CSS 隐藏，而非条件渲染 */}
+            <div 
+              className="timelog-tab-content"
+              style={{ display: activeTabId !== 'timelog' ? 'flex' : 'none' }}
+            >
               {tabManagerEvents.map((event) => (
                 activeTabId === event.id && (
                   <LogTab
@@ -2438,7 +2439,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                 )
               ))}
             </div>
-          )}
         </div>
       </div>
 

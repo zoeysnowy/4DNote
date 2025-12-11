@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>修复 Position 排序问题</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    h1 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      font-size: 16px;
+      cursor: pointer;
+      margin-right: 10px;
+      margin-bottom: 10px;
+      transition: transform 0.2s;
+    }
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:active {
+      transform: translateY(0);
+    }
+    #output {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f8f9fa;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+    .success {
+      color: #28a745;
+      font-weight: bold;
+    }
+    .warning {
+      color: #ffc107;
+      font-weight: bold;
+    }
+    .error {
+      color: #dc3545;
+      font-weight: bold;
+    }
+    .info {
+      color: #17a2b8;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      border: 1px solid #dee2e6;
+      padding: 10px;
+      text-align: left;
+    }
+    th {
+      background: #667eea;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background: #f8f9fa;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔧 Position 排序修复工具</h1>
+    <p class="subtitle">诊断并修复事件的 position 字段，确保正确排序</p>
+    
+    <div>
+      <button onclick="diagnosePositions()">🔍 1. 诊断 Position 字段</button>
+      <button onclick="fixPositions()">✅ 2. 修复 Position 排序</button>
+      <button onclick="verifyPositions()">🧪 3. 验证修复结果</button>
+    </div>
+    
+    <div id="output"></div>
+  </div>
+
+  <script>
+    const output = document.getElementById('output');
+    
+    function log(message, type = 'info') {
+      const timestamp = new Date().toLocaleTimeString();
+      const className = type;
+      output.innerHTML += `<span class="${className}">[${timestamp}] ${message}</span>\n`;
+      output.scrollTop = output.scrollHeight;
+    }
+    
+    async function diagnosePositions() {
+      output.innerHTML = '';
+      log('开始诊断 Position 字段...', 'info');
+      
+      try {
+        const db = await openDatabase();
+        const events = await getAllEvents(db);
+        
+        log(`✅ 找到 ${events.length} 个事件`, 'success');
+        
+        // 分析 position 字段
+        const withPosition = events.filter(e => e.position !== undefined);
+        const withoutPosition = events.filter(e => e.position === undefined);
+        
+        log(`\n📊 统计结果:`, 'info');
+        log(`  - 有 position: ${withPosition.length} 个`, withPosition.length > 0 ? 'success' : 'warning');
+        log(`  - 无 position: ${withoutPosition.length} 个`, withoutPosition.length === 0 ? 'success' : 'warning');
+        
+        if (withoutPosition.length > 0) {
+          log(`\n⚠️ 需要修复的事件:`, 'warning');
+          
+          // 按标题排序展示
+          const sorted = withoutPosition.sort((a, b) => {
+            const titleA = typeof a.title === 'string' ? a.title : a.title?.simpleTitle || '';
+            const titleB = typeof b.title === 'string' ? b.title : b.title?.simpleTitle || '';
+            return titleA.localeCompare(titleB);
+          });
+          
+          sorted.forEach((e, i) => {
+            const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+            const createdAt = e.createdAt || '未知时间';
+            log(`  ${i + 1}. ${title} (创建于: ${createdAt})`, 'warning');
+          });
+        }
+        
+        // 检查同级事件的 position 排序
+        log(`\n🔍 检查同级事件排序:`, 'info');
+        const parentGroups = new Map();
+        events.forEach(e => {
+          const parentId = e.parentEventId || 'ROOT';
+          if (!parentGroups.has(parentId)) {
+            parentGroups.set(parentId, []);
+          }
+          parentGroups.get(parentId).push(e);
+        });
+        
+        let hasOrderIssue = false;
+        parentGroups.forEach((siblings, parentId) => {
+          if (siblings.length <= 1) return;
+          
+          const withPos = siblings.filter(s => s.position !== undefined);
+          if (withPos.length < siblings.length) {
+            const parentTitle = parentId === 'ROOT' ? '顶层' : siblings[0].parentEventId?.slice(-8);
+            log(`  ⚠️ 父事件 ${parentTitle} 下有 ${siblings.length - withPos.length} 个子事件缺少 position`, 'warning');
+            hasOrderIssue = true;
+          }
+        });
+        
+        if (!hasOrderIssue) {
+          log(`  ✅ 所有同级事件都有 position 字段`, 'success');
+        }
+        
+      } catch (error) {
+        log(`❌ 诊断失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+    
+    async function fixPositions() {
+      output.innerHTML = '';
+      log('开始修复 Position 排序...', 'info');
+      
+      try {
+        const db = await openDatabase();
+        const events = await getAllEvents(db);
+        
+        // 按创建时间排序所有事件
+        const sortedByTime = events.sort((a, b) => {
+          const timeA = new Date(a.createdAt || 0).getTime();
+          const timeB = new Date(b.createdAt || 0).getTime();
+          return timeA - timeB;
+        });
+        
+        // 按层级分组
+        const parentGroups = new Map();
+        sortedByTime.forEach(e => {
+          const parentId = e.parentEventId || 'ROOT';
+          if (!parentGroups.has(parentId)) {
+            parentGroups.set(parentId, []);
+          }
+          parentGroups.get(parentId).push(e);
+        });
+        
+        let fixedCount = 0;
+        const POSITION_GAP = 1000;
+        
+        // 为每个层级的事件分配 position
+        for (const [parentId, siblings] of parentGroups.entries()) {
+          const parentTitle = parentId === 'ROOT' ? '顶层' : parentId.slice(-8);
+          log(`\n处理 ${parentTitle} 下的 ${siblings.length} 个事件...`, 'info');
+          
+          for (let i = 0; i < siblings.length; i++) {
+            const event = siblings[i];
+            const newPosition = (i + 1) * POSITION_GAP;
+            
+            if (event.position !== newPosition) {
+              const title = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '(无标题)';
+              log(`  修复: ${title} (${event.position || 'undefined'} → ${newPosition})`, 'warning');
+              
+              // 更新数据库
+              await updateEventPosition(db, event.id, newPosition);
+              fixedCount++;
+            }
+          }
+        }
+        
+        log(`\n✅ 修复完成！共更新 ${fixedCount} 个事件`, 'success');
+        log(`\n💡 请刷新页面查看效果`, 'info');
+        
+      } catch (error) {
+        log(`❌ 修复失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+    
+    async function verifyPositions() {
+      output.innerHTML = '';
+      log('开始验证修复结果...', 'info');
+      
+      try {
+        const db = await openDatabase();
+        const events = await getAllEvents(db);
+        
+        // 按层级分组
+        const parentGroups = new Map();
+        events.forEach(e => {
+          const parentId = e.parentEventId || 'ROOT';
+          if (!parentGroups.has(parentId)) {
+            parentGroups.set(parentId, []);
+          }
+          parentGroups.get(parentId).push(e);
+        });
+        
+        let allCorrect = true;
+        
+        for (const [parentId, siblings] of parentGroups.entries()) {
+          if (siblings.length <= 1) continue;
+          
+          const parentTitle = parentId === 'ROOT' ? '顶层' : parentId.slice(-8);
+          
+          // 按 position 排序
+          const sortedByPosition = [...siblings].sort((a, b) => {
+            if (a.position !== undefined && b.position !== undefined) {
+              return a.position - b.position;
+            }
+            return 0;
+          });
+          
+          // 按创建时间排序
+          const sortedByTime = [...siblings].sort((a, b) => {
+            const timeA = new Date(a.createdAt || 0).getTime();
+            const timeB = new Date(b.createdAt || 0).getTime();
+            return timeA - timeB;
+          });
+          
+          // 检查顺序是否一致
+          const orderMatch = sortedByPosition.every((e, i) => e.id === sortedByTime[i].id);
+          
+          if (!orderMatch) {
+            log(`\n⚠️ ${parentTitle} 下的事件顺序不一致:`, 'warning');
+            log(`按 position 排序:`, 'info');
+            sortedByPosition.forEach((e, i) => {
+              const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+              log(`  ${i + 1}. ${title} (position: ${e.position})`, 'info');
+            });
+            log(`按创建时间排序:`, 'info');
+            sortedByTime.forEach((e, i) => {
+              const title = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '(无标题)';
+              log(`  ${i + 1}. ${title} (创建于: ${e.createdAt})`, 'info');
+            });
+            allCorrect = false;
+          }
+        }
+        
+        if (allCorrect) {
+          log(`\n✅ 所有事件的 position 排序都正确！`, 'success');
+        } else {
+          log(`\n⚠️ 仍有事件顺序不一致，请重新运行修复`, 'warning');
+        }
+        
+      } catch (error) {
+        log(`❌ 验证失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+    
+    // ==================== IndexedDB 工具函数 ====================
+    
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('4DNoteDB', 2); // 正确的数据库名称和版本
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
+    function getAllEvents(db) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('events', 'readonly');
+        const store = tx.objectStore('events');
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+    
+    function updateEventPosition(db, eventId, position) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('events', 'readwrite');
+        const store = tx.objectStore('events');
+        
+        // 先读取事件
+        const getRequest = store.get(eventId);
+        getRequest.onsuccess = () => {
+          const event = getRequest.result;
+          if (!event) {
+            reject(new Error(`Event ${eventId} not found`));
+            return;
+          }
+          
+          // 更新 position
+          event.position = position;
+          
+          // 保存回数据库
+          const putRequest = store.put(event);
+          putRequest.onsuccess = () => resolve();
+          putRequest.onerror = () => reject(putRequest.error);
+        };
+        getRequest.onerror = () => reject(getRequest.error);
+      });
+    }
+  </script>
+</body>
+</html>

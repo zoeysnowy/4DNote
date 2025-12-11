@@ -16,6 +16,8 @@ import { STORAGE_KEYS, CacheManager } from './constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from './utils/persistentStorage';
 import { TagService } from './services/TagService';
 import { EventService } from './services/EventService';
+import { EventHub } from './services/EventHub'; // 🔧 同步导入 EventHub（避免异步挂载延迟）
+import { TimeHub } from './services/TimeHub'; // 🔧 同步导入 TimeHub
 import { EventEditModalV2 } from './components/EventEditModal/EventEditModalV2'; // v2 - 新版本
 import SettingsModal from './components/SettingsModal';
 import { SyncNotification } from './components/SyncNotification';
@@ -56,9 +58,15 @@ declare global {
 // 在组件外部立即创建服务实例
 const microsoftCalendarService = new MicrosoftCalendarService();
 
-// 立即暴露到全局
+// 🔧 立即暴露核心服务到全局（在 ActionBasedSyncManager 初始化前）
 if (typeof window !== 'undefined') {
   window.microsoftCalendarService = microsoftCalendarService;
+  
+  // ✅ 立即挂载 EventHub 和 TimeHub（同步挂载，避免 ActionBasedSyncManager 查找失败）
+  (window as any).EventService = EventService;
+  (window as any).EventHub = EventHub;
+  (window as any).TimeHub = TimeHub;
+  console.log('✅ [App] EventHub, TimeHub, EventService 已同步挂载到 window');
 }
 
 function App() {
@@ -188,17 +196,9 @@ function App() {
           }
         };
         
-        // 🧪 暴露测试所需的全局对象
-        console.log('🧪 [App] Exposing global objects for testing...');
-        import('./services/EventService').then(({ EventService }) => {
-          (window as any).EventService = EventService;
-        });
-        import('./services/EventHub').then(({ EventHub }) => {
-          (window as any).EventHub = EventHub;
-        });
-        import('./services/TimeHub').then(({ TimeHub }) => {
-          (window as any).TimeHub = TimeHub;
-        });
+        // 🧪 EventHub/TimeHub/EventService 已在组件外部同步挂载
+        // 这里只需异步加载 ContactService 和 StorageManager
+        console.log('🧪 [App] Exposing async global objects for testing...');
         import('./services/ContactService').then(({ ContactService }) => {
           (window as any).ContactService = ContactService;
         });
@@ -1523,9 +1523,7 @@ function App() {
           console.log('🔍 [App] ActionBasedSyncManager 创建成功:', newSyncManager);
           console.log('🔍 [App] forceSync 方法:', typeof newSyncManager.forceSync);
           
-          setSyncManager(newSyncManager);
-          
-          // 🔧 初始化 EventService（注入同步管理器）
+          // 🔧 初始化 EventService（在 setSyncManager 之前）
           EventService.initialize(newSyncManager);
           
           // 🧹 检查并清理历史记录（防止 localStorage 溢出）
@@ -1542,6 +1540,10 @@ function App() {
             (window as any).syncManager = newSyncManager;
             console.log('🔍 [App] syncManager 已暴露到 window.syncManager');
           }
+          
+          // ✅ 最后设置 syncManager（触发 useEffect 重新执行，但此时已有 syncManager，会跳过创建）
+          // ⚠️ 注意：不要在这里重置 syncManagerCreationRef.current，应该在 cleanup 中重置
+          setSyncManager(newSyncManager);
         } catch (error) {
           AppLogger.error('❌ 同步管理器初始化失败:', error);
           console.error('❌ [App] 详细错误:', error);
@@ -1553,14 +1555,18 @@ function App() {
       AppLogger.log('⏸️ 用户已登出，停止同步管理器...');
       syncManager.stop();
       setSyncManager(null);
-    } else if (currentAuthState && syncManager) {
-      // 🔧 [HMR FIX] 已登录且 syncManager 存在时，重新初始化 EventService
-      // 这个分支会在 HMR 后被触发，因为 syncManager 在依赖数组中
-      console.log('🔍 [App] syncManager 已存在，重新初始化 EventService...');
+    } else if (currentAuthState && syncManager && !syncManagerCreationRef.current) {
+      // 🔧 [HMR FIX] HMR 后 syncManager 引用变化，重新初始化 EventService
+      // 注意：只在非创建期间执行（避免重复初始化）
+      console.log('🔍 [App] HMR detected, re-initializing EventService with existing syncManager...');
       EventService.initialize(syncManager);
-      console.log('✅ [App] EventService 重新初始化完成');
+      console.log('✅ [App] EventService re-initialized after HMR');
     } else {
-      console.log('🔍 [App] 未登录，跳过同步管理器初始化');
+      console.log('🔍 [App] 跳过初始化:', {
+        hasAuth: currentAuthState,
+        hasSyncManager: !!syncManager,
+        isCreating: syncManagerCreationRef.current
+      });
     }
     
     // 更新 lastAuthState
@@ -1576,7 +1582,7 @@ function App() {
       }
       syncManagerCreationRef.current = false; // 重置标志
     };
-  }, [microsoftService, lastAuthState, syncManager]);  // 🔧 [HMR FIX] 添加 syncManager 依赖，确保 HMR 后自动重新初始化
+  }, [microsoftService, lastAuthState, syncManager]);  // 🔧 [HMR FIX] 保留 syncManager 依赖，但通过标志位避免重复创建
 
   // 🔐 监听全局认证状态变化事件（登录成功后触发）
   useEffect(() => {

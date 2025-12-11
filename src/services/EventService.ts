@@ -2229,28 +2229,46 @@ export class EventService {
         }]));
       }
       
-      // 🔍 检查是否需要将单个 paragraph 拆分成 timestamp-divider 结构
-      // （用于修复从 Outlook 同步回来的旧事件）
+      // 🔍 检查是否需要将 paragraph 节点中的时间戳文本拆分成 timestamp-divider 结构
+      // （用于修复从 Outlook 同步回来的旧事件或用户粘贴的内容）
       try {
         const slateNodes = typeof eventLog.slateJson === 'string' 
           ? JSON.parse(eventLog.slateJson) 
           : eventLog.slateJson;
         
-        // 如果是单个 paragraph 节点，且包含时间戳文本
-        if (Array.isArray(slateNodes) && 
-            slateNodes.length === 1 && 
-            slateNodes[0].type === 'paragraph' &&
-            slateNodes[0].children?.[0]?.text) {
+        if (Array.isArray(slateNodes)) {
+          let needsReparse = false;
           
-          const text = slateNodes[0].children[0].text;
-          // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
-          const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
-          const matches = [...text.matchAll(timestampPattern)];
+          // 遍历所有节点，检查段落中是否包含时间戳文本
+          for (const node of slateNodes) {
+            if (node.type === 'paragraph' && node.children?.[0]?.text) {
+              const text = node.children[0].text.trim();
+              // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
+              const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/;
+              if (timestampPattern.test(text)) {
+                needsReparse = true;
+                break;
+              }
+            }
+          }
           
-          if (matches.length > 0) {
-            // 发现时间戳，需要重新解析
-            console.log('[EventService] 发现旧格式事件（单段落包含时间戳），重新解析:', matches.length, '个时间戳');
-            const newSlateNodes = this.parseTextWithTimestamps(text);
+          if (needsReparse) {
+            // 发现时间戳段落，需要重新解析整个内容
+            // 将所有节点转换回文本，然后使用 parseTextWithTimestamps 重新解析
+            const textLines: string[] = [];
+            for (const node of slateNodes) {
+              if (node.type === 'paragraph' && node.children) {
+                const paragraphText = node.children.map((child: any) => child.text || '').join('');
+                textLines.push(paragraphText);
+              } else if (node.type === 'timestamp-divider') {
+                // 保留已有的时间戳
+                textLines.push(node.displayText || new Date(node.timestamp).toLocaleString());
+              }
+            }
+            
+            const fullText = textLines.join('\n');
+            console.log('[EventService] 发现段落中包含时间戳文本，重新解析 eventlog');
+            const newSlateNodes = this.parseTextWithTimestamps(fullText);
             const newSlateJson = JSON.stringify(newSlateNodes);
             return this.convertSlateJsonToEventLog(newSlateJson);
           }

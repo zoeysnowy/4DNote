@@ -18,6 +18,7 @@
 import { Event } from '../types';
 import { EventService } from './EventService';
 import { TimeHub } from './TimeHub';
+import { formatTimeForStorage } from '../utils/timeUtils'; // 🔧 导入时间格式化工具
 
 const dbg = console.log.bind(console);
 
@@ -132,9 +133,8 @@ class EventHubClass {
     // 5. 持久化到 EventService
     const result = await EventService.updateEvent(eventId, updatedEvent, skipSync);
 
-    // ✅ 架构优化：EventService 已经触发了 eventsUpdated 事件
-    // 不需要 EventHub 再触发 eventUpdated，避免重复事件
-    // 所有订阅者统一监听 eventsUpdated 事件即可
+    // ✅ 不触发 notify，避免 ActionBasedSyncManager 循环依赖
+    // ActionBasedSyncManager 应该通过其他方式（如拦截 EventService）感知变化
 
     return result;
   }
@@ -220,8 +220,7 @@ class EventHubClass {
     // 2. 持久化
     const result = await EventService.createEvent(event);
 
-    // ✅ 架构优化：EventService 已经触发了 eventsUpdated 事件
-    // 不需要 EventHub 再触发 eventCreated，避免重复事件
+    // ✅ 不触发 notify，避免 ActionBasedSyncManager 循环依赖
 
     return result;
   }
@@ -232,14 +231,16 @@ class EventHubClass {
   async deleteEvent(eventId: string, skipSync: boolean = false): Promise<{ success: boolean; error?: string }> {
     dbg('🗑️ [EventHub] 删除事件', { eventId });
 
-    // 1. 清除缓存
+    // 1. 缓存快照（用于触发事件）
+    const deletedEvent = this.cache.get(eventId)?.event || EventService.getEventById(eventId);
+
+    // 2. 清除缓存
     this.cache.delete(eventId);
 
-    // 2. 删除持久化数据
+    // 3. 删除持久化数据
     const result = await EventService.deleteEvent(eventId, skipSync);
 
-    // ✅ 架构优化：EventService 已经触发了 eventsUpdated 事件
-    // 不需要 EventHub 再触发 eventDeleted，避免重复事件
+    // ✅ 不触发 notify，避免 ActionBasedSyncManager 循环依赖
 
     return result;
   }

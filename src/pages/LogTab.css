@@ -1290,6 +1290,35 @@
   position: relative;
 }
 
+/* 编辑器包装容器 */
+.logtab-editor-wrapper {
+  min-height: 100%;
+  position: relative;
+}
+
+/* 编辑器样式（继承自 EventEditModalV2）*/
+.logtab-editor-wrapper .eventlog-editor {
+  min-height: 400px;
+  padding: 16px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+/* Slate 编辑器焦点样式 */
+.logtab-editor-wrapper .eventlog-editor:focus-within {
+  outline: none;
+}
+
+/* Slate 段落间距 */
+.logtab-editor-wrapper .eventlog-editor > div > div {
+  margin-bottom: 8px;
+}
+
+.logtab-editor-wrapper .eventlog-editor > div > div:last-child {
+  margin-bottom: 0;
+}
+
 
 
 /* logtab-container 保持 flex 布局 */

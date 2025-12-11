@@ -78,7 +78,7 @@
 /* 🆕 Bullet Paragraph 样式 */
 .slate-bullet-paragraph {
   position: relative;
-  padding-left: 1.5em; /* 🔧 bullet 与文字之间约半个字符宽度的 gap */
+  padding-left: 0; /* 🔧 不添加 padding，让文字与标题首字符对齐 */
   margin: 1px 0; /* 🔧 紧凑间距 */
   line-height: 1.5; /* 🔧 稍紧凑的行高 */
   white-space: pre-wrap; /* 保留空格和换行 */
@@ -95,7 +95,7 @@
 .slate-bullet-paragraph[data-level="0"]::before {
   content: '●';
   position: absolute;
-  left: 8px;
+  left: -12px; /* 🔧 在文字左侧 12px，位于 24px spacer 区域内 */
   color: #374151;
   font-size: 0.65em; /* 🔧 相对字体大小，自动适配 */
   line-height: 1; /* 🔧 bullet 自身行高为 1，不受段落行高影响 */
@@ -106,7 +106,7 @@
 .slate-bullet-paragraph[data-level="1"]::before {
   content: '○';
   position: absolute;
-  left: 8px;
+  left: -12px; /* 🔧 在文字左侧 12px */
   color: #374151;
   font-size: 0.65em;
   line-height: 1;
@@ -117,7 +117,7 @@
 .slate-bullet-paragraph[data-level="2"]::before {
   content: '–';
   position: absolute;
-  left: 8px;
+  left: -12px; /* 🔧 在文字左侧 12px */
   color: #374151;
   font-size: 0.65em;
   line-height: 1;
@@ -128,7 +128,7 @@
 .slate-bullet-paragraph[data-level="3"]::before {
   content: '□';
   position: absolute;
-  left: 8px;
+  left: -12px; /* 🔧 在文字左侧 12px */
   color: #374151;
   font-size: 0.65em;
   line-height: 1;
@@ -139,7 +139,7 @@
 .slate-bullet-paragraph[data-level="4"]::before {
   content: '▸';
   position: absolute;
-  left: 8px;
+  left: -12px; /* 🔧 在文字左侧 12px */
   color: #374151;
   font-size: 0.75em; /* 三角形稍大一点 */
   line-height: 1;

@@ -1342,12 +1342,19 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       
       // 🐛 Bulletpoint 调试：检查 eventlog 字段
       if (isChanged && updatedItem.eventlog) {
+        const eventlogData = typeof updatedItem.eventlog === 'object' 
+          ? updatedItem.eventlog 
+          : { slateJson: updatedItem.eventlog, html: updatedItem.eventlog, plainText: updatedItem.eventlog };
+        
         console.log('[PlanManager Bullet Debug] eventlog 内容:', {
           eventId: updatedItem.id?.slice(-8),
           eventlogType: typeof updatedItem.eventlog,
-          eventlogLength: updatedItem.eventlog.length,
-          hasBulletAttr: updatedItem.eventlog.includes('data-bullet="true"'),
-          preview: updatedItem.eventlog.substring(0, 200)
+          isObject: typeof updatedItem.eventlog === 'object',
+          slateJsonLength: eventlogData.slateJson?.length || 0,
+          htmlLength: eventlogData.html?.length || 0,
+          hasBulletAttr: eventlogData.slateJson?.includes('"bullet"') || eventlogData.html?.includes('data-bullet="true"'),
+          slateJsonPreview: eventlogData.slateJson?.substring(0, 200),
+          htmlPreview: eventlogData.html?.substring(0, 200)
         });
       }
       
