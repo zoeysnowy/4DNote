@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SignatureUtils 测试页面</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-section h3 {
+      margin-top: 0;
+      color: #667eea;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 10px;
+    }
+    .test-case {
+      background: #f9f9f9;
+      padding: 15px;
+      border-left: 4px solid #667eea;
+      margin: 10px 0;
+    }
+    .result {
+      margin: 10px 0;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+    }
+    .result.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .result.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .result.info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 1px solid #bee5eb;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin-top: 20px;
+    }
+    .stat-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #667eea;
+    }
+    .stat-label {
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✅ SignatureUtils 测试页面</h1>
+    <p>测试签名工具类的所有功能</p>
+  </div>
+
+  <div class="test-section">
+    <h3>🔍 1. isSignatureParagraph() - 签名检测</h3>
+    <button onclick="testSignatureDetection()">运行测试</button>
+    <div id="detection-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h3>✂️ 2. extractCoreContent() - 提取核心内容</h3>
+    <button onclick="testExtractCoreContent()">运行测试</button>
+    <div id="extract-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h3>➕ 3. addSignature() - 添加签名</h3>
+    <button onclick="testAddSignature()">运行测试</button>
+    <div id="add-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h3>📊 4. extractSignatureInfo() - 提取签名信息</h3>
+    <button onclick="testExtractSignatureInfo()">运行测试</button>
+    <div id="info-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h3>🔧 5. 综合测试 - 实际场景</h3>
+    <button onclick="testRealWorldScenarios()">运行测试</button>
+    <div id="scenario-results"></div>
+  </div>
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="stat-value" id="total-tests">0</div>
+      <div class="stat-label">总测试数</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="passed-tests" style="color: #28a745;">0</div>
+      <div class="stat-label">通过</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" id="failed-tests" style="color: #dc3545;">0</div>
+      <div class="stat-label">失败</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { SignatureUtils } from '../src/utils/signatureUtils.ts';
+    
+    window.SignatureUtils = SignatureUtils;
+    window.testStats = { total: 0, passed: 0, failed: 0 };
+
+    // 更新统计
+    window.updateStats = function() {
+      document.getElementById('total-tests').textContent = window.testStats.total;
+      document.getElementById('passed-tests').textContent = window.testStats.passed;
+      document.getElementById('failed-tests').textContent = window.testStats.failed;
+    };
+
+    // 测试助手
+    window.runTest = function(name, testFn, container) {
+      window.testStats.total++;
+      try {
+        const result = testFn();
+        if (result) {
+          window.testStats.passed++;
+          container.innerHTML += `<div class="result success">✅ ${name}: 通过</div>`;
+        } else {
+          window.testStats.failed++;
+          container.innerHTML += `<div class="result error">❌ ${name}: 失败</div>`;
+        }
+      } catch (error) {
+        window.testStats.failed++;
+        container.innerHTML += `<div class="result error">❌ ${name}: 异常 - ${error.message}</div>`;
+      }
+      window.updateStats();
+    };
+
+    // 1. 签名检测测试
+    window.testSignatureDetection = function() {
+      const container = document.getElementById('detection-results');
+      container.innerHTML = '';
+
+      const testCases = [
+        ['4DNote 创建签名', '由 🔮 4DNote 创建于 2025-12-16 10:00:00', true],
+        ['Outlook 创建签名', '由 📧 Outlook 创建于 2025-12-16 10:00:00', true],
+        ['4DNote 编辑签名', '由 🔮 4DNote 最后修改于 2025-12-16 10:00:00', true],
+        ['Outlook 编辑签名', '由 📧 Outlook 编辑于 2025-12-16 10:00:00', true],
+        ['分隔线', '---', false],  // 单独的分隔线不是签名
+        ['普通文本', '这是普通内容', false],
+        ['空文本', '', false],
+        ['包含"创建于"但格式不对', '我在创建于 2025-12-16', false]
+      ];
+
+      testCases.forEach(([name, text, expected]) => {
+        window.runTest(
+          name,
+          () => SignatureUtils.isSignatureParagraph(text) === expected,
+          container
+        );
+      });
+    };
+
+    // 2. 提取核心内容测试
+    window.testExtractCoreContent = function() {
+      const container = document.getElementById('extract-results');
+      container.innerHTML = '';
+
+      const testCases = [
+        [
+          '移除 4DNote 签名',
+          '核心内容\n\n---\n由 🔮 4DNote 创建于 2025-12-16 10:00:00',
+          '核心内容'
+        ],
+        [
+          '移除 Outlook 签名',
+          '重要事件\n\n---\n由 📧 Outlook 创建于 2025-12-16 10:00:00',
+          '重要事件'
+        ],
+        [
+          '移除双重签名',
+          '内容\n\n---\n由 🔮 4DNote 创建于 2025-12-16 10:00:00\n由 📧 Outlook 最后修改于 2025-12-16 11:00:00',
+          '内容'
+        ],
+        [
+          '无签名内容',
+          '纯文本内容',
+          '纯文本内容'
+        ],
+        [
+          '空内容',
+          '',
+          ''
+        ]
+      ];
+
+      testCases.forEach(([name, input, expected]) => {
+        window.runTest(
+          name,
+          () => SignatureUtils.extractCoreContent(input).trim() === expected.trim(),
+          container
+        );
+      });
+    };
+
+    // 3. 添加签名测试
+    window.testAddSignature = function() {
+      const container = document.getElementById('add-results');
+      container.innerHTML = '';
+
+      // 测试 1: 添加 4DNote 创建签名
+      window.runTest(
+        '添加 4DNote 创建签名',
+        () => {
+          const result = SignatureUtils.addSignature('核心内容', {
+            createdAt: '2025-12-16 10:00:00',
+            fourDNoteSource: true
+          });
+          return result.includes('由 🔮 4DNote 创建于 2025-12-16 10:00:00');
+        },
+        container
+      );
+
+      // 测试 2: 添加 Outlook 创建签名
+      window.runTest(
+        '添加 Outlook 创建签名',
+        () => {
+          const result = SignatureUtils.addSignature('核心内容', {
+            createdAt: '2025-12-16 10:00:00',
+            source: 'outlook'
+          });
+          return result.includes('由 📧 Outlook 创建于 2025-12-16 10:00:00');
+        },
+        container
+      );
+
+      // 测试 3: 不重复添加签名
+      window.runTest(
+        '不重复添加签名',
+        () => {
+          const withSignature = '核心内容\n\n---\n由 🔮 4DNote 创建于 2025-12-16 10:00:00';
+          const result = SignatureUtils.addSignature(withSignature, {
+            createdAt: '2025-12-16 10:00:00'
+          });
+          // 统计签名出现次数
+          const matches = result.match(/由\s+🔮\s*4DNote\s*创建于/g);
+          return matches && matches.length === 1; // 只有一个签名
+        },
+        container
+      );
+    };
+
+    // 4. 提取签名信息测试
+    window.testExtractSignatureInfo = function() {
+      const container = document.getElementById('info-results');
+      container.innerHTML = '';
+
+      // 测试 1: 提取 4DNote 签名信息
+      window.runTest(
+        '提取 4DNote 签名信息',
+        () => {
+          const content = '内容\n\n---\n由 🔮 4DNote 创建于 2025-12-16 10:00:00';
+          const info = SignatureUtils.extractSignatureInfo(content);
+          return info.createdAt === '2025-12-16 10:00:00' && info.fourDNoteSource === true;
+        },
+        container
+      );
+
+      // 测试 2: 提取 Outlook 签名信息
+      window.runTest(
+        '提取 Outlook 签名信息',
+        () => {
+          const content = '内容\n\n---\n由 📧 Outlook 创建于 2025-12-16 10:00:00\n由 📧 Outlook 最后修改于 2025-12-16 11:00:00';
+          const info = SignatureUtils.extractSignatureInfo(content);
+          return info.createdAt === '2025-12-16 10:00:00' && 
+                 info.updatedAt === '2025-12-16 11:00:00' && 
+                 info.fourDNoteSource === false && 
+                 info.source === 'outlook';
+        },
+        container
+      );
+    };
+
+    // 5. 实际场景测试
+    window.testRealWorldScenarios = function() {
+      const container = document.getElementById('scenario-results');
+      container.innerHTML = '';
+
+      // 场景 1: 创建事件 → 添加签名 → 提取核心内容
+      window.runTest(
+        '场景 1: 创建→签名→提取',
+        () => {
+          const original = '这是一个重要的会议记录';
+          const withSignature = SignatureUtils.addSignature(original, {
+            createdAt: '2025-12-16 10:00:00',
+            fourDNoteSource: true
+          });
+          const extracted = SignatureUtils.extractCoreContent(withSignature);
+          return extracted.trim() === original.trim();
+        },
+        container
+      );
+
+      // 场景 2: IndexMap 轮询不重复添加签名
+      window.runTest(
+        '场景 2: IndexMap 轮询不重复',
+        () => {
+          let content = '会议内容';
+          // 模拟轮询 10 次
+          for (let i = 0; i < 10; i++) {
+            content = SignatureUtils.addSignature(content, {
+              createdAt: '2025-12-16 10:00:00',
+              fourDNoteSource: true
+            });
+          }
+          // 统计签名出现次数
+          const matches = content.match(/由\s+🔮\s*4DNote\s*创建于/g);
+          return matches && matches.length === 1;
+        },
+        container
+      );
+
+      // 场景 3: Outlook 同步更新签名
+      window.runTest(
+        '场景 3: Outlook 同步更新',
+        () => {
+          const original = '核心内容';
+          const withSignature = SignatureUtils.addSignature(original, {
+            createdAt: '2025-12-16 10:00:00',
+            updatedAt: '2025-12-16 11:00:00',
+            source: 'outlook',
+            lastModifiedSource: 'outlook'
+          });
+          // 检查是否包含 Outlook 签名
+          return withSignature.includes('由 📧 Outlook 创建于 2025-12-16 10:00:00') &&
+                 withSignature.includes('最后修改于 2025-12-16 11:00:00');
+        },
+        container
+      );
+
+      // 场景 4: 前端签名检测
+      window.runTest(
+        '场景 4: 前端签名隐藏',
+        () => {
+          const paragraphs = [
+            '这是正常段落',
+            '---',  // 分隔线不是签名
+            '由 🔮 4DNote 创建于 2025-12-16 10:00:00',  // 这是签名
+            '这是另一个正常段落'
+          ];
+          const visibleParagraphs = paragraphs.filter(p => !SignatureUtils.isSignatureParagraph(p));
+          // 应该是 3 个：两个正常段落 + 分隔线
+          return visibleParagraphs.length === 3 && 
+                 visibleParagraphs.includes('---') &&
+                 !visibleParagraphs.includes('由 🔮 4DNote 创建于 2025-12-16 10:00:00');
+        },
+        container
+      );
+    };
+
+    console.log('✅ SignatureUtils 测试页面已加载');
+  </script>
+</body>
+</html>

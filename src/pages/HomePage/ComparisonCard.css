@@ -1,0 +1,179 @@
+/* ComparisonCard - 对比统计卡片样式 */
+
+.comparison-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 对比区块 */
+.comparison-section {
+  padding: 16px;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.comparison-section.current {
+  background: linear-gradient(135deg, #e6f7ff 0%, #f0f8ff 100%);
+  border: 2px solid #1890ff;
+}
+
+.comparison-section.compare {
+  background: #f5f5f5;
+  border: 2px solid #d9d9d9;
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.section-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.section-badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  background: #1890ff;
+  color: white;
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.compare-badge {
+  background: #8c8c8c;
+}
+
+.section-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #333;
+  line-height: 1.2;
+  margin-bottom: 4px;
+}
+
+.section-meta {
+  font-size: 12px;
+  color: #999;
+}
+
+/* 对比箭头 */
+.comparison-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+.arrow-indicator {
+  font-size: 36px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.arrow-indicator.up {
+  color: #52c41a;
+}
+
+.arrow-indicator.down {
+  color: #ff4d4f;
+}
+
+.arrow-indicator.same {
+  color: #8c8c8c;
+}
+
+.change-percentage {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.change-percentage.up {
+  color: #52c41a;
+}
+
+.change-percentage.down {
+  color: #ff4d4f;
+}
+
+.change-percentage.same {
+  color: #8c8c8c;
+}
+
+/* 进度条对比 */
+.comparison-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: white;
+  border-radius: 8px;
+  border: 1px solid #e8e8e8;
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bar-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+  min-width: 50px;
+}
+
+.bar-container {
+  flex: 1;
+  height: 24px;
+  background: #f0f0f0;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 12px;
+  transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+}
+
+.bar-fill.current {
+  background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+}
+
+.bar-fill.compare {
+  background: linear-gradient(90deg, #8c8c8c 0%, #bfbfbf 100%);
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .section-value {
+    font-size: 28px;
+  }
+
+  .arrow-indicator {
+    font-size: 32px;
+  }
+
+  .change-percentage {
+    font-size: 18px;
+  }
+
+  .bar-label {
+    min-width: 40px;
+    font-size: 12px;
+  }
+
+  .bar-container {
+    height: 20px;
+  }
+}

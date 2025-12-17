@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>清空 EventHistory 数据库</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #e91e63;
+      padding-bottom: 10px;
+    }
+    .warning {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .success {
+      background: #d4edda;
+      border-left: 4px solid #28a745;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    .error {
+      background: #f8d7da;
+      border-left: 4px solid #dc3545;
+      padding: 15px;
+      margin: 20px 0;
+    }
+    button {
+      background: #e91e63;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      font-size: 16px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #c2185b;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    .stats {
+      background: #e3f2fd;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 20px 0;
+    }
+    .stats-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #ddd;
+    }
+    .stats-item:last-child {
+      border-bottom: none;
+    }
+    .stats-value {
+      font-weight: bold;
+      color: #1976d2;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🧹 EventHistory 数据库清理工具</h1>
+    
+    <div class="warning">
+      <strong>⚠️ 警告：</strong>此操作将永久删除所有 EventHistory 记录，无法恢复！
+    </div>
+
+    <div id="stats" class="stats" style="display: none;">
+      <h3>📊 当前统计</h3>
+      <div id="statsContent"></div>
+    </div>
+
+    <div>
+      <button onclick="checkStats()">📊 检查当前记录数</button>
+      <button onclick="cleanupEventHistory()" style="background: #dc3545;">🗑️ 清空 EventHistory</button>
+      <button onclick="vacuumDatabase()">💾 释放磁盘空间 (VACUUM)</button>
+    </div>
+
+    <div id="message"></div>
+
+    <h3>📖 使用说明</h3>
+    <ol>
+      <li>点击"检查当前记录数"查看数据库状态</li>
+      <li>确认无误后，点击"清空 EventHistory"</li>
+      <li>清空后，点击"释放磁盘空间"优化数据库</li>
+    </ol>
+
+    <h3>🔧 手动执行 SQL（可选）</h3>
+    <p>如果上述按钮无法使用，请打开浏览器开发者工具（F12），在 Console 中执行：</p>
+    <pre>
+// 打开 IndexedDB
+const request = indexedDB.open('4DNoteDB', 3);
+request.onsuccess = (event) => {
+  const db = event.target.result;
+  console.log('✅ 数据库已打开');
+  console.log('📋 Object Stores:', Array.from(db.objectStoreNames));
+  
+  // 清空 event_history
+  const tx = db.transaction(['event_history'], 'readwrite');
+  const store = tx.objectStore('event_history');
+  const clearRequest = store.clear();
+  
+  clearRequest.onsuccess = () => {
+    console.log('✅ EventHistory 已清空');
+  };
+};
+    </pre>
+  </div>
+
+  <script>
+    let db = null;
+
+    // 初始化数据库连接
+    async function initDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open('4DNoteDB', 3);
+        
+        request.onerror = () => {
+          showMessage('❌ 无法打开数据库: ' + request.error, 'error');
+          reject(request.error);
+        };
+        
+        request.onsuccess = (event) => {
+          db = event.target.result;
+          console.log('✅ 数据库连接成功');
+          console.log('📋 可用的 Object Stores:', Array.from(db.objectStoreNames));
+          resolve(db);
+        };
+        
+        request.onupgradeneeded = (event) => {
+          console.log('⚠️ 数据库需要升级');
+        };
+      });
+    }
+
+    // 检查统计信息
+    async function checkStats() {
+      try {
+        if (!db) await initDatabase();
+        
+        const tx = db.transaction(['event_history'], 'readonly');
+        const store = tx.objectStore('event_history');
+        const countRequest = store.count();
+        
+        countRequest.onsuccess = () => {
+          const count = countRequest.result;
+          
+          const statsHtml = `
+            <div class="stats-item">
+              <span>总记录数：</span>
+              <span class="stats-value">${count.toLocaleString()} 条</span>
+            </div>
+            <div class="stats-item">
+              <span>数据库名称：</span>
+              <span class="stats-value">4DNoteDB (IndexedDB v3)</span>
+            </div>
+            <div class="stats-item">
+              <span>Object Store：</span>
+              <span class="stats-value">event_history</span>
+            </div>
+          `;
+          
+          document.getElementById('statsContent').innerHTML = statsHtml;
+          document.getElementById('stats').style.display = 'block';
+          
+          showMessage(`📊 当前有 ${count.toLocaleString()} 条 EventHistory 记录`, 'success');
+        };
+        
+        countRequest.onerror = () => {
+          showMessage('❌ 无法读取记录数', 'error');
+        };
+        
+      } catch (error) {
+        showMessage('❌ 检查失败: ' + error.message, 'error');
+        console.error(error);
+      }
+    }
+
+    // 清空 EventHistory
+    async function cleanupEventHistory() {
+      if (!confirm('⚠️ 确认要清空所有 EventHistory 记录吗？此操作无法撤销！')) {
+        return;
+      }
+      
+      try {
+        if (!db) await initDatabase();
+        
+        const tx = db.transaction(['event_history'], 'readwrite');
+        const store = tx.objectStore('event_history');
+        const clearRequest = store.clear();
+        
+        clearRequest.onsuccess = () => {
+          showMessage('✅ EventHistory 已成功清空！', 'success');
+          checkStats(); // 重新检查统计
+        };
+        
+        clearRequest.onerror = () => {
+          showMessage('❌ 清空失败', 'error');
+        };
+        
+      } catch (error) {
+        showMessage('❌ 清空失败: ' + error.message, 'error');
+        console.error(error);
+      }
+    }
+
+    // VACUUM 数据库（IndexedDB 不需要此操作）
+    async function vacuumDatabase() {
+      showMessage('ℹ️ IndexedDB 会自动管理空间，无需手动 VACUUM', 'success');
+    }
+
+    // 显示消息
+    function showMessage(text, type = 'success') {
+      const messageDiv = document.getElementById('message');
+      messageDiv.className = type;
+      messageDiv.innerHTML = `<strong>${text}</strong>`;
+      messageDiv.style.display = 'block';
+      
+      if (type === 'success') {
+        setTimeout(() => {
+          messageDiv.style.display = 'none';
+        }, 5000);
+      }
+    }
+
+    // 页面加载时初始化
+    window.addEventListener('load', () => {
+      initDatabase().then(() => {
+        console.log('✅ 清理工具已就绪');
+      }).catch((error) => {
+        showMessage('❌ 初始化失败: ' + error.message, 'error');
+      });
+    });
+  </script>
+</body>
+</html>

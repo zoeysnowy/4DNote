@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>标签页设计对比测试</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      text-align: center;
+      color: white;
+      margin-bottom: 40px;
+      font-size: 32px;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .design-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+      gap: 30px;
+      margin-bottom: 40px;
+    }
+
+    .design-card {
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+    }
+
+    .design-title {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #333;
+    }
+
+    .design-subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 20px;
+    }
+
+    .design-demo {
+      background: #f8f9fa;
+      border-radius: 12px;
+      padding: 20px;
+      min-height: 300px;
+    }
+
+    /* ========== 当前设计（原始版本）========== */
+    .current-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .current-tab {
+      padding: 12px 20px;
+      background: #e5e5e5;
+      border-radius: 12px 12px 0 0;
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .current-tab.active {
+      background: white;
+      color: #333;
+      border-left: 4px solid #6c5ce7;
+    }
+
+    .current-content {
+      background: white;
+      padding: 24px;
+      border-radius: 0 12px 12px 12px;
+      min-height: 200px;
+    }
+
+    /* ========== 方案一：胶囊风格 ========== */
+    .capsule-container {
+      padding: 4px;
+      background: #f1f2f6;
+      border-radius: 12px;
+      display: inline-flex;
+      margin-bottom: 16px;
+    }
+
+    .capsule-tab {
+      padding: 10px 20px;
+      border-radius: 8px;
+      color: #666;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      font-weight: 500;
+    }
+
+    .capsule-tab:hover:not(.active) {
+      color: #333;
+      background: rgba(255,255,255,0.5);
+    }
+
+    .capsule-tab.active {
+      background: white;
+      color: #000;
+      font-weight: 600;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    }
+
+    .capsule-content {
+      background: white;
+      padding: 24px;
+      border-radius: 12px;
+      min-height: 200px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+
+    /* ========== 方案二：Chrome/Notion 风格 ========== */
+    .chrome-tabs-wrapper {
+      position: relative;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: -1px;
+    }
+
+    .chrome-tabs {
+      display: flex;
+      gap: 4px;
+      padding-left: 8px;
+    }
+
+    .chrome-tab {
+      padding: 12px 20px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-bottom: none;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      position: relative;
+      font-weight: 500;
+    }
+
+    .chrome-tab:hover:not(.active) {
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    .chrome-tab.active {
+      background: white;
+      color: #333;
+      border-color: #e0e0e0;
+      border-bottom-color: white;
+      border-top: 2px solid #6c5ce7;
+      padding-top: 10px;
+      font-weight: 600;
+    }
+
+    .chrome-content {
+      background: white;
+      padding: 24px;
+      border: 1px solid #e0e0e0;
+      border-top: none;
+      border-radius: 0 0 12px 12px;
+      min-height: 200px;
+    }
+
+    /* ========== 方案三：极简文字风格 ========== */
+    .minimal-tabs {
+      display: flex;
+      gap: 32px;
+      border-bottom: 1px solid #e0e0e0;
+      margin-bottom: 24px;
+    }
+
+    .minimal-tab {
+      padding: 12px 4px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      color: #888;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+      font-weight: 500;
+      margin-bottom: -1px;
+    }
+
+    .minimal-tab:hover:not(.active) {
+      color: #666;
+    }
+
+    .minimal-tab.active {
+      color: #6c5ce7;
+      border-bottom-color: #6c5ce7;
+      font-weight: 600;
+    }
+
+    .minimal-content {
+      padding: 0 4px;
+      min-height: 200px;
+    }
+
+    /* ========== 速效救心丸版本 ========== */
+    .quick-fix-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 0;
+    }
+
+    .quick-fix-tab {
+      padding: 12px 24px;
+      background: #e5e5e5;
+      border-radius: 12px 12px 0 0;
+      cursor: pointer;
+      color: #666;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: all 0.2s;
+      font-weight: 500;
+    }
+
+    .quick-fix-tab:hover:not(.active) {
+      background: #d5d5d5;
+    }
+
+    .quick-fix-tab.active {
+      background: white;
+      color: #6c5ce7;
+      font-weight: 600;
+      border-radius: 12px 12px 0 0;
+      padding: 12px 24px;
+    }
+
+    .quick-fix-tab .emoji {
+      font-size: 1.1em;
+    }
+
+    .quick-fix-content {
+      background: white;
+      padding: 24px;
+      border-radius: 0 12px 12px 12px;
+      min-height: 200px;
+    }
+
+    /* 通用内容样式 */
+    .demo-content {
+      color: #666;
+      line-height: 1.6;
+    }
+
+    .demo-content h3 {
+      margin-bottom: 12px;
+      color: #333;
+      font-size: 16px;
+    }
+
+    .demo-content p {
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: #6c5ce7;
+      color: white;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    /* 响应式 */
+    @media (max-width: 768px) {
+      .design-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .info-box {
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #856404;
+    }
+
+    .info-box strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #533f03;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎨 TimeLog 标签页设计方案对比</h1>
+
+    <div class="design-grid">
+      <!-- 当前设计 -->
+      <div class="design-card">
+        <div class="design-title">❌ 当前设计（需要改进）</div>
+        <div class="design-subtitle">问题：紫色竖条突兀、层次感弱</div>
+        <div class="design-demo">
+          <div class="current-tabs" id="current-tabs">
+            <div class="current-tab active" data-tab="current-1">
+              <span class="emoji">📝</span>
+              <span>时光日志</span>
+            </div>
+            <div class="current-tab" data-tab="current-2">
+              <span class="emoji">👿</span>
+              <span>测试事件</span>
+            </div>
+          </div>
+          <div class="current-content">
+            <div class="demo-content" id="current-content-1">
+              <h3>当前设计的问题</h3>
+              <p>• 紫色竖条放在顶部标签很突兀</p>
+              <p>• 未选中标签灰底色太接近背景</p>
+              <p>• 看起来像"禁用"而非"待选"</p>
+              <p>• 整体缺乏现代感和层次</p>
+            </div>
+            <div class="demo-content" id="current-content-2" style="display:none;">
+              <h3>测试事件内容</h3>
+              <p>点击标签可以切换内容</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案一：胶囊风格 -->
+      <div class="design-card">
+        <div class="design-title">✨ 方案一：胶囊风格（推荐）</div>
+        <div class="design-subtitle">现代感强，类似 Linear、Arc 浏览器</div>
+        <div class="design-demo">
+          <div class="capsule-container" id="capsule-tabs">
+            <button class="capsule-tab active" data-tab="capsule-1">
+              <span class="emoji">📝</span>
+              <span>时光日志</span>
+            </button>
+            <button class="capsule-tab" data-tab="capsule-2">
+              <span class="emoji">👿</span>
+              <span>测试事件</span>
+            </button>
+          </div>
+          <div class="capsule-content">
+            <div class="demo-content" id="capsule-content-1">
+              <span class="badge">最推荐</span>
+              <h3>设计特点</h3>
+              <p>✓ 无边框设计，整体简洁</p>
+              <p>✓ 选中态有轻微阴影，层次分明</p>
+              <p>✓ 胶囊悬浮效果，现代感强</p>
+              <p>✓ 适合内容密集的界面</p>
+            </div>
+            <div class="demo-content" id="capsule-content-2" style="display:none;">
+              <h3>测试事件内容</h3>
+              <p>注意标签切换的丝滑动画效果</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案二：Chrome/Notion 风格 -->
+      <div class="design-card">
+        <div class="design-title">🌟 方案二：Chrome/Notion 风格</div>
+        <div class="design-subtitle">经典耐看，与内容融为一体</div>
+        <div class="design-demo">
+          <div class="chrome-tabs-wrapper">
+            <div class="chrome-tabs" id="chrome-tabs">
+              <div class="chrome-tab active" data-tab="chrome-1">
+                <span class="emoji">📝</span>
+                <span>时光日志</span>
+              </div>
+              <div class="chrome-tab" data-tab="chrome-2">
+                <span class="emoji">👿</span>
+                <span>测试事件</span>
+              </div>
+            </div>
+          </div>
+          <div class="chrome-content">
+            <div class="demo-content" id="chrome-content-1">
+              <span class="badge">经典款</span>
+              <h3>设计特点</h3>
+              <p>✓ 顶部紫色横条替代竖条</p>
+              <p>✓ 标签与内容"长在一起"</p>
+              <p>✓ 底部边框融合，整体感强</p>
+              <p>✓ 适合传统桌面应用</p>
+            </div>
+            <div class="demo-content" id="chrome-content-2" style="display:none;">
+              <h3>测试事件内容</h3>
+              <p>这种设计在浏览器和传统软件中很常见</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 方案三：极简文字风格 -->
+      <div class="design-card">
+        <div class="design-title">💎 方案三：极简文字风格</div>
+        <div class="design-subtitle">干净透气，内容为王</div>
+        <div class="design-demo">
+          <div class="minimal-tabs" id="minimal-tabs">
+            <button class="minimal-tab active" data-tab="minimal-1">
+              <span class="emoji">📝</span>
+              <span>时光日志</span>
+            </button>
+            <button class="minimal-tab" data-tab="minimal-2">
+              <span class="emoji">👿</span>
+              <span>测试事件</span>
+            </button>
+          </div>
+          <div class="minimal-content">
+            <div class="demo-content" id="minimal-content-1">
+              <span class="badge">最简洁</span>
+              <h3>设计特点</h3>
+              <p>✓ 完全去框，只保留下划线</p>
+              <p>✓ 选中文字变紫色加粗</p>
+              <p>✓ 呼吸感强，视觉不拥挤</p>
+              <p>✓ 适合内容复杂的页面</p>
+            </div>
+            <div class="demo-content" id="minimal-content-2" style="display:none;">
+              <h3>测试事件内容</h3>
+              <p>极简设计让内容成为焦点</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 速效救心丸 -->
+      <div class="design-card">
+        <div class="design-title">💊 速效救心丸版本</div>
+        <div class="design-subtitle">在当前基础上微调，快速见效</div>
+        <div class="design-demo">
+          <div class="quick-fix-tabs" id="quick-fix-tabs">
+            <div class="quick-fix-tab active" data-tab="quick-1">
+              <span class="emoji">📝</span>
+              <span>时光日志</span>
+            </div>
+            <div class="quick-fix-tab" data-tab="quick-2">
+              <span class="emoji">👿</span>
+              <span>测试事件</span>
+            </div>
+          </div>
+          <div class="quick-fix-content">
+            <div class="demo-content" id="quick-fix-content-1">
+              <span class="badge">快速改进</span>
+              <h3>改动点</h3>
+              <p>✓ 删除紫色竖条</p>
+              <p>✓ 文字直接用紫色</p>
+              <p>✓ 增加内边距让标签呼吸</p>
+              <p>✓ Emoji 缩小到 1.1em</p>
+            </div>
+            <div class="demo-content" id="quick-fix-content-2" style="display:none;">
+              <h3>测试事件内容</h3>
+              <p>这是最小改动方案，快速见效</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="design-card">
+      <div class="info-box">
+        <strong>💡 选择建议：</strong>
+        • 如果追求现代感和品质感 → 选<strong>方案一（胶囊风格）</strong><br>
+        • 如果希望稳重、经典 → 选<strong>方案二（Chrome 风格）</strong><br>
+        • 如果内容很多需要极简 → 选<strong>方案三（文字风格）</strong><br>
+        • 如果时间紧急只想快速改善 → 选<strong>速效救心丸</strong>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // 通用标签切换函数
+    function setupTabs(containerId, contentIdPrefix) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+
+      const tabs = container.querySelectorAll('[data-tab]');
+      
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          const targetTab = tab.getAttribute('data-tab');
+          
+          // 更新标签状态
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+          
+          // 更新内容显示
+          const contentElements = document.querySelectorAll(`[id^="${contentIdPrefix}"]`);
+          contentElements.forEach(content => {
+            content.style.display = 'none';
+          });
+          
+          const targetContent = document.getElementById(`${contentIdPrefix}-${targetTab.split('-')[1]}`);
+          if (targetContent) {
+            targetContent.style.display = 'block';
+          }
+        });
+      });
+    }
+
+    // 初始化所有标签页
+    setupTabs('current-tabs', 'current-content');
+    setupTabs('capsule-tabs', 'capsule-content');
+    setupTabs('chrome-tabs', 'chrome-content');
+    setupTabs('minimal-tabs', 'minimal-content');
+    setupTabs('quick-fix-tabs', 'quick-fix-content');
+  </script>
+</body>
+</html>

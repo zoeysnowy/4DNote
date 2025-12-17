@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>事件诊断工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 32px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #333;
+      margin-bottom: 16px;
+      font-size: 20px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 8px;
+    }
+
+    .input-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #555;
+      font-weight: 500;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .output {
+      background: #f8f9fa;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+
+    .error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+
+    .info {
+      background: #d1ecf1;
+      border-color: #17a2b8;
+      color: #0c5460;
+    }
+
+    .log-entry {
+      padding: 8px;
+      margin: 4px 0;
+      border-left: 4px solid #999;
+      background: white;
+      border-radius: 4px;
+    }
+
+    .log-error {
+      border-left-color: #dc3545;
+      background: #fff5f5;
+    }
+
+    .log-warn {
+      border-left-color: #ffc107;
+      background: #fffef5;
+    }
+
+    .log-info {
+      border-left-color: #17a2b8;
+      background: #f5fbfc;
+    }
+
+    .log-success {
+      border-left-color: #28a745;
+      background: #f5fdf7;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 事件处理诊断工具</h1>
+
+    <div class="section">
+      <h2>输入事件 ID 或标题</h2>
+      <div class="input-group">
+        <label>事件 ID（可选）:</label>
+        <input type="text" id="eventId" placeholder="例如: evt-xxx">
+      </div>
+      <div class="input-group">
+        <label>事件标题（可选）:</label>
+        <input type="text" id="eventTitle" placeholder="例如: 4DNote开发">
+      </div>
+      <button onclick="diagnoseEvent()">诊断事件</button>
+      <button onclick="checkConsoleErrors()">检查控制台错误</button>
+      <button onclick="clearOutput()">清空</button>
+      <div id="output" class="output" style="display: none;"></div>
+    </div>
+
+    <div class="section">
+      <h2>实时日志监控</h2>
+      <button onclick="startLogCapture()">开始捕获日志</button>
+      <button onclick="stopLogCapture()">停止捕获</button>
+      <button onclick="clearLogs()">清空日志</button>
+      <div id="logOutput" class="output" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    let logCapturing = false;
+    let capturedLogs = [];
+    const originalConsole = {
+      log: console.log,
+      warn: console.warn,
+      error: console.error,
+      info: console.info
+    };
+
+    function startLogCapture() {
+      logCapturing = true;
+      capturedLogs = [];
+      const logOutput = document.getElementById('logOutput');
+      logOutput.style.display = 'block';
+      logOutput.textContent = '📡 开始捕获日志...\n\n';
+
+      // 拦截 console 方法
+      console.log = function(...args) {
+        originalConsole.log.apply(console, args);
+        if (logCapturing) {
+          addLog('info', args);
+        }
+      };
+
+      console.warn = function(...args) {
+        originalConsole.warn.apply(console, args);
+        if (logCapturing) {
+          addLog('warn', args);
+        }
+      };
+
+      console.error = function(...args) {
+        originalConsole.error.apply(console, args);
+        if (logCapturing) {
+          addLog('error', args);
+        }
+      };
+    }
+
+    function stopLogCapture() {
+      logCapturing = false;
+      // 恢复原始 console
+      console.log = originalConsole.log;
+      console.warn = originalConsole.warn;
+      console.error = originalConsole.error;
+      
+      const logOutput = document.getElementById('logOutput');
+      logOutput.textContent = '⏸️ 停止捕获\n\n' + logOutput.textContent;
+    }
+
+    function addLog(type, args) {
+      const timestamp = new Date().toLocaleTimeString('zh-CN');
+      const message = args.map(arg => {
+        if (typeof arg === 'object') {
+          return JSON.stringify(arg, null, 2);
+        }
+        return String(arg);
+      }).join(' ');
+
+      capturedLogs.push({ type, timestamp, message });
+
+      const logOutput = document.getElementById('logOutput');
+      const logDiv = document.createElement('div');
+      logDiv.className = `log-entry log-${type}`;
+      
+      let prefix = '';
+      switch(type) {
+        case 'error': prefix = '❌'; break;
+        case 'warn': prefix = '⚠️'; break;
+        case 'info': prefix = 'ℹ️'; break;
+        default: prefix = '✅';
+      }
+      
+      logDiv.textContent = `[${timestamp}] ${prefix} ${message}`;
+      logOutput.appendChild(logDiv);
+      
+      // 自动滚动到底部
+      logOutput.scrollTop = logOutput.scrollHeight;
+    }
+
+    function clearLogs() {
+      capturedLogs = [];
+      const logOutput = document.getElementById('logOutput');
+      logOutput.style.display = 'none';
+      logOutput.innerHTML = '';
+    }
+
+    async function diagnoseEvent() {
+      const eventId = document.getElementById('eventId').value.trim();
+      const eventTitle = document.getElementById('eventTitle').value.trim();
+      const output = document.getElementById('output');
+      
+      output.style.display = 'block';
+      output.className = 'output info';
+      output.textContent = '🔍 正在诊断...\n';
+
+      try {
+        // 尝试从 IndexedDB 读取事件
+        const db = await openDB();
+        let event = null;
+
+        if (eventId) {
+          event = await getEventById(db, eventId);
+        } else if (eventTitle) {
+          event = await getEventByTitle(db, eventTitle);
+        }
+
+        if (!event) {
+          output.className = 'output warning';
+          output.textContent = '⚠️ 未找到事件\n\n';
+          output.textContent += `搜索条件:\n`;
+          if (eventId) output.textContent += `  ID: ${eventId}\n`;
+          if (eventTitle) output.textContent += `  标题: ${eventTitle}\n`;
+          return;
+        }
+
+        // 分析事件数据
+        let report = `✅ 找到事件\n\n`;
+        report += `${'='.repeat(60)}\n`;
+        report += `基本信息\n`;
+        report += `${'='.repeat(60)}\n`;
+        report += `ID: ${event.id}\n`;
+        report += `标题: ${typeof event.title === 'object' ? event.title.simpleTitle : event.title}\n`;
+        report += `来源: ${event.source || 'N/A'}\n`;
+        report += `创建时间: ${event.createdAt}\n`;
+        report += `更新时间: ${event.updatedAt}\n`;
+        report += `同步状态: ${event.syncStatus}\n\n`;
+
+        // 检查 eventlog
+        report += `${'='.repeat(60)}\n`;
+        report += `EventLog 检查\n`;
+        report += `${'='.repeat(60)}\n`;
+        
+        let eventlog = event.eventlog;
+        if (typeof eventlog === 'string') {
+          try {
+            eventlog = JSON.parse(eventlog);
+            report += `✅ eventlog 类型: string → 已解析为 object\n`;
+          } catch (e) {
+            report += `❌ eventlog 解析失败: ${e.message}\n`;
+          }
+        } else {
+          report += `✅ eventlog 类型: object\n`;
+        }
+
+        if (eventlog && eventlog.slateJson) {
+          let slateJson = eventlog.slateJson;
+          if (typeof slateJson === 'string') {
+            try {
+              slateJson = JSON.parse(slateJson);
+              report += `✅ slateJson 类型: string → 已解析为 array\n`;
+            } catch (e) {
+              report += `❌ slateJson 解析失败: ${e.message}\n`;
+            }
+          } else {
+            report += `✅ slateJson 类型: ${Array.isArray(slateJson) ? 'array' : typeof slateJson}\n`;
+          }
+
+          if (Array.isArray(slateJson)) {
+            report += `节点总数: ${slateJson.length}\n\n`;
+
+            // 分析每个节点
+            slateJson.forEach((node, index) => {
+              report += `  节点 ${index + 1}:\n`;
+              report += `    类型: ${node.type}\n`;
+              
+              if (node.createdAt) {
+                const date = new Date(node.createdAt);
+                report += `    ✅ createdAt: ${node.createdAt} (${date.toLocaleString('zh-CN')})\n`;
+              } else {
+                report += `    ⚠️ createdAt: 缺失（会回退到 Event.createdAt）\n`;
+              }
+
+              if (node.updatedAt) {
+                const date = new Date(node.updatedAt);
+                report += `    ✅ updatedAt: ${node.updatedAt} (${date.toLocaleString('zh-CN')})\n`;
+              }
+
+              if (node.children) {
+                const text = node.children.map(c => c.text || '').join('');
+                report += `    内容: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}\n`;
+              }
+              report += `\n`;
+            });
+          }
+        } else {
+          report += `❌ slateJson 缺失\n`;
+        }
+
+        // 检查 description
+        report += `\n${'='.repeat(60)}\n`;
+        report += `Description 检查\n`;
+        report += `${'='.repeat(60)}\n`;
+        if (event.description) {
+          report += `长度: ${event.description.length} 字符\n`;
+          report += `内容预览:\n${event.description.substring(0, 200)}\n`;
+          
+          // 检查是否包含签名
+          if (event.description.includes('由') && event.description.includes('创建于')) {
+            report += `\n✅ 包含签名\n`;
+          } else {
+            report += `\n⚠️ 未检测到签名\n`;
+          }
+        } else {
+          report += `⚠️ description 为空\n`;
+        }
+
+        // 模拟 EventNodeService 处理
+        report += `\n${'='.repeat(60)}\n`;
+        report += `EventNode 生成预测\n`;
+        report += `${'='.repeat(60)}\n`;
+
+        if (Array.isArray(slateJson)) {
+          let nodeCount = 0;
+          let hasBlockTimestamp = 0;
+          let needsFallback = 0;
+
+          slateJson.forEach(node => {
+            if (node.type === 'paragraph') {
+              const text = node.children?.map(c => c.text || '').join('').trim();
+              if (text) {
+                nodeCount++;
+                if (node.createdAt) {
+                  hasBlockTimestamp++;
+                } else {
+                  needsFallback++;
+                }
+              }
+            }
+          });
+
+          report += `可生成的 EventNode 数量: ${nodeCount}\n`;
+          report += `  - 有 Block-Level Timestamp: ${hasBlockTimestamp}\n`;
+          report += `  - 需要回退到 Event.createdAt: ${needsFallback}\n`;
+
+          if (needsFallback > 0 && !event.createdAt) {
+            report += `\n❌ 警告: 有 ${needsFallback} 个节点需要回退，但 Event.createdAt 缺失！\n`;
+          } else if (needsFallback > 0) {
+            report += `\n✅ P1 修复生效: ${needsFallback} 个节点将使用 Event.createdAt (${event.createdAt})\n`;
+          }
+        }
+
+        output.textContent = report;
+        output.className = 'output success';
+
+      } catch (error) {
+        output.className = 'output error';
+        output.textContent = `❌ 诊断失败:\n${error.message}\n\n${error.stack}`;
+      }
+    }
+
+    function checkConsoleErrors() {
+      const output = document.getElementById('output');
+      output.style.display = 'block';
+      
+      let report = `🔍 控制台错误检查\n\n`;
+      report += `请打开浏览器的开发者工具（F12），然后:\n\n`;
+      report += `1. 切换到 Console 标签\n`;
+      report += `2. 筛选 "Error" 和 "Warning"\n`;
+      report += `3. 查找包含以下关键词的日志:\n`;
+      report += `   - EventNodeService\n`;
+      report += `   - extractParagraphs\n`;
+      report += `   - syncNodesFromEvent\n`;
+      report += `   - Block-Level\n`;
+      report += `   - timestamp\n\n`;
+      report += `或者使用上方的 "实时日志监控" 功能捕获日志。\n`;
+      
+      output.textContent = report;
+      output.className = 'output info';
+    }
+
+    function clearOutput() {
+      document.getElementById('output').style.display = 'none';
+    }
+
+    // IndexedDB 工具函数
+    async function openDB() {
+      return new Promise((resolve, reject) => {
+        // 尝试打开数据库，不指定版本号（使用最新版本）
+        const request = indexedDB.open('4DNote');
+        request.onsuccess = () => {
+          const db = request.result;
+          console.log('✅ 打开数据库成功:', {
+            name: db.name,
+            version: db.version,
+            objectStoreNames: Array.from(db.objectStoreNames)
+          });
+          resolve(db);
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function findEventStore(db) {
+      const storeNames = Array.from(db.objectStoreNames);
+      console.log('📋 可用的 object stores:', storeNames);
+      
+      // 可能的事件存储名称
+      const possibleNames = ['events', 'Events', 'event', 'Event'];
+      
+      for (const name of possibleNames) {
+        if (storeNames.includes(name)) {
+          console.log('✅ 找到事件存储:', name);
+          return name;
+        }
+      }
+      
+      // 如果没找到，返回第一个包含 'event' 的
+      const eventStore = storeNames.find(name => name.toLowerCase().includes('event'));
+      if (eventStore) {
+        console.log('✅ 找到可能的事件存储:', eventStore);
+        return eventStore;
+      }
+      
+      throw new Error(`未找到事件存储。可用的存储: ${storeNames.join(', ')}`);
+    }
+
+    async function getEventById(db, id) {
+      const storeName = await findEventStore(db);
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.get(id);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    async function getEventByTitle(db, title) {
+      const storeName = await findEventStore(db);
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.openCursor();
+        
+        request.onsuccess = (e) => {
+          const cursor = e.target.result;
+          if (cursor) {
+            const event = cursor.value;
+            const eventTitle = typeof event.title === 'object' 
+              ? event.title.simpleTitle 
+              : event.title;
+            
+            if (eventTitle && eventTitle.includes(title)) {
+              resolve(event);
+              return;
+            }
+            cursor.continue();
+          } else {
+            resolve(null);
+          }
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    console.log('🚀 事件诊断工具已加载');
+    console.log('提示: 输入事件 ID 或标题，然后点击"诊断事件"按钮');
+  </script>
+</body>
+</html>

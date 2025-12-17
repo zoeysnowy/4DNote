@@ -1,0 +1,83 @@
+/* TodayStatsCard - 今日统计卡片样式 */
+.today-stats-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 主要指标区域 */
+.today-stats-primary {
+  text-align: center;
+  padding: 12px 0;
+}
+
+.stat-value-large {
+  font-size: 36px;
+  font-weight: 700;
+  color: #1890ff;
+  line-height: 1.2;
+  margin-bottom: 8px;
+}
+
+/* 次要指标区域 */
+.today-stats-secondary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+  border-top: 1px solid #f0f0f0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.stat-item {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 600;
+  color: #333333;
+  line-height: 1.2;
+  margin-bottom: 6px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #999999;
+  line-height: 1.2;
+}
+
+/* 进度条 */
+.today-stats-progress {
+  margin-top: 4px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .stat-value-large {
+    font-size: 28px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+  }
+
+  .today-stats-secondary {
+    gap: 8px;
+  }
+}

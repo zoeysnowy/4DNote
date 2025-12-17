@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>同步修复验证 - 快速测试</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      max-width: 1000px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .header {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    button {
+      background: #28a745;
+      color: white;
+      border: none;
+      padding: 15px 30px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px;
+      font-size: 16px;
+      font-weight: bold;
+    }
+    button:hover {
+      background: #218838;
+    }
+    .result {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .success {
+      border-left: 4px solid #28a745;
+      background: #d4edda;
+    }
+    .fail {
+      border-left: 4px solid #dc3545;
+      background: #f8d7da;
+    }
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-value {
+      font-size: 36px;
+      font-weight: bold;
+      color: #28a745;
+    }
+    .stat-label {
+      color: #666;
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>✅ 同步修复验证</h1>
+    <p>快速测试 normalizeEvent 和签名处理是否正常工作</p>
+  </div>
+
+  <div>
+    <button onclick="testNormalizeEventLog()">测试 normalizeEventLog</button>
+    <button onclick="testSignatureRemoval()">测试签名移除</button>
+    <button onclick="testFullWorkflow()">完整工作流测试</button>
+    <button onclick="checkRecentSyncedEvents()">检查最近同步事件</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script type="module">
+    import { EventService } from '../src/services/EventService.ts';
+    import { SignatureUtils } from '../src/utils/signatureUtils.ts';
+    import { storageManager } from '../src/services/storage/StorageManager.ts';
+
+    window.EventService = EventService;
+    window.SignatureUtils = SignatureUtils;
+    window.storageManager = storageManager;
+
+    function addResult(html) {
+      document.getElementById('results').innerHTML += html;
+    }
+
+    function clearResults() {
+      document.getElementById('results').innerHTML = '';
+    }
+
+    // 测试 1: normalizeEventLog 是否正确处理纯文本
+    window.testNormalizeEventLog = async function() {
+      clearResults();
+      addResult('<h3>测试 normalizeEventLog</h3>');
+
+      try {
+        // 测试用例 1: 纯文本（无时间戳）
+        const plainText = '这是一段会议记录';
+        const result1 = EventService['normalizeEventLog'](plainText);
+        
+        const slateJson1 = JSON.parse(result1.slateJson);
+        const hasBlockMeta1 = slateJson1.every(node => 
+          node.type !== 'paragraph' || (node.id && node.createdAt && node.updatedAt)
+        );
+
+        addResult(`
+          <div class="result ${hasBlockMeta1 ? 'success' : 'fail'}">
+            <strong>${hasBlockMeta1 ? '✅' : '❌'} 测试 1: 纯文本 → EventLog</strong>
+            <p>输入: "${plainText}"</p>
+            <p>Block-Level 元数据: ${hasBlockMeta1 ? '已添加' : '缺失'}</p>
+            <details>
+              <summary>查看 slateJson</summary>
+              <pre>${JSON.stringify(slateJson1, null, 2)}</pre>
+            </details>
+          </div>
+        `);
+
+        // 测试用例 2: 带时间戳的纯文本
+        const textWithTimestamp = '2025-12-07 01:30:06\n会议内容第一段\n\n2025-12-07 02:00:00\n会议内容第二段';
+        const result2 = EventService['normalizeEventLog'](textWithTimestamp);
+        
+        const slateJson2 = JSON.parse(result2.slateJson);
+        const hasTimestampParsed = slateJson2.every(node => 
+          node.type !== 'paragraph' || (node.createdAt && node.id)
+        );
+        const noTextTimestamp = !slateJson2.some(node => 
+          node.type === 'paragraph' && 
+          node.children?.[0]?.text?.match(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/)
+        );
+
+        addResult(`
+          <div class="result ${hasTimestampParsed && noTextTimestamp ? 'success' : 'fail'}">
+            <strong>${hasTimestampParsed && noTextTimestamp ? '✅' : '❌'} 测试 2: 带时间戳文本 → Block-Level</strong>
+            <p>时间戳解析: ${hasTimestampParsed ? '成功' : '失败'}</p>
+            <p>纯文本时间戳残留: ${noTextTimestamp ? '无' : '有（问题！）'}</p>
+            <details>
+              <summary>查看 slateJson</summary>
+              <pre>${JSON.stringify(slateJson2, null, 2)}</pre>
+            </details>
+          </div>
+        `);
+
+      } catch (error) {
+        addResult(`
+          <div class="result fail">
+            <strong>❌ 测试失败</strong>
+            <p>${error.message}</p>
+            <pre>${error.stack}</pre>
+          </div>
+        `);
+      }
+    };
+
+    // 测试 2: 签名移除
+    window.testSignatureRemoval = function() {
+      clearResults();
+      addResult('<h3>测试签名移除</h3>');
+
+      const testCases = [
+        {
+          input: '会议内容\n\n---\n由 🔮 4DNote 创建于 2025-12-04 02:47:50',
+          expected: '会议内容'
+        },
+        {
+          input: '重要事项\n\n---\n由 🔮 4DNote 创建于 2025-12-04 02:47:50\n由 📧 Outlook 最后编辑于 2025-12-15 00:21:54',
+          expected: '重要事项'
+        },
+        {
+          input: '无签名的内容',
+          expected: '无签名的内容'
+        }
+      ];
+
+      testCases.forEach((test, idx) => {
+        const result = SignatureUtils.extractCoreContent(test.input);
+        const success = result.trim() === test.expected.trim();
+
+        addResult(`
+          <div class="result ${success ? 'success' : 'fail'}">
+            <strong>${success ? '✅' : '❌'} 测试用例 ${idx + 1}</strong>
+            <p>输入长度: ${test.input.length} 字符</p>
+            <p>输出长度: ${result.length} 字符</p>
+            <p>预期: "${test.expected}"</p>
+            <p>实际: "${result}"</p>
+            <p>结果: ${success ? '通过' : '失败'}</p>
+          </div>
+        `);
+      });
+    };
+
+    // 测试 3: 完整工作流
+    window.testFullWorkflow = async function() {
+      clearResults();
+      addResult('<h3>完整工作流测试</h3>');
+      addResult('<p>模拟 Outlook 同步 → EventService.updateEvent → 验证结果</p>');
+
+      try {
+        // 1. 创建测试事件
+        const testEvent = await EventService.createEvent({
+          title: '测试事件 - 同步修复验证',
+          startTime: '2025-12-16 10:00:00',
+          endTime: '2025-12-16 11:00:00',
+          description: '初始内容'
+        });
+
+        addResult(`
+          <div class="result success">
+            <strong>✅ 步骤 1: 创建测试事件</strong>
+            <p>事件 ID: ${testEvent.id}</p>
+          </div>
+        `);
+
+        // 2. 模拟 Outlook 同步（传递纯文本）
+        const remoteCoreContent = '2025-12-07 01:30:06\nOutlook 同步的内容\n\n2025-12-07 02:00:00\n第二段内容';
+        
+        const updateResult = await EventService.updateEvent(
+          testEvent.id,
+          {
+            eventlog: remoteCoreContent  // ✅ 传递纯文本，不手动构造 slateJson
+          },
+          false,
+          { source: 'external-sync' }
+        );
+
+        if (!updateResult.success) {
+          throw new Error('更新失败: ' + updateResult.error);
+        }
+
+        const updatedEvent = updateResult.event;
+        
+        // 3. 验证 EventLog 结构
+        const eventlog = updatedEvent.eventlog;
+        const slateJson = typeof eventlog.slateJson === 'string' 
+          ? JSON.parse(eventlog.slateJson) 
+          : eventlog.slateJson;
+        
+        const hasBlockMeta = slateJson.every(node => 
+          node.type !== 'paragraph' || (node.id && node.createdAt && node.updatedAt)
+        );
+        
+        const noTextTimestamp = !slateJson.some(node => 
+          node.type === 'paragraph' && 
+          node.children?.[0]?.text?.match(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/)
+        );
+
+        addResult(`
+          <div class="result ${hasBlockMeta && noTextTimestamp ? 'success' : 'fail'}">
+            <strong>${hasBlockMeta && noTextTimestamp ? '✅' : '❌'} 步骤 2: 验证 EventLog 结构</strong>
+            <p>Block-Level 元数据: ${hasBlockMeta ? '✅ 完整' : '❌ 缺失'}</p>
+            <p>纯文本时间戳: ${noTextTimestamp ? '✅ 已清除' : '❌ 仍存在'}</p>
+            <details>
+              <summary>查看 slateJson</summary>
+              <pre>${JSON.stringify(slateJson, null, 2)}</pre>
+            </details>
+          </div>
+        `);
+
+        // 4. 验证签名处理
+        const description = updatedEvent.description || '';
+        const hasSignature = /由\s+(?:🔮|📧)\s*(?:4DNote|Outlook)\s*创建于/.test(description);
+        const coreContent = SignatureUtils.extractCoreContent(description);
+        const signatureRemoved = !coreContent.includes('由') && !coreContent.includes('创建于');
+
+        addResult(`
+          <div class="result ${hasSignature && signatureRemoved ? 'success' : 'fail'}">
+            <strong>${hasSignature && signatureRemoved ? '✅' : '❌'} 步骤 3: 验证签名处理</strong>
+            <p>description 包含签名: ${hasSignature ? '✅ 是' : '❌ 否'}</p>
+            <p>extractCoreContent 移除签名: ${signatureRemoved ? '✅ 成功' : '❌ 失败'}</p>
+            <details>
+              <summary>查看 description</summary>
+              <pre>${description}</pre>
+            </details>
+            <details>
+              <summary>查看核心内容</summary>
+              <pre>${coreContent}</pre>
+            </details>
+          </div>
+        `);
+
+        // 5. 清理测试事件
+        await EventService.deleteEvent(testEvent.id, true);
+        addResult(`
+          <div class="result success">
+            <strong>✅ 步骤 4: 清理测试事件</strong>
+            <p>测试完成，已删除测试事件</p>
+          </div>
+        `);
+
+      } catch (error) {
+        addResult(`
+          <div class="result fail">
+            <strong>❌ 工作流测试失败</strong>
+            <p>${error.message}</p>
+            <pre>${error.stack}</pre>
+          </div>
+        `);
+      }
+    };
+
+    // 测试 4: 检查最近同步的事件
+    window.checkRecentSyncedEvents = async function() {
+      clearResults();
+      addResult('<h3>检查最近同步的事件</h3>');
+
+      try {
+        const events = await storageManager.getAllEvents();
+        const syncedEvents = events
+          .filter(e => e.lastSyncTime)
+          .sort((a, b) => new Date(b.lastSyncTime) - new Date(a.lastSyncTime))
+          .slice(0, 5);
+
+        let totalChecked = 0;
+        let passedCount = 0;
+        let failedCount = 0;
+
+        syncedEvents.forEach((event, idx) => {
+          totalChecked++;
+          
+          try {
+            const slateJson = typeof event.eventlog?.slateJson === 'string'
+              ? JSON.parse(event.eventlog.slateJson)
+              : event.eventlog?.slateJson || [];
+            
+            const hasBlockMeta = slateJson.every(node => 
+              node.type !== 'paragraph' || (node.id && node.createdAt)
+            );
+            
+            const noTextTimestamp = !slateJson.some(node => 
+              node.type === 'paragraph' && 
+              node.children?.[0]?.text?.match(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/)
+            );
+
+            const passed = hasBlockMeta && noTextTimestamp;
+            if (passed) passedCount++;
+            else failedCount++;
+
+            addResult(`
+              <div class="result ${passed ? 'success' : 'fail'}">
+                <strong>${passed ? '✅' : '❌'} ${idx + 1}. ${event.title?.simpleTitle || event.title || 'Untitled'}</strong>
+                <p>最后同步: ${event.lastSyncTime}</p>
+                <p>Block-Level 元数据: ${hasBlockMeta ? '✅' : '❌'}</p>
+                <p>纯文本时间戳: ${noTextTimestamp ? '✅ 无' : '❌ 有'}</p>
+              </div>
+            `);
+          } catch (error) {
+            failedCount++;
+            addResult(`
+              <div class="result fail">
+                <strong>❌ ${idx + 1}. 检查失败</strong>
+                <p>${error.message}</p>
+              </div>
+            `);
+          }
+        });
+
+        // 显示统计
+        addResult(`
+          <div class="stats">
+            <div class="stat-card">
+              <div class="stat-value">${totalChecked}</div>
+              <div class="stat-label">检查事件数</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color: #28a745;">${passedCount}</div>
+              <div class="stat-label">通过</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-value" style="color: #dc3545;">${failedCount}</div>
+              <div class="stat-label">失败</div>
+            </div>
+          </div>
+        `);
+
+      } catch (error) {
+        addResult(`
+          <div class="result fail">
+            <strong>❌ 检查失败</strong>
+            <p>${error.message}</p>
+          </div>
+        `);
+      }
+    };
+
+    console.log('✅ 测试页面已加载');
+    console.log('可用测试：');
+    console.log('1. testNormalizeEventLog() - 测试 normalizeEventLog');
+    console.log('2. testSignatureRemoval() - 测试签名移除');
+    console.log('3. testFullWorkflow() - 完整工作流测试');
+    console.log('4. checkRecentSyncedEvents() - 检查最近同步的事件');
+  </script>
+</body>
+</html>

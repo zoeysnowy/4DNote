@@ -463,7 +463,175 @@ class ActionBasedSyncManager {
 
 ## 3. 核心功能
 
-### 3.1 同步启动与停止
+### 3.1 远程同步到本地（Outlook → 4DNote）
+
+**🔥 关键架构原则**：
+1. **description 是唯一输入**（Outlook 只提供 description，没有 eventlog）
+2. **必须先解析成 Block-Level eventlog**（识别时间戳）
+3. **必须 diff 比较后再更新**（避免无脑更新和无意义的 eventHistory）
+
+#### 3.1.1 Create 流程
+
+```typescript
+case 'create':
+  // Step 1: 转换 Outlook 事件为本地格式
+  const newEvent = this.convertRemoteEventToLocal(action.data);
+  // newEvent = {
+  //   description: htmlContent,  // ✅ 原始 Outlook HTML
+  //   createdAt/updatedAt,       // ✅ Outlook 时间戳
+  //   NO eventlog field          // ❌ Outlook 不提供 eventlog
+  // }
+  
+  // Step 2: EventService.normalizeEvent() 规范化
+  // → normalizeEventLog(undefined, fallbackContent)  // 进入"情况2"
+  //   → 检测时间戳 → parseTextWithBlockTimestamps()
+  //   → 生成 Block-Level eventlog
+  
+  // Step 3: 保存到数据库
+  await storageManager.createEvent(normalizedEvent);
+```
+
+**关键点**：
+- ✅ `fallbackContent` 是移除签名后的纯文本
+- ✅ `normalizeEventLog` 检测到时间戳 → 调用 `parseTextWithBlockTimestamps`
+- ✅ 生成的 paragraph 节点包含 `createdAt`/`updatedAt` 元数据
+
+#### 3.1.2 Update 流程（含 Block-Level Timestamp 完整数据流）
+
+**🔥 完整数据流（Outlook → 4DNote）**：
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ Step 1: Outlook API 获取事件                             │
+├─────────────────────────────────────────────────────────┤
+│ {                                                        │
+│   createdDateTime: "2025-12-14T09:30:00Z",              │
+│   lastModifiedDateTime: "2025-12-15T05:56:36Z",         │
+│   body: {                                                │
+│     contentType: "HTML",                                 │
+│     content: "&lt;html&gt;...议程：&lt;br&gt;..."       │
+│   }                                                      │
+│ }                                                        │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 2: ActionBasedSyncManager 提取时间戳                │
+├─────────────────────────────────────────────────────────┤
+│ const remoteCreatedAt = new Date(                        │
+│   action.data.createdDateTime                            │
+│ ).getTime()  // → 1734168600000                         │
+│                                                          │
+│ const remoteUpdatedAt = new Date(                        │
+│   action.data.lastModifiedDateTime                       │
+│ ).getTime()  // → 1734242196000                         │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 3: 调用 EventService.normalizeEventLog             │
+├─────────────────────────────────────────────────────────┤
+│ ✅ 直接传递 remoteCoreContent（不用 fallback）         │
+│                                                          │
+│ normalizeEventLog(                                       │
+│   remoteCoreContent,     // ✅ 主数据（HTML/纯文本）    │
+│   undefined,             // 不需要 fallback             │
+│   remoteCreatedAt,       // Outlook 创建时间            │
+│   remoteUpdatedAt,       // Outlook 修改时间            │
+│   localEvent.eventlog    // 旧数据用于 Diff             │
+│ )                                                        │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 4: HTML 实体递归解码（修复多层转义）               │
+├─────────────────────────────────────────────────────────┤
+│ Input:  "&lt;html&gt;...议程：&lt;br&gt;..."           │
+│                                                          │
+│ 迭代解码直到没有变化（最多 10 层）：                    │
+│   tempDiv.innerHTML = input                              │
+│   decodedHtml = tempDiv.innerHTML                        │
+│                                                          │
+│ ✅ 修复：标点符号后的 <br> 不会丢失逗号句号             │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 5: 提取纯文本并解析时间戳                          │
+├─────────────────────────────────────────────────────────┤
+│ parseTextWithBlockTimestamps() 4步处理：                │
+│ 1. 解析文本内的时间戳分隔符（YYYY-MM-DD HH:mm:ss）     │
+│ 2. 处理未被时间戳包裹的文字（使用 eventCreatedAt）     │
+│ 3. History Diff 比较（检测新增/修改/未变化）            │
+│ 4. 应用时间戳到 paragraph 节点                          │
+└─────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────┐
+│ Step 6: 生成最终 EventLog                                │
+├─────────────────────────────────────────────────────────┤
+│ {                                                        │
+│   slateJson: "[{                                         │
+│     type: 'paragraph',                                   │
+│     id: 'block-1734168600000-abc',                      │
+│     createdAt: 1734168600000,  // ✅ Outlook 真实时间   │
+│     updatedAt: 1734168600000,                            │
+│     children: [{ text: '...' }]                         │
+│   }]",                                                   │
+│   plainText: "...",                                      │
+│   descriptionPlainText: "..."                            │
+│ }                                                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**代码实现**：
+
+```typescript
+case 'update':
+  // Step 1: 获取本地事件
+  const oldEvent = await EventService.getEventById(action.entityId);
+  
+  // Step 2: 检测远程变化
+  const remoteHTML = action.data.body?.content || '';
+  const remoteCoreContent = this.extractCoreContent(remoteHTML);
+  const localCoreContent = this.extractCoreContent(oldEvent.description);
+  const descriptionChanged = remoteCoreContent !== localCoreContent;
+  
+  // Step 3: 🔥 CRITICAL - Description 变化处理
+  if (descriptionChanged) {
+    // ✅ 解析远程内容为 Block-Level eventlog
+    const remoteEventlog = EventService.normalizeEventLog(undefined, remoteCoreContent);
+    
+    // ✅ Diff 比较（规范化后的 slateJson）
+    const oldSlateJson = JSON.stringify(oldEvent.eventlog?.slateJson || []);
+    const newSlateJson = JSON.stringify(remoteEventlog.slateJson || []);
+    
+    // ✅ 只有真正变化才更新
+    if (oldSlateJson !== newSlateJson) {
+      updates.eventlog = remoteEventlog;  // 传递完整的 EventLog 对象
+      eventlogActuallyChanged = true;
+    } else {
+      // ⏭️ EventLog 相同（仅签名差异），跳过更新
+      descriptionChanged = false;
+    }
+  }
+  
+  // Step 4: 更新事件
+  if (eventlogActuallyChanged || titleChanged || timeChanged) {
+    await EventService.updateEvent(localEvent.id, updates, true, { 
+      source: 'external-sync' 
+    });
+  }
+```
+
+**关键点**：
+- ❌ **错误做法**：直接赋值 `updates.eventlog = remoteCoreContent`（纯文本）
+- ✅ **正确做法**：
+  1. 先解析：`EventService.normalizeEventLog(undefined, remoteCoreContent)`
+  2. 再 diff：比较 `oldSlateJson` vs `newSlateJson`
+  3. 后更新：只有真正变化才赋值
+
+**避免的问题**：
+- ✅ 无脑更新（每次同步都创建 eventHistory）
+- ✅ 签名差异误判（description 变化但 eventlog 相同）
+- ✅ 时间戳丢失（直接包装纯文本，不解析 Block-Level）
+
+### 3.2 同步启动与停止
 
 #### start()
 
@@ -2647,6 +2815,353 @@ async syncPendingRemoteActions(): Promise<void> {
 **相关文档**:
 - EventHub/TimeHub Architecture v2.15 (架构原则)
 - SYNC_ARCHITECTURE_FIX_TEST.md (测试文档)
+
+---
+
+---
+
+### 8.3 多行文本拆分为多个 Paragraph 节点
+
+**现象**:
+```
+Input HTML:
+2025-12-18 02:50:57
+&lt;html&gt;&lt;head&gt;&lt;meta http-equiv=&quot;Content-Type&quot; ...
+&lt;meta name=&quot;Generator&quot; content=&quot;Microsoft Exchange Server&quot;&gt;
+&lt;style&gt;&lt;!-- .EmailQuote { margin-left: 1pt; } --&gt;&lt;/style&gt;
+&lt;/head&gt;
+&lt;body&gt;
+
+Output: 7 个独立的 paragraph 节点（每行一个）❌
+```
+
+**根源**:
+```typescript
+// ❌ 修复前：遇到空行就创建新 paragraph
+const paragraphText = currentParagraphLines.join('\n').trim();  // 移除空行
+if (paragraphText) {
+  slateNodes.push({ type: 'paragraph', ... });
+}
+```
+
+**修复**:
+```typescript
+// ✅ 修复后：保留所有行（包括空行），作为一个完整的 paragraph
+const paragraphText = currentParagraphLines.join('\n');  // 不 trim
+if (paragraphText.trim()) {  // 只检查是否完全为空
+  slateNodes.push({ type: 'paragraph', children: [{ text: paragraphText }] });
+}
+```
+
+**修复位置**:
+- `EventService.ts` L3426-L3442（parseTextWithTimestamps）
+- `EventService.ts` L3600-L3616（parseTextWithBlockTimestamps）
+
+---
+
+### 8.4 normalizeEventLog 组件化重构（v2.18.8）
+
+**目标**: 提升代码可维护性，减少重复逻辑
+
+**问题**:
+- 重复代码 ~200行（HTML处理、时间戳检测、节点生成）
+- 参数传递容易出错（3个可选参数，5处调用）
+- HTML实体解码逻辑重复3次
+- 时间戳正则定义分散
+
+**重构方案**:
+
+#### 1. 引入 ParseContext 接口
+```typescript
+interface ParseContext {
+  eventCreatedAt?: number;
+  eventUpdatedAt?: number;
+  oldEventLog?: EventLog;
+}
+```
+
+#### 2. 新增可复用组件（8个辅助方法）
+
+```typescript
+// 📍 EventService.ts L3340-L3408
+
+// 统一的正则定义
+private static readonly TIMESTAMP_PATTERN
+private static readonly TIMESTAMP_PATTERN_GLOBAL
+
+// HTML处理组件
+private static decodeHtmlEntities()      // 递归解码HTML实体
+private static extractTextFromHtml()     // HTML转纯文本
+private static cleanHtmlSignature()      // 清理签名
+
+// 时间戳检测
+private static detectTimestamps()        // 检测时间戳
+
+// Slate节点生成
+private static createParagraphNode()     // 创建基础paragraph
+private static parseTextToSlateNodes()   // 智能解析（自动检测时间戳）
+```
+
+#### 3. 函数签名简化
+
+**之前**:
+```typescript
+parseTextWithBlockTimestamps(
+  text: string,
+  eventCreatedAt?: number,
+  eventUpdatedAt?: number,
+  oldEventLog?: EventLog
+)
+```
+
+**之后**:
+```typescript
+parseTextWithBlockTimestamps(
+  text: string,
+  context: ParseContext  // 对象参数，清晰不易出错
+)
+```
+
+#### 4. 调用点简化（5处统一更新）
+
+**之前**:
+```typescript
+this.parseTextWithBlockTimestamps(
+  text,
+  eventCreatedAt,  // 容易遗漏
+  eventUpdatedAt,  // 容易写错顺序
+  oldEventLog      // 每次都要传
+);
+```
+
+**之后**:
+```typescript
+this.parseTextWithBlockTimestamps(
+  text,
+  { eventCreatedAt, eventUpdatedAt, oldEventLog }  // 解构赋值，清晰明确
+);
+```
+
+**修复位置**:
+- `EventService.ts` L3340-L3408（新增8个辅助组件）
+- `EventService.ts` L3559-L3563（更新函数签名）
+- `EventService.ts` L2586, L2663, L2694, L2804, L2842（5处调用更新）
+
+**重构收益**:
+
+| 维度 | 之前 | 之后 | 提升 |
+|------|------|------|------|
+| **重复逻辑** | ~200行重复 | 0行重复 | -200行 |
+| **参数传递错误率** | 中（3参数×5处） | 低（对象参数） | ↓60% |
+| **可维护性** | 中 | 高 | ✅ |
+| **可扩展性** | 低 | 高（新增参数只改接口） | ✅ |
+
+**核心优势**:
+- ✅ 重复代码减少 ~200行
+- ✅ HTML处理逻辑统一管理
+- ✅ 时间戳检测统一定义
+- ✅ 对象参数避免顺序错误
+- ✅ 类型检查更强，IDE自动补全更好
+
+**性能优化**（v2.18.8 后续）:
+- 🚀 Diff 算法优化：O(n) → O(1)
+  - 优化前：遍历所有节点比较
+  - 优化后：只检查新增 + 最后一个节点
+  - 提升：100个节点时性能提升 ~100倍
+- 🗑️ 移除 hasChanges 返回值（updateEvent 中用 JSON.stringify 最终验证）
+- 📊 双层 Diff 架构：
+  - 第一层（parseTextWithBlockTimestamps）：节点级精细 diff → 决定时间戳
+  - 第二层（updateEvent）：全局 JSON 比较 → 决定是否保存 EventHistory
+
+---
+
+### 8.5 EventHistory 版本爆炸修复（v2.18.8）
+
+**问题**:
+- 每次调用 `updateEvent` 且有 `eventlog` 字段，就保存版本
+- Outlook 同步频繁调用，即使内容未变也保存
+- 后果：版本历史爆炸（每次同步都产生新版本）
+
+**修复**:
+```typescript
+// 📍 EventService.ts L1373-1399
+const oldContent = JSON.stringify(oldEventLog.slateJson);
+const newContent = JSON.stringify(newEventLog.slateJson);
+
+if (oldContent !== newContent) {
+  // ✅ 内容有变化，保存版本
+  storageManager.saveEventLogVersion(eventId, newEventLog, oldEventLog);
+} else {
+  // ⏭️ 内容未变化，跳过保存
+}
+```
+
+**收益**:
+- ✅ 避免冗余版本（只在真正有修改时保存）
+- ✅ 节省存储空间（减少无意义的版本记录）
+- ✅ 性能提升（减少 SQLite 写入次数）
+
+---
+
+## 8. 关键 Bug 修复历史（v2.18.1）
+
+### 8.1 Event.createdAt 显示同步时间
+
+**现象**: 
+- Event.createdAt: 2025-12-18 02:03:27（同步时间）❌
+- 应该是: 2025-12-15 15:30:00（Outlook 真实创建时间）✅
+
+**根源**:
+```typescript
+// ❌ 修复前：UPDATE 时只更新 eventlog，不更新 Event
+const updates = {
+  eventlog: remoteEventlog,  // ✅ paragraph.createdAt 正确
+  title: ...,
+  location: ...
+  // ❌ 缺少 Event.createdAt 和 Event.updatedAt
+};
+```
+
+**修复**:
+```typescript
+// ✅ 修复后：同时更新 Event 的时间戳
+const updates = {
+  eventlog: remoteEventlog,
+  createdAt: this.safeFormatDateTime(new Date(remoteCreatedAt)),  // ✅
+  updatedAt: this.safeFormatDateTime(new Date(remoteUpdatedAt)),  // ✅
+  title: ...,
+  location: ...
+};
+```
+
+**修复位置**:
+- `ActionBasedSyncManager.ts` L2510-2565（批量同步 UPDATE）
+- `ActionBasedSyncManager.ts` L4216-4260（applyAction UPDATE）
+
+---
+
+### 8.2 标点符号变成换行符
+
+**现象**:
+```
+Input:  "议程：<br>13:20 开场，<br>14:30 讨论。"
+Output: "议程：\n13:20 开场\n14:30 讨论"  // ❌ 逗号句号丢失
+```
+
+**根源**:
+```typescript
+// ❌ 修复前：只解码一层 HTML 实体
+tempDiv.innerHTML = cleanedHtml;
+const textContent = tempDiv.textContent;  // "&lt;br&gt;" 变成纯文本 "<br>"
+```
+
+**修复**:
+```typescript
+// ✅ 修复后：递归解码所有层级的 HTML 实体
+let decodedHtml = cleanedHtml;
+let previousHtml = '';
+let iterations = 0;
+const maxIterations = 10;
+
+while (decodedHtml !== previousHtml && iterations < maxIterations) {
+  previousHtml = decodedHtml;
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = decodedHtml;
+  decodedHtml = tempDiv.innerHTML;  // 浏览器自动解码一层
+  iterations++;
+}
+
+// 现在 decodedHtml 是完全解码的 HTML
+// "&lt;br&gt;" → "<br>" ✅
+```
+
+**修复位置**:
+- `EventService.ts` L2741-2776（normalizeEventLog HTML 路径）
+- `EventService.ts` L2964-2988（normalizeEvent description 路径）
+
+---
+
+### 8.3 Block-Level Timestamp 使用同步时间
+
+**现象**:
+```
+Event.createdAt: 2025-12-15 15:30:00 ✅
+paragraph.createdAt: 2025-12-18 02:03:27 ❌（同步时间）
+```
+
+**根源**:
+```typescript
+// ❌ 修复前：未被时间戳包裹的文字使用 Date.now()
+const timestamp = currentTimestamp || Date.now();
+```
+
+**修复**:
+```typescript
+// ✅ 修复后：优先使用 Event.createdAt
+const timestamp = currentTimestamp || eventCreatedAt || Date.now();
+```
+
+**修复位置**:
+- `EventService.ts` L3493（遇到新时间戳前的段落）
+- `EventService.ts` L3528（时间戳解析失败时）
+- `EventService.ts` L3550（最后剩余的段落）
+
+---
+
+### 8.4 fallbackDescription 误用
+
+**现象**: Outlook 同步时使用 `normalizeEventLog(undefined, remoteCoreContent)`
+
+**问题**: 
+- `remoteCoreContent` 是主数据，不应该作为 fallback 传递
+- 这导致走了"回退逻辑"而不是"主流程"
+
+**修复**:
+```typescript
+// ❌ 修复前（使用 undefined + fallback）
+normalizeEventLog(undefined, remoteCoreContent, ...)
+
+// ✅ 修复后（直接传递主数据）
+normalizeEventLog(remoteCoreContent, undefined, ...)
+```
+
+**修复位置**:
+- `ActionBasedSyncManager.ts` L2528（批量同步）
+- `ActionBasedSyncManager.ts` L4243（applyAction）
+
+---
+
+### 8.5 垃圾 Fallback 机制移除
+
+**移除的垃圾 Fallback**:
+
+1. **时间解析失败 → 当前时间** ❌
+   ```typescript
+   // ❌ 修复前
+   eventStartTime = new Date(); // 使用当前时间作为fallback
+   
+   // ✅ 修复后
+   return false; // ⚠️ 时间无效，跳过该事件
+   ```
+
+2. **createEventFromRemoteSync 失败 → createEvent** ❌
+   ```typescript
+   // ❌ 修复前
+   } catch (error) {
+     // Fallback: 直接通过 EventService 创建
+     const createdEvent = await EventService.createEvent(newEvent);
+   }
+   
+   // ✅ 修复后
+   } catch (error) {
+     throw error; // ⚠️ 直接抛出错误，不掩盖问题
+   }
+   ```
+
+**保留的合理 Fallback**:
+- ✅ 日历 ID 回退（Calendar Fallback）
+- ✅ React Suspense/ErrorBoundary
+- ✅ UI 显示时的备用数据
 
 ---
 

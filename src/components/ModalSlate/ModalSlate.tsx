@@ -150,19 +150,17 @@ const createTimestampDivider = (timestamp: Date): TimestampDividerType => {
   };
 };
 
-export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>(
-  (
-    {
-      content,
-      parentEventId,
-      onChange,
-      enableTimestamp = false,
-      placeholder = '开始编写...',
-      className = '',
-      readOnly = false
-    },
-    ref
-  ) => {
+const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSlateProps> = (props, ref) => {
+  const {
+    content,
+    parentEventId,
+    onChange,
+    enableTimestamp = false,
+    placeholder = '开始编写...',
+    className = '',
+    readOnly = false
+  } = props;
+
   // 创建 Slate 编辑器实例
   const editor = useMemo(() => {
     let editorInstance = withReact(createEditor());
@@ -378,72 +376,73 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>(
     
       // 如果启用 timestamp 且这个 content 还没添加过 timestamp
       if (enableTimestamp && parentEventId && timestampAddedForContentRef.current !== content) {
-      const hasActualContent = nodes.some((node: any) => {
-        if (node.type === 'paragraph') {
-          return node.children?.some((child: any) => child.text?.trim());
-        }
-        return node.type !== 'paragraph';
-      });
-      
-      const hasTimestamp = nodes.some((node: any) => node.type === 'timestamp-divider');
-      
-      if (hasActualContent && !hasTimestamp) {
-        // 从 EventHistoryService 获取创建时间
-        let createLog = EventHistoryService.queryHistory({
-          eventId: parentEventId,
-          operations: ['create'],
-          limit: 1
-        })[0];
+        const hasActualContent = nodes.some((node: any) => {
+          if (node.type === 'paragraph') {
+            return node.children?.some((child: any) => child.text?.trim());
+          }
+          return node.type !== 'paragraph';
+        });
         
-        // 🔧 如果没有创建日志，使用 event.createdAt 或 event.updatedAt 作为 fallback
-        if (!createLog) {
-          const event = EventService.getEventById(parentEventId);
-          if (event) {
-            if (event.createdAt) {
-              createLog = {
-                id: 'fallback-' + parentEventId,
-                eventId: parentEventId,
-                operation: 'create',
-                timestamp: event.createdAt,
-                source: 'fallback-createdAt',
-                changes: []
-              } as any;
-              console.log('[ModalSlate initialValue] 使用 event.createdAt fallback:', event.createdAt);
-            } else if (event.updatedAt) {
-              createLog = {
-                id: 'fallback-' + parentEventId,
-                eventId: parentEventId,
-                operation: 'create',
-                timestamp: event.updatedAt,
-                source: 'fallback-updatedAt',
-                changes: []
-              } as any;
-              console.log('[ModalSlate initialValue] 使用 event.updatedAt fallback:', event.updatedAt);
+        const hasTimestamp = nodes.some((node: any) => node.type === 'timestamp-divider');
+        
+        if (hasActualContent && !hasTimestamp) {
+          // 从 EventHistoryService 获取创建时间
+          let createLog = EventHistoryService.queryHistory({
+            eventId: parentEventId,
+            operations: ['create'],
+            limit: 1
+          })[0];
+          
+          // 🔧 如果没有创建日志，使用 event.createdAt 或 event.updatedAt 作为 fallback
+          if (!createLog) {
+            const event = EventService.getEventById(parentEventId);
+            if (event) {
+              if (event.createdAt) {
+                createLog = {
+                  id: 'fallback-' + parentEventId,
+                  eventId: parentEventId,
+                  operation: 'create',
+                  timestamp: event.createdAt,
+                  source: 'fallback-createdAt',
+                  changes: []
+                } as any;
+                console.log('[ModalSlate initialValue] 使用 event.createdAt fallback:', event.createdAt);
+              } else if (event.updatedAt) {
+                createLog = {
+                  id: 'fallback-' + parentEventId,
+                  eventId: parentEventId,
+                  operation: 'create',
+                  timestamp: event.updatedAt,
+                  source: 'fallback-updatedAt',
+                  changes: []
+                } as any;
+                console.log('[ModalSlate initialValue] 使用 event.updatedAt fallback:', event.updatedAt);
+              }
             }
           }
-        }
-        
-        if (createLog) {
-          const createTime = new Date(createLog.timestamp);
-          console.log('[ModalSlate] 在 initialValue 中添加 timestamp:', createTime);
           
-          // ✅ 使用 Time Architecture 规范格式
-          const timestampStr = formatDateTime(createTime);
-          
-          // 在开头插入 timestamp（不插入 preline，由 renderElement 动态绘制）
-          nodes = [
-            {
-              type: 'timestamp-divider',
-              timestamp: timestampStr,  // ✅ 不再使用 toISOString()
-              displayText: timestampStr,
-              isFirstOfDay: true,
-              children: [{ text: '' }]
-            },
-            ...nodes
-          ] as any;
-          
-          // 标记这个 content 已经添加过 timestamp
-          timestampAddedForContentRef.current = content;
+          if (createLog) {
+            const createTime = new Date(createLog.timestamp);
+            console.log('[ModalSlate] 在 initialValue 中添加 timestamp:', createTime);
+            
+            // ✅ 使用 Time Architecture 规范格式
+            const timestampStr = formatDateTime(createTime);
+            
+            // 在开头插入 timestamp（不插入 preline，由 renderElement 动态绘制）
+            nodes = [
+              {
+                type: 'timestamp-divider',
+                timestamp: timestampStr,  // ✅ 不再使用 toISOString()
+                displayText: timestampStr,
+                isFirstOfDay: true,
+                children: [{ text: '' }]
+              },
+              ...nodes
+            ] as any;
+            
+            // 标记这个 content 已经添加过 timestamp
+            timestampAddedForContentRef.current = content;
+          }
         }
       }
       
@@ -1558,6 +1557,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>(
       )}
     </div>
   );
-});
+};
 
+export const ModalSlate = forwardRef(ModalSlateComponent);
 ModalSlate.displayName = 'ModalSlate';

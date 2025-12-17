@@ -1,0 +1,31 @@
+#!/bin/sh
+# TimeSpec 规范检查 - Git Pre-commit Hook
+#
+# 安装方法：
+# 1. 复制此文件到 .git/hooks/pre-commit
+# 2. 赋予执行权限：chmod +x .git/hooks/pre-commit
+#
+# 或者运行：npm run install-hooks
+
+echo "🔍 检查 TimeSpec 规范..."
+
+# 运行检查脚本
+node scripts/check-timespec.js
+
+# 如果有违规，阻止提交
+if [ $? -ne 0 ]; then
+  echo ""
+  echo "❌ 提交被阻止：发现 TimeSpec 规范违规！"
+  echo ""
+  echo "请修复以下问题："
+  echo "1. 使用 formatTimeForStorage(date) 替代 toISOString()"
+  echo "2. 使用 parseLocalTimeString(str) 解析时间"
+  echo "3. 确保所有时间使用 YYYY-MM-DD HH:mm:ss 格式"
+  echo ""
+  echo "📖 参考文档：docs/TimeSpec.md"
+  echo ""
+  exit 1
+fi
+
+echo "✅ TimeSpec 规范检查通过！"
+exit 0

@@ -1,0 +1,87 @@
+/* FocusScoreCard - 专注力评分卡片样式 */
+.focus-score-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 24px;
+}
+
+/* 评分圆环 */
+.focus-score-ring {
+  position: relative;
+  width: 140px;
+  height: 140px;
+}
+
+.focus-score-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.focus-score-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: #333333;
+  line-height: 1.2;
+}
+
+.focus-score-level {
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 4px;
+  line-height: 1.2;
+}
+
+/* 详细指标 */
+.focus-metrics {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+
+.focus-metric-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+
+.metric-label {
+  font-size: 13px;
+  color: #666666;
+}
+
+.metric-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333333;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .focus-score-ring {
+    width: 120px;
+    height: 120px;
+  }
+
+  .focus-score-ring svg {
+    width: 120px;
+    height: 120px;
+  }
+
+  .focus-score-value {
+    font-size: 32px;
+  }
+
+  .focus-score-level {
+    font-size: 13px;
+  }
+}

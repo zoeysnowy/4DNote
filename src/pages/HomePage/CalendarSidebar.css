@@ -1,0 +1,250 @@
+/* CalendarSidebar - 日历侧边栏样式 */
+
+.calendar-sidebar-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.3);
+  z-index: 999;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.calendar-sidebar {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 360px;
+  background: white;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+/* 头部 */
+.calendar-sidebar .sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid #e8e8e8;
+}
+
+.calendar-sidebar .sidebar-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.calendar-sidebar .close-btn {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 18px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.calendar-sidebar .close-btn:hover {
+  background: #e5e5e5;
+  color: #333;
+}
+
+/* 快捷选择 */
+.calendar-sidebar .quick-select {
+  display: flex;
+  gap: 8px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.calendar-sidebar .quick-select button {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendar-sidebar .quick-select button:hover {
+  border-color: #1890ff;
+  color: #1890ff;
+  background: #f0f8ff;
+}
+
+/* 月份导航 */
+.calendar-sidebar .month-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.calendar-sidebar .month-nav button {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 18px;
+  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.calendar-sidebar .month-nav button:hover {
+  background: #e5e5e5;
+  color: #333;
+}
+
+.calendar-sidebar .month-nav span {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+/* 星期标题 */
+.calendar-sidebar .weekday-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  padding: 12px 20px;
+  background: #fafafa;
+}
+
+.calendar-sidebar .weekday {
+  text-align: center;
+  font-size: 12px;
+  color: #999;
+  font-weight: 500;
+}
+
+/* 日历网格 */
+.calendar-sidebar .calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  padding: 12px 20px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.calendar-sidebar .calendar-day {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #333;
+  position: relative;
+}
+
+.calendar-sidebar .calendar-day:hover:not(.other-month) {
+  background: #f0f8ff;
+  color: #1890ff;
+}
+
+.calendar-sidebar .calendar-day.other-month {
+  color: #ccc;
+  cursor: default;
+}
+
+.calendar-sidebar .calendar-day.today {
+  background: #1890ff;
+  color: white;
+  font-weight: 600;
+}
+
+.calendar-sidebar .calendar-day.today:hover {
+  background: #40a9ff;
+}
+
+.calendar-sidebar .calendar-day.selected {
+  background: #1890ff;
+  color: white;
+  font-weight: 600;
+}
+
+.calendar-sidebar .calendar-day.in-range {
+  background: #e6f7ff;
+  color: #1890ff;
+}
+
+.calendar-sidebar .calendar-day.in-range.selected {
+  background: #1890ff;
+  color: white;
+}
+
+/* 选中范围信息 */
+.calendar-sidebar .selected-range-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-top: 1px solid #e8e8e8;
+  background: #fafafa;
+}
+
+.calendar-sidebar .range-text {
+  font-size: 13px;
+  color: #666;
+}
+
+.calendar-sidebar .clear-btn {
+  padding: 6px 12px;
+  border: 1px solid #d9d9d9;
+  background: white;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.calendar-sidebar .clear-btn:hover {
+  border-color: #ff4d4f;
+  color: #ff4d4f;
+  background: #fff1f0;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .calendar-sidebar {
+    width: 100%;
+  }
+}

@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>同步链路 normalizeEvent 诊断</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .issue-card {
+      background: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 4px;
+    }
+    .issue-card h3 {
+      margin-top: 0;
+      color: #856404;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .test-result {
+      margin: 10px 0;
+      padding: 15px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    .test-result.pass {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .test-result.fail {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .test-result.warn {
+      background: #fff3cd;
+      color: #856404;
+      border: 1px solid #ffeeba;
+    }
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #5568d3;
+    }
+    pre {
+      background: #2d2d2d;
+      color: #f8f8f2;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 500px;
+    }
+    .timeline {
+      margin: 20px 0;
+      padding-left: 20px;
+      border-left: 3px solid #667eea;
+    }
+    .timeline-item {
+      margin: 15px 0;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+    .code-block {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 4px solid #667eea;
+      margin: 10px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🔍 同步链路 normalizeEvent 诊断</h1>
+    <p>检查所有 update 和 sync 方法是否正确调用 normalizeEvent/normalizeEventLog</p>
+  </div>
+
+  <div class="issue-card">
+    <h3>🐛 当前问题</h3>
+    <p><strong>问题1：</strong>Timestamp 退化 - 同步时加上了同步时刻的 timestamp，过去已有的 timestamp 被退化成字符串</p>
+    <p><strong>问题2：</strong>签名未清除 - 签名依旧显示在内部，未被 normalizeEventLog 正确处理</p>
+    <p><strong>根因：</strong>ActionBasedSyncManager 的同步路径未正确调用 normalizeEvent，直接传递了原始数据</p>
+  </div>
+
+  <div class="test-section">
+    <h3>📋 诊断结果</h3>
+    <button onclick="runDiagnosis()">运行诊断</button>
+    <button onclick="checkRecentEvents()">检查最近事件</button>
+    <button onclick="showFixSuggestions()">查看修复方案</button>
+    <div id="diagnosis-results"></div>
+  </div>
+
+  <div class="test-section">
+    <h3>🔧 修复建议</h3>
+    <div id="fix-suggestions"></div>
+  </div>
+
+  <script type="module">
+    import { storageManager } from '../src/services/storage/StorageManager.ts';
+    import { EventService } from '../src/services/EventService.ts';
+    import { SignatureUtils } from '../src/utils/signatureUtils.ts';
+
+    window.storageManager = storageManager;
+    window.EventService = EventService;
+    window.SignatureUtils = SignatureUtils;
+
+    window.runDiagnosis = async function() {
+      const container = document.getElementById('diagnosis-results');
+      container.innerHTML = '<p>🔍 正在诊断...</p>';
+      
+      try {
+        const events = await storageManager.getAllEvents();
+        container.innerHTML = '<h4>诊断报告</h4>';
+        
+        // 问题1: 检查 eventlog 是否有 timestamp-divider（旧格式）
+        const eventsWithOldTimestamp = events.filter(e => {
+          try {
+            const slateJson = typeof e.eventlog === 'object' && e.eventlog?.slateJson
+              ? (typeof e.eventlog.slateJson === 'string' ? JSON.parse(e.eventlog.slateJson) : e.eventlog.slateJson)
+              : [];
+            return Array.isArray(slateJson) && slateJson.some(node => node.type === 'timestamp-divider');
+          } catch {
+            return false;
+          }
+        });
+        
+        if (eventsWithOldTimestamp.length > 0) {
+          container.innerHTML += `
+            <div class="test-result fail">
+              ❌ 发现 ${eventsWithOldTimestamp.length} 个事件使用旧格式 timestamp-divider
+              <details>
+                <summary>查看示例</summary>
+                <pre>${JSON.stringify(eventsWithOldTimestamp.slice(0, 3), null, 2)}</pre>
+              </details>
+            </div>
+          `;
+        } else {
+          container.innerHTML += `
+            <div class="test-result pass">
+              ✅ 所有事件已迁移到 Block-Level Timestamp
+            </div>
+          `;
+        }
+        
+        // 问题2: 检查 eventlog 中是否有纯文本时间戳（未被解析）
+        const eventsWithTextTimestamp = events.filter(e => {
+          try {
+            const slateJson = typeof e.eventlog === 'object' && e.eventlog?.slateJson
+              ? (typeof e.eventlog.slateJson === 'string' ? JSON.parse(e.eventlog.slateJson) : e.eventlog.slateJson)
+              : [];
+            return Array.isArray(slateJson) && slateJson.some(node => {
+              if (node.type === 'paragraph' && node.children?.[0]?.text) {
+                const text = node.children[0].text.trim();
+                return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/.test(text);
+              }
+              return false;
+            });
+          } catch {
+            return false;
+          }
+        });
+        
+        if (eventsWithTextTimestamp.length > 0) {
+          container.innerHTML += `
+            <div class="test-result fail">
+              ❌ 发现 ${eventsWithTextTimestamp.length} 个事件包含未解析的纯文本时间戳
+              <details>
+                <summary>查看示例</summary>
+                <pre>${JSON.stringify(eventsWithTextTimestamp.slice(0, 3).map(e => ({
+                  id: e.id,
+                  title: e.title?.simpleTitle || e.title,
+                  eventlog: e.eventlog
+                })), null, 2)}</pre>
+              </details>
+            </div>
+          `;
+        } else {
+          container.innerHTML += `
+            <div class="test-result pass">
+              ✅ 所有时间戳已正确解析为 Block-Level 元数据
+            </div>
+          `;
+        }
+        
+        // 问题3: 检查 description 是否包含签名（内部显示时应该移除）
+        const eventsWithSignature = events.filter(e => {
+          const desc = e.description || '';
+          return SignatureUtils.isSignatureParagraph(desc) || 
+                 /由\s+(?:🔮|📧)\s*(?:4DNote|Outlook)\s*创建于/.test(desc);
+        });
+        
+        if (eventsWithSignature.length > 0) {
+          container.innerHTML += `
+            <div class="test-result warn">
+              ⚠️ 发现 ${eventsWithSignature.length} 个事件的 description 包含签名
+              <p>注意：description 应该包含签名（用于 Outlook 同步），但前端应该使用 SignatureUtils.extractCoreContent() 移除签名显示</p>
+              <details>
+                <summary>查看示例</summary>
+                <pre>${eventsWithSignature.slice(0, 3).map(e => ({
+                  id: e.id,
+                  title: e.title?.simpleTitle || e.title,
+                  description: e.description?.substring(0, 200)
+                })).map(e => JSON.stringify(e, null, 2)).join('\n\n')}</pre>
+              </details>
+            </div>
+          `;
+        } else {
+          container.innerHTML += `
+            <div class="test-result pass">
+              ✅ description 签名状态正常
+            </div>
+          `;
+        }
+        
+        // 问题4: 检查 eventlog 中是否缺少 Block-Level 元数据
+        const eventsWithoutBlockMeta = events.filter(e => {
+          try {
+            const slateJson = typeof e.eventlog === 'object' && e.eventlog?.slateJson
+              ? (typeof e.eventlog.slateJson === 'string' ? JSON.parse(e.eventlog.slateJson) : e.eventlog.slateJson)
+              : [];
+            if (!Array.isArray(slateJson) || slateJson.length === 0) return false;
+            const paragraphs = slateJson.filter(n => n.type === 'paragraph');
+            return paragraphs.length > 0 && !paragraphs.some(p => p.createdAt || p.id);
+          } catch {
+            return false;
+          }
+        });
+        
+        if (eventsWithoutBlockMeta.length > 0) {
+          container.innerHTML += `
+            <div class="test-result fail">
+              ❌ 发现 ${eventsWithoutBlockMeta.length} 个事件缺少 Block-Level 元数据（id/createdAt）
+              <details>
+                <summary>查看示例</summary>
+                <pre>${JSON.stringify(eventsWithoutBlockMeta.slice(0, 3).map(e => ({
+                  id: e.id,
+                  title: e.title?.simpleTitle || e.title,
+                  eventlog: e.eventlog
+                })), null, 2)}</pre>
+              </details>
+            </div>
+          `;
+        } else {
+          container.innerHTML += `
+            <div class="test-result pass">
+              ✅ 所有事件的 paragraph 节点都有 Block-Level 元数据
+            </div>
+          `;
+        }
+        
+      } catch (error) {
+        container.innerHTML += `
+          <div class="test-result fail">
+            ❌ 诊断失败: ${error.message}
+            <pre>${error.stack}</pre>
+          </div>
+        `;
+      }
+    };
+
+    window.checkRecentEvents = async function() {
+      const container = document.getElementById('diagnosis-results');
+      container.innerHTML = '<p>🔍 检查最近同步的事件...</p>';
+      
+      try {
+        const events = await storageManager.getAllEvents();
+        const recentSynced = events
+          .filter(e => e.lastSyncTime)
+          .sort((a, b) => new Date(b.lastSyncTime) - new Date(a.lastSyncTime))
+          .slice(0, 10);
+        
+        container.innerHTML = '<h4>最近同步的 10 个事件</h4>';
+        
+        recentSynced.forEach((event, idx) => {
+          const slateJson = typeof event.eventlog === 'object' && event.eventlog?.slateJson
+            ? (typeof event.eventlog.slateJson === 'string' ? JSON.parse(event.eventlog.slateJson) : event.eventlog.slateJson)
+            : [];
+          
+          const hasOldTimestamp = slateJson.some(n => n.type === 'timestamp-divider');
+          const hasTextTimestamp = slateJson.some(n => {
+            if (n.type === 'paragraph' && n.children?.[0]?.text) {
+              const text = n.children[0].text.trim();
+              return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/.test(text);
+            }
+            return false;
+          });
+          const hasBlockMeta = slateJson.some(n => n.type === 'paragraph' && (n.createdAt || n.id));
+          const hasSignature = /由\s+(?:🔮|📧)\s*(?:4DNote|Outlook)\s*创建于/.test(event.description || '');
+          
+          const statusClass = (hasOldTimestamp || hasTextTimestamp) ? 'fail' : 'pass';
+          
+          container.innerHTML += `
+            <div class="test-result ${statusClass}">
+              <strong>${idx + 1}. ${event.title?.simpleTitle || event.title || 'Untitled'}</strong><br>
+              ID: ${event.id}<br>
+              最后同步: ${event.lastSyncTime}<br>
+              旧格式 timestamp-divider: ${hasOldTimestamp ? '❌ 是' : '✅ 否'}<br>
+              纯文本时间戳: ${hasTextTimestamp ? '❌ 是' : '✅ 否'}<br>
+              Block-Level 元数据: ${hasBlockMeta ? '✅ 有' : '❌ 无'}<br>
+              description 签名: ${hasSignature ? '✅ 有' : '❌ 无'}<br>
+              <details>
+                <summary>查看 eventlog 结构</summary>
+                <pre>${JSON.stringify(slateJson, null, 2)}</pre>
+              </details>
+            </div>
+          `;
+        });
+        
+      } catch (error) {
+        container.innerHTML += `
+          <div class="test-result fail">
+            ❌ 检查失败: ${error.message}
+          </div>
+        `;
+      }
+    };
+
+    window.showFixSuggestions = function() {
+      const container = document.getElementById('fix-suggestions');
+      container.innerHTML = `
+        <div class="timeline">
+          <div class="timeline-item">
+            <h4>修复 1: ActionBasedSyncManager 增量更新路径</h4>
+            <p><strong>位置：</strong>ActionBasedSyncManager.ts L2500-2550</p>
+            <p><strong>问题：</strong>直接传递 <code>slateJson</code> 字符串，未经过 normalizeEventLog 处理</p>
+            <div class="code-block">
+              <strong>❌ 当前代码：</strong>
+              <pre>const slateJson = JSON.stringify([{ type: 'paragraph', children: [{ text: remoteCoreContent }] }]);
+updates.eventlog = slateJson;  // 直接传递字符串</pre>
+            </div>
+            <div class="code-block">
+              <strong>✅ 修复后：</strong>
+              <pre>// 不要直接传递 slateJson 字符串，让 EventService.updateEvent 自动调用 normalizeEvent
+// normalizeEvent 会调用 normalizeEventLog 处理签名和 Block-Level Timestamp
+updates.eventlog = remoteCoreContent;  // 传递纯文本，让 normalizeEventLog 处理</pre>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <h4>修复 2: ActionBasedSyncManager 旧格式更新路径</h4>
+            <p><strong>位置：</strong>ActionBasedSyncManager.ts L4150-4200</p>
+            <p><strong>问题：</strong>同样的问题，直接构造 slateJson 字符串</p>
+            <div class="code-block">
+              <strong>❌ 当前代码：</strong>
+              <pre>const slateJson = JSON.stringify([{ type: 'paragraph', children: [{ text: remoteCoreContent }] }]);
+updates.eventlog = slateJson;</pre>
+            </div>
+            <div class="code-block">
+              <strong>✅ 修复后：</strong>
+              <pre>updates.eventlog = remoteCoreContent;  // 传递纯文本</pre>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <h4>修复 3: EventService.updateEvent 确保调用 normalizeEvent</h4>
+            <p><strong>位置：</strong>EventService.ts L818-1100</p>
+            <p><strong>检查：</strong>确认 updateEvent 在保存前调用 normalizeEvent</p>
+            <div class="code-block">
+              <strong>✅ 当前已正确实现：</strong>
+              <pre>// 场景1: eventlog 有变化 → 规范化并同步到 description（带签名）
+if ((updates as any).eventlog !== undefined) {
+  const normalizedEventLog = this.normalizeEventLog((updates as any).eventlog);
+  (updatesWithSync as any).eventlog = normalizedEventLog;
+  // ...
+}</pre>
+            </div>
+            <p><strong>✅ 已正确：</strong>updateEvent 已经调用 normalizeEventLog</p>
+          </div>
+
+          <div class="timeline-item">
+            <h4>修复 4: 前端显示时移除签名</h4>
+            <p><strong>位置：</strong>所有显示 description 的组件</p>
+            <p><strong>问题：</strong>直接显示 <code>event.description</code>，未移除签名</p>
+            <div class="code-block">
+              <strong>❌ 当前代码：</strong>
+              <pre>const description = event.description;</pre>
+            </div>
+            <div class="code-block">
+              <strong>✅ 修复后：</strong>
+              <pre>import { SignatureUtils } from '@/utils/signatureUtils';
+const description = SignatureUtils.extractCoreContent(event.description);</pre>
+            </div>
+          </div>
+
+          <div class="timeline-item">
+            <h4>修复 5: LogSlate/ModalSlate 已正确隐藏签名</h4>
+            <p><strong>状态：</strong>✅ 已完成</p>
+            <p><strong>实现：</strong>使用 <code>SignatureUtils.isSignatureParagraph()</code> 检测并隐藏签名段落</p>
+            <div class="code-block">
+              <pre>// LogSlate.tsx & ModalSlate.tsx
+const isSignature = paragraphText && SignatureUtils.isSignatureParagraph(paragraphText);
+if (isSignature) {
+  return &lt;span {...props.attributes} style={{ display: 'none' }}&gt;{props.children}&lt;/span&gt;;
+}</pre>
+            </div>
+          </div>
+        </div>
+
+        <h4>总结</h4>
+        <p><strong>关键原则：</strong></p>
+        <ul>
+          <li>❌ <strong>不要</strong>在同步代码中直接构造 <code>slateJson</code> 字符串</li>
+          <li>✅ <strong>应该</strong>传递纯文本/HTML，让 <code>normalizeEventLog</code> 自动处理</li>
+          <li>✅ <strong>应该</strong>在前端显示时使用 <code>SignatureUtils.extractCoreContent()</code> 移除签名</li>
+          <li>✅ <strong>应该</strong>在编辑器中使用 <code>SignatureUtils.isSignatureParagraph()</code> 隐藏签名段落</li>
+        </ul>
+      `;
+    };
+
+    console.log('✅ 诊断页面已加载');
+    console.log('使用方法：');
+    console.log('1. 点击"运行诊断"检查所有事件');
+    console.log('2. 点击"检查最近事件"查看最近同步的事件');
+    console.log('3. 点击"查看修复方案"获取详细的修复建议');
+  </script>
+</body>
+</html>

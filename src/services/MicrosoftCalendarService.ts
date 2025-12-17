@@ -1853,14 +1853,16 @@ export class MicrosoftCalendarService {
     }
   }
 
-  private safeFormatDateTime(dateTimeStr: string | undefined | null): string {
-    if (!dateTimeStr) return formatTimeForStorage(new Date());
+  private safeFormatDateTime(dateTimeStr: string | undefined | null): string | undefined {
+    // ✅ [FIX v2.19.0] 如果没有时间戳，返回 undefined（不要回退到 new Date()）
+    // 让调用方决定回退逻辑（如使用 start.dateTime）
+    if (!dateTimeStr) return undefined;
     
     try {
       const date = new Date(dateTimeStr);
-      return isNaN(date.getTime()) ? formatTimeForStorage(new Date()) : formatTimeForStorage(date);
+      return isNaN(date.getTime()) ? undefined : formatTimeForStorage(date);
     } catch (error) {
-      return formatTimeForStorage(new Date());
+      return undefined;
     }
   }
 

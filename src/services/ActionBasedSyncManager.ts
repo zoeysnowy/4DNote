@@ -1826,16 +1826,16 @@ export class ActionBasedSyncManager {
             eventStartTime = new Date(timeSource);
             // 验证日期是否有效
             if (isNaN(eventStartTime.getTime())) {
-              console.warn(`⚠️ Invalid date for event "${subject}": ${timeSource}`);
-              eventStartTime = new Date(); // 使用当前时间作为fallback
+              console.error(`❌ [Sync] Invalid date for event "${subject}": ${timeSource}`);
+              return false; // ⚠️ 时间无效，跳过该事件
             }
           } else {
-            console.warn(`⚠️ No date found for event "${subject}"`);
-            eventStartTime = new Date(); // 使用当前时间作为fallback
+            console.error(`❌ [Sync] No date found for event "${subject}"`);
+            return false; // ⚠️ 无时间，跳过该事件
           }
         } catch (error) {
-          console.warn(`⚠️ Date parsing error for event "${subject}":`, error);
-          eventStartTime = new Date(); // 使用当前时间作为fallback
+          console.error(`❌ [Sync] Date parsing error for event "${subject}":`, error);
+          return false; // ⚠️ 解析失败，跳过该事件
         }
         
         const isInTimeRange = eventStartTime >= startDate && eventStartTime <= endDate;
@@ -2504,14 +2504,65 @@ private getUserSettings(): any {
         
         // ✅ 增量更新原则：只更新变化的字段
         if (descriptionChanged) {
-          // 🔥 [CRITICAL FIX] 传递纯文本到 eventlog
-          // EventService.updateEvent 会自动：
-          // 1. 调用 normalizeEventLog 将纯文本转换为 EventLog 对象（自动处理 Block-Level Timestamp）
-          // 2. 从 eventlog.plainText 提取核心内容（移除签名）
-          // 3. 调用 SignatureUtils.addSignature 添加新签名到 description
+          // 🔥 [CRITICAL FIX] 先解析成 Block-Level，再比较 diff，避免无脑更新
+          const { EventService: ES } = await import('./EventService');
           
-          // ✅ 传递纯文本，让 normalizeEventLog 自动处理格式转换和时间戳
-          updates.eventlog = remoteCoreContent;  // 传递纯文本，不要手动构造 slateJson
+          // 🆕 获取 Outlook 时间戳
+          const remoteCreatedAt = action.data.createdDateTime 
+            ? new Date(action.data.createdDateTime).getTime() 
+            : undefined;
+          const remoteUpdatedAt = action.data.lastModifiedDateTime 
+            ? new Date(action.data.lastModifiedDateTime).getTime() 
+            : undefined;
+          
+          // 🔍 调试：打印 Outlook 时间戳
+          if (successCount < 3) {
+            console.log('[Sync] Outlook 时间戳:', {
+              createdDateTime: action.data.createdDateTime,
+              lastModifiedDateTime: action.data.lastModifiedDateTime,
+              remoteCreatedAt: remoteCreatedAt ? new Date(remoteCreatedAt).toLocaleString() : 'undefined',
+              remoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt).toLocaleString() : 'undefined'
+            });
+          }
+          
+          // ✅ 直接传递 remoteCoreContent 作为 eventlogInput（而非 fallback）
+          const remoteEventlog = ES.normalizeEventLog(
+            remoteCoreContent,  // ✅ 直接传递 HTML/纯文本
+            undefined,          // 不需要 fallback
+            remoteCreatedAt,    // Event.createdAt
+            remoteUpdatedAt,    // Event.updatedAt
+            localEvent.eventlog // 旧 eventlog（用于 Diff）
+          );
+          
+          // 比较新旧 eventlog 的 slateJson
+          const oldSlateJson = typeof localEvent.eventlog?.slateJson === 'string' 
+            ? localEvent.eventlog.slateJson 
+            : JSON.stringify(localEvent.eventlog?.slateJson || []);
+          const newSlateJson = typeof remoteEventlog.slateJson === 'string'
+            ? remoteEventlog.slateJson
+            : JSON.stringify(remoteEventlog.slateJson || []);
+          
+          // 只有 eventlog 真的变化了才更新
+          if (oldSlateJson !== newSlateJson) {
+            updates.eventlog = remoteEventlog;
+            
+            // 🆕 同时更新 Event 的时间戳（使用 Outlook 的时间）
+            if (remoteCreatedAt) {
+              updates.createdAt = this.safeFormatDateTime(new Date(remoteCreatedAt));
+            }
+            if (remoteUpdatedAt) {
+              updates.updatedAt = this.safeFormatDateTime(new Date(remoteUpdatedAt));
+            }
+            
+            if (successCount < 3) {
+              console.log('✅ [Sync] EventLog 真实变化，将更新（含时间戳）');
+            }
+          } else {
+            if (successCount < 3) {
+              console.log('⏭️ [Sync] Description 变化但 EventLog 相同（仅签名差异），跳过 eventlog 更新');
+            }
+            descriptionChanged = false;  // 重置标志，避免后续无意义更新
+          }
         }
         
         if (timeChanged) {
@@ -2571,6 +2622,13 @@ private getUserSettings(): any {
       const uiUpdates: Array<{ type: string; eventId: string; event?: any }> = [];
       
       for (const action of otherActions) {
+        // ✅ 跳过已同步的 action（防止重复处理）
+        if (action.synchronized) {
+          console.log(`⏭️ [SyncRemote] Skipping already synchronized action:`, action.id);
+          skippedCount++;
+          continue;
+        }
+        
         try {
           const beforeCount = localEvents.length;
           const result = await this.applyRemoteActionToLocal(action, false, localEvents);
@@ -4025,17 +4083,8 @@ private getUserSettings(): any {
               this.triggerUIUpdate('create', createdEvent);
             }
           } catch (error) {
-            console.error('[ActionBasedSyncManager] Failed to create remote event via EventService:', error);
-            // Fallback: 直接通过 EventService 创建
-            try {
-              const createdEvent = await EventService.createEvent(newEvent);
-              this.updateEventInIndex(createdEvent);
-              if (triggerUI) {
-                this.triggerUIUpdate('create', createdEvent);
-              }
-            } catch (fallbackError) {
-              console.error('[ActionBasedSyncManager] Fallback creation also failed:', fallbackError);
-            }
+            console.error('[ActionBasedSyncManager] Failed to create remote event:', error);
+            throw error; // ⚠️ 直接抛出错误，不掩盖问题
           }
         } else {
           // ✅ 找到现有事件（如 Timer 事件），更新而不是创建
@@ -4156,12 +4205,65 @@ private getUserSettings(): any {
           }
           
           // 🆕 v2.14.1: 同步 description 到 eventlog 对象
-          // 🔥 [CRITICAL FIX] 传递核心内容（无签名），EventService 会自动添加签名
+          // 🔥 [CRITICAL FIX] 先解析成 Block-Level，再比较 diff，避免无脑更新
           let updatedEventlog = oldEvent.eventlog;
+          let eventlogActuallyChanged = false;
+          
           if (descriptionChanged) {
-            // ✅ 传递纯文本，让 EventService.normalizeEventLog 自动处理格式转换
-            // normalizeEventLog 会自动添加 Block-Level Timestamp 元数据
-            updatedEventlog = remoteCoreContent;  // 传递纯文本，不要手动构造 slateJson
+            // ✅ Step 1: 将远程内容解析成 Block-Level eventlog
+            const { EventService } = await import('./EventService');
+            
+            // 🆕 获取 Outlook 时间戳
+            const remoteCreatedAt = action.data.createdDateTime 
+              ? new Date(action.data.createdDateTime).getTime() 
+              : undefined;
+            const remoteUpdatedAt = action.data.lastModifiedDateTime 
+              ? new Date(action.data.lastModifiedDateTime).getTime() 
+              : undefined;
+            
+            // 🔍 调试：打印 Outlook 时间戳
+            if ((action as any).__debugCount < 5) {
+              console.log('[applyAction] Outlook 时间戳:', {
+                eventId: oldEvent.id.slice(-8),
+                createdDateTime: action.data.createdDateTime,
+                lastModifiedDateTime: action.data.lastModifiedDateTime,
+                remoteCreatedAt: remoteCreatedAt ? new Date(remoteCreatedAt).toLocaleString() : 'undefined',
+                remoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt).toLocaleString() : 'undefined'
+              });
+            }
+            
+            // ✅ 直接传递 remoteCoreContent 作为 eventlogInput（而非 fallback）
+            const remoteEventlog = EventService.normalizeEventLog(
+              remoteCoreContent,  // ✅ 直接传递 HTML/纯文本
+              undefined,          // 不需要 fallback
+              remoteCreatedAt,    // Event.createdAt
+              remoteUpdatedAt,    // Event.updatedAt
+              oldEvent.eventlog   // 旧 eventlog（用于 Diff）
+            );
+            
+            // ✅ Step 2: 比较新旧 eventlog 的 slateJson（规范化后的结构）
+            const oldSlateJson = typeof oldEvent.eventlog?.slateJson === 'string' 
+              ? oldEvent.eventlog.slateJson 
+              : JSON.stringify(oldEvent.eventlog?.slateJson || []);
+            const newSlateJson = typeof remoteEventlog.slateJson === 'string'
+              ? remoteEventlog.slateJson
+              : JSON.stringify(remoteEventlog.slateJson || []);
+            
+            // ✅ Step 3: 只有 eventlog 真的变化了才更新
+            if (oldSlateJson !== newSlateJson) {
+              updatedEventlog = remoteEventlog;
+              eventlogActuallyChanged = true;
+              console.log('✅ [Sync] EventLog 真实变化，将更新:', {
+                eventId: oldEvent.id.slice(-8),
+                oldLength: oldSlateJson.length,
+                newLength: newSlateJson.length
+              });
+            } else {
+              console.log('⏭️ [Sync] Description 变化但 EventLog 相同（仅签名差异），跳过更新:', {
+                eventId: oldEvent.id.slice(-8)
+              });
+              // EventLog 没变化，不更新
+            }
           }
           
           // 🔧 将 Outlook subject 转换为完整的 EventTitle 对象
@@ -4183,8 +4285,8 @@ private getUserSettings(): any {
             updates.title = titleObject;
           }
           
-          if (descriptionChanged && updatedEventlog) {
-            // ✅ 只设置 eventlog，EventService 会自动调用 normalizeEventLog 处理
+          if (eventlogActuallyChanged && updatedEventlog) {
+            // ✅ 只在 eventlog 真正变化时才更新
             updates.eventlog = updatedEventlog;
           }
           
@@ -4775,14 +4877,27 @@ private getUserSettings(): any {
       isAllDay: remoteEvent.isAllDay || false,
       location: remoteEvent.location?.displayName || '',
       reminder: 0,
-      // 🔥 [CRITICAL FIX v2.18.8] 总是传递 Outlook 的时间戳
+      // 🔥 [CRITICAL FIX v2.19.0] 总是传递 Outlook 的时间戳
       // normalizeEvent 会收集3个候选：
       //   1. 签名中的时间（extractedTimestamps.createdAt）
       //   2. Outlook 的时间（event.createdAt，即下面传的值）
       //   3. 同步时间（new Date()，作为最后回退）
       // 然后取最早的时间，确保创建时间永远不会变晚
-      createdAt: this.safeFormatDateTime(remoteEvent.createdDateTime || new Date()),
-      updatedAt: this.safeFormatDateTime(remoteEvent.lastModifiedDateTime || new Date()),
+      // 
+      // ✅ [FIX] createdDateTime/lastModifiedDateTime 默认不在 Graph API 响应中
+      //    使用 start.dateTime 作为回退值（事件开始时间作为创建时间的近似值）
+      createdAt: this.safeFormatDateTime(
+        remoteEvent.createdDateTime || 
+        remoteEvent.start?.dateTime || 
+        remoteEvent.start || 
+        new Date()
+      ),
+      updatedAt: this.safeFormatDateTime(
+        remoteEvent.lastModifiedDateTime || 
+        remoteEvent.end?.dateTime || 
+        remoteEvent.end || 
+        new Date()
+      ),
       externalId: pureOutlookId, // 纯 Outlook ID，不带 'outlook-' 前缀
       calendarIds: remoteEvent.calendarIds || ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
       source: 'outlook', // 🔧 设置source字段（默认值，extractCreatorFromSignature 会根据签名覆盖）

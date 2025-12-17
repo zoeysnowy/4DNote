@@ -1,0 +1,792 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>事件查询工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 32px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #333;
+      margin-bottom: 16px;
+      font-size: 20px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 8px;
+    }
+
+    .input-group {
+      margin-bottom: 16px;
+      display: grid;
+      grid-template-columns: 150px 1fr;
+      gap: 10px;
+      align-items: center;
+    }
+
+    label {
+      color: #555;
+      font-weight: 500;
+    }
+
+    input {
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    .output {
+      background: #f8f9fa;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 600px;
+      overflow-y: auto;
+    }
+
+    .success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+
+    .error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+
+    .info {
+      background: #d1ecf1;
+      border-color: #17a2b8;
+      color: #0c5460;
+    }
+
+    .event-card {
+      background: white;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 12px 0;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .event-card:hover {
+      border-color: #667eea;
+      box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+    }
+
+    .event-card.selected {
+      border-color: #667eea;
+      background: #f0f4ff;
+    }
+
+    .event-title {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .event-meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 8px;
+      font-size: 13px;
+      color: #666;
+    }
+
+    .event-meta-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .badge-success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .badge-warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .badge-info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .copy-btn {
+      background: #28a745;
+      padding: 6px 12px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+
+    .copy-btn:hover {
+      background: #218838;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 事件精确查询工具</h1>
+
+    <div class="section">
+      <h2>按日期和时间查询</h2>
+      <div class="input-group">
+        <label>日期:</label>
+        <input type="date" id="eventDate" value="2025-12-14">
+      </div>
+      <div class="input-group">
+        <label>开始时间:</label>
+        <input type="time" id="startTime" value="17:30">
+      </div>
+      <div class="input-group">
+        <label>标题关键词（可选）:</label>
+        <input type="text" id="titleKeyword" placeholder="例如: 4DNote">
+      </div>
+      <button onclick="searchByDateTime()">🔍 精确查询</button>
+      <button onclick="searchByDate()">📅 查询当天所有事件</button>
+      <button onclick="clearOutput()">清空</button>
+      <div id="output" class="output" style="display: none;"></div>
+    </div>
+
+    <div class="section">
+      <h2>查询数据库统计</h2>
+      <button onclick="showDatabaseStats()">📊 显示统计</button>
+      <button onclick="cleanupEmptyDatabases()" style="background: #f44336; margin-left: 10px;">🗑️ 清理空数据库</button>
+      <div id="statsOutput" class="output" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    let selectedEventId = null;
+
+    async function listAllDatabases() {
+      if ('databases' in indexedDB) {
+        const databases = await indexedDB.databases();
+        console.log('📋 所有数据库:', databases);
+        return databases;
+      }
+      return [];
+    }
+
+    async function openDB() {
+      return new Promise(async (resolve, reject) => {
+        // 先列出所有数据库
+        const databases = await listAllDatabases();
+        console.log('🔍 检测到的数据库:', databases);
+        
+        // 尝试所有检测到的数据库，找到第一个有内容的
+        if (databases && databases.length > 0) {
+          for (const dbInfo of databases) {
+            try {
+              console.log(`🔍 尝试打开数据库: ${dbInfo.name}`);
+              const db = await new Promise((res, rej) => {
+                const request = indexedDB.open(dbInfo.name);
+                request.onsuccess = () => res(request.result);
+                request.onerror = () => rej(request.error);
+              });
+              
+              if (db.objectStoreNames.length > 0) {
+                console.log('✅ 找到有内容的数据库:', {
+                  name: db.name,
+                  version: db.version,
+                  stores: Array.from(db.objectStoreNames)
+                });
+                resolve(db);
+                return;
+              } else {
+                console.log(`⏭️ 跳过空数据库: ${dbInfo.name}`);
+                db.close();
+              }
+            } catch (err) {
+              console.warn(`⚠️ 无法打开数据库 ${dbInfo.name}:`, err);
+            }
+          }
+          
+          reject(new Error('所有数据库都是空的，请先在应用中创建事件'));
+          return;
+        }
+        
+        // 如果无法获取数据库列表，尝试默认名称
+        console.log('⚠️ 无法获取数据库列表，尝试默认名称');
+        const possibleDBNames = ['4DNoteDB', '4DNote', 'FourDNote'];
+        
+        for (const dbName of possibleDBNames) {
+          try {
+            const db = await new Promise((res, rej) => {
+              const request = indexedDB.open(dbName);
+              request.onsuccess = () => res(request.result);
+              request.onerror = () => rej(request.error);
+            });
+            
+            if (db.objectStoreNames.length > 0) {
+              console.log('✅ 数据库打开成功:', {
+                name: db.name,
+                version: db.version,
+                stores: Array.from(db.objectStoreNames)
+              });
+              resolve(db);
+              return;
+            } else {
+              db.close();
+            }
+          } catch (err) {
+            console.warn(`尝试 ${dbName} 失败:`, err);
+          }
+        }
+        
+        reject(new Error('未找到可用的数据库'));
+      });
+    }
+
+    async function findEventStore(db) {
+      const storeNames = Array.from(db.objectStoreNames);
+      console.log('📦 可用的 Object Stores:', storeNames);
+      
+      if (storeNames.length === 0) {
+        throw new Error('数据库中没有任何 object store。请先在应用中创建事件。');
+      }
+      
+      // 可能的事件存储名称
+      const possibleNames = ['events', 'Events', 'event', 'Event', 'event_store', 'EventStore'];
+      
+      for (const name of possibleNames) {
+        if (storeNames.includes(name)) {
+          console.log('✅ 找到事件存储:', name);
+          return name;
+        }
+      }
+      
+      // 查找包含 'event' 的存储
+      const eventStore = storeNames.find(name => name.toLowerCase().includes('event'));
+      if (eventStore) {
+        console.log('✅ 找到可能的事件存储:', eventStore);
+        return eventStore;
+      }
+      
+      // 如果只有一个 store，就用它
+      if (storeNames.length === 1) {
+        console.log('⚠️ 只有一个 store，尝试使用:', storeNames[0]);
+        return storeNames[0];
+      }
+      
+      throw new Error(`未找到事件存储。可用的 stores: ${storeNames.join(', ')}。\n\n请检查:\n1. 是否已经在应用中创建了事件？\n2. 数据库是否已经初始化？`);
+    }
+
+    async function getAllEvents(db) {
+      const storeName = await findEventStore(db);
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    function formatDateTime(dateStr) {
+      if (!dateStr) return 'N/A';
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return dateStr;
+      return date.toLocaleString('zh-CN', { 
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    }
+
+    function createEventCard(event, index) {
+      const div = document.createElement('div');
+      div.className = 'event-card';
+      div.onclick = () => selectEvent(event.id, div);
+      
+      const title = typeof event.title === 'object' 
+        ? (event.title.simpleTitle || event.title.fullTitle || '无标题')
+        : (event.title || '无标题');
+      
+      const startDate = event.startTime ? new Date(event.startTime) : null;
+      const endDate = event.endTime ? new Date(event.endTime) : null;
+      
+      let timeStr = '';
+      if (startDate && !isNaN(startDate.getTime())) {
+        const dateStr = startDate.toLocaleDateString('zh-CN');
+        const startTimeStr = startDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        const endTimeStr = endDate && !isNaN(endDate.getTime()) 
+          ? endDate.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+          : '?';
+        timeStr = `${dateStr} ${startTimeStr} - ${endTimeStr}`;
+      } else {
+        timeStr = '无时间';
+      }
+      
+      div.innerHTML = `
+        <div class="event-title">${index + 1}. ${title}</div>
+        <div class="event-meta">
+          <div class="event-meta-item">
+            📅 ${timeStr}
+          </div>
+          <div class="event-meta-item">
+            🆔 <code>${event.id}</code>
+            <button class="copy-btn" onclick="event.stopPropagation(); copyToClipboard('${event.id}', this)">复制ID</button>
+          </div>
+          <div class="event-meta-item">
+            📝 创建: ${formatDateTime(event.createdAt)}
+          </div>
+          <div class="event-meta-item">
+            🔄 更新: ${formatDateTime(event.updatedAt)}
+          </div>
+          <div class="event-meta-item">
+            🏷️ ${event.tags && event.tags.length > 0 ? event.tags.join(', ') : '无标签'}
+          </div>
+          <div class="event-meta-item">
+            🔗 来源: <span class="badge badge-info">${event.source || 'N/A'}</span>
+          </div>
+        </div>
+      `;
+      
+      return div;
+    }
+
+    function selectEvent(eventId, cardElement) {
+      selectedEventId = eventId;
+      document.querySelectorAll('.event-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      cardElement.classList.add('selected');
+      
+      console.log('✅ 已选择事件:', eventId);
+      showEventDetails(eventId);
+    }
+
+    async function showEventDetails(eventId) {
+      const output = document.getElementById('output');
+      
+      try {
+        const db = await openDB();
+        const storeName = await findEventStore(db);
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const request = store.get(eventId);
+        
+        request.onsuccess = () => {
+          const event = request.result;
+          if (!event) {
+            alert('事件未找到！');
+            return;
+          }
+          
+          let details = `\n${'='.repeat(60)}\n`;
+          details += `📋 事件详细信息\n`;
+          details += `${'='.repeat(60)}\n\n`;
+          details += `🆔 ID: ${event.id}\n`;
+          details += `📝 标题: ${typeof event.title === 'object' ? event.title.simpleTitle : event.title}\n`;
+          details += `📅 开始时间: ${event.startTime}\n`;
+          details += `⏰ 结束时间: ${event.endTime}\n`;
+          details += `🎨 创建时间: ${event.createdAt}\n`;
+          details += `🔄 更新时间: ${event.updatedAt}\n`;
+          details += `🔗 来源: ${event.source}\n`;
+          details += `🏷️ 标签: ${event.tags ? event.tags.join(', ') : '无'}\n\n`;
+          
+          // EventLog 分析
+          details += `${'='.repeat(60)}\n`;
+          details += `📄 EventLog 分析\n`;
+          details += `${'='.repeat(60)}\n`;
+          
+          let eventlog = event.eventlog;
+          if (typeof eventlog === 'string') {
+            try {
+              eventlog = JSON.parse(eventlog);
+              details += `类型: string → object ✅\n`;
+            } catch (e) {
+              details += `类型: string（解析失败）❌\n`;
+            }
+          }
+          
+          if (eventlog && eventlog.slateJson) {
+            let slateJson = eventlog.slateJson;
+            if (typeof slateJson === 'string') {
+              try {
+                slateJson = JSON.parse(slateJson);
+                details += `slateJson: string → array ✅\n`;
+              } catch (e) {
+                details += `slateJson: string（解析失败）❌\n`;
+              }
+            }
+            
+            if (Array.isArray(slateJson)) {
+              details += `节点数: ${slateJson.length}\n\n`;
+              
+              slateJson.forEach((node, i) => {
+                details += `  节点 ${i + 1}:\n`;
+                details += `    类型: ${node.type}\n`;
+                
+                if (node.createdAt) {
+                  const date = new Date(node.createdAt);
+                  details += `    ✅ createdAt: ${node.createdAt}\n`;
+                  details += `       → UTC: ${date.toISOString()}\n`;
+                  details += `       → 本地: ${date.toLocaleString('zh-CN')}\n`;
+                } else {
+                  details += `    ⚠️ createdAt: 缺失\n`;
+                }
+                
+                if (node.updatedAt) {
+                  const date = new Date(node.updatedAt);
+                  details += `    ✅ updatedAt: ${node.updatedAt}\n`;
+                  details += `       → 本地: ${date.toLocaleString('zh-CN')}\n`;
+                }
+                
+                if (node.children) {
+                  const text = node.children.map(c => c.text || '').join('');
+                  details += `    内容: ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}\n`;
+                }
+                details += `\n`;
+              });
+            }
+          }
+          
+          // Description
+          if (event.description) {
+            details += `\n${'='.repeat(60)}\n`;
+            details += `📝 Description\n`;
+            details += `${'='.repeat(60)}\n`;
+            details += event.description.substring(0, 500);
+            if (event.description.length > 500) {
+              details += '\n...(已截断)';
+            }
+          }
+          
+          const newOutput = document.createElement('div');
+          newOutput.textContent = details;
+          newOutput.className = 'output info';
+          newOutput.style.display = 'block';
+          
+          output.parentNode.insertBefore(newOutput, output.nextSibling);
+        };
+      } catch (error) {
+        alert('查询失败: ' + error.message);
+      }
+    }
+
+    async function searchByDateTime() {
+      const date = document.getElementById('eventDate').value;
+      const time = document.getElementById('startTime').value;
+      const keyword = document.getElementById('titleKeyword').value;
+      const output = document.getElementById('output');
+      
+      output.style.display = 'block';
+      output.innerHTML = '';
+      output.className = 'output info';
+      
+      try {
+        const db = await openDB();
+        const events = await getAllEvents(db);
+        
+        const targetDateTime = new Date(`${date}T${time}`);
+        console.log('🔍 查询目标时间:', targetDateTime.toLocaleString('zh-CN'));
+        
+        const matches = events.filter(event => {
+          if (!event.startTime) return false;
+          
+          const startTime = new Date(event.startTime);
+          if (isNaN(startTime.getTime())) return false;
+          
+          // 检查日期和小时、分钟是否匹配
+          const dateMatch = 
+            startTime.getFullYear() === targetDateTime.getFullYear() &&
+            startTime.getMonth() === targetDateTime.getMonth() &&
+            startTime.getDate() === targetDateTime.getDate() &&
+            startTime.getHours() === targetDateTime.getHours() &&
+            startTime.getMinutes() === targetDateTime.getMinutes();
+          
+          if (!dateMatch) return false;
+          
+          // 如果有关键词，检查标题
+          if (keyword) {
+            const title = typeof event.title === 'object' 
+              ? (event.title.simpleTitle || event.title.fullTitle || '')
+              : (event.title || '');
+            return title.includes(keyword);
+          }
+          
+          return true;
+        });
+        
+        if (matches.length === 0) {
+          output.textContent = `❌ 未找到匹配的事件\n\n查询条件:\n  日期时间: ${targetDateTime.toLocaleString('zh-CN')}\n  关键词: ${keyword || '无'}`;
+          output.className = 'output warning';
+          return;
+        }
+        
+        const header = document.createElement('div');
+        header.textContent = `✅ 找到 ${matches.length} 个匹配的事件\n\n查询: ${targetDateTime.toLocaleString('zh-CN')}${keyword ? ` + "${keyword}"` : ''}\n`;
+        output.appendChild(header);
+        
+        matches.forEach((event, index) => {
+          output.appendChild(createEventCard(event, index));
+        });
+        
+        output.className = 'output success';
+        
+      } catch (error) {
+        output.textContent = `❌ 查询失败:\n${error.message}\n\n${error.stack}`;
+        output.className = 'output error';
+      }
+    }
+
+    async function searchByDate() {
+      const date = document.getElementById('eventDate').value;
+      const output = document.getElementById('output');
+      
+      output.style.display = 'block';
+      output.innerHTML = '';
+      output.className = 'output info';
+      
+      try {
+        const db = await openDB();
+        const events = await getAllEvents(db);
+        
+        const targetDate = new Date(date);
+        
+        const matches = events.filter(event => {
+          if (!event.startTime) return false;
+          const startTime = new Date(event.startTime);
+          if (isNaN(startTime.getTime())) return false;
+          
+          return startTime.getFullYear() === targetDate.getFullYear() &&
+                 startTime.getMonth() === targetDate.getMonth() &&
+                 startTime.getDate() === targetDate.getDate();
+        });
+        
+        matches.sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+        
+        if (matches.length === 0) {
+          output.textContent = `❌ ${date} 没有事件`;
+          output.className = 'output warning';
+          return;
+        }
+        
+        const header = document.createElement('div');
+        header.textContent = `✅ ${date} 共有 ${matches.length} 个事件\n\n`;
+        output.appendChild(header);
+        
+        matches.forEach((event, index) => {
+          output.appendChild(createEventCard(event, index));
+        });
+        
+        output.className = 'output success';
+        
+      } catch (error) {
+        output.textContent = `❌ 查询失败:\n${error.message}`;
+        output.className = 'output error';
+      }
+    }
+
+    async function showDatabaseStats() {
+      const output = document.getElementById('statsOutput');
+      output.style.display = 'block';
+      
+      try {
+        // 先列出所有数据库
+        const databases = await listAllDatabases();
+        
+        let stats = `📊 IndexedDB 统计\n\n`;
+        
+        if (databases && databases.length > 0) {
+          stats += `检测到的数据库:\n`;
+          databases.forEach(db => {
+            stats += `  - ${db.name} (版本 ${db.version || 'unknown'})\n`;
+          });
+          stats += `\n`;
+        }
+        
+        const db = await openDB();
+        const storeNames = Array.from(db.objectStoreNames);
+        
+        stats += `当前数据库: ${db.name}\n`;
+        stats += `版本: ${db.version}\n`;
+        stats += `Object Stores (${storeNames.length}):\n`;
+        storeNames.forEach(name => {
+          stats += `  - ${name}\n`;
+        });
+        
+        output.textContent = stats;
+      } catch (err) {
+        output.textContent = '❌ 错误: ' + err.message;
+      }
+    }
+
+    async function cleanupEmptyDatabases() {
+      const output = document.getElementById('statsOutput');
+      output.style.display = 'block';
+      
+      try {
+        const databases = await listAllDatabases();
+        if (!databases || databases.length === 0) {
+          output.textContent = '⚠️ 无法获取数据库列表';
+          return;
+        }
+
+        output.textContent = '🔍 正在检查数据库...\n';
+        const emptyDatabases = [];
+        
+        // 检查每个数据库
+        for (const dbInfo of databases) {
+          try {
+            const db = await new Promise((resolve, reject) => {
+              const request = indexedDB.open(dbInfo.name);
+              request.onsuccess = () => resolve(request.result);
+              request.onerror = () => reject(request.error);
+            });
+            
+            if (db.objectStoreNames.length === 0) {
+              emptyDatabases.push(dbInfo.name);
+              output.textContent += `  - 发现空数据库: ${dbInfo.name}\n`;
+            }
+            db.close();
+          } catch (err) {
+            console.warn(`无法检查数据库 ${dbInfo.name}:`, err);
+          }
+        }
+
+        if (emptyDatabases.length === 0) {
+          output.textContent = '✅ 没有空数据库需要清理';
+          return;
+        }
+
+        const confirmed = confirm(
+          `发现 ${emptyDatabases.length} 个空数据库:\n${emptyDatabases.join(', ')}\n\n确定要删除吗？`
+        );
+
+        if (!confirmed) {
+          output.textContent = '❌ 已取消';
+          return;
+        }
+
+        output.textContent = '🗑️ 正在删除...\n';
+        
+        // 删除空数据库
+        for (const dbName of emptyDatabases) {
+          try {
+            await new Promise((resolve, reject) => {
+              const request = indexedDB.deleteDatabase(dbName);
+              request.onsuccess = () => resolve();
+              request.onerror = () => reject(request.error);
+            });
+            output.textContent += `  ✅ 已删除: ${dbName}\n`;
+          } catch (err) {
+            output.textContent += `  ❌ 删除失败 ${dbName}: ${err.message}\n`;
+          }
+        }
+
+        output.textContent += '\n✅ 清理完成！';
+      } catch (err) {
+        output.textContent = '❌ 清理失败: ' + err.message;
+      }
+    }
+
+    function copyToClipboard(text, button) {
+      navigator.clipboard.writeText(text).then(() => {
+        const originalText = button.textContent;
+        button.textContent = '✅ 已复制';
+        button.style.background = '#28a745';
+        setTimeout(() => {
+          button.textContent = originalText;
+          button.style.background = '';
+        }, 2000);
+      }).catch(err => {
+        alert('复制失败: ' + err.message);
+      });
+    }
+
+    function clearOutput() {
+      document.getElementById('output').style.display = 'none';
+      document.getElementById('output').innerHTML = '';
+    }
+
+    console.log('🚀 事件查询工具已加载');
+  </script>
+</body>
+</html>

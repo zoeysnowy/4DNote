@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EventHistory 诊断测试</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 28px;
+    }
+    .subtitle {
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 14px;
+    }
+    .section {
+      margin-bottom: 30px;
+      padding: 20px;
+      background: #f8f9fa;
+      border-radius: 8px;
+      border-left: 4px solid #667eea;
+    }
+    .section h2 {
+      color: #667eea;
+      margin-bottom: 15px;
+      font-size: 20px;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      background: #667eea;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.3s;
+      font-weight: 500;
+    }
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      transform: none;
+    }
+    button.danger {
+      background: #e74c3c;
+    }
+    button.danger:hover {
+      background: #c0392b;
+    }
+    button.success {
+      background: #27ae60;
+    }
+    button.success:hover {
+      background: #229954;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+    .stat-card {
+      padding: 15px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #e0e0e0;
+    }
+    .stat-card h3 {
+      color: #999;
+      font-size: 12px;
+      text-transform: uppercase;
+      margin-bottom: 5px;
+      font-weight: 600;
+    }
+    .stat-card .value {
+      color: #333;
+      font-size: 24px;
+      font-weight: bold;
+    }
+    .stat-card.warning .value {
+      color: #f39c12;
+    }
+    .stat-card.danger .value {
+      color: #e74c3c;
+    }
+    .stat-card.success .value {
+      color: #27ae60;
+    }
+    .log-container {
+      background: #1e1e1e;
+      color: #d4d4d4;
+      padding: 20px;
+      border-radius: 8px;
+      max-height: 500px;
+      overflow-y: auto;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .log-entry {
+      margin-bottom: 5px;
+      padding: 5px;
+      border-radius: 3px;
+    }
+    .log-entry.info { color: #4fc3f7; }
+    .log-entry.success { color: #66bb6a; }
+    .log-entry.warning { color: #ffa726; }
+    .log-entry.error { 
+      color: #ef5350;
+      background: rgba(239, 83, 80, 0.1);
+    }
+    .progress-bar {
+      width: 100%;
+      height: 6px;
+      background: #e0e0e0;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      width: 0%;
+      transition: width 0.3s;
+    }
+    .table-container {
+      max-height: 400px;
+      overflow-y: auto;
+      margin-top: 15px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    thead {
+      position: sticky;
+      top: 0;
+      background: #667eea;
+      color: white;
+      z-index: 1;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    tbody tr:hover {
+      background: #f5f5f5;
+    }
+    .code-block {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 6px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      overflow-x: auto;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 EventHistory 诊断测试</h1>
+    <p class="subtitle">测试历史记录服务、清理功能和性能优化</p>
+
+    <!-- 统计信息 -->
+    <div class="section">
+      <h2>📈 当前统计</h2>
+      <div class="stats" id="stats">
+        <div class="stat-card">
+          <h3>总记录数</h3>
+          <div class="value" id="totalCount">-</div>
+        </div>
+        <div class="stat-card">
+          <h3>Create 操作</h3>
+          <div class="value" id="createCount">-</div>
+        </div>
+        <div class="stat-card">
+          <h3>Update 操作</h3>
+          <div class="value" id="updateCount">-</div>
+        </div>
+        <div class="stat-card">
+          <h3>Delete 操作</h3>
+          <div class="value" id="deleteCount">-</div>
+        </div>
+        <div class="stat-card">
+          <h3>Backfill 记录</h3>
+          <div class="value" id="backfillCount">-</div>
+        </div>
+        <div class="stat-card">
+          <h3>最旧记录</h3>
+          <div class="value" id="oldestRecord" style="font-size: 14px;">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作按钮 -->
+    <div class="section">
+      <h2>🔧 测试操作</h2>
+      <div class="button-group">
+        <button onclick="loadStats()">🔄 刷新统计</button>
+        <button onclick="testExtractChanges()">🧪 测试 extractChanges</button>
+        <button onclick="testEventLogComparison()">📝 测试 EventLog 比较</button>
+        <button onclick="showRecentLogs()">📜 显示最近记录</button>
+        <button onclick="checkDuplicates()">🔍 检查重复记录</button>
+        <button onclick="analyzeChangeFields()">📊 分析变更字段</button>
+        <button onclick="debugExternalSync()">🐛 调试 external-sync</button>
+        <button onclick="analyzeCreateRecords()">🔬 分析 CREATE 记录</button>
+      </div>
+      <div class="button-group">
+        <button class="success" onclick="runAutoCleanup()">🧹 运行自动清理</button>
+        <button class="success" onclick="cleanOldRecords()">🗑️ 清理旧记录（30天前）</button>
+        <button class="danger" onclick="clearAllHistory()">⚠️ 清空所有历史</button>
+      </div>
+    </div>
+
+    <!-- 控制台日志 -->
+    <div class="section">
+      <h2>📋 测试日志</h2>
+      <div class="log-container" id="logContainer">
+        <div class="log-entry info">等待测试...</div>
+      </div>
+    </div>
+
+    <!-- 🆕 Description 变更调试 -->
+    <div class="section">
+      <h2>🔍 Description 变更调试（实时监听 UPDATE 操作）</h2>
+      <div class="button-group">
+        <button onclick="testDescriptionChange()">🧪 手动测试 Description 变更</button>
+        <button onclick="clearDescriptionLog()">🗑️ 清空日志</button>
+      </div>
+      <div class="log-container" id="descriptionDebugContainer" style="max-height: 300px;">
+        <div class="log-entry info">⏳ 等待 UPDATE 操作触发...（CREATE 操作不会触发此调试）</div>
+      </div>
+    </div>
+
+    <!-- 🆕 CREATE 去重调试 -->
+    <div class="section">
+      <h2>🛡️ CREATE 去重监控（实时捕捉重复调用）</h2>
+      <div class="button-group">
+        <button onclick="testCreateEvent()">🧪 手动测试 CREATE</button>
+        <button onclick="testCreateDuplicate()">⚠️ 测试重复调用（1秒内）</button>
+        <button onclick="clearCreateLog()">🗑️ 清空日志</button>
+        <button class="info" onclick="showCreateStats()">📊 显示统计</button>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 15px;">
+        <div style="background: #e3f2fd; padding: 10px; border-radius: 5px;">
+          <strong>✅ 成功记录:</strong> <span id="createSuccessCount" style="font-size: 20px; color: #2196F3;">0</span>
+        </div>
+        <div style="background: #fff3e0; padding: 10px; border-radius: 5px;">
+          <strong>⚠️ 去重拦截:</strong> <span id="createDedupeCount" style="font-size: 20px; color: #ff9800;">0</span>
+        </div>
+      </div>
+      <div class="log-container" id="createDebugContainer" style="max-height: 400px;">
+        <div class="log-entry info">⏳ 等待 CREATE 操作...（包含调用堆栈信息）</div>
+      </div>
+    </div>
+
+    <!-- 测试结果 -->
+    <div class="section" id="resultsSection" style="display: none;">
+      <h2>📊 测试结果</h2>
+      <div id="resultsContent"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    // 动态导入 EventHistoryService
+    let EventHistoryService;
+    let StorageManager;
+
+    async function init() {
+      try {
+        const historyModule = await import('/src/services/EventHistoryService.ts');
+        EventHistoryService = historyModule.EventHistoryService;
+        
+        const storageModule = await import('/src/services/storage/StorageManager.ts');
+        StorageManager = storageModule.storageManager;
+        
+        log('✅ 模块加载成功', 'success');
+        window.EventHistoryService = EventHistoryService;
+        window.StorageManager = StorageManager;
+        
+        // 🆕 监听 description 调试事件
+        window.addEventListener('description-debug', (event) => {
+          const { detail } = event;
+          logDescription(detail);
+        });
+        
+        // 🆕 监听 CREATE 成功记录
+        window.addEventListener('create-logged', (event) => {
+          const { detail } = event;
+          logCreateSuccess(detail);
+        });
+        
+        // 🆕 监听 CREATE 去重拦截
+        window.addEventListener('create-dedupe', (event) => {
+          const { detail } = event;
+          logCreateDedupe(detail);
+        });
+        
+        // 自动加载统计
+        await loadStats();
+      } catch (error) {
+        log(`❌ 模块加载失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    }
+
+    // 日志输出
+    window.log = function(message, type = 'info') {
+      const container = document.getElementById('logContainer');
+      const entry = document.createElement('div');
+      entry.className = `log-entry ${type}`;
+      entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+      console.log(message);
+    };
+
+    // 🆕 CREATE 成功日志计数器
+    let createSuccessCount = 0;
+    let createDedupeCount = 0;
+    
+    // 🆕 CREATE 成功日志输出
+    window.logCreateSuccess = function(data) {
+      createSuccessCount++;
+      document.getElementById('createSuccessCount').textContent = createSuccessCount;
+      
+      const container = document.getElementById('createDebugContainer');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry success';
+      entry.innerHTML = `
+        <div><strong>[${new Date(data.timestamp).toLocaleTimeString()}] ✅ CREATE 已记录</strong></div>
+        <div style="margin-top: 5px;">事件ID: <code>${data.eventId}</code> | 来源: <code>${data.source}</code></div>
+        <details style="margin-top: 5px;">
+          <summary style="cursor: pointer; color: #666;">📍 调用堆栈（点击展开）</summary>
+          <pre style="margin-top: 5px; padding: 10px; background: #f5f5f5; border-radius: 3px; font-size: 11px; overflow-x: auto;">${data.stackTrace}</pre>
+        </details>
+      `;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    };
+    
+    // 🆕 CREATE 去重日志输出
+    window.logCreateDedupe = function(data) {
+      createDedupeCount++;
+      document.getElementById('createDedupeCount').textContent = createDedupeCount;
+      
+      const container = document.getElementById('createDebugContainer');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry warning';
+      entry.innerHTML = `
+        <div><strong>[${new Date(data.timestamp).toLocaleTimeString()}] ⚠️ CREATE 去重拦截</strong></div>
+        <div style="margin-top: 5px;">事件ID: <code>${data.eventId}</code> | 来源: <code>${data.source}</code></div>
+        <div style="margin-top: 5px; color: #ff9800;">⏱️ 距离上次调用: <strong>${data.timeSinceLastCall}ms</strong> (去重窗口: 1000ms)</div>
+        <details style="margin-top: 5px;">
+          <summary style="cursor: pointer; color: #666;">📍 调用堆栈（点击展开）</summary>
+          <pre style="margin-top: 5px; padding: 10px; background: #fff3e0; border-radius: 3px; font-size: 11px; overflow-x: auto;">${data.stackTrace}</pre>
+        </details>
+      `;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+    };
+    
+    // 🆕 清空 CREATE 日志
+    window.clearCreateLog = function() {
+      createSuccessCount = 0;
+      createDedupeCount = 0;
+      document.getElementById('createSuccessCount').textContent = '0';
+      document.getElementById('createDedupeCount').textContent = '0';
+      document.getElementById('createDebugContainer').innerHTML = '<div class="log-entry info">⏳ 等待 CREATE 操作...</div>';
+    };
+    
+    // 🆕 显示 CREATE 统计
+    window.showCreateStats = function() {
+      const total = createSuccessCount + createDedupeCount;
+      const dedupeRate = total > 0 ? ((createDedupeCount / total) * 100).toFixed(1) : 0;
+      alert(`CREATE 操作统计:\n\n✅ 成功记录: ${createSuccessCount}\n⚠️ 去重拦截: ${createDedupeCount}\n📊 总计: ${total}\n🛡️ 拦截率: ${dedupeRate}%`);
+    };
+    
+    // 🆕 Description 调试日志输出
+    window.logDescription = function(data) {
+      const container = document.getElementById('descriptionDebugContainer');
+      const entry = document.createElement('div');
+      entry.className = 'log-entry warning';
+      entry.innerHTML = `
+        <div style="border-left: 3px solid #ffa726; padding-left: 10px; margin: 10px 0;">
+          <strong>[${new Date().toLocaleTimeString()}] EventID: ${data.eventId}</strong><br>
+          <span style="color: #aaa;">Before (${data.before_length} chars):</span> ${data.before_first_150}<br>
+          <span style="color: #aaa;">After (${data.after_length} chars):</span> ${data.after_first_150}<br>
+          <span style="color: ${data.equal ? '#66bb6a' : '#ef5350'};">相等: ${data.equal}</span>
+        </div>
+      `;
+      container.appendChild(entry);
+      container.scrollTop = container.scrollHeight;
+      
+      // 限制最多显示 20 条
+      while (container.children.length > 20) {
+        container.removeChild(container.children[1]); // 保留第一个提示
+      }
+    };
+
+    // 加载统计
+    window.loadStats = async function() {
+      try {
+        log('📊 加载统计数据...', 'info');
+        const stats = await EventHistoryService.getBasicStatistics();
+        
+        document.getElementById('totalCount').textContent = stats.total || 0;
+        document.getElementById('createCount').textContent = stats.byOperation?.create || 0;
+        document.getElementById('updateCount').textContent = stats.byOperation?.update || 0;
+        document.getElementById('deleteCount').textContent = stats.byOperation?.delete || 0;
+        document.getElementById('backfillCount').textContent = stats.bySource?.['backfill-from-timestamp'] || 0;
+        document.getElementById('oldestRecord').textContent = stats.oldestRecord || '-';
+        
+        // 根据数量设置警告样式
+        const totalCard = document.querySelector('.stat-card');
+        const total = stats.total || 0;
+        if (total > 10000) {
+          totalCard.classList.add('danger');
+          log(`⚠️ 历史记录超限: ${total} / 10000`, 'warning');
+        } else if (total > 8000) {
+          totalCard.classList.add('warning');
+          log(`⚠️ 历史记录即将超限: ${total} / 10000`, 'warning');
+        } else {
+          totalCard.classList.add('success');
+          log(`✅ 历史记录正常: ${total} / 10000`, 'success');
+        }
+        
+        log('✅ 统计加载完成', 'success');
+      } catch (error) {
+        log(`❌ 加载统计失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 测试 extractChanges
+    window.testExtractChanges = async function() {
+      log('🧪 测试 extractChanges...', 'info');
+      log('ℹ️ 注意: 此测试需要实际创建事件，暂时跳过', 'warning');
+      log('✅ 改用控制台命令测试:', 'info');
+      log('  await testEventUpdate()', 'info');
+    };
+
+    async function testExtractChangesHelper(before, after) {
+      // 简化版本 - 直接使用全局 EventService
+      try {
+        if (!window.EventService) {
+          throw new Error('EventService 未加载，请刷新页面');
+        }
+        
+        // 先创建 before 事件
+        const beforeEvent = await window.EventService.createEvent(before, { source: 'test' });
+        
+        // 更新为 after
+        await window.EventService.updateEvent(beforeEvent.id, after, { source: 'test' });
+        
+        // 查询历史记录
+        const history = await EventHistoryService.queryHistory({
+          eventId: beforeEvent.id,
+          limit: 10
+        });
+        
+        const updateLog = history.find(h => h.operation === 'update');
+        
+        // 清理测试事件
+        await window.EventService.deleteEvent(beforeEvent.id);
+        
+        return updateLog?.changes || [];
+      } catch (error) {
+        log(`测试失败: ${error.message}`, 'error');
+        console.error('详细错误:', error);
+        return [];
+      }
+    }
+
+    // 测试 EventLog 比较
+    window.testEventLogComparison = function() {
+      log('📝 测试 EventLog 文本提取...', 'info');
+      
+      const testCases = [
+        {
+          name: 'Slate JSON with Block Timestamp',
+          eventlog: {
+            slateJson: JSON.stringify([
+              { type: 'paragraph', createdAt: 1734220800000, children: [{ text: '测试内容' }] }
+            ])
+          },
+          expected: '测试内容'
+        },
+        {
+          name: 'Slate JSON without timestamp',
+          eventlog: {
+            slateJson: JSON.stringify([
+              { type: 'paragraph', children: [{ text: '测试内容' }] }
+            ])
+          },
+          expected: '测试内容'
+        },
+        {
+          name: 'Multiple paragraphs',
+          eventlog: {
+            slateJson: JSON.stringify([
+              { type: 'paragraph', children: [{ text: '第一段' }] },
+              { type: 'paragraph', children: [{ text: '第二段' }] }
+            ])
+          },
+          expected: '第一段\n第二段'
+        }
+      ];
+      
+      testCases.forEach((test, index) => {
+        log(`测试 ${index + 1}: ${test.name}`, 'info');
+        // Note: extractTextFromEventLog 是私有方法，这里仅作演示
+        log(`  预期: "${test.expected}"`, 'info');
+      });
+      
+      log('✅ EventLog 比较测试完成', 'success');
+    };
+
+    // 显示最近的记录
+    window.showRecentLogs = async function() {
+      try {
+        log('📜 查询最近 20 条记录...', 'info');
+        const logs = await EventHistoryService.queryHistory({ limit: 20 });
+        
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContent = document.getElementById('resultsContent');
+        
+        let html = `<div class="table-container"><table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>操作</th>
+              <th>事件ID</th>
+              <th>来源</th>
+              <th>变更字段</th>
+            </tr>
+          </thead>
+          <tbody>`;
+        
+        logs.forEach(log => {
+          const changes = log.changes?.map(c => c.field).join(', ') || '-';
+          html += `<tr>
+            <td>${log.timestamp}</td>
+            <td>${log.operation}</td>
+            <td>${log.eventId?.slice(-8) || '-'}</td>
+            <td>${log.source}</td>
+            <td>${changes}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table></div>';
+        resultsContent.innerHTML = html;
+        resultsSection.style.display = 'block';
+        
+        log(`✅ 显示 ${logs.length} 条记录`, 'success');
+      } catch (error) {
+        log(`❌ 查询失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 检查重复记录
+    window.checkDuplicates = async function() {
+      try {
+        log('🔍 检查重复记录...', 'info');
+        const logs = await EventHistoryService.queryHistory({ limit: 10000 });
+        
+        const seen = new Map();
+        const duplicates = [];
+        
+        logs.forEach(log => {
+          const key = `${log.eventId}|${log.operation}|${log.timestamp}`;
+          if (seen.has(key)) {
+            duplicates.push({ original: seen.get(key), duplicate: log });
+          } else {
+            seen.set(key, log);
+          }
+        });
+        
+        log(`✅ 检查完成: 找到 ${duplicates.length} 组重复记录`, 
+            duplicates.length > 0 ? 'warning' : 'success');
+        
+        if (duplicates.length > 0) {
+          log(`  示例: ${duplicates.slice(0, 3).map(d => d.original.eventId?.slice(-8)).join(', ')}`, 'info');
+        }
+      } catch (error) {
+        log(`❌ 检查失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 分析变更字段分布
+    window.analyzeChangeFields = async function() {
+      try {
+        log('📊 分析变更字段分布...', 'info');
+        const logs = await EventHistoryService.queryHistory({ limit: 10000 });
+        
+        const fieldCount = {};
+        const operationCount = {};
+        const sourceCount = {};
+        
+        logs.forEach(log => {
+          // 统计操作类型
+          operationCount[log.operation] = (operationCount[log.operation] || 0) + 1;
+          
+          // 统计来源
+          sourceCount[log.source] = (sourceCount[log.source] || 0) + 1;
+          
+          // 统计变更字段
+          if (log.changes) {
+            log.changes.forEach(change => {
+              fieldCount[change.field] = (fieldCount[change.field] || 0) + 1;
+            });
+          }
+        });
+        
+        log(`✅ 分析完成（样本: ${logs.length} 条）`, 'success');
+        log('', 'info');
+        log('📈 操作类型分布:', 'info');
+        Object.entries(operationCount)
+          .sort((a,b) => b[1] - a[1])
+          .forEach(([op, count]) => {
+            log(`  ${op}: ${count} (${(count/logs.length*100).toFixed(1)}%)`, 'info');
+          });
+        
+        log('', 'info');
+        log('🏷️ 来源分布:', 'info');
+        Object.entries(sourceCount)
+          .sort((a,b) => b[1] - a[1])
+          .slice(0, 10)
+          .forEach(([source, count]) => {
+            log(`  ${source}: ${count} (${(count/logs.length*100).toFixed(1)}%)`, 'info');
+          });
+        
+        log('', 'info');
+        log('🔧 变更字段 TOP 20:', 'info');
+        Object.entries(fieldCount)
+          .sort((a,b) => b[1] - a[1])
+          .slice(0, 20)
+          .forEach(([field, count]) => {
+            log(`  ${field}: ${count} (${(count/logs.length*100).toFixed(1)}%)`, 'info');
+          });
+        
+        // 保存到全局供进一步分析
+        window.analysisResult = { fieldCount, operationCount, sourceCount, logs };
+        log('', 'info');
+        log('💾 详细数据已保存到 window.analysisResult', 'success');
+      } catch (error) {
+        log(`❌ 分析失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 🆕 调试最近的 external-sync 更新
+    window.debugExternalSync = async function() {
+      try {
+        log('🔍 查找最近的 external-sync 更新...', 'info');
+        const logs = await EventHistoryService.queryHistory({ limit: 100 });
+        
+        const syncLogs = logs.filter(log => 
+          log.operation === 'update' && log.source === 'external-sync'
+        );
+        
+        if (syncLogs.length === 0) {
+          log('✅ 没有找到 external-sync 更新', 'success');
+          return;
+        }
+        
+        log(`找到 ${syncLogs.length} 条 external-sync 更新`, 'info');
+        
+        // 分析第一条
+        const firstLog = syncLogs[0];
+        log('', 'info');
+        log('📝 最近一条 external-sync 更新详情:', 'info');
+        log(`  事件ID: ${firstLog.eventId}`, 'info');
+        log(`  时间: ${firstLog.timestamp}`, 'info');
+        log(`  变更字段数: ${firstLog.changes?.length || 0}`, 'info');
+        
+        if (firstLog.changes && firstLog.changes.length > 0) {
+          log('', 'info');
+          log('  变更详情:', 'info');
+          firstLog.changes.slice(0, 5).forEach(change => {
+            log(`    - ${change.field}:`, 'info');
+            const oldStr = change.oldValue === undefined ? 'undefined' : JSON.stringify(change.oldValue);
+            const newStr = change.newValue === undefined ? 'undefined' : JSON.stringify(change.newValue);
+            log(`        旧: ${oldStr.slice(0, 100)}`, 'info');
+            log(`        新: ${newStr.slice(0, 100)}`, 'info');
+          });
+        }
+        
+        // 保存到全局
+        window.debugLog = firstLog;
+        log('', 'info');
+        log('💾 完整数据已保存到 window.debugLog', 'success');
+        log('💡 在控制台运行 console.log(window.debugLog) 查看完整内容', 'info');
+        
+      } catch (error) {
+        log(`❌ 调试失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 运行自动清理
+    window.runAutoCleanup = async function() {
+      if (!confirm('确定要运行自动清理吗？这会删除过期和重复的历史记录。')) return;
+      
+      try {
+        log('🧹 开始自动清理...', 'info');
+        const deleted = await EventHistoryService.autoCleanup();
+        log(`✅ 清理完成: 删除 ${deleted} 条记录`, 'success');
+        await loadStats();
+      } catch (error) {
+        log(`❌ 清理失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 清理旧记录（30天前）
+    window.cleanOldRecords = async function() {
+      if (!confirm('确定要清理 30 天前的记录吗？')) return;
+      
+      try {
+        log('🗑️ 开始清理 30 天前的记录...', 'info');
+        
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - 30);
+        
+        const { formatTimeForStorage } = await import('/src/utils/timeUtils.ts');
+        const cutoffStr = formatTimeForStorage(cutoffDate);
+        
+        log(`  截止时间: ${cutoffStr}`, 'info');
+        
+        const deleted = await StorageManager.cleanupEventHistory(cutoffStr);
+        
+        log(`✅ 清理完成: 删除 ${deleted} 条记录`, 'success');
+        await loadStats();
+      } catch (error) {
+        log(`❌ 清理失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 清空所有历史
+    window.clearAllHistory = async function() {
+      if (!confirm('⚠️ 确定要清空所有历史记录吗？此操作不可恢复！')) return;
+      if (!confirm('⚠️⚠️ 再次确认：这会删除所有历史记录！')) return;
+      
+      try {
+        log('⚠️ 清空所有历史记录...', 'warning');
+        
+        // 分批删除，避免一次性查询太多
+        let totalDeleted = 0;
+        let batchSize = 5000;
+        
+        while (true) {
+          const logs = await EventHistoryService.queryHistory({ limit: batchSize });
+          
+          if (logs.length === 0) break;
+          
+          log(`  正在删除 ${logs.length} 条记录...`, 'info');
+          
+          for (const log of logs) {
+            await StorageManager.deleteEventHistory(log.id);
+          }
+          
+          totalDeleted += logs.length;
+          log(`  已删除 ${totalDeleted} 条`, 'info');
+          
+          if (logs.length < batchSize) break;
+        }
+        
+        log(`✅ 清空完成: 删除 ${totalDeleted} 条记录`, 'success');
+        await loadStats();
+      } catch (error) {
+        log(`❌ 清空失败: ${error.message}`, 'error');
+      }
+    };
+
+    // 🆕 手动测试 description 变更
+    window.testDescriptionChange = async function() {
+      try {
+        log('🧪 测试 description 变更检测...', 'info');
+        
+        // 获取最近的一条 update 记录
+        const logs = await EventHistoryService.queryHistory({ 
+          limit: 100,
+          operationType: 'update'
+        });
+        
+        if (logs.length === 0) {
+          log('⚠️ 没有找到 update 记录', 'warning');
+          return;
+        }
+        
+        // 找第一个包含 description 变更的记录
+        const descLog = logs.find(l => 
+          l.changes?.some(c => c.field === 'description')
+        );
+        
+        if (!descLog) {
+          log('⚠️ 没有找到包含 description 变更的记录', 'warning');
+          return;
+        }
+        
+        const descChange = descLog.changes.find(c => c.field === 'description');
+        
+        // 手动触发调试事件
+        const debugData = {
+          eventId: descLog.eventId.slice(-8),
+          before_length: typeof descChange.oldValue === 'string' ? descChange.oldValue.length : 'N/A',
+          after_length: typeof descChange.newValue === 'string' ? descChange.newValue.length : 'N/A',
+          before_first_150: typeof descChange.oldValue === 'string' ? descChange.oldValue.substring(0, 150) : descChange.oldValue,
+          after_first_150: typeof descChange.newValue === 'string' ? descChange.newValue.substring(0, 150) : descChange.newValue,
+          equal: descChange.oldValue === descChange.newValue
+        };
+        
+        logDescription(debugData);
+        log('✅ 已显示最近一条 description 变更', 'success');
+        
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 🆕 清空 description 日志
+    window.clearDescriptionLog = function() {
+      const container = document.getElementById('descriptionDebugContainer');
+      container.innerHTML = '<div class="log-entry info">⏳ 等待 UPDATE 操作触发...（CREATE 操作不会触发此调试）</div>';
+      log('✅ 已清空 description 日志', 'success');
+    };
+
+    // 🆕 手动测试 CREATE 记录
+    window.testCreateEvent = async function() {
+      try {
+        log('🧪 测试 CREATE 记录...', 'info');
+        
+        // 创建测试事件
+        const testEvent = {
+          id: `test-${Date.now()}`,
+          title: { text: '测试 CREATE 事件', displayText: '测试 CREATE 事件', slateJson: '[]' },
+          description: '这是一个测试事件，用于触发 CREATE 记录',
+          startTime: new Date().toISOString().slice(0, 19).replace('T', ' '),
+          endTime: new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' '),
+          isAllDay: false
+        };
+        
+        // 直接调用 logCreate
+        const result = EventHistoryService.logCreate(testEvent, 'manual-test');
+        
+        if (result) {
+          log('✅ CREATE 记录成功，查看下方日志', 'success');
+        } else {
+          log('⚠️ CREATE 记录被跳过（可能被去重）', 'warning');
+        }
+        
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 🆕 测试重复 CREATE（1秒内）
+    window.testCreateDuplicate = async function() {
+      try {
+        log('🧪 测试重复 CREATE（1秒内两次调用）...', 'info');
+        
+        const eventId = `test-duplicate-${Date.now()}`;
+        const testEvent = {
+          id: eventId,
+          title: { text: '测试重复 CREATE', displayText: '测试重复 CREATE', slateJson: '[]' },
+          description: '测试去重机制',
+          startTime: new Date().toISOString().slice(0, 19).replace('T', ' '),
+          endTime: new Date(Date.now() + 3600000).toISOString().slice(0, 19).replace('T', ' '),
+          isAllDay: false
+        };
+        
+        // 第一次调用
+        const result1 = EventHistoryService.logCreate(testEvent, 'duplicate-test-1');
+        log(result1 ? '✅ 第一次 CREATE 成功' : '⚠️ 第一次 CREATE 被跳过', result1 ? 'success' : 'warning');
+        
+        // 立即第二次调用（应该被去重）
+        setTimeout(() => {
+          const result2 = EventHistoryService.logCreate(testEvent, 'duplicate-test-2');
+          log(result2 ? '❌ 第二次 CREATE 成功（去重失败！）' : '✅ 第二次 CREATE 被去重拦截', result2 ? 'error' : 'success');
+        }, 100); // 100ms 后调用，远小于 1000ms 去重窗口
+        
+      } catch (error) {
+        log(`❌ 测试失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 🆕 分析 CREATE 记录（诊断为什么有这么多创建操作）
+    window.analyzeCreateRecords = async function() {
+      try {
+        log('🔬 分析最近的 CREATE 记录...', 'info');
+        
+        const logs = await EventHistoryService.queryHistory({ 
+          limit: 200,
+          operationType: 'create'
+        });
+        
+        if (logs.length === 0) {
+          log('⚠️ 没有找到 CREATE 记录', 'warning');
+          return;
+        }
+        
+        log(`找到 ${logs.length} 条 CREATE 记录`, 'info');
+        log('', 'info');
+        
+        // 统计来源
+        const sources = {};
+        const recentCreates = [];
+        const now = Date.now();
+        
+        logs.forEach(l => {
+          const source = l.source || 'unknown';
+          sources[source] = (sources[source] || 0) + 1;
+          
+          // 最近24小时的记录
+          const logTime = new Date(l.timestamp).getTime();
+          if (now - logTime < 24 * 60 * 60 * 1000) {
+            recentCreates.push(l);
+          }
+        });
+        
+        log('📊 来源分布:', 'info');
+        Object.entries(sources).forEach(([source, count]) => {
+          log(`  ${source}: ${count} (${(count / logs.length * 100).toFixed(1)}%)`, 'info');
+        });
+        
+        log('', 'info');
+        log(`⏰ 最近24小时内的 CREATE: ${recentCreates.length} 条`, recentCreates.length > 50 ? 'warning' : 'success');
+        
+        if (recentCreates.length > 0) {
+          log('', 'info');
+          log('🔍 最近10条 CREATE 详情:', 'info');
+          
+          recentCreates.slice(0, 10).forEach((l, i) => {
+            const eventId = l.eventId.slice(-8);
+            const timeDiff = Math.floor((now - new Date(l.timestamp).getTime()) / 1000 / 60);
+            log(`  ${i + 1}. [${eventId}] ${timeDiff}分钟前 - 来源: ${l.source}`, 'info');
+            
+            // 检查是否有 externalId（说明是 Outlook 同步）
+            const hasExternalId = l.changes?.some(c => c.field === 'externalId' && c.newValue);
+            const title = l.changes?.find(c => c.field === 'title')?.newValue?.simpleTitle || 'N/A';
+            
+            log(`      标题: ${title}`, 'info');
+            log(`      是否有 externalId: ${hasExternalId ? 'Yes (Outlook)' : 'No (Local)'}`, 'info');
+          });
+        }
+        
+        // 保存到全局
+        window.createAnalysis = { logs, recentCreates, sources };
+        log('', 'info');
+        log('💾 完整数据已保存到 window.createAnalysis', 'success');
+        log('💡 运行 console.log(window.createAnalysis) 查看详情', 'info');
+        
+      } catch (error) {
+        log(`❌ 分析失败: ${error.message}`, 'error');
+        console.error(error);
+      }
+    };
+
+    // 初始化
+    init();
+  </script>
+</body>
+</html>

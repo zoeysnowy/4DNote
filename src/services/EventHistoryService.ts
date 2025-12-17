@@ -182,63 +182,8 @@ export class EventHistoryService {
   /**
    * 记录事件创建
    * @param customTimestamp - 可选，指定创建时间（用于补录历史记录）
-   * 
-   * 🆕 [v2.18.8] 添加去重机制：同一个事件1秒内只记录一次 CREATE
    */
   static logCreate(event: Event, source: string = 'user', customTimestamp?: Date): EventChangeLog {
-    // 🆕 [v2.18.8] 去重检查：1秒内同一个事件只记录一次 CREATE
-    const dedupeKey = `create_${event.id}_${source}`;
-    const now = Date.now();
-    const lastCallTime = recentCallsCache.get(dedupeKey);
-    
-    if (lastCallTime && now - lastCallTime < 1000) {
-      const stackTrace = new Error().stack?.split('\n').slice(1, 5).join('\n') || 'unknown';
-      const debugInfo = {
-        eventId: event.id?.slice(-10),
-        source,
-        timeSinceLastCall: now - lastCallTime,
-        stackTrace,
-        timestamp: new Date().toISOString()
-      };
-      
-      // 🔍 [DEBUG v2.18.8] 更显眼的去重日志
-      console.warn(`%c[EventHistoryService] ⚠️ CREATE 去重拦截`, 'color: #FF9800; font-weight: bold', {
-        eventId: debugInfo.eventId,
-        source,
-        时间差: `${debugInfo.timeSinceLastCall}ms`
-      });
-      
-      // 🆕 分发到 test-event-history.html（包含完整堆栈）
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('create-dedupe', { detail: debugInfo }));
-      }
-      
-      return null as any; // 返回 null 表示跳过
-    }
-    
-    recentCallsCache.set(dedupeKey, now);
-    
-    // 获取调用堆栈（用于调试重复调用来源）
-    const stackTrace = new Error().stack?.split('\n').slice(1, 5).join('\n') || 'unknown';
-    const createInfo = {
-      eventId: event.id?.slice(-10),
-      source,
-      stackTrace,
-      timestamp: new Date().toISOString()
-    };
-    
-    // 🔍 [DEBUG v2.18.8] 精简控制台日志，堆栈发送到页面
-    console.log(`%c[EventHistoryService] 📝 CREATE 已记录`, 'color: #4CAF50; font-weight: bold', {
-      eventId: createInfo.eventId,
-      source,
-      timestamp: new Date().toLocaleTimeString()
-    });
-    
-    // 🆕 分发到 test-event-history.html（包含完整堆栈）
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('create-logged', { detail: createInfo }));
-    }
-    
     const log: EventChangeLog = {
       id: this.generateLogId(),
       eventId: event.id,
@@ -1101,12 +1046,18 @@ export class EventHistoryService {
         }
       }
 
-      // �🔧 特殊处理: eventlog 字段（只比较文本内容，忽略 Block Timestamp 元数据）
+      // 🔧 特殊处理: eventlog 字段（比较 Block-Level paragraph 数量来判断版本变化）
       if (key === 'eventlog') {
-        const oldText = this.extractTextFromEventLog(oldValue);
-        const newText = this.extractTextFromEventLog(newValue);
+        const oldBlockCount = this.countBlockLevelParagraphs(oldValue);
+        const newBlockCount = this.countBlockLevelParagraphs(newValue);
         
-        if (oldText !== newText) {
+        console.log('[EventHistoryService] eventlog 比较:', {
+          oldBlockCount,
+          newBlockCount,
+          有变化: oldBlockCount !== newBlockCount
+        });
+        
+        if (oldBlockCount !== newBlockCount) {
           changes.push({
             field: key,
             oldValue,
@@ -1143,19 +1094,13 @@ export class EventHistoryService {
         return;
       }
 
-      // 🔧 特殊处理: description（移除签名后比较核心内容）
+      // 🔧 特殊处理: description（忽略，因为它是 eventlog 的衍生品，用于外部同步）
       if (key === 'description') {
-        // 移除签名，只比较核心内容
-        const oldCore = this.extractCoreContent(oldValue || '');
-        const newCore = this.extractCoreContent(newValue || '');
-        if (oldCore !== newCore) {
-          changes.push({
-            field: key,
-            oldValue,
-            newValue,
-            displayName: FIELD_DISPLAY_NAMES[key] || key
-          });
-        }
+        // description 不记录到 EventHistory，因为：
+        // 1. 它是从 eventlog 生成的（包含签名）
+        // 2. 它用于同步到外部系统（Outlook），不是 app 内部状态
+        // 3. eventlog 的变化已经被记录，无需重复记录 description
+        console.log('[EventHistoryService] 🚫 跳过 description 字段（外部同步字段，不记录历史）');
         return;
       }
 
@@ -1173,6 +1118,41 @@ export class EventHistoryService {
     return changes;
   }
   
+  /**
+   * 🆕 统计 EventLog 中 Block-Level paragraph 的数量
+   * 用于判断 eventlog 的版本变化（数量增加 = 有新的编辑）
+   * Block-Level paragraph 是指带有 createdAt 元数据的 paragraph 节点
+   */
+  private static countBlockLevelParagraphs(eventlog: any): number {
+    if (!eventlog) return 0;
+    
+    try {
+      // 处理 EventLog 对象
+      if (typeof eventlog === 'object' && 'slateJson' in eventlog) {
+        const parsed = JSON.parse(eventlog.slateJson || '[]');
+        if (Array.isArray(parsed)) {
+          return parsed.filter((node: any) => 
+            node.type === 'paragraph' && node.createdAt !== undefined
+          ).length;
+        }
+      }
+      
+      // 处理直接的 Slate JSON 字符串
+      if (typeof eventlog === 'string') {
+        const parsed = JSON.parse(eventlog);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((node: any) => 
+            node.type === 'paragraph' && node.createdAt !== undefined
+          ).length;
+        }
+      }
+    } catch {
+      // 解析失败，返回 0
+    }
+    
+    return 0;
+  }
+
   /**
    * 🆕 从 EventLog 中提取纯文本内容（忽略 Block Timestamp 元数据）
    */

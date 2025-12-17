@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>测试签名清理</title>
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .test { margin: 20px 0; padding: 15px; border: 1px solid #ccc; }
+    .label { font-weight: bold; margin-bottom: 5px; }
+    pre { background: #f5f5f5; padding: 10px; white-space: pre-wrap; }
+    .pass { color: green; }
+    .fail { color: red; }
+  </style>
+</head>
+<body>
+  <h1>签名清理测试</h1>
+  
+  <div id="results"></div>
+
+  <script type="module">
+    // 简化的 extractCoreContent 实现
+    function extractCoreContent(description) {
+      if (!description) return '';
+
+      let core = description;
+      
+      // 🔥 [CRITICAL] 循环移除直到没有签名行（处理多层嵌套）
+      let previousCore = '';
+      let iterations = 0;
+      while (core !== previousCore && iterations < 10) {
+        previousCore = core;
+        core = core
+          // 移除 HTML 注释
+          .replace(/<!--[\s\S]*?-->/g, '')
+          // 移除所有 "---" 分隔符（包括前后的换行）
+          .replace(/\s*---+\s*/g, '\n')
+          // 移除所有签名行（更严格的匹配，包括完整的时间戳）
+          .replace(/\n*\s*[。，]*\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s*[\d\-:\/\s]+/gi, '')
+          // 移除只包含逗号、句号的行
+          .replace(/\n\s*[。，]+\s*\n/g, '\n')
+          // 移除多余空行
+          .replace(/\n\s*\n+/g, '\n')
+          .trim();
+        iterations++;
+      }
+
+      return core;
+    }
+
+    const tests = [
+      {
+        name: 'HTML注释清理',
+        input: '<!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } -->\n\n最后修改于 2025-12-15 14:26:30',
+        expected: '最后修改于 2025-12-15 14:26:30'
+      },
+      {
+        name: '完整签名清理',
+        input: '测试内容\n\n---\n\n由 🔮 4DNote 创建于 2025-12-17 03:06:16',
+        expected: '测试内容'
+      },
+      {
+        name: '多重签名清理',
+        input: '核心内容\n\n---\n\n由 📧 Outlook 创建于 2025-12-15 14:26:30\n\n---\n\n由 🔮 4DNote 最后编辑于 2025-12-17 03:06:16',
+        expected: '核心内容'
+      },
+      {
+        name: '签名+HTML注释',
+        input: '<!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } -->\n\n测试内容\n\n---\n\n由 🔮 ReMarkable 最后修改于 2025-12-15 14:26:30',
+        expected: '测试内容'
+      },
+      {
+        name: '一行签名（创建+修改）',
+        input: '核心内容\n\n---\n\n由 📧 Outlook 创建于 2025-12-15 14:26:30，最后修改于 2025-12-17 03:06:16',
+        expected: '核心内容'
+      },
+      {
+        name: '残留逗号清理',
+        input: '测试内容\n\n，\n\n由 🔮 4DNote 创建于 2025-12-17 03:06:16',
+        expected: '测试内容'
+      }
+    ];
+
+    const resultsDiv = document.getElementById('results');
+    
+    tests.forEach((test, index) => {
+      const result = extractCoreContent(test.input);
+      const passed = result === test.expected;
+      
+      const testDiv = document.createElement('div');
+      testDiv.className = 'test';
+      testDiv.innerHTML = `
+        <div class="label ${passed ? 'pass' : 'fail'}">
+          Test ${index + 1}: ${test.name} ${passed ? '✓' : '✗'}
+        </div>
+        <div><strong>Input:</strong></div>
+        <pre>${test.input}</pre>
+        <div><strong>Expected:</strong></div>
+        <pre>${test.expected}</pre>
+        <div><strong>Result:</strong></div>
+        <pre>${result}</pre>
+        ${!passed ? `<div class="fail"><strong>Difference:</strong> Expected length ${test.expected.length}, got ${result.length}</div>` : ''}
+      `;
+      resultsDiv.appendChild(testDiv);
+    });
+  </script>
+</body>
+</html>

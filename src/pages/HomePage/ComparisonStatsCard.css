@@ -1,0 +1,73 @@
+/* ComparisonStatsCard - 对比统计卡片样式 */
+.comparison-stats-content {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 统计对比容器 */
+.stats-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+
+.stat-comparison-item {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
+.stat-current {
+  font-size: 28px;
+  font-weight: 700;
+  color: #333;
+  line-height: 1.2;
+}
+
+.stat-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+.change-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.change-text {
+  font-weight: 600;
+}
+
+.stat-previous {
+  font-size: 12px;
+  color: #999;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #e0e0e0;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .stats-comparison {
+    grid-template-columns: 1fr;
+  }
+
+  .stat-current {
+    font-size: 24px;
+  }
+}

@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Block-Level Timestamp 调试工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 32px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .test-section {
+      background: white;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 20px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    h2 {
+      color: #333;
+      margin-bottom: 16px;
+      font-size: 20px;
+      border-bottom: 2px solid #667eea;
+      padding-bottom: 8px;
+    }
+
+    h3 {
+      color: #555;
+      margin: 16px 0 8px;
+      font-size: 16px;
+    }
+
+    .input-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 6px;
+      color: #555;
+      font-weight: 500;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 120px;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      resize: vertical;
+      transition: border-color 0.3s;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      background: #667eea;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s;
+      margin-right: 10px;
+    }
+
+    button:hover {
+      background: #5568d3;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .output {
+      background: #f8f9fa;
+      border: 2px solid #e0e0e0;
+      border-radius: 6px;
+      padding: 16px;
+      margin-top: 16px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    .success {
+      background: #d4edda;
+      border-color: #28a745;
+      color: #155724;
+    }
+
+    .error {
+      background: #f8d7da;
+      border-color: #dc3545;
+      color: #721c24;
+    }
+
+    .warning {
+      background: #fff3cd;
+      border-color: #ffc107;
+      color: #856404;
+    }
+
+    .info {
+      background: #d1ecf1;
+      border-color: #17a2b8;
+      color: #0c5460;
+    }
+
+    .test-case {
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      padding: 12px;
+      margin-bottom: 12px;
+      border-radius: 4px;
+    }
+
+    .test-case-title {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+    }
+
+    .test-result {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .result-item {
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      border: 1px solid #e0e0e0;
+    }
+
+    .result-label {
+      font-weight: 600;
+      color: #667eea;
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+
+    .result-value {
+      color: #333;
+      font-size: 13px;
+      word-break: break-all;
+    }
+
+    .timestamp-comparison {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 8px 0;
+    }
+
+    .timestamp-box {
+      flex: 1;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+
+    .timestamp-original {
+      background: #e3f2fd;
+      border: 2px solid #2196f3;
+    }
+
+    .timestamp-parsed {
+      background: #f3e5f5;
+      border: 2px solid #9c27b0;
+    }
+
+    .timestamp-final {
+      background: #e8f5e9;
+      border: 2px solid #4caf50;
+    }
+
+    .arrow {
+      font-size: 24px;
+      color: #999;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    @media (max-width: 768px) {
+      .grid-2 {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 Block-Level Timestamp 调试工具</h1>
+
+    <!-- 测试区域 1: 自定义输入 -->
+    <div class="test-section">
+      <h2>1️⃣ 自定义文本解析测试</h2>
+      <div class="input-group">
+        <label for="customInput">输入包含时间戳的文本（支持多行，每行可以是时间戳或内容）：</label>
+        <textarea id="customInput" placeholder="例如：
+2025-12-15 13:56:36
+这是第一段内容
+
+2025-12-15 14:30:00
+这是第二段内容">2025-12-15 13:56:36
+这是第一段内容
+
+2025-12-15 14:30:00 这行有时间戳和内容
+后续行内容
+
+2025-12-17 22:21:41
+第三段</textarea>
+      </div>
+      <button onclick="testCustomInput()">解析并显示结果</button>
+      <button onclick="clearCustomOutput()">清空结果</button>
+      <div id="customOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- 测试区域 2: 预设测试用例 -->
+    <div class="test-section">
+      <h2>2️⃣ 预设测试用例</h2>
+      <button onclick="runAllTests()">运行所有测试</button>
+      <button onclick="clearTestOutput()">清空结果</button>
+      <div id="testOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- 测试区域 3: EventLog 完整测试 -->
+    <div class="test-section">
+      <h2>3️⃣ EventLog → EventNode 完整流程测试</h2>
+      <div class="input-group">
+        <label for="eventLogInput">输入 EventLog slateJson（JSON 格式）：</label>
+        <textarea id="eventLogInput" placeholder='例如：
+[
+  {
+    "type": "paragraph",
+    "createdAt": 1734440196000,
+    "updatedAt": 1734440215000,
+    "children": [{"text": "测试内容"}]
+  }
+]'>[
+  {
+    "type": "paragraph",
+    "createdAt": 1734440196000,
+    "updatedAt": 1734440215000,
+    "children": [{"text": "第一段内容"}]
+  },
+  {
+    "type": "paragraph",
+    "children": [{"text": "无时间戳的段落"}]
+  }
+]</textarea>
+      </div>
+      <div class="input-group">
+        <label>Event.createdAt（回退值）：</label>
+        <input type="text" id="eventCreatedAt" value="2025-12-15 13:56:36" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 4px;">
+      </div>
+      <div class="input-group">
+        <label>Event.updatedAt（回退值）：</label>
+        <input type="text" id="eventUpdatedAt" value="2025-12-15 14:30:00" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 4px;">
+      </div>
+      <button onclick="testEventLogFlow()">测试完整流程</button>
+      <button onclick="clearEventLogOutput()">清空结果</button>
+      <div id="eventLogOutput" class="output" style="display: none;"></div>
+    </div>
+
+    <!-- 测试区域 4: 时区转换测试 -->
+    <div class="test-section">
+      <h2>4️⃣ 时区转换与格式化测试</h2>
+      <div class="grid-2">
+        <div>
+          <h3>Unix 毫秒时间戳 → TimeSpec</h3>
+          <input type="number" id="unixInput" value="1734440196000" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 4px; margin-bottom: 8px;">
+          <button onclick="testUnixConversion()">转换</button>
+          <div id="unixOutput" class="output" style="display: none; margin-top: 10px;"></div>
+        </div>
+        <div>
+          <h3>TimeSpec → Unix 毫秒时间戳</h3>
+          <input type="text" id="timespecInput" value="2025-12-15 13:56:36" style="width: 100%; padding: 8px; border: 2px solid #e0e0e0; border-radius: 4px; margin-bottom: 8px;">
+          <button onclick="testTimespecConversion()">转换</button>
+          <div id="timespecOutput" class="output" style="display: none; margin-top: 10px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 工具函数 ====================
+
+    /**
+     * 格式化日期为 TimeSpec 格式（YYYY-MM-DD HH:mm:ss）
+     */
+    function formatTimeForStorage(date) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    }
+
+    /**
+     * 转换时间戳为 TimeSpec 格式
+     */
+    function convertTimestampToTimeSpec(timestamp) {
+      if (typeof timestamp === 'number') {
+        const converted = formatTimeForStorage(new Date(timestamp));
+        console.log('[convertTimestampToTimeSpec]', {
+          原始值: timestamp,
+          类型: 'number',
+          Date对象: new Date(timestamp).toISOString(),
+          本地时间: new Date(timestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+          转换后: converted
+        });
+        return converted;
+      } else if (typeof timestamp === 'string') {
+        console.log('[convertTimestampToTimeSpec] 时间戳已是字符串:', timestamp);
+        return timestamp;
+      }
+      return formatTimeForStorage(new Date());
+    }
+
+    /**
+     * 解析文本中的 Block-Level Timestamp（核心解析逻辑）
+     */
+    function parseTextWithBlockTimestamps(text) {
+      const slateNodes = [];
+      const lines = text.split('\n');
+      
+      console.log('[parseTextWithBlockTimestamps] 🔍 开始解析:', {
+        总行数: lines.length,
+        前3行: lines.slice(0, 3)
+      });
+      
+      // 🔧 时间戳正则（两种模式）
+      const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
+      
+      let currentParagraphLines = [];
+      let currentTimestamp = null;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(timestampPattern);
+        
+        if (match) {
+          // 遇到时间戳行
+          
+          // 1. 先保存之前累积的段落内容（如果有）
+          if (currentParagraphLines.length > 0) {
+            const paragraphText = currentParagraphLines.join('\n').trim();
+            if (paragraphText) {
+              const timestamp = currentTimestamp || Date.now();
+              slateNodes.push({
+                type: 'paragraph',
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                children: [{ text: paragraphText }]
+              });
+            }
+            currentParagraphLines = [];
+          }
+          
+          // 2. 解析新时间戳
+          const timeStr = match[1].replace(/\//g, '-');
+          try {
+            // 🔧 规范化日期格式：补零
+            const parts = timeStr.split(' ');
+            const datePart = parts[0];
+            const timePart = parts[1];
+            
+            const [year, month, day] = datePart.split('-');
+            const normalizedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            const normalizedTimeStr = `${normalizedDate} ${timePart}`;
+            
+            // ⚠️ 使用 YYYY-MM-DD HH:mm:ss 格式
+            currentTimestamp = new Date(normalizedTimeStr).getTime();
+            
+            console.log('[parseTextWithBlockTimestamps] ✅ 解析时间戳:', { 
+              原始: timeStr, 
+              规范化: normalizedTimeStr,
+              Unix毫秒: currentTimestamp,
+              UTC时间: new Date(currentTimestamp).toISOString(),
+              本地时间: new Date(currentTimestamp).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }),
+              TimeSpec: formatTimeForStorage(new Date(currentTimestamp))
+            });
+          } catch (error) {
+            console.warn('[parseTextWithBlockTimestamps] 解析时间戳失败:', timeStr, error);
+            currentTimestamp = Date.now();
+          }
+          
+          // 3. 提取时间戳后面的内容（如果有）
+          const restOfLine = line.substring(match[0].length).trim();
+          if (restOfLine) {
+            currentParagraphLines.push(restOfLine);
+          }
+          
+        } else {
+          // 普通文本行，累积到当前段落
+          currentParagraphLines.push(line);
+        }
+      }
+      
+      // 处理最后剩余的段落
+      if (currentParagraphLines.length > 0) {
+        const paragraphText = currentParagraphLines.join('\n').trim();
+        if (paragraphText) {
+          const timestamp = currentTimestamp || Date.now();
+          slateNodes.push({
+            type: 'paragraph',
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            children: [{ text: paragraphText }]
+          });
+        }
+      }
+      
+      console.log('[parseTextWithBlockTimestamps] ✅ 解析完成:', {
+        生成节点数: slateNodes.length,
+        节点详情: slateNodes.map(n => ({ 
+          createdAt: n.createdAt,
+          createdAtTimeSpec: formatTimeForStorage(new Date(n.createdAt)),
+          文本长度: n.children[0]?.text?.length 
+        }))
+      });
+      
+      return slateNodes;
+    }
+
+    /**
+     * 提取 EventNode（模拟 EventNodeService.extractParagraphsFromEventLog）
+     */
+    function extractParagraphsFromEventLog(eventlog, event) {
+      const slateJson = typeof eventlog.slateJson === 'string' 
+        ? JSON.parse(eventlog.slateJson)
+        : eventlog.slateJson;
+
+      if (!Array.isArray(slateJson)) {
+        return [];
+      }
+
+      const paragraphs = [];
+
+      for (const node of slateJson) {
+        const content = node.children
+          ?.map(child => child.text || '')
+          .join('')
+          .trim();
+
+        if (!content) continue;
+
+        // 有 Block-Level Timestamp
+        if (node.type === 'paragraph' && node.createdAt) {
+          const timestamp = convertTimestampToTimeSpec(node.createdAt);
+          const updatedAt = node.updatedAt 
+            ? convertTimestampToTimeSpec(node.updatedAt)
+            : timestamp;
+
+          console.log('[extractParagraphs] ✅ Block-Level:', {
+            createdAt: node.createdAt,
+            timestamp,
+            content: content.substring(0, 50)
+          });
+
+          paragraphs.push({
+            content,
+            timestamp,
+            paragraphCreatedAt: timestamp,
+            paragraphUpdatedAt: updatedAt,
+            slateNode: node
+          });
+        } 
+        // 无 Block-Level Timestamp，回退到 Event.createdAt
+        else if (node.type === 'paragraph' && !node.createdAt && event) {
+          const fallbackTimestamp = event.createdAt || formatTimeForStorage(new Date());
+          const fallbackUpdatedAt = event.updatedAt || fallbackTimestamp;
+
+          console.log('[extractParagraphs] ⚠️ 回退到 Event.createdAt:', {
+            fallbackTimestamp,
+            content: content.substring(0, 50)
+          });
+
+          paragraphs.push({
+            content,
+            timestamp: fallbackTimestamp,
+            paragraphCreatedAt: fallbackTimestamp,
+            paragraphUpdatedAt: fallbackUpdatedAt,
+            slateNode: node
+          });
+        }
+      }
+
+      return paragraphs;
+    }
+
+    // ==================== 测试函数 ====================
+
+    /**
+     * 测试自定义输入
+     */
+    function testCustomInput() {
+      const input = document.getElementById('customInput').value;
+      const output = document.getElementById('customOutput');
+      
+      output.style.display = 'block';
+      output.className = 'output info';
+      
+      try {
+        const result = parseTextWithBlockTimestamps(input);
+        
+        let html = `📊 解析结果（共 ${result.length} 个段落）\n\n`;
+        
+        result.forEach((node, index) => {
+          const createdAtDate = new Date(node.createdAt);
+          html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+          html += `段落 ${index + 1}:\n`;
+          html += `  📅 createdAt (Unix毫秒): ${node.createdAt}\n`;
+          html += `  🕐 UTC时间: ${createdAtDate.toISOString()}\n`;
+          html += `  🇨🇳 本地时间: ${createdAtDate.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`;
+          html += `  ✅ TimeSpec格式: ${formatTimeForStorage(createdAtDate)}\n`;
+          html += `  📝 内容: ${node.children[0].text}\n\n`;
+        });
+        
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `🔍 原始 JSON:\n${JSON.stringify(result, null, 2)}`;
+        
+        output.textContent = html;
+        output.className = 'output success';
+      } catch (error) {
+        output.textContent = `❌ 解析失败:\n${error.message}\n\n${error.stack}`;
+        output.className = 'output error';
+      }
+    }
+
+    /**
+     * 运行所有预设测试
+     */
+    function runAllTests() {
+      const output = document.getElementById('testOutput');
+      output.style.display = 'block';
+      output.className = 'output info';
+      
+      const testCases = [
+        {
+          name: '测试 1: 标准格式（时间戳独立成行）',
+          input: '2025-12-15 13:56:36\n第一段内容\n\n2025-12-15 14:30:00\n第二段内容'
+        },
+        {
+          name: '测试 2: 时间戳+内容在同一行',
+          input: '2025-12-15 13:56:36 这行有时间戳和内容\n后续内容'
+        },
+        {
+          name: '测试 3: 斜杠分隔符',
+          input: '2025/12/15 13:56:36\n内容'
+        },
+        {
+          name: '测试 4: 单位数月份/日期',
+          input: '2025-12-7 13:56:36\n内容'
+        },
+        {
+          name: '测试 5: 混合格式',
+          input: '2025-12-15 13:56:36\n第一段\n\n2025/12/7 14:30:00 第二段同行\n第二段续'
+        },
+        {
+          name: '测试 6: Unix 毫秒时间戳（1734440196000 = 2025-12-17 22:16:36 本地时间）',
+          input: '直接测试 Unix 转换',
+          unixTest: 1734440196000
+        }
+      ];
+      
+      let html = '';
+      testCases.forEach((testCase, index) => {
+        html += `\n${'='.repeat(60)}\n`;
+        html += `${testCase.name}\n`;
+        html += `${'='.repeat(60)}\n\n`;
+        
+        if (testCase.unixTest) {
+          const date = new Date(testCase.unixTest);
+          html += `Unix 毫秒: ${testCase.unixTest}\n`;
+          html += `UTC: ${date.toISOString()}\n`;
+          html += `本地时间: ${date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`;
+          html += `TimeSpec: ${formatTimeForStorage(date)}\n`;
+        } else {
+          html += `输入:\n${testCase.input}\n\n`;
+          
+          try {
+            const result = parseTextWithBlockTimestamps(testCase.input);
+            html += `✅ 成功解析 ${result.length} 个段落:\n\n`;
+            
+            result.forEach((node, i) => {
+              const createdAtDate = new Date(node.createdAt);
+              html += `  段落 ${i + 1}:\n`;
+              html += `    createdAt: ${node.createdAt}\n`;
+              html += `    TimeSpec: ${formatTimeForStorage(createdAtDate)}\n`;
+              html += `    内容: ${node.children[0].text}\n\n`;
+            });
+          } catch (error) {
+            html += `❌ 失败: ${error.message}\n`;
+          }
+        }
+      });
+      
+      output.textContent = html;
+    }
+
+    /**
+     * 测试 EventLog 完整流程
+     */
+    function testEventLogFlow() {
+      const slateJsonInput = document.getElementById('eventLogInput').value;
+      const eventCreatedAt = document.getElementById('eventCreatedAt').value;
+      const eventUpdatedAt = document.getElementById('eventUpdatedAt').value;
+      const output = document.getElementById('eventLogOutput');
+      
+      output.style.display = 'block';
+      
+      try {
+        const slateJson = JSON.parse(slateJsonInput);
+        const eventlog = { slateJson };
+        const event = { 
+          createdAt: eventCreatedAt, 
+          updatedAt: eventUpdatedAt 
+        };
+        
+        const paragraphs = extractParagraphsFromEventLog(eventlog, event);
+        
+        let html = `📊 EventLog → EventNode 完整流程测试\n\n`;
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `输入 Event:\n`;
+        html += `  createdAt: ${eventCreatedAt}\n`;
+        html += `  updatedAt: ${eventUpdatedAt}\n\n`;
+        
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `解析结果（共 ${paragraphs.length} 个 EventNode）:\n\n`;
+        
+        paragraphs.forEach((para, index) => {
+          html += `EventNode ${index + 1}:\n`;
+          html += `  content: ${para.content}\n`;
+          html += `  timestamp: ${para.timestamp}\n`;
+          html += `  paragraphCreatedAt: ${para.paragraphCreatedAt}\n`;
+          html += `  paragraphUpdatedAt: ${para.paragraphUpdatedAt}\n`;
+          html += `  来源: ${para.slateNode.createdAt ? 'Block-Level Timestamp' : 'Event.createdAt（回退）'}\n\n`;
+        });
+        
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `🔍 详细 JSON:\n${JSON.stringify(paragraphs, null, 2)}`;
+        
+        output.textContent = html;
+        output.className = 'output success';
+      } catch (error) {
+        output.textContent = `❌ 测试失败:\n${error.message}\n\n${error.stack}`;
+        output.className = 'output error';
+      }
+    }
+
+    /**
+     * 测试 Unix 转换
+     */
+    function testUnixConversion() {
+      const unix = parseInt(document.getElementById('unixInput').value);
+      const output = document.getElementById('unixOutput');
+      
+      output.style.display = 'block';
+      
+      const date = new Date(unix);
+      const timespec = formatTimeForStorage(date);
+      
+      let html = `Unix 毫秒: ${unix}\n`;
+      html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      html += `Date 对象: ${date}\n`;
+      html += `UTC 时间: ${date.toISOString()}\n`;
+      html += `本地时间: ${date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`;
+      html += `TimeSpec: ${timespec}\n`;
+      html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+      html += `时区偏移: UTC${date.getTimezoneOffset() / -60 >= 0 ? '+' : ''}${date.getTimezoneOffset() / -60}`;
+      
+      output.textContent = html;
+      output.className = 'output success';
+    }
+
+    /**
+     * 测试 TimeSpec 转换
+     */
+    function testTimespecConversion() {
+      const timespec = document.getElementById('timespecInput').value;
+      const output = document.getElementById('timespecOutput');
+      
+      output.style.display = 'block';
+      
+      try {
+        const date = new Date(timespec);
+        const unix = date.getTime();
+        
+        let html = `TimeSpec: ${timespec}\n`;
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `Date 对象: ${date}\n`;
+        html += `Unix 毫秒: ${unix}\n`;
+        html += `UTC 时间: ${date.toISOString()}\n`;
+        html += `本地时间: ${date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n`;
+        html += `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        html += `反向验证: ${formatTimeForStorage(date)}`;
+        
+        output.textContent = html;
+        output.className = 'output success';
+      } catch (error) {
+        output.textContent = `❌ 解析失败:\n${error.message}`;
+        output.className = 'output error';
+      }
+    }
+
+    // ==================== 清空函数 ====================
+    
+    function clearCustomOutput() {
+      document.getElementById('customOutput').style.display = 'none';
+    }
+    
+    function clearTestOutput() {
+      document.getElementById('testOutput').style.display = 'none';
+    }
+    
+    function clearEventLogOutput() {
+      document.getElementById('eventLogOutput').style.display = 'none';
+    }
+
+    // ==================== 页面加载完成后自动运行一次测试 ====================
+    
+    window.addEventListener('load', () => {
+      console.log('🚀 Block-Level Timestamp 调试工具已加载');
+      console.log('当前时区:', Intl.DateTimeFormat().resolvedOptions().timeZone);
+      console.log('时区偏移:', new Date().getTimezoneOffset() / -60, '小时');
+    });
+  </script>
+</body>
+</html>

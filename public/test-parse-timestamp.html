@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>测试时间戳解析</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 900px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 { color: #333; }
+    .input-area {
+      margin: 20px 0;
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: 'Consolas', monospace;
+      font-size: 14px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .output {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #4CAF50;
+      white-space: pre-wrap;
+      font-family: 'Consolas', monospace;
+      font-size: 13px;
+      max-height: 500px;
+      overflow-y: auto;
+    }
+    .error {
+      border-left-color: #f44336;
+      background: #ffebee;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 时间戳解析测试</h1>
+    
+    <div class="input-area">
+      <h3>输入文本：</h3>
+      <textarea id="inputText" placeholder="粘贴包含时间戳的文本...">2025-12-15 13:56:36
+测试会不会标签消失</textarea>
+      <button onclick="testParse()">🚀 解析</button>
+      <button onclick="useTest2()" style="background: #2196F3;">测试案例2</button>
+      <button onclick="useTest3()" style="background: #FF9800;">测试案例3</button>
+    </div>
+
+    <div id="output" class="output" style="display: none;"></div>
+  </div>
+
+  <script>
+    function generateBlockId(timestamp) {
+      const uniqueSuffix = Math.random().toString(36).slice(2, 11);
+      return `block_${timestamp || Date.now()}_${uniqueSuffix}`;
+    }
+
+    function parseTextWithBlockTimestamps(text) {
+      const slateNodes = [];
+      const lines = text.split('\n');
+      
+      console.log('[parseTextWithBlockTimestamps] 🔍 开始解析:', {
+        总行数: lines.length,
+        前3行: lines.slice(0, 3),
+        所有行: lines
+      });
+      
+      const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
+      
+      let currentParagraphLines = [];
+      let currentTimestamp = null;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const match = line.match(timestampPattern);
+        
+        console.log(`[Line ${i}] "${line}" → match:`, match ? 'YES' : 'NO');
+        
+        if (match) {
+          // 遇到时间戳行
+          
+          // 1. 先保存之前累积的段落内容（如果有）
+          if (currentParagraphLines.length > 0) {
+            const paragraphText = currentParagraphLines.join('\n').trim();
+            if (paragraphText) {
+              const timestamp = currentTimestamp || Date.now();
+              console.log('[保存段落]', {
+                timestamp,
+                行数: currentParagraphLines.length,
+                文本: paragraphText
+              });
+              slateNodes.push({
+                type: 'paragraph',
+                id: generateBlockId(timestamp),
+                createdAt: timestamp,
+                updatedAt: timestamp,
+                children: [{ text: paragraphText }]
+              });
+            }
+            currentParagraphLines = [];
+          }
+          
+          // 2. 解析新时间戳
+          const timeStr = match[1].replace(/\//g, '-');
+          try {
+            const parts = timeStr.split(' ');
+            const datePart = parts[0];
+            const timePart = parts[1];
+            
+            const [year, month, day] = datePart.split('-');
+            const normalizedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+            const normalizedTimeStr = `${normalizedDate} ${timePart}`;
+            
+            currentTimestamp = new Date(normalizedTimeStr).getTime();
+            console.log('[解析时间戳]', { 
+              原始: timeStr, 
+              规范化: normalizedTimeStr,
+              Unix: currentTimestamp, 
+              日期: new Date(currentTimestamp).toLocaleString() 
+            });
+          } catch (error) {
+            console.warn('[解析时间戳失败]', timeStr, error);
+            currentTimestamp = Date.now();
+          }
+          
+          // 3. 提取时间戳后面的内容（如果有）
+          const restOfLine = line.substring(match[0].length).trim();
+          if (restOfLine) {
+            console.log('[时间戳同行内容]', restOfLine);
+            currentParagraphLines.push(restOfLine);
+          } else {
+            console.log('[独立时间戳行]');
+          }
+          
+        } else {
+          // 普通文本行，累积到当前段落
+          console.log('[累积文本]', line);
+          currentParagraphLines.push(line);
+        }
+      }
+      
+      // 处理最后剩余的段落
+      if (currentParagraphLines.length > 0) {
+        const paragraphText = currentParagraphLines.join('\n').trim();
+        if (paragraphText) {
+          const timestamp = currentTimestamp || Date.now();
+          console.log('[保存最后段落]', {
+            timestamp,
+            行数: currentParagraphLines.length,
+            文本: paragraphText
+          });
+          slateNodes.push({
+            type: 'paragraph',
+            id: generateBlockId(timestamp),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            children: [{ text: paragraphText }]
+          });
+        }
+      }
+      
+      console.log('[parseTextWithBlockTimestamps] ✅ 解析完成:', {
+        生成节点数: slateNodes.length,
+        节点详情: slateNodes
+      });
+      
+      // 确保至少有一个段落
+      if (slateNodes.length === 0) {
+        const now = Date.now();
+        slateNodes.push({
+          type: 'paragraph',
+          id: generateBlockId(),
+          createdAt: now,
+          updatedAt: now,
+          children: [{ text: '' }]
+        });
+      }
+      
+      return slateNodes;
+    }
+
+    function testParse() {
+      const text = document.getElementById('inputText').value;
+      const output = document.getElementById('output');
+      output.style.display = 'block';
+      output.className = 'output';
+      
+      try {
+        console.clear();
+        const result = parseTextWithBlockTimestamps(text);
+        
+        let displayText = '✅ 解析成功\n\n';
+        displayText += `输入文本:\n${text}\n\n`;
+        displayText += `生成节点数: ${result.length}\n\n`;
+        
+        result.forEach((node, index) => {
+          displayText += `节点 ${index + 1}:\n`;
+          displayText += `  类型: ${node.type}\n`;
+          if (node.createdAt) {
+            const date = new Date(node.createdAt);
+            displayText += `  ✅ createdAt: ${node.createdAt} (${date.toLocaleString()})\n`;
+          } else {
+            displayText += `  ⚠️ createdAt: 缺失\n`;
+          }
+          if (node.updatedAt) {
+            const date = new Date(node.updatedAt);
+            displayText += `  ✅ updatedAt: ${node.updatedAt} (${date.toLocaleString()})\n`;
+          }
+          displayText += `  id: ${node.id}\n`;
+          displayText += `  文本: ${node.children[0]?.text || ''}\n\n`;
+        });
+        
+        displayText += '\nJSON 输出:\n';
+        displayText += JSON.stringify(result, null, 2);
+        
+        output.textContent = displayText;
+      } catch (err) {
+        output.className = 'output error';
+        output.textContent = '❌ 解析失败\n\n' + err.stack;
+      }
+    }
+
+    function useTest2() {
+      document.getElementById('inputText').value = 
+`2025-12-15 13:56:36 这是同行内容
+第二行内容
+第三行内容`;
+      testParse();
+    }
+
+    function useTest3() {
+      document.getElementById('inputText').value = 
+`2025-12-14 10:00:00
+第一段内容
+
+2025-12-15 13:56:36
+第二段内容
+包含多行`;
+      testParse();
+    }
+
+    // 自动测试
+    testParse();
+  </script>
+</body>
+</html>

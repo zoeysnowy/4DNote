@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HTML 实体解码测试</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      line-height: 1.6;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 2px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .section {
+      margin: 30px 0;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+    textarea {
+      width: 100%;
+      min-height: 150px;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 10px 5px 10px 0;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    .result {
+      background: white;
+      padding: 15px;
+      border-left: 4px solid #4CAF50;
+      margin-top: 15px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .error {
+      color: #f44336;
+      border-left-color: #f44336;
+    }
+    .info {
+      background: #e3f2fd;
+      padding: 10px;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .stat-item {
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      border-left: 3px solid #2196F3;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #666;
+    }
+    .stat-value {
+      font-size: 18px;
+      font-weight: bold;
+      color: #333;
+    }
+    code {
+      background: #fff3cd;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔓 HTML 实体递归解码测试</h1>
+  
+  <div class="info">
+    <strong>📝 使用说明：</strong>
+    <ul>
+      <li>粘贴多层转义的 HTML 内容到输入框</li>
+      <li>点击「递归解码」查看解码后的结果</li>
+      <li>查看迭代次数和解码前后对比</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>1️⃣ 输入多层转义的 HTML</h2>
+    <textarea id="input" placeholder="粘贴 Outlook 同步回来的 HTML 内容...
+示例：&amp;lt;br&amp;gt; → &lt;br&gt; → <br>"></textarea>
+    <button onclick="decodeRecursive()">🔓 递归解码</button>
+    <button onclick="loadSample()">📋 加载示例</button>
+    <button onclick="clearAll()">🗑️ 清空</button>
+  </div>
+
+  <div class="section">
+    <h2>2️⃣ 解码结果</h2>
+    <div class="stats" id="stats"></div>
+    <div id="result" class="result" style="display:none;"></div>
+  </div>
+
+  <div class="section">
+    <h2>3️⃣ 提取纯文本</h2>
+    <button onclick="extractText()">📄 提取文本</button>
+    <div id="textResult" class="result" style="display:none;"></div>
+  </div>
+
+  <script>
+    let decodedHtml = '';
+
+    function decodeRecursive() {
+      const input = document.getElementById('input').value;
+      if (!input.trim()) {
+        alert('请先输入 HTML 内容！');
+        return;
+      }
+
+      // 🔓 递归解码多层 HTML 实体
+      decodedHtml = input;
+      let previousHtml = '';
+      let iterations = 0;
+      const maxIterations = 10;
+      const history = [];
+
+      while (decodedHtml !== previousHtml && iterations < maxIterations) {
+        previousHtml = decodedHtml;
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = decodedHtml;
+        decodedHtml = tempDiv.innerHTML;
+        
+        history.push({
+          iteration: iterations + 1,
+          length: decodedHtml.length,
+          preview: decodedHtml.substring(0, 100)
+        });
+        
+        iterations++;
+      }
+
+      // 显示统计信息
+      const statsHtml = `
+        <div class="stat-item">
+          <div class="stat-label">迭代次数</div>
+          <div class="stat-value">${iterations}</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">原始长度</div>
+          <div class="stat-value">${input.length}</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">解码后长度</div>
+          <div class="stat-value">${decodedHtml.length}</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">长度变化</div>
+          <div class="stat-value">${decodedHtml.length - input.length > 0 ? '+' : ''}${decodedHtml.length - input.length}</div>
+        </div>
+      `;
+      document.getElementById('stats').innerHTML = statsHtml;
+
+      // 显示解码结果
+      const resultDiv = document.getElementById('result');
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = `
+        <strong>🔓 解码完成（${iterations} 次迭代）</strong>
+        <pre>${escapeHtml(decodedHtml)}</pre>
+        
+        <hr>
+        <strong>📊 迭代历史：</strong>
+        ${history.map(h => `
+          <div style="margin: 10px 0; padding: 10px; background: #fafafa; border-left: 3px solid #2196F3;">
+            <strong>第 ${h.iteration} 次迭代：</strong>长度 ${h.length}
+            <pre style="margin: 5px 0; color: #666;">${escapeHtml(h.preview)}...</pre>
+          </div>
+        `).join('')}
+      `;
+    }
+
+    function extractText() {
+      if (!decodedHtml) {
+        alert('请先执行「递归解码」！');
+        return;
+      }
+
+      // 🔧 提取纯文本
+      // Step 1: 将 <br> 和 </p> 转换为换行符
+      let htmlForExtraction = decodedHtml
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<\/div>/gi, '\n');
+
+      // Step 2: 提取纯文本
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = htmlForExtraction;
+
+      // 优先从 <body> 提取
+      const bodyElement = tempDiv.querySelector('body');
+      let textContent = (bodyElement || tempDiv).textContent || '';
+
+      // Step 3: 清理多余换行
+      textContent = textContent
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+
+      // 显示结果
+      const textResultDiv = document.getElementById('textResult');
+      textResultDiv.style.display = 'block';
+      textResultDiv.innerHTML = `
+        <strong>📄 提取的纯文本（长度：${textContent.length}）</strong>
+        <pre>${escapeHtml(textContent)}</pre>
+        
+        <hr>
+        <strong>🔍 标点符号检查：</strong>
+        <ul>
+          <li>逗号数量：${(textContent.match(/,/g) || []).length}</li>
+          <li>句号数量：${(textContent.match(/。/g) || []).length}</li>
+          <li>换行符数量：${(textContent.match(/\n/g) || []).length}</li>
+          <li>包含 &lt;br&gt;：${textContent.includes('<br>') ? '❌ 是' : '✅ 否'}</li>
+          <li>包含 &amp;：${textContent.includes('&amp;') ? '❌ 是' : '✅ 否'}</li>
+        </ul>
+      `;
+    }
+
+    function loadSample() {
+      // 加载示例（多层转义的 HTML）
+      const sample = `&lt;html&gt;&lt;head&gt;&lt;meta http-equiv=&quot;Content-Type&quot; content=&quot;text/html; charset=utf-8&quot;&gt;
+&lt;meta name=&quot;Generator&quot; content=&quot;Microsoft Exchange Server&quot;&gt;
+&lt;style&gt;&lt;!-- .EmailQuote { margin-left: 1pt; padding-left: 4pt; border-left: #800000 2px solid; } --&gt;&lt;/style&gt;&lt;/head&gt;
+&lt;body&gt;
+&lt;font size=&quot;2&quot;&gt;&lt;span style=&quot;font-size:11pt;&quot;&gt;&lt;div class=&quot;PlainText&quot;&gt;📋【议程安排】&lt;br&gt;
+13:20-13:30 上汽金控领导开场致辞&lt;br&gt;
+13:30-14:30 华泰联合证券投行并购部：主题分享&lt;br&gt;
+&lt;/div&gt;&lt;/span&gt;&lt;/font&gt;
+&lt;/body&gt;
+&lt;/html&gt;`;
+      
+      document.getElementById('input').value = sample;
+    }
+
+    function clearAll() {
+      document.getElementById('input').value = '';
+      document.getElementById('stats').innerHTML = '';
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('textResult').style.display = 'none';
+      decodedHtml = '';
+    }
+
+    function escapeHtml(text) {
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    }
+  </script>
+</body>
+</html>

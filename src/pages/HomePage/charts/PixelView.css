@@ -1,0 +1,208 @@
+/* PixelView - 像素热力图 */
+.pixel-view {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.chart-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #1f2937;
+}
+
+.pixel-container {
+  margin-bottom: 24px;
+}
+
+/* 像素网格 */
+.pixel-grid {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  padding: 16px 0;
+}
+
+.pixel-week {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pixel-day {
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.pixel-date {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  display: none;
+}
+
+.pixel-day:hover {
+  transform: scale(1.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.pixel-day:hover .pixel-date {
+  display: block;
+}
+
+/* 强度等级 */
+.pixel-day.level-0 {
+  background: #e5e7eb;
+}
+
+.pixel-day.level-1 {
+  background: #c7d2fe;
+}
+
+.pixel-day.level-2 {
+  background: #a5b4fc;
+}
+
+.pixel-day.level-3 {
+  background: #818cf8;
+}
+
+.pixel-day.level-4 {
+  background: #6366f1;
+}
+
+/* 图例 */
+.pixel-legend {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.legend-label {
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+.legend-scale {
+  display: flex;
+  gap: 4px;
+}
+
+.legend-item {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  cursor: help;
+  transition: transform 0.2s;
+}
+
+.legend-item:hover {
+  transform: scale(1.2);
+}
+
+/* 统计摘要 */
+.pixel-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.summary-item {
+  padding: 16px;
+  background: #f9fafb;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.summary-label {
+  display: block;
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 6px;
+}
+
+.summary-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px;
+  color: #9ca3af;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+  opacity: 0.5;
+}
+
+.empty-state p {
+  font-size: 14px;
+}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  .pixel-view {
+    padding: 16px;
+  }
+
+  .pixel-day {
+    width: 24px;
+    height: 24px;
+  }
+
+  .pixel-grid {
+    padding: 12px 0;
+  }
+
+  .pixel-summary {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .summary-item {
+    padding: 12px;
+  }
+
+  .summary-value {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .pixel-day {
+    width: 20px;
+    height: 20px;
+  }
+
+  .pixel-summary {
+    grid-template-columns: 1fr;
+  }
+}

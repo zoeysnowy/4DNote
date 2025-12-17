@@ -1,0 +1,152 @@
+/* DashboardGridStack - Gridstack.js 网格布局样式 */
+
+.dashboard-gridstack {
+  width: 100%;
+  min-height: 100%;  /* 最小高度100%，内容多时自动扩展 */
+  position: relative;
+  padding-bottom: 0;  /* 🔧 移除底部padding，由父容器 .homepage-container 统一控制 */
+}
+
+/* GridStack 基础样式覆盖 */
+.dashboard-gridstack .grid-stack {
+  background: transparent;
+  transition: background 0.2s ease;
+  min-height: 800px;  /* 增加最小高度，确保有足够空间 */
+}
+
+/* 拖拽时显示洞洞板网格，辅助对齐 - 支持多种可能的类名 */
+.dashboard-gridstack .grid-stack.grid-stack-drag-in-progress,
+.dashboard-gridstack .grid-stack.ui-draggable-dragging,
+.dashboard-gridstack .grid-stack:has(.ui-draggable-dragging),
+.dashboard-gridstack .grid-stack:has(.grid-stack-item.ui-draggable-dragging),
+/* Resize时也显示洞洞板 */
+.dashboard-gridstack .grid-stack:has(.ui-resizable-resizing),
+.dashboard-gridstack .grid-stack:has(.grid-stack-item.ui-resizable-resizing) {
+  /* 使用径向渐变模拟圆点 */
+  background-color: #f8f9fa;
+  background-image: radial-gradient(circle, #1890ff 1.5px, transparent 1.5px);
+  /* 4.166% 对应 24列 (100% / 24) */
+  background-size: 4.166% 40px;
+  background-position: 0 0;
+}
+
+/* 洞洞板模式：用margin代替padding（因为Gridstack的inline style会覆盖） */
+.dashboard-gridstack .grid-stack-item {
+  /* 去掉transition，防止拖拽时延迟 */
+  transition: none !important;
+  
+  /* 不在这里加padding，因为会被inline style覆盖 */
+}
+
+.dashboard-gridstack .grid-stack-item-content {
+  /* 用margin控制视觉间距，8px margin = 16px间距 */
+  margin: 8px !important;
+  
+  /* 宽高需要减去margin */
+  width: calc(100% - 16px) !important;
+  height: calc(100% - 16px) !important;
+  
+  /* 保持透明，让子卡片的样式显示 */
+  background: transparent !important;
+  
+  /* 关键！圆角 + overflow: hidden 防止内容溢出 */
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  
+  /* 确保在手柄下层 */
+  z-index: 1;
+  
+  /* 拖拽光标 */
+  cursor: grab;
+  position: relative;
+  box-sizing: border-box;
+}
+
+/* 只对 Dashboard 卡片应用全尺寸，不影响其他页面 */
+.dashboard-gridstack .grid-stack-item-content > * {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+.dashboard-gridstack .grid-stack-item-content:hover {
+  /* 移除额外hover效果，让子卡片自己的hover生效 */
+}
+
+/* 拖拽中 */
+.dashboard-gridstack .grid-stack-item.ui-draggable-dragging .grid-stack-item-content {
+  cursor: grabbing;
+  opacity: 0.8;
+  /* 拖拽时的阴影和旋转由子卡片继承 */
+}
+
+/* 调整大小中 */
+.dashboard-gridstack .grid-stack-item.ui-resizable-resizing .grid-stack-item-content {
+  opacity: 0.9;
+}
+
+/* 修正手柄位置 - 适配margin: 8px */
+.dashboard-gridstack .grid-stack-item > .ui-resizable-handle {
+  z-index: 100 !important;
+}
+
+/* 右下角调整手柄 - 醒目的圆形按钮 */
+.dashboard-gridstack .grid-stack-item > .ui-resizable-se {
+  width: 24px;
+  height: 24px;
+  /* 因为content有8px margin，手柄也要往里移 */
+  right: 12px !important;
+  bottom: 12px !important;
+  cursor: se-resize;
+  z-index: 100 !important;
+}
+
+/* hover时显示圆形手柄 */
+.dashboard-gridstack .grid-stack-item:hover > .ui-resizable-se {
+  background: linear-gradient(135deg, #1890ff 0%, #0050b3 100%);
+  border-radius: 50%;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.4);
+  transition: all 0.2s ease;
+}
+
+/* 添加拖拽图标 */
+.dashboard-gridstack .grid-stack-item:hover > .ui-resizable-se::after {
+  content: '⋮⋮';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-size: 10px;
+  font-weight: bold;
+  line-height: 1;
+  letter-spacing: -2px;
+}
+
+.dashboard-gridstack .grid-stack-item > .ui-resizable-se:hover {
+  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.6);
+  transform: scale(1.15);
+}
+
+/* 占位符（拖拽时显示的目标位置） */
+.dashboard-gridstack .grid-stack-placeholder > .placeholder-content {
+  background: rgba(24, 144, 255, 0.15);
+  border: 2px dashed #1890ff;
+  border-radius: 12px;
+}
+
+/* 响应式：移动端优化 */
+@media (max-width: 768px) {
+  .dashboard-gridstack .grid-stack {
+    /* 移动端自动变为单列，由 disableOneColumnMode: false 控制 */
+  }
+  
+  .dashboard-gridstack .grid-stack-item-content {
+    cursor: default; /* 移动端不显示 grab 光标 */
+  }
+  
+  .dashboard-gridstack .ui-resizable-se {
+    width: 30px;
+    height: 30px; /* 移动端放大调整手柄 */
+  }
+}
