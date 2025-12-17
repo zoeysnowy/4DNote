@@ -675,8 +675,28 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   
   // 🔧 [已删除] 调试日志 useEffect - 导致频繁 re-render，如需调试可在关键位置手动添加日志
 
-  // TimeLog 相关状态 - formData.eventlog 是 JSON 字符串
-  const timelogContent = formData.eventlog || '[]';
+  // TimeLog 相关状态 - formData.eventlog 转换为 JSON 字符串
+  const timelogContent = useMemo(() => {
+    const eventlog = formData.eventlog;
+    
+    // 如果已经是字符串，直接返回
+    if (typeof eventlog === 'string') {
+      return eventlog || '[]';
+    }
+    
+    // 如果是数组/对象，序列化为字符串
+    if (Array.isArray(eventlog)) {
+      return eventlog.length > 0 ? JSON.stringify(eventlog) : '[]';
+    }
+    
+    // 如果是 EventLog 对象
+    if (eventlog && typeof eventlog === 'object' && 'slateJson' in eventlog) {
+      return eventlog.slateJson || '[]';
+    }
+    
+    // 默认返回空数组
+    return '[]';
+  }, [formData.eventlog]);
   
   const [activePickerIndex, setActivePickerIndex] = useState(-1);
   const [isSubPickerOpen, setIsSubPickerOpen] = useState(false); // 🆕 追踪子选择器（颜色选择器）是否打开
@@ -3842,108 +3862,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     className={`event-log-editor-wrapper ${showTopShadow ? 'show-top-shadow' : ''}`}
                     ref={rightPanelRef}
                   >
-                    {/* 图片上传工具栏 */}
-                    <div style={{
-                      display: 'flex',
-                      gap: '8px',
-                      padding: '8px 16px',
-                      borderBottom: '1px solid #e5e7eb',
-                      backgroundColor: '#f9fafb'
-                    }}>
-                      {/* 上传图片按钮 */}
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isExtracting}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '6px 12px',
-                          fontSize: '13px',
-                          backgroundColor: isExtracting ? '#e5e7eb' : '#3b82f6',
-                          color: isExtracting ? '#6b7280' : 'white',
-                          border: 'none',
-                          borderRadius: '6px',
-                          cursor: isExtracting ? 'not-allowed' : 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isExtracting) {
-                            e.currentTarget.style.backgroundColor = '#2563eb';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isExtracting) {
-                            e.currentTarget.style.backgroundColor = '#3b82f6';
-                          }
-                        }}
-                        title="上传活动海报，自动识别二维码和活动信息"
-                      >
-                        {isExtracting ? '⏳ 处理中...' : '📸 上传海报'}
-                      </button>
-
-                      {/* 从HTML提取按钮 */}
-                      <button
-                        type="button"
-                        onClick={handleExtractFromHTML}
-                        disabled={isExtracting}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          padding: '6px 12px',
-                          fontSize: '13px',
-                          backgroundColor: isExtracting ? '#e5e7eb' : 'white',
-                          color: isExtracting ? '#6b7280' : '#6b7280',
-                          border: '1px solid #d1d5db',
-                          borderRadius: '6px',
-                          cursor: isExtracting ? 'not-allowed' : 'pointer',
-                          transition: 'all 0.2s'
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!isExtracting) {
-                            e.currentTarget.style.backgroundColor = '#f3f4f6';
-                          }
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isExtracting) {
-                            e.currentTarget.style.backgroundColor = 'white';
-                          }
-                        }}
-                        title="从 EventLog 的 HTML 内容中提取图片并识别二维码"
-                      >
-                        🔍 提取HTML图片
-                      </button>
-
-                      {/* 显示提取的二维码数量 */}
-                      {extractedQRCodes.length > 0 && (
-                        <div style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '4px',
-                          marginLeft: 'auto',
-                          padding: '6px 12px',
-                          fontSize: '13px',
-                          backgroundColor: '#dcfce7',
-                          color: '#166534',
-                          borderRadius: '6px'
-                        }}>
-                          ✅ {extractedQRCodes.length} 个二维码
-                        </div>
-                      )}
-
-                      {/* 隐藏的文件输入 */}
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        multiple
-                        style={{ display: 'none' }}
-                        onChange={(e) => handleImageUpload(e.target.files)}
-                      />
-                    </div>
-
                     <ModalSlate
                       ref={slateEditorRef}
                       key={`editor-${formData.id}`}

@@ -150,18 +150,19 @@ const createTimestampDivider = (timestamp: Date): TimestampDividerType => {
   };
 };
 
-export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
-  {
-    content,
-    parentEventId,
-    onChange,
-    enableTimestamp = false,
-    placeholder = '开始编写...',
-    className = '',
-    readOnly = false
-  },
-  ref
-) => {
+export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>(
+  (
+    {
+      content,
+      parentEventId,
+      onChange,
+      enableTimestamp = false,
+      placeholder = '开始编写...',
+      className = '',
+      readOnly = false
+    },
+    ref
+  ) => {
   // 创建 Slate 编辑器实例
   const editor = useMemo(() => {
     let editorInstance = withReact(createEditor());
@@ -321,13 +322,62 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
   // 记录已添加 timestamp 的 content (必须在 initialValue 之前定义)
   const timestampAddedForContentRef = useRef<string | null>(null);
   
-  // 将 Slate JSON 字符串转换为 Slate nodes（使用 SlateCore）
+  // 🔥 [PERFORMANCE FIX] 使用 ref 缓存上次的 content，避免每次输入都重新解析
+  const lastParsedContentRef = useRef<string>('');
+  const cachedNodesRef = useRef<Descendant[]>([{ type: 'paragraph', children: [{ text: '' }] }] as any);
+  
+  // 🔥 只在 content 真正变化时才重新解析（排除 onChange 循环）
   const initialValue = useMemo(() => {
-    let nodes = slateJsonToNodes(content);
-    // console.log('[ModalSlate] 解析内容为节点:', { content, nodes });
+    // 如果 content 没变，直接返回缓存
+    if (content === lastParsedContentRef.current) {
+      console.log('[ModalSlate] ⚡ 使用缓存节点，跳过解析');
+      return cachedNodesRef.current;
+    }
     
-    // 如果启用 timestamp 且这个 content 还没添加过 timestamp
-    if (enableTimestamp && parentEventId && timestampAddedForContentRef.current !== content) {
+    console.log('[ModalSlate] 🔄 初始化/重置编辑器，解析 content:', {
+      contentLength: content?.length || 0,
+      contentPreview: content?.substring(0, 200),
+      parentEventId
+    });
+    
+    try {
+      let nodes = slateJsonToNodes(content);
+      
+      // 🔧 验证节点是否有效
+      if (!Array.isArray(nodes) || nodes.length === 0) {
+        console.warn('[ModalSlate] ⚠️ 解析结果为空，使用默认段落');
+        nodes = [{ type: 'paragraph', children: [{ text: '' }] }] as any;
+      }
+      
+      // 🔧 验证每个节点的结构
+      nodes = nodes.map((node: any, index) => {
+        if (!node || typeof node !== 'object') {
+          console.error('[ModalSlate] ❌ 无效节点:', { index, node });
+          return { type: 'paragraph', children: [{ text: '' }] };
+        }
+        
+        // 确保每个节点都有 children
+        if (!node.children || !Array.isArray(node.children)) {
+          console.warn('[ModalSlate] ⚠️ 节点缺少 children:', { index, nodeType: node.type });
+          return { ...node, children: [{ text: '' }] };
+        }
+        
+        // 确保 children 中至少有一个文本节点
+        if (node.children.length === 0) {
+          return { ...node, children: [{ text: '' }] };
+        }
+        
+        return node;
+      });
+      
+      console.log('[ModalSlate] ✅ 解析成功:', {
+        nodeCount: nodes.length,
+        firstNodeType: nodes[0]?.type,
+        hasTimestamp: nodes.some((n: any) => n.type === 'timestamp-divider')
+      });
+    
+      // 如果启用 timestamp 且这个 content 还没添加过 timestamp
+      if (enableTimestamp && parentEventId && timestampAddedForContentRef.current !== content) {
       const hasActualContent = nodes.some((node: any) => {
         if (node.type === 'paragraph') {
           return node.children?.some((child: any) => child.text?.trim());
@@ -396,10 +446,24 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           timestampAddedForContentRef.current = content;
         }
       }
+      
+      // 🔧 更新缓存
+      lastParsedContentRef.current = content;
+      cachedNodesRef.current = nodes;
+      
+      return nodes;
+    } catch (error) {
+      console.error('[ModalSlate] ❌ 解析 content 失败:', error, {
+        contentLength: content?.length,
+        contentPreview: content?.substring(0, 500)
+      });
+      // 返回默认空段落
+      const fallbackNodes = [{ type: 'paragraph', children: [{ text: '' }] }] as any;
+      lastParsedContentRef.current = content;
+      cachedNodesRef.current = fallbackNodes;
+      return fallbackNodes;
     }
-    
-    return nodes;
-  }, [content, enableTimestamp, parentEventId]); // 依赖 content，内容变化时重新解析
+  }, [content, parentEventId]); // ✅ 依赖 content 和 parentEventId，但通过 ref 缓存避免重复解析
   
   // 自动保存定时器
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);

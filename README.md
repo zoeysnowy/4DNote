@@ -1,4 +1,6 @@
-# 4DNote v1.3.0 🎯
+// 关闭所有数据库连接
+indexedDB.deleteDatabase('4dnote-storage')
+location.reload()# 4DNote v1.3.0 🎯
 
 **四维时间管理系统 - 集成 Plan/Actual/TimeLog/Timer 的智能生产力工具**
 
@@ -10,8 +12,11 @@
 
 4DNote 是一个创新的四维时间管理系统，整合了 **计划 (Plan)**、**执行 (Actual)**、**日志 (TimeLog)** 和 **计时器 (Timer)** 四个维度，提供完整的时间管理闭环。支持与 Microsoft Outlook 日历双向同步，采用 Slate.js 富文本编辑器和现代化存储架构。
 
-> **🆕 v1.3.0 更新** (2025-12-03)  
-> 项目从 ReMarkable 重命名为 4DNote，完成代码架构重组和文档系统升级
+> **🆕 v1.3.1 更新** (2025-12-17)  
+> 新增用户功能手册，完善 AI 功能文档，优化核心架构
+
+> **📖 [用户功能手册](./USER_MANUAL.md)** - 面向用户的完整功能指南  
+> 包含详细的功能说明、使用场景、快捷键参考和常见问题
 
 ---
 
@@ -163,6 +168,42 @@ EventService.getBacklinks(eventId)             // 获取反向链接
 - 拖拽编辑关系
 - 自动布局算法
 
+### 🤖 AI 智能助手
+
+**已实现功能**：
+
+#### AI 事件提取
+- 📄 **文档解析**：上传 PDF/TXT，AI 自动识别会议信息
+- 🤖 **多模型支持**：DashScope（阿里云）、腾讯混元、Ollama（本地）
+- ✅ **智能提取**：标题、时间、地点、参与人、议程、行动项
+- 📝 **可编辑预览**：提取后可修改，一键创建事件
+- 💰 **成本极低**：单次提取 < ¥0.01，支持本地模型免费使用
+
+**规划中功能**：
+
+#### AI 内联对话
+- 💬 在 EventLog 中通过 `@ai` 触发对话
+- 📦 对话历史自动保存为 Toggle 节点
+- 🎯 上下文感知，理解当前事件和笔记内容
+- 🔀 多模型支持（GPT-4、Claude、Gemini）
+
+#### AI 笔记管理器
+- 🏷️ 自动分类和标签提取
+- 🔗 智能关联相关笔记、事件、任务
+- 🔍 语义搜索，理解搜索意图
+- 📊 知识图谱可视化
+
+#### AI 任务管理器
+- 📥 从邮件、文档、图片自动提取任务
+- 🤖 智能判断优先级和所需时间
+- ⏰ 在日历空闲时段自动安排任务
+- 📊 时间使用分析和优化建议
+
+#### AI 语音与图像
+- 🎤 语音转写（实时转写、说话人分离、智能摘要）
+- 🖼️ 图片识别（白板、文档扫描、海报、名片）
+- 📝 自动生成结构化笔记
+
 ---
 
 ## 🚀 技术栈
@@ -185,6 +226,12 @@ EventService.getBacklinks(eventId)             // 获取反向链接
 - **SQLite** (Electron) - 离线持久化
 - **Microsoft Graph API** - Outlook 日历同步
 - **Azure MSAL** - OAuth 身份认证
+
+### AI 与智能服务
+- **DashScope** (阿里云通义千问) - AI 事件提取（推荐）
+- **腾讯混元** - 多模型 AI 支持
+- **Ollama** - 本地 AI 模型部署
+- **AI Proxy Server** - 跨域请求代理
 
 ### 开发工具
 - **Vitest** - 单元测试
@@ -277,22 +324,57 @@ VITE_AMAP_KEY=your_actual_api_key_here
 
 ## 📖 文档
 
-### 核心文档
+### 用户文档
+- **[用户功能手册](./USER_MANUAL.md)** - 完整的功能指南（推荐从这里开始）
+  - 四维时间管理详解
+  - AI 功能使用指南
+  - 8 个市场稀缺亮点功能
+  - 5 个真实使用场景
+  - 快捷键参考和常见问题
+
+### 核心架构 PRD
 - **[Storage Architecture](./docs/architecture/STORAGE_ARCHITECTURE.md)** - 存储架构设计（v2.4.0）
 - **[Slate Editor PRD](./docs/PRD/SLATEEDITOR_PRD.md)** - Slate.js 编辑器系统（v3.0）
 - **[EventTree Module PRD](./docs/PRD/EVENTTREE_MODULE_PRD.md)** - 事件树模块设计
 - **[EventService Module PRD](./docs/PRD/EVENTSERVICE_MODULE_PRD.md)** - 事件服务 API
-- **[Floating Components PRD](./docs/PRD/FLOATING_COMPONENTS_PRD.md)** - 浮动工具栏系统
+- **[App Architecture PRD](./docs/architecture/APP_ARCHITECTURE_PRD.md)** - 应用整体架构
+- **[EventHub & TimeHub Architecture](./docs/architecture/EVENTHUB_TIMEHUB_ARCHITECTURE.md)** - 事件中心架构
 
-### 功能文档
+### 功能模块 PRD
+- **[PlanManager Module PRD](./docs/PRD/PLANMANAGER_MODULE_PRD.md)** - Plan 视图模块
+- **[TimeCalendar Module PRD](./docs/PRD/TIMECALENDAR_MODULE_PRD.md)** - 日历视图模块
+- **[TimeLog & Description PRD](./docs/PRD/TimeLog_&_Description_PRD.md)** - 日志视图模块
+- **[Timer Module PRD](./docs/PRD/TIMER_MODULE_PRD.md)** - 计时器模块
 - **[EventEditModal V2 PRD](./docs/PRD/EVENTEDITMODAL_V2_PRD.md)** - 增强事件编辑器
+- **[Floating Components PRD](./docs/PRD/FLOATING_COMPONENTS_PRD.md)** - 浮动工具栏系统
 - **[UnifiedMention PRD](./docs/PRD/UnifiedMention_PRD.md)** - @提及 和日期引用
-- **[ActionBasedSyncManager PRD](./docs/PRD/ACTIONBASEDSYNCMANAGER_PRD.md)** - 同步管理器
-- **[Attachment System Integration](./docs/ATTACHMENT_SYSTEM_INTEGRATION.md)** - 附件系统集成
+- **[TagManager Module PRD](./docs/PRD/TAGMANAGER_MODULE_PRD.md)** - 标签管理系统
+- **[ContactService PRD](./docs/PRD/CONTACTSERVICE_PRD.md)** - 联系人服务
 
-### 测试文档
+### AI 功能 PRD
+- **[AI Event Extraction Demo PRD](./docs/PRD/AI_DEMO_PRD.md)** - AI 事件提取（已实现）
+- **[AI ChatFlow PRD](./docs/PRD/AI_ChatFlow_PRD.md)** - AI 内联对话系统
+- **[AI Notes Manager PRD](./docs/PRD/AI_NotesManager_PRD.md)** - AI 笔记管理器
+- **[AI Task Manager PRD](./docs/PRD/AI_TaskManager_PRD.md)** - AI 任务管理器
+
+### AI 使用指南
+- **[AI Demo V2 Guide](./docs/AI_DEMO_V2_GUIDE.md)** - AI 事件提取使用指南
+- **[Activity Poster Recognition](./docs/ACTIVITY_POSTER_RECOGNITION_GUIDE.md)** - 海报识别指南
+- **[AI Framework Phase 1](./docs/AI_FRAMEWORK_PHASE1_REPORT.md)** - AI 框架阶段 1 报告
+- **[AI Framework Phase 2](./docs/AI_FRAMEWORK_PHASE2_REPORT.md)** - AI 框架阶段 2 报告
+- **[RAG Quick Start](./docs/RAG_QUICK_START.md)** - RAG 快速开始
+- **[RAG Usage Guide](./docs/RAG_USAGE_GUIDE.md)** - RAG 使用指南
+
+### 同步与存储
+- **[ActionBasedSyncManager PRD](./docs/PRD/ACTIONBASEDSYNCMANAGER_PRD.md)** - 同步管理器
+- **[MicrosoftCalendarService PRD](./docs/PRD/MICROSOFTCALENDARSERVICE_PRD.md)** - Outlook 同步服务
+- **[EventHistory Module PRD](./docs/PRD/EVENTHISTORY_MODULE_PRD.md)** - 事件历史模块
+- **[Attachment System PRD](./docs/PRD/ATTACHMENT_SYSTEM_PRD.md)** - 附件系统
+
+### 测试与开发
 - **[Location Feature Setup](./docs/LOCATION_FEATURE_SETUP.md)** - 地址功能配置
 - **[Location Test Checklist](./docs/LOCATION_TEST_CHECKLIST.md)** - 地址功能测试清单
+- **[快捷键速查表](./docs/shortcuts-cheatsheet.md)** - 所有快捷键列表
 
 ### 架构演进
 - **[CHANGELOG.md](./CHANGELOG.md)** - 完整更新日志
@@ -324,6 +406,20 @@ VITE_AMAP_KEY=your_actual_api_key_here
 ---
 
 ## 🔄 版本历史
+
+### v1.3.1 (2025-12-17) - 用户手册与 AI 文档完善
+- **用户功能手册**：新增 60+ 页完整功能指南
+  - 四维时间管理体系详解
+  - AI 事件提取功能突出展示
+  - 8 个市场稀缺亮点功能
+  - 5 个真实使用场景案例
+- **AI 文档体系**：新增 10+ 个 AI 相关文档
+  - AI ChatFlow、NotesManager、TaskManager PRD
+  - AI 事件提取使用指南
+  - RAG 系统快速开始和使用指南
+  - AI 框架实施报告
+- **文档结构优化**：MECE 原则重组，覆盖所有功能模块
+- **README 更新**：与实现和规划保持一致
 
 ### v1.3.0 (2025-12-03) - 重命名与架构升级
 - **项目重命名**：ReMarkable → 4DNote
@@ -420,10 +516,20 @@ VITE_AMAP_KEY=your_actual_api_key_here
 - ✅ 本地存储架构（IndexedDB + SQLite）
 - ✅ Outlook 日历同步
 - ✅ 四维时间管理（Plan/Actual/TimeLog/Timer）
-- ✅ Slate.js 富文本编辑器
-- ✅ EventTree 层级系统
+- ✅ Slate.js 富文本编辑器（SlateCore 共享层）
+- ✅ EventTree 层级系统（父子关系 + 双向链接）
+- ✅ AI 事件提取（PDF/TXT 文档智能解析）
+- ✅ 多 AI 模型支持（DashScope/腾讯混元/Ollama）
+- ✅ 标签管理系统（层级标签 + 日历映射）
+- ✅ 联系人管理
+- ✅ 附件系统（多类型文件支持）
 
-### Phase 2: Beta (3-6 个月)
+### Phase 2: Beta (3-6 个月) - AI 增强
+- 🚧 AI 内联对话（@ai 触发，多模型支持）
+- 🚧 AI 笔记管理器（自动分类、智能关联、语义搜索）
+- 🚧 AI 任务管理器（智能提取、自动规划）
+- 🚧 AI 语音转写（实时转写、说话人分离）
+- 🚧 AI 图片识别（白板、文档、海报、名片）
 - ⏳ 4DNote Cloud (Supabase)
 - ⏳ App 账号系统
 - ⏳ 跨设备同步
@@ -431,12 +537,14 @@ VITE_AMAP_KEY=your_actual_api_key_here
 - ⏳ iCloud 集成
 - ⏳ 移动端适配
 
-### Phase 3: 1.0 Release (6-12 个月)
-- ⏳ AI 驱动的时间建议
-- ⏳ 智能事件分类
-- ⏳ 高级可视化（EventTree Canvas）
-- ⏳ 团队协作功能
+### Phase 3: 1.0 Release (6-12 个月) - 协作与开放
+- ⏳ AI 驱动的时间建议和优化
+- ⏳ 智能事件分类和预测
+- ⏳ 高级可视化（EventTree Canvas 图谱）
+- ⏳ 团队协作功能（共享事件、评论）
 - ⏳ API 开放平台
+- ⏳ 插件市场
+- ⏳ 高级数据分析和报表
 
 ---
 
