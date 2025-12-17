@@ -4238,11 +4238,16 @@ private getUserSettings(): any {
             }
             
             // ✅ 直接传递 remoteCoreContent 作为 eventlogInput（而非 fallback）
+            // 🆕 使用本地 updatedAt 进行 Diff（避免 Outlook 时间戳变化导致签名变化）
+            const localUpdatedAt = oldEvent.updatedAt 
+              ? new Date(oldEvent.updatedAt).getTime() 
+              : remoteUpdatedAt;
+            
             const remoteEventlog = EventService.normalizeEventLog(
               remoteCoreContent,  // ✅ 直接传递 HTML/纯文本
               undefined,          // 不需要 fallback
               remoteCreatedAt,    // Event.createdAt
-              remoteUpdatedAt,    // Event.updatedAt
+              localUpdatedAt,     // 🆕 使用本地时间（而非 Outlook 时间）
               oldEvent.eventlog   // 旧 eventlog（用于 Diff）
             );
             
