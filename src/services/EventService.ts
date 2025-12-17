@@ -3789,7 +3789,6 @@ export class EventService {
     
     console.log('[parseTextWithBlockTimestamps] ✅ 所有步骤完成:', {
       最终节点数: slateNodes.length,
-      hasChanges,  // 🆕 是否有变化
       节点详情: slateNodes.map(n => ({ 
         id: n.id, 
         createdAt: new Date(n.createdAt).toLocaleString(), 
