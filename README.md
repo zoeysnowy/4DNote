@@ -145,7 +145,12 @@ LocalStorage (缓存层)
   - Time Field State Bitmap（v2.6）：精确追踪用户设置的字段
   - Fuzzy Date 支持："下周日中午" → `12:00` 单时间点
   - 三层架构：数据层（完整时间戳）→ 元数据层（用户意图）→ 显示层（精确渲染）
-
+- **Snapshot 状态可视化**：事件历史追溯系统
+  - 五种状态标识：New（蓝）、Updated（橙）、Done（绿）、Missed（红）、Deleted（灰）
+  - 彩色竖线可视化事件生命周期
+  - 多线并行显示，智能列分配算法
+  - Ghost 事件（已删除）完整历史查看
+  - 适用场景：项目复盘、时间段分析、习惯追踪
 ### 🌳 EventTree 层级系统
 
 **自动维护 + 双向链接** 的事件关系管理：
@@ -339,6 +344,7 @@ VITE_AMAP_KEY=your_actual_api_key_here
 - **[EventService Module PRD](./docs/PRD/EVENTSERVICE_MODULE_PRD.md)** - 事件服务 API
 - **[App Architecture PRD](./docs/architecture/APP_ARCHITECTURE_PRD.md)** - 应用整体架构
 - **[EventHub & TimeHub Architecture](./docs/architecture/EVENTHUB_TIMEHUB_ARCHITECTURE.md)** - 事件中心架构
+- **[Snapshot Status Visualization PRD](./docs/PRD/SNAPSHOT_STATUS_VISUALIZATION_PRD.md)** - 快照状态可视化系统
 
 ### 功能模块 PRD
 - **[PlanManager Module PRD](./docs/PRD/PLANMANAGER_MODULE_PRD.md)** - Plan 视图模块
@@ -518,6 +524,7 @@ VITE_AMAP_KEY=your_actual_api_key_here
 - ✅ 四维时间管理（Plan/Actual/TimeLog/Timer）
 - ✅ Slate.js 富文本编辑器（SlateCore 共享层）
 - ✅ EventTree 层级系统（父子关系 + 双向链接）
+- ✅ Snapshot 快照可视化（事件历史追溯系统）
 - ✅ AI 事件提取（PDF/TXT 文档智能解析）
 - ✅ 多 AI 模型支持（DashScope/腾讯混元/Ollama）
 - ✅ 标签管理系统（层级标签 + 日历映射）
