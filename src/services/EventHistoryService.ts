@@ -1011,12 +1011,14 @@ export class EventHistoryService {
     //      会遍历到 tags，导致 oldValue=['tag1'], newValue=undefined → 误判为变更
     const allKeys = new Set(Object.keys(after));
 
-    // 忽略的字段（只忽略同步元数据，不忽略 createdAt/updatedAt）
+    // 忽略的字段（同步元数据和自动更新的时间戳）
     const ignoredFields = new Set([
       'localVersion', 
       'lastLocalChange', 
       'lastSyncTime',
-      'position'     // ✅ position 只是排序字段，不应触发历史记录
+      'position',          // ✅ position 只是排序字段，不应触发历史记录
+      'updatedAt',         // 🆕 忽略 updatedAt（每次更新都会变，非实质性变更）
+      'fourDNoteSource'    // 🆕 忽略 fourDNoteSource（同步标记，非实质性变更）
     ]);
 
     allKeys.forEach(key => {
