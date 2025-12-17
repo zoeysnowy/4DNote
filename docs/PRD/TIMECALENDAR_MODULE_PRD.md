@@ -152,10 +152,12 @@ TimeCalendar 是 ReMarkable 的**核心可视化模块**，提供基于 TUI Cale
 - ✅ **所见即所得**: 拖拽位置即事件时间，减少认知负担
 - ✅ **智能默认值**: 根据拖拽范围自动计算 startTime/endTime
 - ✅ **延迟创建**: 不立即保存，通过 Modal 确认后再创建（避免误操作）
+- ✅ **默认本地**: 新建事件默认 `syncStatus: 'local-only'`，仅本地存储，不强制同步（v2.17.5）
+- ✅ **智能同步**: 用户添加标签或日历后，自动升级为 `pending` 并同步到 Outlook（v2.17.5）
 
 **代码位置**:
 - 阻止默认创建: `TimeCalendar.tsx` L1641-1648 `handleBeforeCreateEvent()`
-- 选择时间触发 Modal: `TimeCalendar.tsx` L1610-1637 `handleSelectDateTime()`
+- 选择时间触发 Modal: `TimeCalendar.tsx` L1785-1816 `handleSelectDateTime()` (v2.17.5 更新)
 - Modal 保存逻辑: `TimeCalendar.tsx` L1782-1839 `handleSaveEvent()`
 
 **技术细节**:

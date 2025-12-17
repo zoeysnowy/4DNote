@@ -36,6 +36,9 @@ export interface TextNode {
  */
 export interface ParagraphNode {
   type: 'paragraph';
+  id?: string;             // 🆕 唯一标识符（block_timestamp_random）
+  createdAt?: number;      // 🆕 创建时间戳（Unix ms）
+  updatedAt?: number;      // 🆕 最后修改时间戳
   bullet?: boolean;        // 是否为 bullet list item
   bulletLevel?: number;    // bullet 层级 (0-4)
   children: (TextNode | TagNode | DateMentionNode)[];

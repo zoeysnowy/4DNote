@@ -144,12 +144,12 @@ export async function setEventTime(
     dbg('time', '✅ EventHub 更新成功', { eventId, start, end });
   }
   
-  // 🎯 Step 2: 如果有其他非时间字段（dueDate），通过 EventHub.updateFields 更新
+  // 🎯 Step 2: 如果有其他非时间字段（dueDateTime），通过 EventHub.updateFields 更新
   if (dueDate) {
     await EventHub.updateFields(eventId, {
-      dueDate,
+      dueDateTime: dueDate,
     }, {
-      source: 'planmanager-duedate'
+      source: 'planmanager-duedatetime'
     });
   }
   
@@ -157,7 +157,7 @@ export async function setEventTime(
   return {
     start: start ?? null,
     end: end ?? null,
-    dueDate: dueDate ?? null,
+    dueDateTime: dueDate ?? null,
     isAllDay: isAllDay ?? false,
     timeSpec,
   };

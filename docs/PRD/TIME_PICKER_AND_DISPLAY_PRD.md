@@ -123,7 +123,7 @@ formatRelativeTimeDisplay(eventTime.start, ...)  // ✅ 直接传递本地时间
 TimeHoverCard({ startTime: date.toISOString() })  // ❌ 错误！
 
 // ✅ 正确：传递本地时间字符串
-TimeHoverCard({ startTime: startTimeStr })  // ✅ 使用已有的字符串变量
+TimeHoverCard({ startTime: formatTimeForStorage(date) })  // ✅ 使用 TimeSpec 格式
 ```
 
 **为什么禁止 ISO 格式（包括 T 分隔符）**:
@@ -1465,9 +1465,9 @@ interface Event {
 ```typescript
 // ❌ v2.4 之前（错误）
 <TimeHoverCard
-  startTime={startTime.toISOString()}  // 生成 ISO 格式
-  endTime={endTime.toISOString()}
-  dueDate={dueDate?.toISOString() ?? null}
+  startTime={formatTimeForStorage(startTime)}  // 生成 TimeSpec 格式
+  endTime={formatTimeForStorage(endTime)}
+  dueDate={dueDate ? formatTimeForStorage(dueDate) : null}
 />
 
 // ✅ v2.5（正确）
@@ -6163,15 +6163,15 @@ TimeDisplay 模块负责将绝对时间转换为符合人类阅读习惯的相�
 ```typescript
 // ❌ 错误：直接使用 toISOString()
 const event = {
-  startTime: new Date('2025-11-12T15:00:00').toISOString()
-  // 结果: "2025-11-12T15:00:00.000Z" → 存储后变成 UTC 时间
-  // 如果本地是 GMT+8，实际时间会变成 23:00（15:00 + 8）
+  startTime: new Date('2025-11-12 15:00:00').toISOString()
+  // 结果: "2025-11-12T07:00:00.000Z" → 转换为 UTC 时间
+  // 如果本地是 GMT+8，15:00 会变成 07:00 UTC（时间错误）
 };
 
 // ✅ 正确：使用 formatTimeForStorage()
 const event = {
-  startTime: formatTimeForStorage(new Date('2025-11-12T15:00:00'))
-  // 结果: "2025-11-12T15:00:00" → 正确存储本地时间
+  startTime: formatTimeForStorage(new Date('2025-11-12 15:00:00'))
+  // 结果: "2025-11-12 15:00:00" → 正确存储本地时间
 };
 ```
 

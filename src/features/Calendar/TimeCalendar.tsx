@@ -31,7 +31,8 @@ import {
   validateEvent,
   mergeEventUpdates,
   getCalendarGroupColor,
-  getAvailableCalendarsForSettings
+  getAvailableCalendarsForSettings,
+  generateEventId // ✅ 生成真实 UUID
 } from '../../utils/calendarUtils';
 
 interface TimeCalendarProps {
@@ -206,6 +207,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   // ✏️ 事件编辑弹窗状态
   const [showEventEditModal, setShowEventEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
+  const [newlyCreatedEventId, setNewlyCreatedEventId] = useState<string | null>(null); // 🔧 v2.17.5: 跟踪新创建的事件，用于取消时删除
 
   // 📅 可用日历状态
   const [availableCalendars, setAvailableCalendars] = useState<any[]>([]);
@@ -1767,32 +1769,62 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   }, []); // 空依赖数组，因为我们直接从 StorageManager 读取
 
   /**
-   * 📅 选择日期时间 - 打开创建事件模态框
+   * 📅 选择日期时间 - 立即创建事件并打开编辑模态框
+   * 
+   * 🎯 架构改进（参考 PlanManager）：
+   * - 立即创建事件（通过 EventHub.createEvent）
+   * - 分配真实 UUID，不使用临时 ID
+   * - Modal 中的 event 对象始终存在，避免 null 状态
+   * - 支持未来的 EventTree 父子关系维护
+   * 
+   * 🔧 v2.17.5: 添加取消删除逻辑
+   * - 保存 newlyCreatedEventId 用于取消时删除
+   * - 用户点击取消 → 删除刚创建的事件
+   * - 用户点击保存 → 清除标记，保留事件
    */
-  const handleSelectDateTime = useCallback((selectionInfo: any) => {
+  const handleSelectDateTime = useCallback(async (selectionInfo: any) => {
     console.log('📅 [TimeCalendar] Time selection:', selectionInfo);
     
     const { start, end, isAllday } = selectionInfo;
     
-    // 创建新事件对象（不保存，仅用于编辑）
-    const newEvent: Event = {
-      id: `local-${Date.now()}`,
-      title: { simpleTitle: '' }, // ✅ 只传 simpleTitle
-      startTime: formatTimeForStorage(start),
-      endTime: formatTimeForStorage(end),
-      location: '',
-      description: '',
-      tags: [],
-      isAllDay: isAllday || false,
-      createdAt: formatTimeForStorage(new Date()),
-      updatedAt: formatTimeForStorage(new Date()),
-      syncStatus: 'pending',
-      fourDNoteSource: true // 🔧 标记为本地创建
-    };
-    
-    // 打开编辑模态框
-    setEditingEvent(newEvent);
-    setShowEventEditModal(true);
+    try {
+      // ✅ 立即创建事件（学习 PlanManager 的 robust 策略）
+      // 🔧 v2.17.2: 新建事件默认为本地专属，不强制同步
+      const newEvent: Event = {
+        id: generateEventId(), // ✅ 使用真实 UUID，而非 local-xxx
+        title: { simpleTitle: '' },
+        startTime: formatTimeForStorage(start),
+        endTime: formatTimeForStorage(end),
+        location: '',
+        description: '',
+        tags: [],
+        calendarIds: [], // 🔧 v2.17.2: 空数组表示未选择日历，不会同步
+        isAllDay: isAllday || false,
+        createdAt: formatTimeForStorage(new Date()),
+        updatedAt: formatTimeForStorage(new Date()),
+        syncStatus: 'local-only', // 🔧 v2.17.2: 默认仅本地，用户添加标签后自动变为 'pending'
+        fourDNoteSource: true
+      };
+      
+      // 🎯 立即保存到 EventService（通过 EventHub）
+      const { EventHub } = await import('../../services/EventHub');
+      await EventHub.createEvent(newEvent);
+      
+      console.log('✅ [TimeCalendar] Event created immediately:', {
+        eventId: newEvent.id,
+        startTime: newEvent.startTime,
+        endTime: newEvent.endTime
+      });
+      
+      // 🔧 v2.17.5: 保存新创建的事件 ID，用于取消时删除
+      setNewlyCreatedEventId(newEvent.id);
+      
+      // 打开编辑模态框（此时 event 已存在于 EventService）
+      setEditingEvent(newEvent);
+      setShowEventEditModal(true);
+    } catch (error) {
+      console.error('❌ [TimeCalendar] Failed to create event:', error);
+    }
   }, []);
 
   /**
@@ -1904,8 +1936,21 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   /**
    * 🚪 关闭编辑弹窗
    * ✅ 使用 useCallback 避免不必要的 EventEditModalV2 re-render
+   * 🔧 v2.17.5: 如果是新创建的事件且用户点击取消，则删除该事件
    */
-  const handleCloseModal = React.useCallback(() => {
+  const handleCloseModal = React.useCallback(async () => {
+    // 🔧 v2.17.5: 如果是新创建的事件（用户点击取消），则删除该事件
+    if (newlyCreatedEventId) {
+      try {
+        const { EventHub } = await import('../../services/EventHub');
+        await EventHub.deleteEvent(newlyCreatedEventId);
+        console.log('🗑️ [TimeCalendar] Deleted newly created event (user cancelled):', newlyCreatedEventId);
+        setNewlyCreatedEventId(null);
+      } catch (error) {
+        console.error('❌ [TimeCalendar] Failed to delete newly created event:', error);
+      }
+    }
+    
     setShowEventEditModal(false);
     setEditingEvent(null);
     // 清除 TUI Calendar 的时间段选择状态
@@ -1915,7 +1960,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
         instance.clearGridSelections();
       }
     }
-  }, []);
+  }, [newlyCreatedEventId]);
 
   /**
    * ⏱️ Timer 动作分发器
@@ -1980,6 +2025,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       // 🚪 关闭弹窗并清除时间段选择状态
       setShowEventEditModal(false);
       setEditingEvent(null);
+      setNewlyCreatedEventId(null); // 🔧 v2.17.5: 清除新创建事件标记（保存成功）
       
       // 清除 TUI Calendar 的网格选择（避免时间标签与事件标题重叠）
       if (calendarRef.current) {
@@ -2847,6 +2893,9 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
         hierarchicalTags={hierarchicalTagsMemo}
         globalTimer={globalTimer}
         onTimerAction={handleTimerAction}
+        initialStartTime={editingEvent?.startTime}
+        initialEndTime={editingEvent?.endTime}
+        initialIsAllDay={editingEvent?.isAllDay}
       />
 
       {/* ⚙️ 设置面板 */}

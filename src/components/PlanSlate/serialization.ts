@@ -35,7 +35,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       // ✅ v1.8: 时间字段保留 undefined（不转换为 null）
       startTime: item.startTime,
       endTime: item.endTime,
-      dueDate: item.dueDate,
+      dueDateTime: item.dueDateTime,
       isAllDay: item.isAllDay,
       timeSpec: item.timeSpec,
       

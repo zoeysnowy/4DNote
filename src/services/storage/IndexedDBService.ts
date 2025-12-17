@@ -31,11 +31,14 @@ import type {
   Metadata,
   StorageStats,
   QueryOptions,
-  QueryResult
+  QueryResult,
+  EventStats
 } from './types';
 
+import { formatTimeForStorage } from '../../utils/timeUtils';
+
 const DB_NAME = '4DNoteDB';
-const DB_VERSION = 2; // v2: Added event_history store
+const DB_VERSION = 3; // v3: Added event_stats store for performance
 
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
@@ -57,38 +60,38 @@ export class IndexedDBService {
     }
 
     this.initPromise = new Promise((resolve, reject) => {
+      console.log('[IndexedDBService] 🔄 Opening database:', DB_NAME, 'version:', DB_VERSION);
+      
+      // 🆕 添加超时机制（10秒）
+      const timeout = setTimeout(() => {
+        console.error('[IndexedDBService] ❌ Initialization timeout (10s)');
+        this.initPromise = null;
+        reject(new Error('IndexedDB initialization timeout'));
+      }, 10000);
+      
       const request = indexedDB.open(DB_NAME, DB_VERSION);
+      console.log('[IndexedDBService] 🔍 Open request created:', request);
 
       request.onerror = () => {
+        clearTimeout(timeout);
         const error = request.error;
-        console.error('[IndexedDBService] Failed to open database:', error);
-        
-        // 如果是 Internal error，尝试删除并重建数据库
-        if (error?.message?.includes('Internal error')) {
-          console.warn('[IndexedDBService] Attempting to reset corrupted database...');
-          this.resetDatabase().then(() => {
-            console.log('[IndexedDBService] Database reset complete, retrying...');
-            // 重试初始化
-            this.initPromise = null;
-            this.initialize().then(resolve).catch(reject);
-          }).catch(resetError => {
-            console.error('[IndexedDBService] Failed to reset database:', resetError);
-            reject(error);
-          });
-        } else {
-          reject(error);
-        }
+        console.error('[IndexedDBService] ❌ Failed to open database:', error);
+        this.initPromise = null;
+        reject(error);
       };
 
       request.onsuccess = () => {
+        clearTimeout(timeout);
         this.db = request.result;
         console.log('[IndexedDBService] ✅ Database opened successfully');
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
+        console.log('[IndexedDBService] 🔄 onupgradeneeded triggered');
         const db = (event.target as IDBOpenDBRequest).result;
         console.log('[IndexedDBService] Upgrading database schema...');
+        console.log('[IndexedDBService] Current object stores:', Array.from(db.objectStoreNames));
 
         // 1. Accounts Store
         if (!db.objectStoreNames.contains('accounts')) {
@@ -170,6 +173,21 @@ export class IndexedDBService {
           console.log('[IndexedDBService] Created event_history store');
         }
 
+        // 10. Event Stats Store (v3) - 轻量级统计数据
+        if (!db.objectStoreNames.contains('event_stats')) {
+          const statsStore = db.createObjectStore('event_stats', { keyPath: 'id' });
+          statsStore.createIndex('startTime', 'startTime', { unique: false });
+          statsStore.createIndex('endTime', 'endTime', { unique: false });
+          statsStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
+          statsStore.createIndex('calendarIds', 'calendarIds', { unique: false, multiEntry: true });
+          statsStore.createIndex('source', 'source', { unique: false });
+          console.log('[IndexedDBService] Created event_stats store');
+        }
+
+      request.onblocked = () => {
+        console.warn('[IndexedDBService] ⚠️ Database upgrade blocked - please close other tabs');
+        // 不 reject，等待用户关闭其他标签页
+      };
         console.log('[IndexedDBService] ✅ Schema upgrade complete');
       };
     });
@@ -747,7 +765,7 @@ export class IndexedDBService {
     const metadata: Metadata = {
       key,
       value,
-      updatedAt: new Date().toISOString()
+      updatedAt: formatTimeForStorage(new Date())
     };
     return this.put('metadata', metadata);
   }
@@ -880,7 +898,7 @@ export class IndexedDBService {
       
       const request = store.add({
         ...log,
-        createdAt: new Date().toISOString()
+        createdAt: formatTimeForStorage(new Date())
       });
 
       request.onsuccess = () => resolve();
@@ -912,7 +930,7 @@ export class IndexedDBService {
       // 使用 put（而非 add）：如果主键存在则更新，不存在则创建
       const request = store.put({
         ...log,
-        createdAt: new Date().toISOString()
+        createdAt: formatTimeForStorage(new Date())
       });
 
       request.onsuccess = () => resolve();
@@ -986,6 +1004,22 @@ export class IndexedDBService {
         resolve(results);
       };
 
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 删除单条历史记录
+   */
+  async deleteEventHistory(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(['event_history'], 'readwrite');
+      const store = transaction.objectStore('event_history');
+      const request = store.delete(id);
+
+      request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   }
@@ -1093,13 +1127,280 @@ export class IndexedDBService {
       
       deleteRequest.onblocked = () => {
         console.warn('[IndexedDBService] ⚠️  Database deletion blocked (close all tabs)');
-        // 等待一段时间后重试
-        setTimeout(() => {
-          resolve();
-        }, 1000);
       };
     });
   }
+
+  // ==================== EventStats CRUD ====================
+
+  /**
+   * 创建 EventStats
+   */
+  async createEventStats(stats: EventStats): Promise<void> {
+    await this.initialize();
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readwrite');
+      const store = transaction.objectStore('event_stats');
+      const request = store.put(stats); // 使用 put 允许覆盖（用于补全缺失的 stats）
+
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 批量创建 EventStats（分批写入，避免事务超时）
+   */
+  async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
+    await this.initialize();
+    
+    const BATCH_SIZE = 100; // 每批 100 条，避免事务超时
+    let totalSuccess = 0;
+    let totalErrors = 0;
+
+    // 分批处理
+    for (let i = 0; i < statsList.length; i += BATCH_SIZE) {
+      const batch = statsList.slice(i, i + BATCH_SIZE);
+      
+      await new Promise<void>((resolve, reject) => {
+        if (!this.db) {
+          reject(new Error('Database not initialized'));
+          return;
+        }
+
+        const transaction = this.db.transaction('event_stats', 'readwrite');
+        const store = transaction.objectStore('event_stats');
+        
+        let successCount = 0;
+        let errorCount = 0;
+        
+        batch.forEach((stats, index) => {
+          const request = store.add(stats);
+          request.onsuccess = () => successCount++;
+          request.onerror = (event) => {
+            errorCount++;
+            console.error(`[IndexedDB] Failed to add EventStats[${i + index}]:`, stats.id, request.error);
+            event.stopPropagation();
+          };
+        });
+
+        transaction.oncomplete = () => {
+          totalSuccess += successCount;
+          totalErrors += errorCount;
+          resolve();
+        };
+        
+        transaction.onerror = () => {
+          console.error('[IndexedDB] Transaction error:', transaction.error);
+          reject(transaction.error);
+        };
+        
+        transaction.onabort = () => {
+          console.error('[IndexedDB] Transaction aborted');
+          reject(new Error('Transaction aborted'));
+        };
+      });
+    }
+
+    console.log(`[IndexedDB] 📊 Bulk insert completed: ${totalSuccess} success, ${totalErrors} errors (${statsList.length} total)`);
+  }
+
+  /**
+   * 更新 EventStats
+   */
+  async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+    await this.initialize();
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction(['event_stats', 'events'], 'readwrite');
+      const store = transaction.objectStore('event_stats');
+      const getRequest = store.get(id);
+
+      getRequest.onsuccess = () => {
+        const existing = getRequest.result;
+        if (!existing) {
+          // 🔧 如果 EventStats 不存在，从 events 表提取并创建
+          console.warn(`[IndexedDB] EventStats not found, creating from event: ${id}`);
+          
+          const eventsStore = transaction.objectStore('events');
+          const eventRequest = eventsStore.get(id);
+          
+          eventRequest.onsuccess = () => {
+            const event = eventRequest.result;
+            if (!event) {
+              reject(new Error(`Event not found: ${id}`));
+              return;
+            }
+            
+            // 创建新的 EventStats 记录
+            const newStats: EventStats = {
+              id: event.id,
+              tags: event.tags || [],
+              calendarIds: event.calendarIds || [],
+              startTime: event.startTime,
+              endTime: event.endTime,
+              source: event.source,
+              updatedAt: event.updatedAt,
+              ...updates // 应用更新
+            };
+            
+            const putRequest = store.put(newStats);
+            putRequest.onsuccess = () => resolve();
+            putRequest.onerror = () => reject(putRequest.error);
+          };
+          
+          eventRequest.onerror = () => reject(eventRequest.error);
+          return;
+        }
+
+        const updated = { ...existing, ...updates };
+        const putRequest = store.put(updated);
+        
+        putRequest.onsuccess = () => resolve();
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+
+      getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  /**
+   * 删除 EventStats
+   */
+  async deleteEventStats(id: string): Promise<void> {
+    await this.initialize();
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readwrite');
+      const store = transaction.objectStore('event_stats');
+      const request = store.delete(id);
+
+      // 🔧 delete 操作即使记录不存在也会成功，无需额外容错
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 按日期范围查询 EventStats
+   */
+  async queryEventStats(options: QueryOptions): Promise<QueryResult<EventStats>> {
+    await this.initialize();
+    
+    const perfStart = performance.now();
+    
+    // 🔧 日期格式化（TimeSpec 标准格式：YYYY-MM-DD HH:mm:ss）
+    const formatDate = (date: Date): string => {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    };
+    
+    const startTimeStr = options.startDate 
+      ? formatDate(options.startDate) 
+      : '1970-01-01 00:00:00';
+    const endTimeStr = options.endDate 
+      ? formatDate(options.endDate) 
+      : '2099-12-31 23:59:59';
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readonly');
+      const store = transaction.objectStore('event_stats');
+      const index = store.index('startTime');
+      
+      const range = IDBKeyRange.bound(startTimeStr, endTimeStr);
+      const request = index.getAll(range);
+
+      request.onsuccess = () => {
+        const results = request.result || [];
+        const duration = performance.now() - perfStart;
+        
+        console.log(`[IndexedDB] ⚡ EventStats query: ${duration.toFixed(1)}ms → ${results.length} records`);
+        
+        resolve({
+          items: results,
+          total: results.length,
+          hasMore: false
+        });
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 🚀 [MIGRATION] 从 events 表提取 EventStats（仅读取必要字段）
+   * 避免反序列化完整 Event 对象（eventlog、title 等大字段）
+   */
+  async extractEventStatsFromEvents(): Promise<EventStats[]> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('events', 'readonly');
+      const store = transaction.objectStore('events');
+      const request = store.openCursor();
+      const statsList: EventStats[] = [];
+
+      request.onsuccess = (event) => {
+        const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
+        
+        if (cursor) {
+          const event = cursor.value;
+          
+          // 只提取 EventStats 需要的字段（跳过 eventlog、title 等大对象）
+          statsList.push({
+            id: event.id,
+            tags: event.tags || [],
+            calendarIds: event.calendarIds || [],
+            startTime: event.startTime,
+            endTime: event.endTime,
+            source: event.source,
+            updatedAt: event.updatedAt,
+          });
+          
+          cursor.continue();
+        } else {
+          // 遍历完成
+          console.log(`[IndexedDB] 📊 Extracted ${statsList.length} EventStats records`);
+          resolve(statsList);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  // ==================== End EventStats CRUD ====================
 }
 
 // 导出单例实例

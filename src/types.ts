@@ -186,11 +186,29 @@ export interface EventLogSyncState {
  * EventLog 完整结构
  * 用于 Event.eventlog 字段（重构后）
  */
+/**
+ * 二维码信息（AI 提取）
+ */
+export interface QRCodeInfo {
+  id: string;                   // 唯一标识
+  content: string;              // 二维码内容
+  type: 'url' | 'text' | 'vcard' | 'wifi' | 'email' | 'phone' | 'sms' | 'geo' | 'unknown';
+  url?: string;                 // 如果是 URL 类型，解析后的 URL
+  metadata?: {
+    title?: string;             // 标题（如 "报名链接"）
+    description?: string;       // 描述
+    action?: string;            // 建议操作（如 "报名"、"观看视频"）
+  };
+  imageData?: string;           // 二维码图片 base64（可下载）
+  extractedAt: string;          // 提取时间
+}
+
 export interface EventLog {
   slateJson: string;            // Slate JSON 格式（主数据源，用户编辑）
   html?: string;                // HTML 格式（渲染用，Outlook 同步）
   plainText?: string;           // 纯文本（搜索优化，性能缓存）
   attachments?: Attachment[];   // 附件列表
+  qrCodes?: QRCodeInfo[];       // 二维码列表（AI 提取）⭐ 新增
   versions?: EventLogVersion[]; // 版本历史（最多 50 个）
   syncState?: EventLogSyncState; // 同步状态
   createdAt?: string;
@@ -246,6 +264,26 @@ export interface PlanSyncConfig {
 export interface ActualSyncConfig {
   mode: ActualSyncMode;
   targetCalendars: string[];  // 目标日历 ID 列表
+}
+
+/**
+ * 地点对象
+ * 支持高德地图 API 返回的地点信息
+ */
+export interface LocationObject {
+  /** 显示名称（必填） */
+  displayName?: string;
+  /** 详细地址 */
+  address?: string;
+  /** 地点 ID（高德地图） */
+  id?: string;
+  /** 坐标信息 */
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  /** 其他扩展信息 */
+  [key: string]: any;
 }
 
 /**
@@ -390,7 +428,7 @@ export interface Event {
   content?: string;      // 废弃：请使用 fullTitle
   emoji?: string;        // emoji 图标
   color?: string;        // 自定义颜色
-  dueDate?: string;      // 截止日期（用于任务类型）
+  dueDateTime?: string;      // 截止日期/时间（用于任务类型，支持模糊时间）
   notes?: string;        // 备注
   priority?: 'low' | 'medium' | 'high' | 'urgent'; // 优先级
   isCompleted?: boolean; // 是否完成
@@ -521,7 +559,7 @@ export interface Task {
   description?: string;
   priority: 'low' | 'medium' | 'high';
   completed: boolean;
-  dueDate?: string;      // 🔧 修改：使用字符串存储本地时间
+  dueDateTime?: string;      // 🔧 修改：使用字符串存储本地时间（支持模糊时间）
   createdAt: string;     // 🔧 修改：使用字符串存储本地时间
   updatedAt: string;     // 🔧 修改：使用字符串存储本地时间
   tags?: string[];       // 🆕 添加：标签支持

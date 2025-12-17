@@ -36,16 +36,16 @@ export const EventLineSuffix: React.FC<EventLineSuffixProps> = React.memo(({ ele
   const containerRef = React.useRef<HTMLDivElement>(null);
   
   const startTime = (eventTime.start && eventTime.start !== '') ? new Date(eventTime.start) : (metadata.startTime ? new Date(metadata.startTime) : null);
-  const dueDate = metadata.dueDate ? new Date(metadata.dueDate) : null;
+  const dueDateTime = metadata.dueDateTime ? new Date(metadata.dueDateTime) : null;
   
   const startTimeStr = (eventTime.start && eventTime.start !== '') ? eventTime.start : (metadata.startTime || null);
   const endTimeStr = (eventTime.end && eventTime.end !== '') ? eventTime.end : (metadata.endTime || null);
-  const dueDateStr = metadata.dueDate || null;
+  const dueDateTimeStr = metadata.dueDateTime || null;
   const isAllDay = eventTime.timeSpec?.allDay ?? metadata.isAllDay;
   
   // 格式化时间显示（v2.8.2: 移除了 displayHint 参数）
-  const relativeTimeDisplay = startTime || dueDate 
-    ? formatRelativeTimeDisplay(startTimeStr, endTimeStr, isAllDay ?? false, dueDateStr)
+  const relativeTimeDisplay = startTime || dueDateTime 
+    ? formatRelativeTimeDisplay(startTimeStr, endTimeStr, isAllDay ?? false, dueDateTimeStr)
     : null;
   
   // 🆕 判断时间类型并设置标签和颜色
@@ -87,7 +87,7 @@ export const EventLineSuffix: React.FC<EventLineSuffixProps> = React.memo(({ ele
             <TimeHoverCard
               startTime={startTimeStr}
               endTime={endTimeStr}
-              dueDate={dueDateStr}
+              dueDateTime={dueDateTimeStr}
               isAllDay={isAllDay ?? false}
               onEditClick={() => {
                 setShowHoverCard(false);

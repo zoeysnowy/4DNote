@@ -12,6 +12,8 @@ import { EventService } from '../services/EventService';
 import { TagService } from '../services/TagService';
 import { formatRelativeDate, formatRelativeTimeDisplay } from '../utils/relativeDateFormatter';
 import { formatTimeForStorage } from '../utils/timeUtils';
+import { getLocationDisplayText } from '../utils/locationUtils';
+import { slateNodesToHtml } from '../components/ModalSlate/serialization';
 
 // 导入本地 SVG 图标
 import TimerStartIconSvg from '../assets/icons/timer_start.svg';
@@ -248,8 +250,17 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
     const tagEmoji = primaryTag?.emoji;
     const tagName = primaryTag?.name;
     
-    // ✅ 直接使用 colorTitle（已经通过 fullTitleToColorTitle 自动剥离了 Tag 和 DateMention 元素）
-    const displayTitle = event.title?.colorTitle || event.title?.simpleTitle || '';
+    // ✅ 使用 colorTitle（富文本），转换为 HTML 显示（保留粗体、颜色等格式）
+    const displayTitle = useMemo(() => {
+      if (!event.title?.colorTitle) return event.title?.simpleTitle || '';
+      try {
+        const nodes = JSON.parse(event.title.colorTitle);
+        return slateNodesToHtml(nodes);
+      } catch (error) {
+        console.warn('解析 colorTitle 失败:', error);
+        return event.title.simpleTitle || '';
+      }
+    }, [event.title]);
     
     // 计算是否需要显示日期（仅过期事件需要）
     let dateDisplay: string | undefined;
@@ -356,15 +367,26 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
           {event.location && (
             <div className="event-location">
               <LocationIcon className="event-location-icon" />
-              <span className="event-location-text">{event.location}</span>
+              <span className="event-location-text">
+                {getLocationDisplayText(event.location)}
+              </span>
             </div>
           )}
 
           {/* Event Log Preview */}
-          {event.description && (
+          {event.eventlog?.slateJson && (
             <div className="event-log-preview">
               <RightIcon className="event-log-expand-icon" />
-              <span className="event-log-text">{event.description}</span>
+              <div className="event-log-text">
+                <ModalSlate
+                  content={event.eventlog.slateJson}
+                  parentEventId={event.id}
+                  onChange={() => {}} // 只读，不处理变化
+                  readOnly={true}
+                  enableTimestamp={false}
+                  placeholder=""
+                />
+              </div>
             </div>
           )}
         </div>

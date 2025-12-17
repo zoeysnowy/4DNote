@@ -629,7 +629,7 @@ export class MicrosoftCalendarService {
   /**
    * 🆕 创建任务到指定的 To Do List
    */
-  public async syncTaskToTodoList(todoListId: string, task: { title: string; body?: string; dueDate?: string }): Promise<any> {
+  public async syncTaskToTodoList(todoListId: string, task: { title: string; body?: string; dueDateTime?: string }): Promise<any> {
     MSCalendarLogger.log('📝 [To Do] Creating task in list:', todoListId, task);
     
     try {
@@ -648,9 +648,9 @@ export class MicrosoftCalendarService {
         };
       }
 
-      if (task.dueDate) {
+      if (task.dueDateTime) {
         taskData.dueDateTime = {
-          dateTime: task.dueDate,
+          dateTime: task.dueDateTime,
           timeZone: 'UTC'
         };
       }

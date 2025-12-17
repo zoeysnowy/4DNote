@@ -369,16 +369,40 @@ export function applyTextFormat(editor: Editor, command: string, value?: string)
     
     switch (command) {
       case 'bold':
-        Editor.addMark(editor, 'bold', true);
+        // 🔄 Toggle 逻辑：如果已经有 bold，则移除；否则添加
+        const currentMarks = Editor.marks(editor);
+        if (currentMarks?.bold) {
+          Editor.removeMark(editor, 'bold');
+        } else {
+          Editor.addMark(editor, 'bold', true);
+        }
         break;
       case 'italic':
-        Editor.addMark(editor, 'italic', true);
+        // 🔄 Toggle 逻辑
+        const italicMarks = Editor.marks(editor);
+        if (italicMarks?.italic) {
+          Editor.removeMark(editor, 'italic');
+        } else {
+          Editor.addMark(editor, 'italic', true);
+        }
         break;
       case 'underline':
-        Editor.addMark(editor, 'underline', true);
+        // 🔄 Toggle 逻辑
+        const underlineMarks = Editor.marks(editor);
+        if (underlineMarks?.underline) {
+          Editor.removeMark(editor, 'underline');
+        } else {
+          Editor.addMark(editor, 'underline', true);
+        }
         break;
       case 'strikeThrough':
-        Editor.addMark(editor, 'strikethrough', true);
+        // 🔄 Toggle 逻辑
+        const strikeMarks = Editor.marks(editor);
+        if (strikeMarks?.strikethrough) {
+          Editor.removeMark(editor, 'strikethrough');
+        } else {
+          Editor.addMark(editor, 'strikethrough', true);
+        }
         break;
       case 'textColor':
         // 🆕 应用文本颜色

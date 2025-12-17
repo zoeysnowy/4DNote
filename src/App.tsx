@@ -9,6 +9,7 @@ import PageContainer from './components/PageContainer';
 import DesktopCalendarWidget from './pages/DesktopCalendarWidget';
 import { TimerCard } from './components/TimerCard'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
+import { HomePage } from './pages/HomePage'; // 🆕 HomePage with stats dashboard
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
@@ -122,20 +123,22 @@ function App() {
         } else {
           console.log('ℹ️  [App] No migration needed');
         }
+        
+        // 🚀 [PERFORMANCE] 一次性迁移：Event → EventStats
+        console.log('📊 [App] Checking EventStats migration...');
+        await storageManager.migrateToEventStats();
       } catch (error) {
         console.error('❌ [App] StorageManager initialization failed:', error);
         // 初始化失败不阻止应用启动，会降级到 localStorage
       }
       
-      // 初始化标签系统（独立于日历连接，后台执行不阻塞渲染）
-      console.log('🏷️  [App] Starting TagService initialization (background)...');
-      TagService.initialize()
-        .then(() => {
-          console.log('✅ [App] TagService initialized');
-        })
-        .catch(error => {
-          console.error('❌ [App] TagService initialization failed:', error);
-        });
+      // 初始化标签系统（独立于日历连接）
+      console.log('🏷️  [App] Starting TagService initialization...');
+      await TagService.initialize();
+      console.log('✅ [App] TagService initialized');
+      
+      // 🔧 初始化完成后加载标签供编辑使用
+      loadAvailableTagsForEdit();
       
       // 🔍 初始化 Unified Mention 搜索索引
       console.log('🔍 [App] Initializing Unified Mention search index...');
@@ -167,9 +170,9 @@ function App() {
       
       // 暴露调试工具到全局
       if (typeof window !== 'undefined') {
-        (window as any).ReMarkableCache = {
+        const cacheObject = {
           clear: () => {
-            AppLogger.warn('⚠️ 使用 ReMarkableCache.clearOnlyRuntime() 清除运行时缓存，或 ReMarkableCache.clearAll() 清除所有数据');
+            AppLogger.warn('⚠️ 使用 FourDNoteCache.clearOnlyRuntime() 清除运行时缓存，或 FourDNoteCache.clearAll() 清除所有数据');
           },
           clearOnlyRuntime: CacheManager.clearAllCache,
           clearAll: () => {
@@ -195,6 +198,10 @@ function App() {
             getFlatTags: () => TagService.getFlatTags()
           }
         };
+        
+        // 挂载 FourDNoteCache 到 window
+        (window as any).FourDNoteCache = cacheObject;
+        console.log('✅ [App] FourDNoteCache 已挂载到 window');
         
         // 🧪 EventHub/TimeHub/EventService 已在组件外部同步挂载
         // 这里只需异步加载 ContactService 和 StorageManager
@@ -1211,7 +1218,7 @@ function App() {
   // 初始化效✅
   useEffect(() => {
     loadAppSettings();
-    loadAvailableTagsForEdit();
+    // ✅ loadAvailableTagsForEdit 已移至 TagService 初始化后调用（App 初始化 useEffect）
   }, []);
 
   // ✅ Timer 自动保存：运行中每30秒更新同一个事件（syncStatus: 'local-only'）
@@ -1576,11 +1583,13 @@ function App() {
     
     // ✨ Cleanup: 组件卸载时停止 SyncManager
     return () => {
+      // 🔧 [STRICT MODE FIX] 只在真正停止 SyncManager 时重置标志位
+      // 避免 React 严格模式双重渲染时误重置导致创建多个实例
       if (syncManager && typeof syncManager.stop === 'function') {
         console.log('🧹 [App] Cleaning up SyncManager on unmount');
         syncManager.stop();
+        syncManagerCreationRef.current = false; // 只在停止时重置
       }
-      syncManagerCreationRef.current = false; // 重置标志
     };
   }, [microsoftService, lastAuthState, syncManager]);  // 🔧 [HMR FIX] 保留 syncManager 依赖，但通过标志位避免重复创建
 
@@ -1767,43 +1776,7 @@ function App() {
     switch (currentPage) {
       case 'home':
         content = (
-          <PageContainer title="首页" subtitle="时间管理与任务概览" className="home-page-container">
-            <div className="home-content" style={{ 
-              display: 'grid',
-              gridTemplateColumns: '280px 1fr',
-              gap: '8px', /* 🔧 Reduced from 24px */
-              alignItems: 'stretch', /* 改为stretch，让两个卡片高度始终一致*/
-              padding: '0', /* 🔧 Reduced from 12px */
-              overflow: 'visible' /* 允许阴影溢出 */
-            }}>
-              {/* 计时器卡片 - 左侧，固定宽度*/}
-              <TimerCard
-                tagId={globalTimer?.tagIds?.[0]}
-                tagName={globalTimer?.tagName}
-                tagEmoji={timerTagEmoji}
-                tagPath={timerTagPath}
-                tagColor={timerTagColor}
-                startTime={globalTimer?.startTime}
-                originalStartTime={globalTimer?.originalStartTime}
-                elapsedTime={globalTimer?.elapsedTime}
-                isRunning={globalTimer?.isRunning}
-                eventEmoji={globalTimer?.eventEmoji}
-                eventTitle={globalTimer?.eventTitle}
-                onPause={globalTimer ? (globalTimer.isRunning ? handleTimerPause : handleTimerResume) : undefined}
-                onStop={globalTimer ? handleTimerStop : undefined}
-                onCancel={globalTimer ? handleTimerCancel : undefined}
-                onEdit={handleTimerEdit}
-                onStart={() => {
-                  // 打开编辑框让用户选择标签和输入标题
-                  handleTimerEdit();
-                }}
-                onStartTimeChange={handleStartTimeChange}
-              />
-              
-              {/* 今日统计卡片 */}
-              <DailyStatsCard />
-            </div>
-          </PageContainer>
+          <HomePage />
         );
         break;
 
@@ -1922,6 +1895,26 @@ function App() {
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo"><div>加载中...</div></PageContainer>}>
             <AIDemo />
+          </React.Suspense>
+        );
+        break;
+        
+      case 'ai-demo-v2':
+        // 懒加载 AIDemoV2 组件
+        const AIDemoV2 = React.lazy(() => import('./components/AIDemoV2.tsx'));
+        content = (
+          <React.Suspense fallback={<PageContainer title="AI Demo V2"><div>加载中...</div></PageContainer>}>
+            <AIDemoV2 />
+          </React.Suspense>
+        );
+        break;
+
+      case 'rag-demo':
+        // 懒加载 RAGDemo 组件
+        const RAGDemo = React.lazy(() => import('./components/RAGDemo.tsx'));
+        content = (
+          <React.Suspense fallback={<PageContainer title="RAG Demo"><div>加载中...</div></PageContainer>}>
+            <RAGDemo />
           </React.Suspense>
         );
         break;

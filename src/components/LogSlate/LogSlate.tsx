@@ -28,6 +28,19 @@ import { MentionMenu } from './MentionMenu';
 
 import './LogSlate.css';
 
+/**
+ * 格式化日期时间为 "YYYY-MM-DD HH:mm:ss" 格式
+ */
+function formatDateTime(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
 interface LogSlateProps {
   mode: 'title' | 'eventlog';
   value: string; // Slate JSON 字符串
@@ -42,6 +55,7 @@ interface LogSlateProps {
   showToolbar?: boolean; // 是否显示工具栏（默认 eventlog 模式显示）
   enableMention?: boolean; // 是否启用 @ 提及（默认启用）
   enableHashtag?: boolean; // 是否启用 # 标签（默认启用）
+  showPreline?: boolean; // 是否显示 preline（默认 true，TimeLog 中为 false）
 }
 
 export const LogSlate: React.FC<LogSlateProps> = ({
@@ -58,6 +72,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   showToolbar = mode === 'eventlog', // eventlog 模式默认显示工具栏
   enableMention = true,
   enableHashtag = true,
+  showPreline = true, // 默认显示 preline（TimeLog 中传 false）
 }) => {
   const editorRef = useRef<Editor | null>(null);
   const [showFloatingToolbar, setShowFloatingToolbar] = useState(false);
@@ -111,22 +126,6 @@ export const LogSlate: React.FC<LogSlateProps> = ({
           {
             type: 'paragraph',
             children: [{ text: '' }],
-          },
-        ] as Descendant[];
-      }
-      
-      // 检测是否是 HTML 格式（旧数据格式）- 需要迁移
-      if (val.trim().startsWith('<')) {
-        console.warn('[LogSlate] 检测到旧的 HTML 格式，需要迁移:', val.substring(0, 50));
-        // 从 HTML 中提取纯文本
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = val;
-        const text = tempDiv.textContent || tempDiv.innerText || '';
-        
-        return [
-          {
-            type: 'paragraph',
-            children: [{ text }],
           },
         ] as Descendant[];
       }
@@ -263,22 +262,186 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   // 渲染元素
   const renderElement = useCallback((props: RenderElementProps) => {
     const { element } = props;
+    const para = element as any;
     
-    switch ((element as any).type) {
-      case 'paragraph':
-        return <p {...props.attributes}>{props.children}</p>;
+    switch (para.type) {
+      case 'paragraph': {
+        // 🆕 [Block-Level Timestamp] 检查是否有时间戳元数据
+        const hasBlockTimestamp = !!(para.createdAt && typeof para.createdAt === 'number');
+        
+        // 🔧 检查段落内容是否为空
+        const paragraphText = para.children?.map((child: any) => child.text || '').join('').trim();
+        const isEmptyOrSignature = !paragraphText;
+        
+        // 🔧 title 模式永不显示 timestamp（避免标题中出现时间戳）
+        // 🔧 空段落或签名段落不显示 timestamp
+        const shouldShowTimestamp = hasBlockTimestamp && mode !== 'title' && !isEmptyOrSignature;
+        
+        // TimeLog 模式（showPreline = false）：显示浅灰色时间戳
+        if (!showPreline && shouldShowTimestamp) {
+          return (
+            <div
+              style={{
+                position: 'relative',
+                paddingTop: '28px'
+              }}
+            >
+              {/* 🆕 Block-Level Timestamp 显示（浅灰色） */}
+              <div
+                contentEditable={false}
+                style={{
+                  position: 'absolute',
+                  left: '0',
+                  top: '8px',
+                  fontSize: '12px',
+                  color: '#999',
+                  opacity: 0.7,
+                  userSelect: 'none',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                {formatDateTime(new Date(para.createdAt))}
+              </div>
+              <p {...props.attributes} style={{ margin: 0 }}>{props.children}</p>
+            </div>
+          );
+        }
+        
+        // TimeLog 模式（无时间戳）：直接渲染段落
+        if (!showPreline) {
+          return <p {...props.attributes}>{props.children}</p>;
+        }
+        
+        // LogTab/ModalSlate 模式：显示 preline（基于 Block-Level Timestamp）
+        const needsPreline = (() => {
+          try {
+            if (!editorRef.current) return false;
+            const editor = editorRef.current;
+            const path = ReactEditor.findPath(editor, element);
+            if (!path) return false;
+            
+            // 向上查找最近的有 createdAt 的 paragraph
+            let hasPrecedingTimestamp = false;
+            
+            for (let i = path[0] - 1; i >= 0; i--) {
+              const node = editor.children[i] as any;
+              // 如果找到有 createdAt 的 paragraph，表示需要 preline
+              if (node.type === 'paragraph' && node.createdAt) {
+                hasPrecedingTimestamp = true;
+                break;
+              }
+              // 如果遇到其他类型节点，停止查找
+              if (node.type !== 'paragraph') {
+                break;
+              }
+            }
+            
+            return hasPrecedingTimestamp;
+          } catch {
+            return false;
+          }
+        })();
+        
+        // 🆕 显示时间戳（LogTab 模式）
+        // 🔧 title 模式永不显示 timestamp
+        // 🔧 空段落或签名段落不显示 timestamp
+        const shouldShowTimestampWithPreline = showPreline && hasBlockTimestamp && mode !== 'title' && !isEmptyOrSignature;
+        
+        return (
+          <div
+            {...props.attributes}
+            style={{
+              position: 'relative',
+              paddingLeft: needsPreline ? '20px' : '0',
+              minHeight: needsPreline ? '20px' : 'auto',
+              paddingTop: shouldShowTimestampWithPreline ? '28px' : '0'
+            }}
+          >
+            {/* 🆕 Block-Level Timestamp 显示（LogTab 模式） */}
+            {shouldShowTimestampWithPreline && (
+              <div
+                contentEditable={false}
+                style={{
+                  position: 'absolute',
+                  left: needsPreline ? '20px' : '0',
+                  top: '0',
+                  fontSize: '12px',
+                  color: '#999',
+                  userSelect: 'none',
+                  opacity: 0.7
+                }}
+              >
+                {formatDateTime(new Date(para.createdAt))}
+              </div>
+            )}
+            {needsPreline && (
+              <div
+                contentEditable={false}
+                style={{
+                  position: 'absolute',
+                  left: '8px',
+                  top: shouldShowTimestamp ? '0' : '-28px',
+                  bottom: '0',
+                  width: '2px',
+                  background: '#e5e7eb',
+                  zIndex: 0,
+                  pointerEvents: 'none'
+                }}
+              />
+            )}
+            <p style={{ margin: 0 }}>{props.children}</p>
+          </div>
+        );
+      }
       case 'tag':
         return <TagElementComponent {...props} />;
       case 'date-mention':
         return <DateMentionElement {...props} />;
-      case 'timestamp-divider':
+      case 'timestamp-divider': {
+        // 🔧 兼容旧格式 timestamp-divider（逐步废弃）
+        // TimeLog 模式：timestamp 左对齐，无 paddingLeft
+        if (!showPreline) {
+          const node = element as any;
+          return (
+            <div
+              {...props.attributes}
+              contentEditable={false}
+              style={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '0',
+                paddingTop: '8px',
+                paddingBottom: '4px',
+                opacity: 0.7,
+                userSelect: 'none'
+              }}
+            >
+              <span 
+                style={{
+                  fontSize: '12px',
+                  color: '#999',
+                  whiteSpace: 'nowrap',
+                  position: 'relative',
+                  zIndex: 1
+                }}
+              >
+                {node.displayText || new Date(node.timestamp).toLocaleString()}
+              </span>
+              {props.children}
+            </div>
+          );
+        }
+        
+        // LogTab/ModalSlate 模式：保持原样式（带 paddingLeft）
         return <TimestampDividerElement {...props} />;
+      }
       case 'event-mention':
         return <EventMentionElement {...props} />;
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }
-  }, []);
+  }, [showPreline]);
   
   // 渲染叶子节点
   const renderLeaf = useCallback((props: RenderLeafProps) => {

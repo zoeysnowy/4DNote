@@ -282,7 +282,7 @@ const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes,
         start || null,
         (start && end && start !== end) ? end : null,
         false, // isAllDay
-        null   // dueDate
+        null   // dueDateTime
       );
       return displayText || formatRelativeDate(new Date(primaryTime));
     }

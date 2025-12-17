@@ -113,8 +113,8 @@ export function hasValidTime(event: Event): boolean {
  * 检查事件是否有任何时间信息（用于同步判断）
  * 
  * @param event - 事件对象
- * @returns 是否具有 startTime、endTime 或 dueDate
+ * @returns 是否具有 startTime、endTime 或 dueDateTime
  */
 export function hasAnyTime(event: Event): boolean {
-  return !!(event.startTime || event.endTime || event.dueDate);
+  return !!(event.startTime || event.endTime || event.dueDateTime);
 }

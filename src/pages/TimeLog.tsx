@@ -9,6 +9,7 @@ import { ModalSlate } from '../components/ModalSlate/ModalSlate';
 import { LogSlate } from '../components/LogSlate/LogSlate';
 import { HierarchicalTagPicker } from '../components/HierarchicalTagPicker/HierarchicalTagPicker';
 import { LocationInput } from '../components/common/LocationInput';
+import { AttendeeDisplay } from '../components/common/AttendeeDisplay';
 import UnifiedDateTimePicker from '../components/FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { TimeGap } from '../components/TimeLog/TimeGap';
 import { CompressedDateRange } from '../components/TimeLog/CompressedDateRange';
@@ -22,6 +23,7 @@ import { supportsMultiWindow, openEventInWindow } from '../utils/electronUtils';
 import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
+import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
 import type { Event } from '../types';
 import './TimeLog.css';
 
@@ -76,10 +78,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
-  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
-  const [editingLocationValue, setEditingLocationValue] = useState('');
   const [editingAttendeesId, setEditingAttendeesId] = useState<string | null>(null);
-  const [editingAttendeesValue, setEditingAttendeesValue] = useState('');
+  const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [hoveredTimeId, setHoveredTimeId] = useState<string | null>(null);
   const [hoveredTitleId, setHoveredTitleId] = useState<string | null>(null);
   const [hoveredRightMenuId, setHoveredRightMenuId] = useState<string | null>(null);
@@ -1013,22 +1013,26 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     });
   };
   
-  // 从 event.eventlog 提取 Slate JSON 字符串（兼容旧格式）
+  // 从 event.eventlog 提取 Slate JSON 字符串
   const getEventLogContent = (event: Event): string => {
     if (!event.eventlog) {
       return '';
     }
     
-    // 新格式：EventLog 对象
+    // EventLog 对象格式（标准格式）
     if (typeof event.eventlog === 'object' && 'slateJson' in event.eventlog) {
       return event.eventlog.slateJson || '';
     }
     
-    // 旧格式：直接是 Slate JSON 字符串
+    // 旧格式兼容：字符串格式
     if (typeof event.eventlog === 'string') {
       return event.eventlog;
     }
     
+    console.error('[TimeLog] eventlog 格式未知:', {
+      eventId: event.id.slice(-8),
+      eventlogType: typeof event.eventlog
+    });
     return '';
   };
 
@@ -1100,18 +1104,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     setEditingTagsId(null);
   };
 
-  // 处理地点编辑
-  const handleLocationEdit = (event: Event) => {
-    setEditingLocationId(event.id);
-    setEditingLocationValue(event.location || '');
+  // 处理参与者编辑
+  const handleAttendeesEdit = (event: Event) => {
+    setEditingAttendeesId(event.id);
   };
 
-  const handleLocationSave = async (eventId: string) => {
-    // 使用 EventHub 保存（带循环更新防护）
-    await EventHub.updateFields(eventId, { location: editingLocationValue }, {
-      source: 'TimeLog-locationSave'
-    });
-    setEditingLocationId(null);
+  // 处理地点编辑
+  const handleLocationEdit = (eventId: string) => {
+    setEditingLocationId(eventId);
   };
 
   // 处理时间编辑
@@ -1131,35 +1131,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     setEditingTimeId(null);
   };
 
-  const handleAttendeesEdit = (event: Event) => {
-    setEditingAttendeesId(event.id);
-    const attendeesText = event.attendees && event.attendees.length > 0
-      ? event.attendees.map(a => a.name || a.email).filter(Boolean).join('; ')
-      : '';
-    setEditingAttendeesValue(attendeesText);
-  };
 
-  const handleAttendeesSave = async (eventId: string) => {
-    // Parse semicolon-separated names/emails into Contact objects
-    const attendees = editingAttendeesValue
-      .split(';')
-      .map(s => s.trim())
-      .filter(Boolean)
-      .map(text => {
-        // Simple parsing: if contains @, treat as email, otherwise as name
-        if (text.includes('@')) {
-          return { email: text, name: '' };
-        } else {
-          return { name: text, email: '' };
-        }
-      });
-    
-    // 使用 EventHub 保存（带循环更新防护）
-    await EventHub.updateFields(eventId, { attendees }, {
-      source: 'TimeLog-attendeesSave'
-    });
-    setEditingAttendeesId(null);
-  };
 
   // 处理点击事件空白区域：展开 eventlog 并插入 timestamp + 预行
   const handleEventClick = (e: React.MouseEvent, eventId: string) => {
@@ -1246,13 +1218,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         endTime: null, // 无结束时间
         tags: [], // 允许空标签
         isAllDay: false,
+        // ⚠️ 空笔记不应该有 Block-Level Timestamp（避免显示时间戳）
         eventlog: JSON.stringify([
-          {
-            type: 'timestamp-divider',
-            timestamp: createdAt,
-            isFirstOfDay: true,
-            children: [{ text: '' }]
-          },
           {
             type: 'paragraph',
             children: [{ text: '' }]
@@ -2290,39 +2257,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       </Tippy>
                     )}
 
-                    {/* Row 3: Attendees field (show when has content OR editing) */}
-                    {((event.attendees && event.attendees.length > 0) || editingAttendeesId === event.id) && (
-                      <div 
-                        className="event-row event-meta-row"
-                        style={{ cursor: editingAttendeesId === event.id ? 'default' : 'pointer' }}
-                      >
-                        <img src={AttendeeIconSvg} className="row-icon" alt="attendees" />
-                        {editingAttendeesId === event.id ? (
-                          <div
-                            className="meta-text meta-text-editing"
-                            contentEditable
-                            suppressContentEditableWarning
-                            onInput={(e) => setEditingAttendeesValue(e.currentTarget.textContent || '')}
-                            onBlur={() => handleAttendeesSave(event.id)}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                handleAttendeesSave(event.id);
-                              } else if (e.key === 'Escape') {
-                                setEditingAttendeesId(null);
-                              }
-                            }}
-                            data-placeholder="输入姓名或邮箱，用分号分隔..."
-                            autoFocus
-                          >{editingAttendeesValue}</div>
-                        ) : (
-                          <span className="meta-text" onClick={() => handleAttendeesEdit(event)}>
-                            {event.attendees && event.attendees.length > 0 
-                              ? event.attendees.map(a => a.name || a.email).filter(Boolean).join('; ')
-                              : <span style={{ color: '#9ca3af' }}>添加参与人...</span>
-                            }
-                          </span>
-                        )}
+                    {/* Row 3: Attendees field - 使用 AttendeeDisplay 组件 */}
+                    {(event.attendees && event.attendees.length > 0 || editingAttendeesId === event.id) && (
+                      <div className="event-row" style={{ padding: '0' }}>
+                        <AttendeeDisplay
+                          event={event}
+                          onChange={(attendees, organizer) => {
+                            EventHub.updateFields(event.id, { 
+                              attendees,
+                              organizer 
+                            }, {
+                              source: 'TimeLog-attendeesChange'
+                            });
+                            setEditingAttendeesId(null);
+                          }}
+                        />
                       </div>
                     )}
 
@@ -2335,15 +2284,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         <img src={LocationIconSvg} className="row-icon" alt="location" />
                         {editingLocationId === event.id ? (
                           <LocationInput
-                            value={editingLocationValue}
-                            onChange={setEditingLocationValue}
-                            onSelect={() => handleLocationSave(event.id)}
-                            onBlur={() => handleLocationSave(event.id)}
+                            value={getLocationDisplayText(event.location) || ''}
+                            onChange={(value) => {
+                              // 直接保存到 EventHub（即时保存）
+                              EventHub.updateFields(event.id, { location: value }, {
+                                source: 'TimeLog-locationChange'
+                              });
+                            }}
+                            onSelect={() => setEditingLocationId(null)}
+                            onBlur={() => setEditingLocationId(null)}
                             placeholder="添加地点..."
                           />
                         ) : (
-                          <span className="meta-text" onClick={() => handleLocationEdit(event)}>
-                            {event.location || <span style={{ color: '#9ca3af' }}>添加地点...</span>}
+                          <span className="meta-text" onClick={() => handleLocationEdit(event.id)}>
+                            {getLocationDisplayText(event.location) || <span style={{ color: '#9ca3af' }}>添加地点...</span>}
                           </span>
                         )}
                       </div>
@@ -2359,11 +2313,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           mode="eventlog"
                           value={getEventLogContent(event)}
                           onChange={(slateJson) => handleLogChange(event.id, slateJson)}
-                          placeholder="记录事件日志..."
+                          placeholder="添加日志..."
                           className="timelog-slate-editor"
                           showToolbar={true}
                           enableMention={true}
                           enableHashtag={true}
+                          showPreline={false}
                         />
                       </div>
                     )}
@@ -2542,8 +2497,8 @@ function formatRelativeTime(timestamp: number | string | undefined): string {
 }
 
 // 辅助函数：格式化截止日期剩余时间
-function formatDueDateRemaining(dueDate: string | Date): string {
-  const date = typeof dueDate === 'string' ? new Date(dueDate) : dueDate;
+function formatDueDateRemaining(dueDateTime: string | Date): string {
+  const date = typeof dueDateTime === 'string' ? new Date(dueDateTime) : dueDateTime;
   const now = Date.now();
   const diff = date.getTime() - now;
   

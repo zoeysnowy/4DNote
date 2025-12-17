@@ -39,6 +39,7 @@ import type {
 } from './types';
 
 import { SQLiteDatabaseWrapper } from './SQLiteDatabaseWrapper';
+import { formatTimeForStorage } from '../../utils/timeUtils';
 
 export class SQLiteService {
   private db: SQLiteDatabaseWrapper | null = null;
@@ -905,7 +906,7 @@ export class SQLiteService {
     const sql = `UPDATE events SET ${fields.join(', ')}, updated_at = ? WHERE id = ?`;
     // 🔧 FIX: 使用 updates.updatedAt（如果提供），否则生成新的时间戳
     // 这样保持?createEvent 相同的逻辑，使用应用层提供的时间格?
-    const updatedAtValue = updates.updatedAt || new Date().toISOString();
+    const updatedAtValue = updates.updatedAt || formatTimeForStorage(new Date());
     const finalValues = [...values, updatedAtValue, id];
     
     console.log('[SQLiteService] 🔍 Final SQL:', sql);
@@ -973,7 +974,7 @@ export class SQLiteService {
       UPDATE events SET deleted_at = ? WHERE id = ?
     `);
 
-    await stmt.run(new Date().toISOString(), id);
+    await stmt.run(formatTimeForStorage(new Date()), id);
   }
 
   /**
@@ -1884,7 +1885,7 @@ export class SQLiteService {
       log.changes ? JSON.stringify(log.changes) : null,
       log.userId || null,
       log.metadata ? JSON.stringify(log.metadata) : null,
-      new Date().toISOString()
+      formatTimeForStorage(new Date())
     );
   }
 
@@ -1951,6 +1952,19 @@ export class SQLiteService {
       metadata: row.metadata_json ? JSON.parse(row.metadata_json) : undefined,
       createdAt: row.created_at
     }));
+  }
+
+  /**
+   * 删除单条历史记录
+   */
+  async deleteEventHistory(id: string): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const stmt = this.db.prepare(`
+      DELETE FROM event_history WHERE id = ?
+    `);
+
+    await stmt.run(id);
   }
 
   /**

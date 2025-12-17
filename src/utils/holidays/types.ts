@@ -117,7 +117,7 @@ export interface Event {
   content?: string;      // 文本内容（用于富文本编辑）
   emoji?: string;        // emoji 图标
   color?: string;        // 自定义颜色
-  dueDate?: string;      // 截止日期（用于任务类型）
+  dueDateTime?: string;      // 截止日期/时间（用于任务类型，支持模糊时间）
   notes?: string;        // 备注
   priority?: 'low' | 'medium' | 'high' | 'urgent'; // 优先级
   isCompleted?: boolean; // 是否完成
@@ -163,7 +163,7 @@ export interface Task {
   description?: string;
   priority: 'low' | 'medium' | 'high';
   completed: boolean;
-  dueDate?: string;      // 🔧 修改：使用字符串存储本地时间
+  dueDateTime?: string;      // 🔧 修改：使用字符串存储本地时间（支持模糊时间）
   createdAt: string;     // 🔧 修改：使用字符串存储本地时间
   updatedAt: string;     // 🔧 修改：使用字符串存储本地时间
   tags?: string[];       // 🆕 添加：标签支持

@@ -65,7 +65,7 @@ class TagServiceClass {
 
     // 🔧 [FIX] 如果正在初始化，返回现有的 Promise（避免重复初始化）
     if (this.initializingPromise) {
-      console.log('🏷️ [TagService] Initialization in progress, waiting...');
+      console.log('⏳ [TagService] Already initializing, reusing existing promise...');
       return this.initializingPromise;
     }
 
@@ -180,41 +180,46 @@ class TagServiceClass {
   private async createDefaultTags(): Promise<void> {
     const now = formatTimeForStorage(new Date());
     
+    // 🔧 [FIX] 先生成所有 ID，然后设置正确的 parentId
+    const workId = generateTagId();
+    const personalId = generateTagId();
+    const lifeId = generateTagId();
+    
     const defaultTags: HierarchicalTag[] = [
       {
-        id: generateTagId(),
+        id: workId,
         name: '工作',
         color: '#3498db',
         createdAt: now,
         updatedAt: now,
         children: [
-          { id: generateTagId(), name: '会议', color: '#e74c3c', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '项目开发', color: '#f39c12', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '规划设计', color: '#9b59b6', createdAt: now, updatedAt: now }
+          { id: generateTagId(), name: '会议', color: '#e74c3c', parentId: workId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '项目开发', color: '#f39c12', parentId: workId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '规划设计', color: '#9b59b6', parentId: workId, createdAt: now, updatedAt: now }
         ]
       },
       {
-        id: generateTagId(),
+        id: personalId,
         name: '个人',
         color: '#2ecc71',
         createdAt: now,
         updatedAt: now,
         children: [
-          { id: generateTagId(), name: '学习', color: '#1abc9c', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '运动', color: '#e67e22', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '娱乐', color: '#e91e63', createdAt: now, updatedAt: now }
+          { id: generateTagId(), name: '学习', color: '#1abc9c', parentId: personalId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '运动', color: '#e67e22', parentId: personalId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '娱乐', color: '#e91e63', parentId: personalId, createdAt: now, updatedAt: now }
         ]
       },
       {
-        id: generateTagId(),
+        id: lifeId,
         name: '生活',
         color: '#95a5a6',
         createdAt: now,
         updatedAt: now,
         children: [
-          { id: generateTagId(), name: '购物', color: '#34495e', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '医疗健康', color: '#16a085', createdAt: now, updatedAt: now },
-          { id: generateTagId(), name: '出行', color: '#2980b9', createdAt: now, updatedAt: now }
+          { id: generateTagId(), name: '购物', color: '#34495e', parentId: lifeId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '医疗健康', color: '#16a085', parentId: lifeId, createdAt: now, updatedAt: now },
+          { id: generateTagId(), name: '出行', color: '#2980b9', parentId: lifeId, createdAt: now, updatedAt: now }
         ]
       }
     ];
@@ -379,6 +384,9 @@ class TagServiceClass {
       console.warn(`⚠️ [TagService] flattenTags() 耗时 ${duration.toFixed(2)}ms，处理 ${tags.length} 个标签`);
     }
     
+    // ✅ [CRITICAL FIX] 在这里统一排序，getFlatTags() 直接返回稳定引用
+    result.sort((a, b) => (a.position || 0) - (b.position || 0));
+    
     return result;
   }
 
@@ -440,12 +448,16 @@ class TagServiceClass {
   }
 
   // 获取所有标签（扁平结构）
-  // ✅ [PERFORMANCE FIX] 直接返回内部引用，避免每次创建新数组
+  // ✅ [PERFORMANCE FIX] 返回稳定引用，避免无限重渲染
   // ⚠️ v3.0: 移除同步加载逻辑，依赖 initialize() 异步加载
   getFlatTags(): FlatTag[] {
     // 如果还没有初始化，返回空数组并触发初始化
     if (!this.initialized) {
-      console.warn('⚠️ [TagService] getFlatTags() called before initialization, returning empty array');
+      const stack = new Error().stack;
+      console.warn('⚠️ [TagService] getFlatTags() called before initialization!', {
+        calledFrom: stack?.split('\n')[2]?.trim(),
+        willAutoInit: true
+      });
       // 触发异步初始化（不阻塞）
       this.initialize().catch(err => {
         console.error('❌ [TagService] Failed to initialize:', err);
@@ -453,8 +465,10 @@ class TagServiceClass {
       return [];
     }
     
-    // 按 position 排序后返回
-    return [...this.flatTags].sort((a, b) => (a.position || 0) - (b.position || 0));
+    // ✅ [CRITICAL FIX] 直接返回内部引用，排序在 flattenTags() 或 updateTags() 时完成
+    // ❌ 不要每次调用都创建新数组: return [...this.flatTags].sort(...)
+    // 调用方不应该修改返回的数组
+    return this.flatTags;
   }
 
   // 根据ID获取标签

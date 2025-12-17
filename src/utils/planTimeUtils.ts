@@ -47,9 +47,9 @@ export function determineEventTime(item: Event): TimeRange | null {
     };
   }
 
-  // 场景 3: dueDate（截止日期）
-  if (item.dueDate) {
-    const dueDate = parseLocalTimeString(item.dueDate);
+  // 场景 3: dueDateTime（截止日期/时间）
+  if (item.dueDateTime) {
+    const dueDate = parseLocalTimeString(item.dueDateTime);
     if (!dueDate) return null;
 
     // 设置为截止日期当天 23:59

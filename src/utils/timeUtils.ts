@@ -51,6 +51,27 @@ export const parseLocalTimeString = (timeString: string | Date): Date => {
     return date;
   }
   
+  // 🔧 优先处理 TimeSpec 格式：YYYY-MM-DD HH:mm:ss（空格分隔符）
+  // 支持单位数月份/日期：2025-12-7 21:39:42 或 2025/12/7 21:39:42
+  const timeSpecPattern = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})$/;
+  const match = timeString.match(timeSpecPattern);
+  
+  if (match) {
+    const [, year, month, day, hours, minutes, seconds] = match;
+    const date = new Date(
+      parseInt(year),
+      parseInt(month) - 1,
+      parseInt(day),
+      parseInt(hours),
+      parseInt(minutes),
+      parseInt(seconds)
+    );
+    
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  }
+  
   // 解析ISO格式的时间字符串，但作为本地时间处理
   if (timeString.includes('T')) {
     const [datePart, fullTimePart] = timeString.split('T');
@@ -187,7 +208,14 @@ export const formatTime = (seconds: number): string => {
 // 获取时间字符串（用于文件名等）
 export const getTimeString = (): string => {
   const now = new Date();
-  return formatTimeForStorage(now).replace(/[:-]/g, '').replace('T', '_');
+  // ✅ 直接格式化，不使用 replace('T', '_')
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}_${hours}${minutes}${seconds}`;
 };
 
 // 检查时间是否在指定范围内

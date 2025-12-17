@@ -19,7 +19,7 @@ export interface TimeHoverCardProps {
   /** 结束时间 */
   endTime?: string | null;
   /** 截止日期 */
-  dueDate?: string | null;
+  dueDateTime?: string | null;
   /** 是否全天事件 */
   isAllDay?: boolean;
   /** 修改按钮点击回调 */
@@ -43,7 +43,7 @@ export interface TimeHoverCardProps {
 const TimeHoverCard: React.FC<TimeHoverCardProps> = ({
   startTime,
   endTime,
-  dueDate,
+  dueDateTime,
   isAllDay,
   onEditClick,
   style,
@@ -53,7 +53,7 @@ const TimeHoverCard: React.FC<TimeHoverCardProps> = ({
   const now = new Date();
   
   // 确定主要日期（优先使用开始时间，其次是截止日期）
-  const primaryDate = startTime || dueDate;
+  const primaryDate = startTime || dueDateTime;
   
   if (!primaryDate) {
     return null; // 没有日期信息，不显示卡片

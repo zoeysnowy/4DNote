@@ -22,6 +22,9 @@ import { EventHistoryService } from './EventHistoryService'; // 🆕 事件历�
 import { jsonToSlateNodes, slateNodesToHtml } from '../components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '../utils/idGenerator'; // 🆕 UUID ID 生成
 import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
+import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
+import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
+import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
 
 const eventLogger = logger.module('EventService');
 
@@ -234,6 +237,33 @@ export class EventService {
    * @param startDate ISO 格式的开始日期
    * @param endDate ISO 格式的结束日期
    */
+  /**
+   * 🚀 [PERFORMANCE] 获取统计数据（使用轻量级 EventStats）
+   * @param startDate 开始日期（YYYY-MM-DD 或 ISO 格式）
+   * @param endDate 结束日期（YYYY-MM-DD 或 ISO 格式）
+   * @returns EventStats 数组（90% 更小，5x 更快）
+   */
+  static async getEventStatsByDateRange(startDate: string, endDate: string): Promise<import('./storage/types').EventStats[]> {
+    try {
+      await this.ensureStorageReady();
+      
+      const perfStart = performance.now();
+      
+      const stats = await storageManager.queryEventStats({
+        startDate,
+        endDate,
+      });
+      
+      const duration = performance.now() - perfStart;
+      eventLogger.log(`📊 [Performance] getEventStatsByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
+      
+      return stats;
+    } catch (error) {
+      eventLogger.error('❌ [EventService] Failed to load event stats:', error);
+      return [];
+    }
+  }
+
   static async getEventsByDateRange(startDate: string, endDate: string): Promise<Event[]> {
     try {
       // 🔧 [FIX] 确保存储已初始化
@@ -312,14 +342,14 @@ export class EventService {
         eventlog: storageEvent.eventlog
       };
       
-      // 🔍 调试：验证 syncMode 是否从数据库正确读取
-      if (eventId.startsWith('outlook-')) {
-        console.log('🔍 [EventService] getEventById Outlook 事件:', {
-          eventId: eventId.slice(-8),
-          'storageEvent.syncMode': storageEvent.syncMode,
-          'normalizedEvent.syncMode': normalizedEvent.syncMode
-        });
-      }
+      // 🔍 调试：验证 syncMode 是否从数据库正确读取（已禁用，日志太多）
+      // if (eventId.startsWith('outlook-')) {
+      //   console.log('🔍 [EventService] getEventById Outlook 事件:', {
+      //     eventId: eventId.slice(-8),
+      //     'storageEvent.syncMode': storageEvent.syncMode,
+      //     'normalizedEvent.syncMode': normalizedEvent.syncMode
+      //   });
+      // }
       
       // ⚠️ [数据质量检查] 如果 eventlog 缺少 html/plainText，记录警告
       // 不要自动修复，避免性能灾难（每次读取都转换）
@@ -610,6 +640,18 @@ export class EventService {
       await storageManager.createEvent(storageEvent);
       eventLogger.log('💾 [EventService] Event saved to StorageManager');
       
+      // 🚀 [PERFORMANCE] 同步写入 EventStats（统计数据表）
+      await storageManager.createEventStats({
+        id: finalEvent.id,
+        tags: finalEvent.tags || [],
+        calendarIds: (finalEvent as any).calendarIds || [],
+        startTime: finalEvent.startTime,
+        endTime: finalEvent.endTime,
+        source: finalEvent.source,
+        updatedAt: finalEvent.updatedAt,
+      });
+      eventLogger.log('📊 [EventService] EventStats synced');
+      
       // 🔍 立即读取验证
       const savedEvent = await storageManager.getEvent(storageEvent.id!);
       if (savedEvent?.eventlog && typeof savedEvent.eventlog === 'object') {
@@ -780,6 +822,7 @@ export class EventService {
     options?: {
       originComponent?: 'PlanManager' | 'TimeCalendar' | 'Timer' | 'EventEditModal';
       source?: 'user-edit' | 'external-sync' | 'auto-sync';
+      modifiedBy?: '4dnote' | 'outlook';  // 🆕 修改来源，用于签名
     }
   ): Promise<{ success: boolean; event?: Event; error?: string }> {
     try {
@@ -840,39 +883,73 @@ export class EventService {
       // ========== EventLog 和 Description 双向同步 ==========
       // 🔥 使用 normalizeEventLog 统一处理（支持从 description 生成）
       
-      // 场景1: eventlog 有变化 → 规范化并同步到 description
+      // 🆕 智能判断修改来源：只有内容真正变化时才认定为修改
+      let lastModifiedSource: '4dnote' | 'outlook' = '4dnote';
+      
+      // 场景1: eventlog 有变化 → 规范化并同步到 description（带签名）
       if ((updates as any).eventlog !== undefined) {
         const normalizedEventLog = this.normalizeEventLog((updates as any).eventlog);
         (updatesWithSync as any).eventlog = normalizedEventLog;
         
-        // ✅ 修复：同步到 description（使用 plainText 或 html）
+        // 检查内容是否真的变化
+        const newContent = normalizedEventLog.plainText || normalizedEventLog.html || '';
+        const oldContent = originalEvent.eventlog?.plainText || originalEvent.eventlog?.html || '';
+        const hasContentChange = newContent !== oldContent;
+        
+        // 只有内容真正变化时，才使用指定的修改来源
+        if (hasContentChange) {
+          lastModifiedSource = options?.modifiedBy || 
+            (options?.source === 'external-sync' ? 'outlook' : '4dnote');
+        }
+        
+        // ✅ 修复：同步到 description（只提取核心内容，签名由 normalizeEvent 添加）
         if (updates.description === undefined) {
-          updatesWithSync.description = normalizedEventLog.plainText || normalizedEventLog.html || '';
-          console.log('[EventService] ✅ 自动从 eventlog 同步 description:', {
+          updatesWithSync.description = newContent;  // ← 只存核心内容，不生成签名
+          console.log('[EventService] ✅ 自动从 eventlog 同步 description（核心内容）:', {
             eventId: eventId.slice(-8),
-            descriptionLength: updatesWithSync.description.length
+            descriptionLength: newContent.length,
+            hasContentChange
           });
         }
       }
       
-      // 场景2: description 有变化但 eventlog 没变 → 从 description 生成 eventlog
+      // 场景2: description 有变化但 eventlog 没变 → 从 description 生成 eventlog（移除签名）
       else if (updates.description !== undefined && updates.description !== originalEvent.description) {
-        const normalizedEventLog = this.normalizeEventLog(updates.description);
+        // 从 description 中移除签名，提取核心内容
+        const coreContent = SignatureUtils.extractCoreContent(updates.description);
+        const normalizedEventLog = this.normalizeEventLog(coreContent);
         (updatesWithSync as any).eventlog = normalizedEventLog;
         
-        console.log('[EventService] description 更新 → 生成 eventlog:', {
+        // 检查核心内容是否真的变化
+        const oldCoreContent = SignatureUtils.extractCoreContent(originalEvent.description || '');
+        const hasContentChange = coreContent !== oldCoreContent;
+        
+        // 只有内容真正变化时，才使用指定的修改来源
+        if (hasContentChange) {
+          lastModifiedSource = options?.modifiedBy || 
+            (options?.source === 'external-sync' ? 'outlook' : '4dnote');
+        }
+        
+        // 只保留核心内容，签名由 normalizeEvent 添加
+        updatesWithSync.description = coreContent;  // ← 只存核心内容
+        
+        console.log('[EventService] description 更新 → 生成 eventlog（已移除签名）:', {
           eventId,
-          description: updates.description.substring(0, 50)
+          coreContentLength: coreContent.length,
+          descriptionWithSignature: updatesWithSync.description.substring(0, 100)
         });
       }
       
       // 场景3: 都没变，但原始事件缺少 eventlog → 从 description 补全
       else if (!(originalEvent as any).eventlog && originalEvent.description) {
-        const normalizedEventLog = this.normalizeEventLog(originalEvent.description);
+        // ✅ 从 description 中移除签名，提取核心内容
+        const coreContent = SignatureUtils.extractCoreContent(originalEvent.description);
+        const normalizedEventLog = this.normalizeEventLog(coreContent);
         (updatesWithSync as any).eventlog = normalizedEventLog;
         
-        console.log('[EventService] 补全缺失的 eventlog（从 description）:', {
-          eventId
+        console.log('[EventService] 补全缺失的 eventlog（从 description，已移除签名）:', {
+          eventId,
+          coreContentLength: coreContent.length
         });
       }
       
@@ -968,7 +1045,13 @@ export class EventService {
       // 场景3: 初始化场景 - eventlog 为空但 description 有内容
       if (!(originalEvent as any).eventlog && originalEvent.description && (updates as any).eventlog === undefined) {
         const initialEventLog: EventLog = {
-          slateJson: JSON.stringify([{ type: 'paragraph', children: [{ text: originalEvent.description }] }]),
+          slateJson: JSON.stringify([{ 
+          type: 'paragraph',
+          id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          children: [{ text: originalEvent.description }]
+        }]),
           html: originalEvent.description,
           plainText: this.stripHtml(originalEvent.description),
           attachments: [],
@@ -988,28 +1071,36 @@ export class EventService {
         });
       }
       
-      // ✅ v1.8: 验证合并后的事件（在过滤前，但要过滤掉 undefined 的时间字段）
-      const mergedEvent = { ...originalEvent, ...updatesWithSync };
-      // 🔧 过滤掉 undefined 的时间字段，避免验证失败
-      const eventToValidate = {
-        ...mergedEvent,
-        startTime: mergedEvent.startTime === undefined ? originalEvent.startTime : mergedEvent.startTime,
-        endTime: mergedEvent.endTime === undefined ? originalEvent.endTime : mergedEvent.endTime,
-      };
-      const validation = validateEventTime(eventToValidate);
-      if (!validation.valid) {
-        eventLogger.error('❌ [EventService] Update validation failed:', validation.error);
-        return { success: false, error: validation.error };
-      }
-      
       // 🆕 v1.8: 只合并非 undefined 的字段，避免覆盖已有数据
       // 🔧 v2.9: 但对于时间字段，允许显式设为 undefined 以清除
+      // 🔧 v2.17.2: 保护本地专属字段，防止被远程同步覆盖
       const filteredUpdates: Partial<Event> = {};
+      
+      // 🛡️ 定义本地专属字段列表（不应被远程同步覆盖）
+      const localOnlyFields = new Set([
+        'tags',
+        'remarkableSource',
+        'childEventIds',
+        'parentEventId',
+        'linkedEventIds',
+        'backlinks',
+        'fourDNoteSource',
+        'isTimer',
+        'isTimeLog',
+        'isOutsideApp'
+      ]);
       
       // 🔧 v2.9: 使用 Object.keys 遍历自有属性，避免原型链问题
       Object.keys(updatesWithSync).forEach(key => {
         const typedKey = key as keyof Event;
         const value = updatesWithSync[typedKey];
+        
+        // 🛡️ v2.17.2: 保护本地专属字段
+        // 如果是外部同步（external-sync）且字段在保护列表中，跳过
+        if (options?.source === 'external-sync' && localOnlyFields.has(key)) {
+          // 不包含此字段，保留原始值
+          return;
+        }
         
         // 🔧 如果值不是 undefined，直接包含
         // 🔧 如果值是 undefined 但 key 存在于 updatesWithSync（显式设置），也包含
@@ -1017,16 +1108,65 @@ export class EventService {
           (filteredUpdates as any)[typedKey] = value;
         } else if (Object.prototype.hasOwnProperty.call(updatesWithSync, key)) {
           // 显式设置为 undefined（用于清除字段）
-          (filteredUpdates as any)[typedKey] = undefined;
+          // 但本地专属字段不允许清除
+          if (!localOnlyFields.has(key)) {
+            (filteredUpdates as any)[typedKey] = undefined;
+          }
         }
       });
       
-      // 合并更新
-      const updatedEvent: Event = {
+      // 🔥 [CRITICAL FIX v2.18.8] 先合并再 normalize，确保 logUpdate 比对的是完整数据
+      // 原问题：logUpdate 太早，比对的是 filteredUpdates（部分字段），导致误判
+      // 正确流程：
+      //   1. 合并 originalEvent + filteredUpdates
+      //   2. normalizeEvent() 处理所有字段（description、eventlog、签名等）
+      //   3. logUpdate() 比对 normalize 后的完整数据
+      //   4. 存储
+      
+      // 步骤1: 合并更新（不更新 updatedAt，等 logUpdate 判断后再决定）
+      const mergedEvent: Event = {
         ...originalEvent,
-        ...filteredUpdates,  // 🆕 使用过滤后的 updates
-        id: eventId, // 确保ID不被覆盖
-        updatedAt: formatTimeForStorage(new Date())
+        ...filteredUpdates,
+        id: eventId // 确保ID不被覆盖
+      };
+      
+      // ✅ 验证合并后的事件时间
+      const eventToValidate = {
+        ...mergedEvent,
+        startTime: mergedEvent.startTime || originalEvent.startTime,
+        endTime: mergedEvent.endTime || originalEvent.endTime,
+      };
+      const validation = validateEventTime(eventToValidate);
+      if (!validation.valid) {
+        eventLogger.error('❌ [EventService] Update validation failed:', validation.error);
+        return { success: false, error: validation.error };
+      }
+      
+      // 步骤2: 规范化处理（重新生成 description 签名、处理 eventlog 等）
+      // 使用 preserveSignature 选项，避免每次都重新生成签名导致变更
+      // 🆕 [v2.18.9] 智能判断：如果 eventlog 没变，就保留原签名
+      const eventlogChanged = mergedEvent.eventlog !== undefined && 
+        JSON.stringify(mergedEvent.eventlog) !== JSON.stringify(originalEvent.eventlog);
+      const normalizedEvent = this.normalizeEvent(mergedEvent, {
+        preserveSignature: !eventlogChanged  // eventlog 没变就保留签名
+      });
+      
+      // 步骤3: 记录事件历史（比对 normalize 后的完整数据）
+      const changeLog = EventHistoryService.logUpdate(
+        eventId, 
+        originalEvent,  // before: 旧事件（已 normalize）
+        normalizedEvent,  // after: 新事件（刚 normalize）
+        options?.source || 'user-edit'
+      );
+      
+      // 🔥 [CRITICAL FIX] 只有真正有变更时才更新 updatedAt
+      // 否则会导致：updatedAt 变 → description 签名变 → EventHistory 误判 → 历史记录爆炸
+      const hasRealChanges = changeLog !== null;
+      
+      // 最终事件（包含 updatedAt）
+      const updatedEvent: Event = {
+        ...normalizedEvent,
+        ...(hasRealChanges ? { updatedAt: formatTimeForStorage(new Date()) } : {})
       };
       
       // 🆕 v2.16: 清除占位标志（池化ID的占位事件已被真实数据更新）
@@ -1126,6 +1266,20 @@ export class EventService {
       
       await storageManager.updateEvent(eventId, storageEvent);
       
+      // 🚀 [PERFORMANCE] 同步更新 EventStats（仅更新必要字段）
+      const statsUpdates: Partial<import('./storage/types').EventStats> = {};
+      if (filteredUpdates.tags !== undefined) statsUpdates.tags = updatedEvent.tags || [];
+      if ((filteredUpdates as any).calendarIds !== undefined) statsUpdates.calendarIds = (updatedEvent as any).calendarIds || [];
+      if (filteredUpdates.startTime !== undefined) statsUpdates.startTime = updatedEvent.startTime;
+      if (filteredUpdates.endTime !== undefined) statsUpdates.endTime = updatedEvent.endTime;
+      if (filteredUpdates.source !== undefined) statsUpdates.source = updatedEvent.source;
+      statsUpdates.updatedAt = updatedEvent.updatedAt;
+      
+      if (Object.keys(statsUpdates).length > 1) { // updatedAt 总是存在
+        await storageManager.updateEventStats(eventId, statsUpdates);
+        eventLogger.log('📊 [EventService] EventStats synced');
+      }
+      
       // 🆕 保存 EventLog 版本历史（如果 eventlog 有变更）
       if (filteredUpdates.eventlog && originalEvent.eventlog) {
         const oldEventLog = this.normalizeEventLog(originalEvent.eventlog);
@@ -1153,9 +1307,6 @@ export class EventService {
           更新字段包含actualSyncConfig: !!filteredUpdates.actualSyncConfig
         });
       }
-      
-      // 记录事件历史
-      EventHistoryService.logUpdate(eventId, originalEvent, filteredUpdates, options?.source || 'user-edit');
       
       // ✨ 自动提取并保存联系人（如果 organizer 或 attendees 有更新）
       if (updates.organizer !== undefined || updates.attendees !== undefined) {
@@ -1260,6 +1411,10 @@ export class EventService {
           _isPlaceholder: true
         });
       }
+      
+      // 🚀 [PERFORMANCE] 同步删除 EventStats
+      await storageManager.deleteEventStats(eventId);
+      eventLogger.log('📊 [EventService] EventStats deleted');
 
       // 触发全局更新事件（标记为已删除）
       this.dispatchEventUpdate(eventId, { deleted: true, softDeleted: true });
@@ -1774,7 +1929,13 @@ export class EventService {
           
           // 如果没有有效子节点，返回空文本节点
           if (!children || children.length === 0) {
-            return { type: 'paragraph', children: [{ text: '' }] };
+            return { 
+              type: 'paragraph',
+              id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              children: [{ text: '' }]
+            };
           }
           
           return { type: 'paragraph', children };
@@ -1885,7 +2046,13 @@ export class EventService {
    * @returns Slate JSON 字符串
    */
   private static simpleTitleToFullTitle(simpleTitle: string, formatMap?: import('../types').TextFormatSegment[]): string {
-    if (!simpleTitle) return JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
+    if (!simpleTitle) return JSON.stringify([{ 
+      type: 'paragraph',
+      id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      children: [{ text: '' }]
+    }]);
     
     // ✅ 如果有 formatMap，尝试应用格式
     if (formatMap && formatMap.length > 0) {
@@ -1990,7 +2157,11 @@ export class EventService {
       
       // 纯文本处理
       // 🔧 修复: 将纯文本转换为 Slate JSON 格式保存到 colorTitle,保留 emoji
-      const slateJson = JSON.stringify([{ type: 'paragraph', children: [{ text: titleInput }] }]);
+      // ⚠️ 标题不应该包含 Block-Level Timestamp（仅用于 eventlog）
+      const slateJson = JSON.stringify([{ 
+        type: 'paragraph',
+        children: [{ text: titleInput }]
+      }]);
       return {
         simpleTitle: titleInput,
         colorTitle: slateJson,  // ✅ 保存为 Slate JSON,保留 emoji
@@ -2059,7 +2230,7 @@ export class EventService {
       } catch {
         // 解析失败，说明是纯文本
         result.simpleTitle = simpleTitle;
-        // 🔧 修复: 纯文本需要转换为 Slate JSON 格式
+        // 🔧 修复: 纯文本需要转换为 Slate JSON 格式（标题不包含 Block-Level Timestamp）
         result.colorTitle = JSON.stringify([{ type: 'paragraph', children: [{ text: simpleTitle }] }]);
         // ✅ 尝试使用保存的 formatMap
         result.fullTitle = this.simpleTitleToFullTitle(simpleTitle, (titleInput as any).formatMap);
@@ -2232,43 +2403,118 @@ export class EventService {
       // 🔍 检查是否需要将 paragraph 节点中的时间戳文本拆分成 timestamp-divider 结构
       // （用于修复从 Outlook 同步回来的旧事件或用户粘贴的内容）
       try {
-        const slateNodes = typeof eventLog.slateJson === 'string' 
-          ? JSON.parse(eventLog.slateJson) 
-          : eventLog.slateJson;
+        // 🚨 修复：先判断是否是 JSON 格式再 parse
+        let slateNodes;
+        if (typeof eventLog.slateJson === 'string') {
+          const trimmed = eventLog.slateJson.trim();
+          // 🚨 严格检测 JSON 数组：开头是 [{，结尾是 }]（排除 "[⏱️ 计时]" 等文本）
+          const looksLikeJson = trimmed.startsWith('[{') && trimmed.endsWith('}]') ||
+                               trimmed === '[]';
+          
+          if (looksLikeJson) {
+            try {
+              slateNodes = JSON.parse(eventLog.slateJson);
+            } catch (parseError) {
+              // JSON 解析失败，当作纯文本处理
+              console.warn('[normalizeEventLog] slateJson 看起来像 JSON 但解析失败，转换为纯文本:', trimmed.substring(0, 50));
+              return this.convertSlateJsonToEventLog(JSON.stringify([{
+                type: 'paragraph',
+                children: [{ text: trimmed }]
+              }]));
+            }
+          } else {
+            // 🔧 纯文本字符串，转换为 Slate JSON
+            console.warn('[normalizeEventLog] 🚨 架构错误：slateJson 是纯文本，应该在上游规范化');
+            console.log('[normalizeEventLog] 纯文本内容:', trimmed.substring(0, 100));
+            return this.convertSlateJsonToEventLog(JSON.stringify([{
+              type: 'paragraph',
+              children: [{ text: trimmed }]
+            }]));
+          }
+        } else {
+          slateNodes = eventLog.slateJson;
+        }
+        
+        // 🚀 [性能优化] 早期退出：如果已经是规范化格式，直接返回
+        if (Array.isArray(slateNodes)) {
+          // 🆕 检测并迁移旧格式（timestamp-divider → Block-Level）
+          if (needsMigration(slateNodes)) {
+            console.log('[EventService] 🔄 检测到旧格式 timestamp-divider，自动迁移到 Block-Level...');
+            const migratedNodes = migrateToBlockTimestamp(slateNodes);
+            console.log('[EventService] ✅ 迁移完成:', {
+              原节点数: slateNodes.length,
+              新节点数: migratedNodes.length,
+              移除divider数: slateNodes.filter((n: any) => n.type === 'timestamp-divider').length
+            });
+            return this.convertSlateJsonToEventLog(JSON.stringify(migratedNodes));
+          }
+          
+          // 🆕 确保所有 paragraph 都有 Block Timestamp 元数据
+          const ensuredNodes = ensureBlockTimestamps(slateNodes);
+          if (JSON.stringify(ensuredNodes) !== JSON.stringify(slateNodes)) {
+            console.log('[EventService] 🔧 补全了缺失的 Block Timestamp 元数据');
+            return this.convertSlateJsonToEventLog(JSON.stringify(ensuredNodes));
+          }
+          
+          // ❌ 移除旧的 timestamp-divider 检测逻辑（已由 needsMigration 替代）
+          const hasParagraphTimestamp = slateNodes.some((node: any) => {
+            if (node.type === 'paragraph' && node.children?.[0]?.text) {
+              const text = node.children[0].text.trim();
+              return /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/.test(text);
+            }
+            return false;
+          });
+          
+          // 如果没有纯文本时间戳，直接返回（不再检查 timestamp-divider）
+          if (!hasParagraphTimestamp) {
+            return eventLog; // 已经规范化，跳过解析
+          }
+        }
         
         if (Array.isArray(slateNodes)) {
           let needsReparse = false;
+          const timestampNodes: any[] = [];
           
           // 遍历所有节点，检查段落中是否包含时间戳文本
-          for (const node of slateNodes) {
+          for (let i = 0; i < slateNodes.length; i++) {
+            const node = slateNodes[i];
             if (node.type === 'paragraph' && node.children?.[0]?.text) {
               const text = node.children[0].text.trim();
               // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
-              const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/;
-              if (timestampPattern.test(text)) {
+              // 支持单位数月份/日期（如 2025/12/7）
+              // 🔧 修复：去掉 $ 结尾符，允许时间戳后面有其他内容（换行+正文）
+              const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
+              const matched = timestampPattern.test(text);
+              
+              if (matched) {
                 needsReparse = true;
-                break;
+                timestampNodes.push({ index: i, text });
               }
             }
           }
           
           if (needsReparse) {
             // 发现时间戳段落，需要重新解析整个内容
-            // 将所有节点转换回文本，然后使用 parseTextWithTimestamps 重新解析
+            console.log('🔄 [normalizeEventLog] 发现纯文本时间戳，重新解析为 Block-Level:', {
+              timestampCount: timestampNodes.length
+            });
+            // 将所有节点转换回文本，然后使用 parseTextWithBlockTimestamps 重新解析
             const textLines: string[] = [];
             for (const node of slateNodes) {
               if (node.type === 'paragraph' && node.children) {
                 const paragraphText = node.children.map((child: any) => child.text || '').join('');
                 textLines.push(paragraphText);
               } else if (node.type === 'timestamp-divider') {
-                // 保留已有的时间戳
+                // 旧格式：保留时间戳行
                 textLines.push(node.displayText || new Date(node.timestamp).toLocaleString());
               }
             }
             
             const fullText = textLines.join('\n');
-            console.log('[EventService] 发现段落中包含时间戳文本，重新解析 eventlog');
-            const newSlateNodes = this.parseTextWithTimestamps(fullText);
+            console.log('✅ [normalizeEventLog] 重新解析 eventlog，原文本:', fullText.substring(0, 200));
+            // 🆕 使用 Block-Level 解析器
+            const newSlateNodes = this.parseTextWithBlockTimestamps(fullText);
+            console.log('✅ [normalizeEventLog] 解析后的节点（Block-Level）:', newSlateNodes);
             const newSlateJson = JSON.stringify(newSlateNodes);
             return this.convertSlateJsonToEventLog(newSlateJson);
           }
@@ -2315,52 +2561,100 @@ export class EventService {
       if (trimmed.startsWith('<') || trimmed.includes('<p>') || trimmed.includes('<div>')) {
         console.log('[EventService] 检测到 HTML 格式，先提取文本检查时间戳');
         
-        // 🔧 先从 HTML 中提取纯文本
+        // � [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
+        // 问题：如果先提取文本，签名会作为纯文本保留下来
+        let cleanedHtml = eventlogInput;
+        
+        // 1. 移除 Outlook/4DNote 签名段落（<p> 或 <div> 包含签名）
+        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<br\s*\/?>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi, '');
+        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi, '');
+        
+        // 2. 移除分隔线段落
+        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<\/(p|div)>/gi, '');
+        
+        console.log('[EventService] 🧹 清理 HTML 签名:', {
+          原长度: eventlogInput.length,
+          清理后: cleanedHtml.length,
+          移除字符数: eventlogInput.length - cleanedHtml.length
+        });
+        
+        // 🔧 从清理后的 HTML 提取纯文本（保留换行）
+        // Step 1: 将 <br> 和 </p> 转换为换行符
+        let htmlForExtraction = cleanedHtml
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/p>/gi, '\n')
+          .replace(/<\/div>/gi, '\n');
+        
+        // Step 2: 提取纯文本
         const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = eventlogInput;
+        tempDiv.innerHTML = htmlForExtraction;
         
         // 优先从 <body> 提取，如果没有则从整个内容提取
         const bodyElement = tempDiv.querySelector('body');
-        const textContent = (bodyElement || tempDiv).textContent || '';
+        let textContent = (bodyElement || tempDiv).textContent || '';
+        
+        // Step 3: 清理多余换行
+        textContent = textContent
+          .replace(/\n{3,}/g, '\n\n')  // 最多保留两个连续换行
+          .trim();
         
         // 🔍 检查提取的文本是否包含时间戳分隔符
         // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss
-        const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
+        // 支持单位数月份/日期（如 2025/12/7）
+        const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})$/gm;
         const matches = [...textContent.matchAll(timestampPattern)];
         
         if (matches.length > 0) {
           // 发现时间戳，按时间戳分割内容
-          console.log('[EventService] HTML 中发现', matches.length, '个时间戳，按时间分割内容');
-          const slateNodes = this.parseTextWithTimestamps(textContent);
+          console.log('[EventService] HTML 中发现', matches.length, '个时间戳，按时间分割内容（Block-Level）');
+          // 🆕 使用 Block-Level 解析器
+          const slateNodes = this.parseTextWithBlockTimestamps(textContent);
           const slateJson = JSON.stringify(slateNodes);
           return this.convertSlateJsonToEventLog(slateJson);
         }
         
-        // 没有时间戳，使用反向识别将 HTML 转换为 Slate JSON
-        const slateJson = this.htmlToSlateJsonWithRecognition(eventlogInput);
+        // 没有时间戳，使用反向识别将 HTML 转换为 Slate JSON（使用清理后的 HTML）
+        const slateJson = this.htmlToSlateJsonWithRecognition(cleanedHtml);
         return this.convertSlateJsonToEventLog(slateJson);
       }
       
-      // 纯文本字符串 - 检查是否包含时间戳分隔符
-      console.log('[EventService] 检测到纯文本，检查是否包含时间戳');
+      // 纯文本字符串 - 先清理签名，再检查是否包含时间戳分隔符
+      console.log('[EventService] 检测到纯文本，先清理签名再检查时间戳');
       
-      // 🔍 尝试识别时间戳格式：YYYY-MM-DD HH:mm:ss 或 YYYY/MM/DD HH:mm:ss
+      // 🧹 Step 1: 清理签名（使用 SignatureUtils）
+      let cleanedText = SignatureUtils.extractCoreContent(eventlogInput);
+      console.log('[EventService] 🧹 清理签名:', {
+        原始长度: eventlogInput.length,
+        清理后长度: cleanedText.length,
+        移除字符数: eventlogInput.length - cleanedText.length
+      });
+      
+      // 🔍 Step 2: 识别所有 timestamp
+      // 尝试识别时间戳格式：YYYY-MM-DD HH:mm:ss 或 YYYY/MM/DD HH:mm:ss
+      // 支持单位数月份/日期（如 2025/12/7）
       // 用于 Outlook 同步回来的文本或用户粘贴的内容
-      const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})$/gm;
-      const matches = [...eventlogInput.matchAll(timestampPattern)];
+      const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/gm;
+      const matches = [...cleanedText.matchAll(timestampPattern)];
       
       if (matches.length > 0) {
         // 发现时间戳，按时间戳分割内容
-        console.log('[EventService] 发现', matches.length, '个时间戳，按时间分割内容');
-        const slateNodes = this.parseTextWithTimestamps(eventlogInput);
+        console.log('[EventService] 发现', matches.length, '个时间戳，按时间分割内容（Block-Level）');
+        // 🆕 Step 3: 使用 Block-Level 解析器（会遍历全文，识别所有 timestamp）
+        const slateNodes = this.parseTextWithBlockTimestamps(cleanedText);
         const slateJson = JSON.stringify(slateNodes);
         return this.convertSlateJsonToEventLog(slateJson);
       }
       
-      // 没有时间戳，转换为单段落
+      // 没有时间戳，转换为单段落（🆕 注入 Block-Level Timestamp）
+      const blockId = `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      const now = Date.now();
+      
       const slateJson = JSON.stringify([{
         type: 'paragraph',
-        children: [{ text: eventlogInput }]
+        id: blockId,
+        createdAt: now,
+        updatedAt: now,
+        children: [{ text: cleanedText }]  // 使用清理后的文本
       }]);
       return this.convertSlateJsonToEventLog(slateJson);
     }
@@ -2422,6 +2716,8 @@ export class EventService {
    * 所有事件在存储前必须经过此方法处理，确保数据完整性和一致性
    * 
    * @param event - 部分事件数据（可能来自 UI、远程同步、或旧数据）
+   * @param options - 规范化选项
+   *   - preserveSignature: 是否保留现有签名（用于 external-sync，避免签名变化导致误判）
    * @returns 完整且规范化的 Event 对象
    * 
    * 处理内容：
@@ -2430,7 +2726,10 @@ export class EventService {
    * - description: 从 eventlog 提取或使用原值
    * - 其他字段: 填充默认值和时间戳
    */
-  private static normalizeEvent(event: Partial<Event>): Event {
+  private static normalizeEvent(
+    event: Partial<Event>,
+    options?: { preserveSignature?: boolean }
+  ): Event {
     const now = formatTimeForStorage(new Date());
     
     // 🔥 Title 规范化（支持字符串或对象输入 + tags 同步）
@@ -2439,14 +2738,198 @@ export class EventService {
     // 🗺️ Location 规范化（支持 string 和 LocationObject）
     const normalizedLocation = this.normalizeLocation(event.location);
     
+    // 🆕 [CRITICAL FIX] 在清理签名之前，先从原始 description 提取签名信息
+    const extractedTimestamps = this.extractTimestampsFromSignature(event.description || '');
+    const extractedCreator = this.extractCreatorFromSignature(event.description || '');
+    
+    console.log('[normalizeEvent] 📝 从签名提取元信息:', {
+      createdAt: extractedTimestamps.createdAt,
+      updatedAt: extractedTimestamps.updatedAt,
+      source: extractedCreator.source,
+      fourDNoteSource: extractedCreator.fourDNoteSource,
+      lastModifiedSource: extractedCreator.lastModifiedSource  // 🆕 修改来源
+    });
+    
     // 🔥 EventLog 规范化（优先从 eventlog，回退到 description）
+    // ✅ 从 description 中移除签名，提取核心内容
+    let fallbackContent = event.description ? SignatureUtils.extractCoreContent(event.description) : '';
+    
+    // 🆕 [CRITICAL FIX] 如果 fallbackContent 是 HTML，先转换为纯文本
+    if (fallbackContent && (fallbackContent.includes('<') || fallbackContent.includes('>'))) {
+      console.log('[normalizeEvent] 检测到 HTML 格式的 description，转换为纯文本');
+      
+      // Step 1: 将 <br> 和 </p> 转换为换行符
+      let htmlForExtraction = fallbackContent
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/p>/gi, '\n')
+        .replace(/<\/div>/gi, '\n');
+      
+      // Step 2: 提取纯文本
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = htmlForExtraction;
+      
+      // 优先从 <body> 提取
+      const bodyElement = tempDiv.querySelector('body');
+      fallbackContent = (bodyElement || tempDiv).textContent || '';
+      
+      // Step 3: 清理多余换行
+      fallbackContent = fallbackContent
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      
+      console.log('[normalizeEvent] HTML → 纯文本转换完成:', {
+        原长度: event.description?.length,
+        转换后长度: fallbackContent.length,
+        前100字符: fallbackContent.substring(0, 100)
+      });
+    }
+    
     const normalizedEventLog = this.normalizeEventLog(
       event.eventlog, 
-      event.description  // 回退用的 description
+      fallbackContent  // 回退用的核心内容（已移除签名 + 转换为纯文本）
     );
     
-    // 🔥 Description 规范化（从 eventlog 提取或使用原值）
-    const normalizedDescription = normalizedEventLog.plainText || event.description || '';
+    // 🆕 [v2.18.0] 优先从 Block-Level Timestamp 中提取时间戳
+    let blockLevelTimestamps: { createdAt?: string; updatedAt?: string } = {};
+    try {
+      const slateNodes = typeof normalizedEventLog.slateJson === 'string' 
+        ? JSON.parse(normalizedEventLog.slateJson) 
+        : normalizedEventLog.slateJson;
+      
+      console.log('[normalizeEvent] 🔍 检查 Block-Level Timestamp:', {
+        节点数: slateNodes?.length,
+        第一个节点: slateNodes?.[0],
+        有createdAt的节点数: slateNodes?.filter((n: any) => n.type === 'paragraph' && n.createdAt).length
+      });
+      
+      if (Array.isArray(slateNodes) && slateNodes.length > 0) {
+        // 从第一个 paragraph 获取 createdAt（最早的时间戳）
+        const firstParagraph = slateNodes.find((node: any) => node.type === 'paragraph' && node.createdAt);
+        if (firstParagraph && firstParagraph.createdAt) {
+          blockLevelTimestamps.createdAt = formatTimeForStorage(new Date(firstParagraph.createdAt));
+          console.log('[normalizeEvent] ✅ 提取到 Block-Level createdAt:', blockLevelTimestamps.createdAt);
+        } else {
+          console.warn('[normalizeEvent] ⚠️ 未找到带 createdAt 的 paragraph');
+        }
+        
+        // 从最后一个 paragraph 获取 updatedAt（最晚的时间戳）
+        const paragraphsWithTimestamp = slateNodes.filter((node: any) => node.type === 'paragraph' && node.createdAt);
+        if (paragraphsWithTimestamp.length > 0) {
+          const lastParagraph = paragraphsWithTimestamp[paragraphsWithTimestamp.length - 1];
+          blockLevelTimestamps.updatedAt = formatTimeForStorage(new Date(lastParagraph.createdAt));
+          console.log('[normalizeEvent] ✅ 提取到 Block-Level updatedAt:', blockLevelTimestamps.updatedAt);
+        }
+      }
+    } catch (error) {
+      console.warn('[normalizeEvent] 从 Block-Level Timestamp 提取时间失败:', error);
+    }
+    
+    // 🆕 [v2.18.0] 时间戳选择策略：
+    // - createdAt: 选择最早的时间（多个来源取 min）
+    // - updatedAt: 选择最新的时间（多个来源取 max）
+    // 注意：extractedTimestamps 和 extractedCreator 已在前面提取（清理签名之前）
+    
+    const createdAtCandidates = [
+      blockLevelTimestamps.createdAt,
+      extractedTimestamps.createdAt,
+      event.createdAt
+    ].filter(Boolean);
+    
+    const finalCreatedAt = createdAtCandidates.length > 0
+      ? createdAtCandidates.reduce((earliest, current) => 
+          current < earliest ? current : earliest
+        )
+      : now;
+    
+    const updatedAtCandidates = [
+      blockLevelTimestamps.updatedAt,
+      extractedTimestamps.updatedAt,
+      event.updatedAt
+    ].filter(Boolean);
+    
+    const finalUpdatedAt = updatedAtCandidates.length > 0
+      ? updatedAtCandidates.reduce((latest, current) => 
+          current > latest ? current : latest
+        )
+      : now;
+    
+    // 🚨 错误：如果使用了默认时间（now），说明代码有严重 bug
+    // 理论上永远不应该走到这个分支：
+    // - createEvent: 前端必定传 createdAt
+    // - Outlook 同步: 必定有 createdDateTime
+    // - updateEvent: 保留原有时间戳
+    if (createdAtCandidates.length === 0) {
+      console.error('[normalizeEvent] 🚨 严重错误：缺少创建时间！这不应该发生，请检查调用链:', {
+        eventId: event.id,
+        title: event.title,
+        source: event.source,
+        fourDNoteSource: event.fourDNoteSource,
+        使用默认值: now,
+        堆栈: new Error().stack
+      });
+    }
+    
+    console.log('[normalizeEvent] 📊 时间戳选择策略:', {
+      '候选 createdAt': createdAtCandidates,
+      '最终 createdAt (最早)': finalCreatedAt,
+      '候选 updatedAt': updatedAtCandidates,
+      '最终 updatedAt (最新)': finalUpdatedAt,
+      '使用默认值': createdAtCandidates.length === 0
+    });
+    
+    const finalFourDNoteSource = extractedCreator.fourDNoteSource !== undefined 
+      ? extractedCreator.fourDNoteSource 
+      : event.fourDNoteSource;
+    const finalSource = extractedCreator.source || event.source;
+    
+    // 🔥 Description 规范化（从 eventlog 提取 + 添加签名）
+    let normalizedDescription: string;
+    
+    // 🆕 [v2.18.8] 如果 preserveSignature=true（external-sync），保留原有签名
+    if (options?.preserveSignature && event.description) {
+      normalizedDescription = event.description; // 直接使用原有 description（含签名）
+      console.log('[normalizeEvent] 🔒 保留原有签名（preserveSignature=true）');
+    } else {
+      // 正常流程：重新生成签名
+      const coreContent = normalizedEventLog.plainText || '';
+      const eventMeta = {
+        ...event,
+        createdAt: finalCreatedAt,  // ✅ 使用提取的创建时间
+        updatedAt: finalUpdatedAt   // ✅ 使用提取的修改时间
+      };
+      // ✅ [v2.18.9] 智能识别修改来源：优先使用签名中提取的，回退到事件来源
+      const lastModifiedSource = extractedCreator.lastModifiedSource 
+        || (finalSource === 'outlook' ? 'outlook' : '4dnote');
+      normalizedDescription = SignatureUtils.addSignature(coreContent, {
+        ...eventMeta,
+        lastModifiedSource
+      });
+    }
+    
+    console.log('[normalizeEvent] 时间戳提取完整链路:', {
+      eventId: (event.id || 'new').slice(-8),
+      // Block-Level Timestamp（最高优先级）
+      blockLevelCreatedAt: blockLevelTimestamps.createdAt?.slice(0, 19),
+      blockLevelUpdatedAt: blockLevelTimestamps.updatedAt?.slice(0, 19),
+      // 签名时间戳（次优先级）
+      signatureCreatedAt: extractedTimestamps.createdAt?.slice(0, 19),
+      signatureUpdatedAt: extractedTimestamps.updatedAt?.slice(0, 19),
+      // 传入的时间（回退）
+      passedCreatedAt: event.createdAt?.slice(0, 19),
+      passedUpdatedAt: event.updatedAt?.slice(0, 19),
+      // 最终使用的时间
+      finalCreatedAt: finalCreatedAt.slice(0, 19),
+      finalUpdatedAt: finalUpdatedAt.slice(0, 19),
+      // 创建者信息
+      extractedCreator: extractedCreator.fourDNoteSource !== undefined 
+        ? (extractedCreator.fourDNoteSource ? '4DNote' : 'Outlook')
+        : undefined,
+      extractedModifier: extractedCreator.lastModifiedSource,  // 🆕 修改者信息
+      finalFourDNoteSource,
+      finalSource,
+      // 签名处理
+      preserveSignature: options?.preserveSignature
+    });
     
     return {
       // 🔥 保留所有原始字段（包括 bulletLevel, position 等）
@@ -2464,19 +2947,23 @@ export class EventService {
       startTime: event.startTime,
       endTime: event.endTime,
       isAllDay: event.isAllDay || false,
-      dueDate: event.dueDate,
+      dueDateTime: event.dueDateTime,
       
       // 分类字段
-      tags: event.tags || [],
+      // 🔥 [CRITICAL FIX] 只有 tags 字段存在时才设置，避免强制覆盖为空数组
+      // 否则 Outlook 同步会导致 tags: undefined → tags: [] → EventHistory 误判为变更
+      ...(event.tags !== undefined ? { tags: event.tags || [] } : {}),
       priority: event.priority,
       
       // 协作字段
       organizer: event.organizer,
-      attendees: event.attendees || [],
+      // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
+      ...(event.attendees !== undefined ? { attendees: event.attendees || [] } : {}),
       location: normalizedLocation,
       
-      // 来源标识
-      fourDNoteSource: event.fourDNoteSource,
+      // 来源标识（优先使用从签名提取的值）
+      fourDNoteSource: finalFourDNoteSource,
+      source: finalSource,
       isPlan: event.isPlan,
       isTimeCalendar: event.isTimeCalendar,
       isTimer: event.isTimer,
@@ -2491,21 +2978,22 @@ export class EventService {
       childEventIds: event.childEventIds,
       
       // 日历同步配置
-      calendarIds: event.calendarIds || [],
+      // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
+      ...(event.calendarIds !== undefined ? { calendarIds: event.calendarIds || [] } : {}),
       syncMode: event.syncMode,
       subEventConfig: event.subEventConfig,
       
       // 签到字段
-      checked: event.checked || [],
-      unchecked: event.unchecked || [],
+      // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
+      ...(event.checked !== undefined ? { checked: event.checked || [] } : {}),
+      ...(event.unchecked !== undefined ? { unchecked: event.unchecked || [] } : {}),
       
       // 外部同步
       externalId: event.externalId,
-      source: event.source,
       
-      // 时间戳
-      createdAt: event.createdAt || now,
-      updatedAt: now,
+      // 时间戳 - ✅ [v2.18.0] 使用从签名中提取的真实时间
+      createdAt: finalCreatedAt,  // 优先使用签名中的创建时间
+      updatedAt: finalUpdatedAt,  // 优先使用签名中的修改时间
       lastLocalChange: now,
       localVersion: (event.localVersion || 0) + 1,
       syncStatus: event.syncStatus || 'pending',
@@ -2536,6 +3024,80 @@ export class EventService {
    * ]
    * ```
    */
+  private static cleanEmptyTimestampPairs(slateNodes: any[]): any[] {
+    const cleanedNodes: any[] = [];
+    
+    for (let i = 0; i < slateNodes.length; i++) {
+      const currentNode = slateNodes[i];
+      const nextNode = slateNodes[i + 1];
+      
+      // 检查 1: 移除签名段落（使用统一的签名检测工具）
+      if (currentNode.type === 'paragraph') {
+        const paragraphText = currentNode.children
+          ?.map((child: any) => child.text || '')
+          .join('')
+          .trim();
+        
+        if (SignatureUtils.isSignatureParagraph(paragraphText)) {
+          console.log('🗑️ [cleanEmptyTimestampPairs] 移除签名段落:', paragraphText.substring(0, 50));
+          continue; // 跳过签名段落
+        }
+      }
+      
+      // 检查 2: 移除空时间戳+段落对
+      if (currentNode.type === 'timestamp-divider') {
+        // 检查下一个节点是否是空段落
+        if (nextNode && nextNode.type === 'paragraph') {
+          const paragraphText = nextNode.children
+            ?.map((child: any) => child.text || '')
+            .join('')
+            .trim();
+          
+          if (!paragraphText || paragraphText === '---') {
+            // 跳过当前时间戳和下一个空段落（包括只有"---"的段落）
+            i++; // 跳过空段落
+            console.log('🗑️ [cleanEmptyTimestampPairs] 移除空时间戳对:', currentNode.timestamp);
+            continue;
+          }
+        }
+      }
+      
+      // 保留非签名、非空的节点
+      cleanedNodes.push(currentNode);
+    }
+    
+    // 确保至少有一个节点
+    if (cleanedNodes.length === 0) {
+      cleanedNodes.push({
+        type: 'paragraph',
+        children: [{ text: '' }]
+      });
+    }
+    
+    return cleanedNodes;
+  }
+
+  /**
+   * 从纯文本中解析并插入 timestamp-divider 节点
+   * 
+   * 输入:
+   * ```
+   * 2025-11-27 01:05:22
+   * 第一段内容...
+   * 2025-11-27 01:36:23
+   * 第二段内容...
+   * ```
+   * 
+   * 输出:
+   * ```
+   * [
+   *   { type: 'timestamp-divider', timestamp: '2025-11-27T01:05:22', children: [{ text: '' }] },
+   *   { type: 'paragraph', children: [{ text: '第一段内容...' }] },
+   *   { type: 'timestamp-divider', timestamp: '2025-11-27T01:36:23', children: [{ text: '' }] },
+   *   { type: 'paragraph', children: [{ text: '第二段内容...' }] }
+   * ]
+   * ```
+   */
   private static parseTextWithTimestamps(text: string): any[] {
     const slateNodes: any[] = [];
     
@@ -2546,8 +3108,9 @@ export class EventService {
     // 支持格式：
     // - "2025-11-27 01:05:22" （连字符）
     // - "2025/11/27 01:05:22" （斜杠）
+    // - "2025/12/7 21:39:42" （单位数月份/日期）
     // - 带相对时间："2025-11-27 01:36:23 | 31min later"
-    const timestampPattern = /^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})(\s*\|.*)?$/;
+    const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})(\s*\|.*)?$/;
     
     let currentParagraphLines: string[] = [];
     
@@ -2597,10 +3160,141 @@ export class EventService {
       }
     }
     
-    // 确保至少有一个节点
+    // 🔧 清理空的时间戳+段落对
+    return this.cleanEmptyTimestampPairs(slateNodes);
+  }
+
+  /**
+   * 🆕 从纯文本中解析并注入 Block-Level Timestamp
+   * 
+   * 输入:
+   * ```
+   * 2025-11-27 01:05:22
+   * 第一段内容...
+   * 2025-11-27 01:36:23
+   * 第二段内容...
+   * ```
+   * 
+   * 输出:
+   * ```
+   * [
+   *   { 
+   *     type: 'paragraph', 
+   *     id: 'block_1701007522000_abc123',
+   *     createdAt: 1701007522000,
+   *     children: [{ text: '第一段内容...' }] 
+   *   },
+   *   { 
+   *     type: 'paragraph', 
+   *     id: 'block_1701009383000_def456',
+   *     createdAt: 1701009383000,
+   *     children: [{ text: '第二段内容...' }] 
+   *   }
+   * ]
+   * ```
+   */
+  private static parseTextWithBlockTimestamps(text: string): any[] {
+    const slateNodes: any[] = [];
+    const lines = text.split('\n');
+    
+    console.log('[parseTextWithBlockTimestamps] 🔍 开始解析:', {
+      总行数: lines.length,
+      前3行: lines.slice(0, 3)
+    });
+    
+    // 🔧 时间戳正则（两种模式）：
+    // 1. 独立成行：2025-12-15 21:24:26
+    // 2. 行首时间戳：2025-12-15 21:24:26 内容...
+    const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
+    
+    let currentParagraphLines: string[] = [];
+    let currentTimestamp: number | null = null;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = line.match(timestampPattern);
+      
+      if (match) {
+        // 遇到时间戳行
+        
+        // 1. 先保存之前累积的段落内容（如果有）
+        if (currentParagraphLines.length > 0) {
+          const paragraphText = currentParagraphLines.join('\n').trim();
+          if (paragraphText) {
+            const timestamp = currentTimestamp || Date.now();
+            slateNodes.push({
+              type: 'paragraph',
+              id: generateBlockId(timestamp),
+              createdAt: timestamp,
+              children: [{ text: paragraphText }]
+            });
+          }
+          currentParagraphLines = [];
+        }
+        
+        // 2. 解析新时间戳
+        const timeStr = match[1].replace(/\//g, '-'); // 斜杠转连字符
+        try {
+          // 🔧 规范化日期格式：补零（2025-12-7 → 2025-12-07）
+          const parts = timeStr.split(' ');
+          const datePart = parts[0];
+          const timePart = parts[1];
+          
+          // 分割日期部分并补零
+          const [year, month, day] = datePart.split('-');
+          const normalizedDate = `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+          const normalizedTimeStr = `${normalizedDate} ${timePart}`;
+          
+          // ⚠️ 直接使用 YYYY-MM-DD HH:mm:ss 格式（空格分隔符）
+          currentTimestamp = new Date(normalizedTimeStr).getTime();
+          console.log('[parseTextWithBlockTimestamps] ✅ 解析时间戳:', { 
+            原始: timeStr, 
+            规范化: normalizedTimeStr,
+            Unix: currentTimestamp, 
+            日期: new Date(currentTimestamp).toLocaleString() 
+          });
+        } catch (error) {
+          console.warn('[parseTextWithBlockTimestamps] 解析时间戳失败:', timeStr, error);
+          currentTimestamp = Date.now();
+        }
+        
+        // 3. 提取时间戳后面的内容（如果有）
+        const restOfLine = line.substring(match[0].length).trim();
+        if (restOfLine) {
+          currentParagraphLines.push(restOfLine);
+        }
+        
+      } else {
+        // 普通文本行，累积到当前段落
+        currentParagraphLines.push(line);
+      }
+    }
+    
+    // 处理最后剩余的段落
+    if (currentParagraphLines.length > 0) {
+      const paragraphText = currentParagraphLines.join('\n').trim();
+      if (paragraphText) {
+        const timestamp = currentTimestamp || Date.now();
+        slateNodes.push({
+          type: 'paragraph',
+          id: generateBlockId(timestamp),
+          createdAt: timestamp,
+          children: [{ text: paragraphText }]
+        });
+      }
+    }
+    
+    console.log('[parseTextWithBlockTimestamps] ✅ 解析完成:', {
+      生成节点数: slateNodes.length,
+      节点详情: slateNodes.map(n => ({ createdAt: n.createdAt, 文本长度: n.children[0]?.text?.length }))
+    });
+    
+    // 确保至少有一个段落
     if (slateNodes.length === 0) {
       slateNodes.push({
         type: 'paragraph',
+        id: generateBlockId(),
+        createdAt: Date.now(),
         children: [{ text: '' }]
       });
     }
@@ -2609,24 +3303,119 @@ export class EventService {
   }
 
   /**
+   * 🔧 扁平化 Slate 节点，移除嵌套的 paragraph（v2.18.8）
+   * 
+   * 问题：Slate JSON 可能包含嵌套的 paragraph：
+   * { type: 'paragraph', children: [{ type: 'paragraph', children: [...] }] }
+   * 
+   * 这会导致 React 警告：<p> cannot be a descendant of <p>
+   * 
+   * 解决方案：递归扁平化，确保 paragraph 的 children 只包含 text 节点
+   */
+  private static flattenSlateNodes(nodes: any[]): any[] {
+    const flattened: any[] = [];
+    
+    for (const node of nodes) {
+      if (node.type === 'paragraph') {
+        // 检查 children 中是否有嵌套的 paragraph
+        const hasNestedParagraph = node.children?.some((child: any) => 
+          child.type === 'paragraph'
+        );
+        
+        if (hasNestedParagraph) {
+          // 递归提取所有嵌套的 paragraph
+          const extractParagraphs = (n: any): any[] => {
+            if (n.type === 'paragraph') {
+              // 如果子节点中还有 paragraph，继续递归
+              const nestedParagraphs = n.children?.filter((c: any) => c.type === 'paragraph') || [];
+              const textNodes = n.children?.filter((c: any) => c.text !== undefined) || [];
+              
+              if (nestedParagraphs.length > 0) {
+                // 先添加当前层的文本节点
+                const results: any[] = [];
+                if (textNodes.length > 0) {
+                  results.push({
+                    type: 'paragraph',
+                    createdAt: n.createdAt, // 保留时间戳
+                    children: textNodes
+                  });
+                }
+                
+                // 递归处理嵌套的 paragraph
+                for (const nested of nestedParagraphs) {
+                  results.push(...extractParagraphs(nested));
+                }
+                
+                return results;
+              } else {
+                // 没有嵌套，直接返回
+                return [{
+                  type: 'paragraph',
+                  createdAt: n.createdAt,
+                  children: textNodes.length > 0 ? textNodes : [{ text: '' }]
+                }];
+              }
+            }
+            return [n];
+          };
+          
+          flattened.push(...extractParagraphs(node));
+        } else {
+          // 没有嵌套，直接添加
+          flattened.push(node);
+        }
+      } else {
+        // 非 paragraph 节点，直接添加
+        flattened.push(node);
+      }
+    }
+    
+    return flattened;
+  }
+
+  /**
    * 将 Slate JSON 字符串转换为完整的 EventLog 对象
    * （由 normalizeEventLog 调用）
    */
   private static convertSlateJsonToEventLog(slateJson: string): EventLog {
+    // 🔧 检测并修复非 JSON 输入（架构错误：不应该传纯文本进来）
+    let normalizedSlateJson = slateJson;
+    const trimmed = slateJson.trim();
+    
+    // 检测是否真的是 JSON 格式
+    const looksLikeJson = trimmed.startsWith('[{') && trimmed.endsWith('}]') ||
+                         trimmed === '[]';
+    
+    if (!looksLikeJson && trimmed) {
+      console.error(`[convertSlateJsonToEventLog] 🚨 架构错误：收到非 JSON 输入: ${trimmed.substring(0, 100)}`);
+      console.trace('[convertSlateJsonToEventLog] 调用堆栈');
+      
+      // 临时兼容：转换纯文本为 Slate JSON
+      normalizedSlateJson = JSON.stringify([{
+        type: 'paragraph',
+        children: [{ text: trimmed }]
+      }]);
+      console.log('[convertSlateJsonToEventLog] 已转换为 Slate JSON（临时兼容）');
+    }
+    
     try {
-      const slateNodes = jsonToSlateNodes(slateJson);
+      // 🆕 [v2.18.8] 扁平化 Slate 节点，移除嵌套的 paragraph
+      let slateNodes = jsonToSlateNodes(normalizedSlateJson);
+      slateNodes = this.flattenSlateNodes(slateNodes);
+      normalizedSlateJson = JSON.stringify(slateNodes); // 使用扁平化后的数据
+      
       const htmlDescription = slateNodesToHtml(slateNodes);
       const plainTextDescription = htmlDescription.replace(/<[^>]*>/g, '');
       
       return {
-        slateJson: slateJson,
+        slateJson: normalizedSlateJson,
         html: htmlDescription,
         plainText: plainTextDescription,
         attachments: [],
         versions: [],
         syncState: {
           status: 'pending',
-          contentHash: this.hashContent(slateJson),
+          contentHash: this.hashContent(normalizedSlateJson), // 使用扁平化后的数据
         },
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date()),
@@ -2646,15 +3435,278 @@ export class EventService {
       };
     }
   }
+
+  /**
+   * 为 description 字段维护签名
+   * 签名格式：
+   * - 同一来源：由 🔮 4DNote 创建于 YYYY-MM-DD HH:mm:ss，最后修改于 YYYY-MM-DD HH:mm:ss
+   * - 不同来源：
+   *   由 🔮 4DNote 创建于 YYYY-MM-DD HH:mm:ss
+   *   由 📧 Outlook 最后修改于 YYYY-MM-DD HH:mm:ss
+   * 
+   * @param coreContent - 去除签名的核心内容
+   * @param event - 事件对象（包含创建时间、更新时间、来源等元数据）
+   * @param lastModifiedSource - 最后修改来源（'4dnote' | 'outlook'，可选）
+   * @returns 带签名的完整 description
+   */
+  private static maintainDescriptionSignature(
+    coreContent: string, 
+    event: Partial<Event>,
+    lastModifiedSource?: '4dnote' | 'outlook'
+  ): string {
+    // 🔍 检查核心内容是否已包含签名（避免重复添加）
+    const hasExistingSignature = /由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)/.test(coreContent);
+    
+    if (hasExistingSignature) {
+      // 已有签名，直接返回原内容（不重复添加）
+      return coreContent;
+    }
+    
+    const lines: string[] = [];
+    
+    // 1. 添加核心内容
+    if (coreContent && coreContent.trim()) {
+      lines.push(coreContent.trim());
+      lines.push(''); // 空行
+    }
+    
+    // 2. 添加分隔线
+    lines.push('---');
+    
+    // 3. 确定创建来源和时间
+    const isLocalCreated = event.fourDNoteSource === true || event.source === 'local' || !event.source;
+    const createSource = isLocalCreated ? '🔮 4DNote' : '📧 Outlook';
+    const createSourceKey = isLocalCreated ? '4dnote' : 'outlook';
+    const createTime = event.createdAt || formatTimeForStorage(new Date());
+    
+    // 4. 确定修改来源（优先使用传入的 lastModifiedSource，否则假设与创建来源相同）
+    const modifySourceKey = lastModifiedSource || createSourceKey;
+    const modifySource = modifySourceKey === '4dnote' ? '🔮 4DNote' : '📧 Outlook';
+    
+    // 5. 生成签名
+    if (event.updatedAt && event.updatedAt !== event.createdAt) {
+      const modifyTime = event.updatedAt;
+      
+      if (createSourceKey === modifySourceKey) {
+        // 同一来源：一行签名
+        lines.push(`由 ${createSource} 创建于 ${createTime}，最后修改于 ${modifyTime}`);
+      } else {
+        // 不同来源：两行签名
+        lines.push(`由 ${createSource} 创建于 ${createTime}`);
+        lines.push(`由 ${modifySource} 最后修改于 ${modifyTime}`);
+      }
+    } else {
+      // 未修改：只显示创建信息
+      lines.push(`由 ${createSource} 创建于 ${createTime}`);
+    }
+    
+    return lines.join('\n');
+  }
+
+  /**
+   * 从 description 中移除签名，提取核心内容
+   * @param description - 原始 description（可能包含签名）
+   * @returns 去除签名的核心内容
+   */
+  private static extractCoreContentFromDescription(description: string): string {
+    if (!description) return '';
+    
+    // 移除签名部分（支持多种格式）
+    let core = description
+      // 移除完整签名块（---\n由...创建于...）
+      .replace(/\n?---\n由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*创建于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*$/i, '')
+      // 移除单行签名（创建）
+      .replace(/\n?由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*创建于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*$/gi, '')
+      // 移除单行签名（编辑/修改）
+      .replace(/\n?由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:编辑于|最后(?:编辑|修改)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*$/gi, '');
+    
+    return core.trim();
+  }
+
+  /**
+   * 从 description 或 HTML 中提取签名时间戳
+   * @param content - description 或 HTML 内容（可能包含签名）
+   * @returns { createdAt?: string, updatedAt?: string } - 提取的时间戳（ISO 格式）
+   */
+  private static extractTimestampsFromSignature(content: string): { createdAt?: string; updatedAt?: string } {
+    if (!content) return {};
+    
+    const result: { createdAt?: string; updatedAt?: string } = {};
+    
+    // 1️⃣ 提取创建时间
+    // 支持格式：
+    // - "由 🔮 4DNote 创建于 2025-12-15 10:00:00"
+    // - "由 📧 Outlook 创建于 2025-12-15 10:00:00"
+    // - HTML: "由 <emoji> 4DNote 创建于 2025-12-15 10:00:00"
+    const createPattern = /由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*创建于\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/i;
+    const createMatch = content.match(createPattern);
+    
+    if (createMatch && createMatch[1]) {
+      try {
+        // ✅ 直接使用 TimeSpec 格式（YYYY-MM-DD HH:mm:ss），不转换 ISO
+        const timeStr = createMatch[1];
+        const parsedTime = parseLocalTimeString(timeStr);
+        
+        if (parsedTime) {
+          result.createdAt = timeStr; // 直接使用原始字符串（已是 TimeSpec 格式）
+        }
+      } catch (error) {
+        console.warn('[extractTimestampsFromSignature] 解析创建时间失败:', createMatch[1], error);
+      }
+    }
+    
+    // 2️⃣ 提取最后修改时间
+    // 支持格式：
+    // - "最后修改于 2025-12-15 11:30:00"
+    // - "最后编辑于 2025-12-15 11:30:00"
+    // - "编辑于 2025-12-15 11:30:00"
+    // - 合并格式: "创建于 2025-12-15 10:00:00，最后修改于 2025-12-15 11:30:00"
+    const updatePattern = /(?:最后修改于|最后编辑于|编辑于)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/i;
+    const updateMatch = content.match(updatePattern);
+    
+    if (updateMatch && updateMatch[1]) {
+      try {
+        // ✅ 直接使用 TimeSpec 格式（YYYY-MM-DD HH:mm:ss），不转换 ISO
+        const timeStr = updateMatch[1];
+        const parsedTime = parseLocalTimeString(timeStr);
+        
+        if (parsedTime) {
+          result.updatedAt = timeStr; // 直接使用原始字符串（已是 TimeSpec 格式）
+        }
+      } catch (error) {
+        console.warn('[extractTimestampsFromSignature] 解析修改时间失败:', updateMatch[1], error);
+      }
+    }
+    
+    return result;
+  }
+
+  /**
+   * 从 description 或 HTML 中提取签名创建者信息
+   * @param content - description 或 HTML 内容（可能包含签名）
+   * @returns { fourDNoteSource?: boolean, source?: 'outlook' | 'local', lastModifiedSource?: '4dnote' | 'outlook' } - 提取的创建者和修改者信息
+   */
+  private static extractCreatorFromSignature(content: string): { 
+    fourDNoteSource?: boolean; 
+    source?: 'outlook' | 'local';
+    lastModifiedSource?: '4dnote' | 'outlook';
+  } {
+    if (!content) return {};
+    
+    const result: { 
+      fourDNoteSource?: boolean; 
+      source?: 'outlook' | 'local';
+      lastModifiedSource?: '4dnote' | 'outlook';
+    } = {};
+    
+    // 🔍 提取创建者
+    // 支持格式：
+    // - "由 🔮 4DNote 创建于..."
+    // - "由 📧 Outlook 创建于..."
+    // - HTML: "由 <span>🔮</span> 4DNote 创建于..."
+    const creatorPattern = /由\s+(?:🔮|📧|🟣)?\s*(4DNote|Outlook)\s*创建于/i;
+    const creatorMatch = content.match(creatorPattern);
+    
+    if (creatorMatch && creatorMatch[1]) {
+      const creator = creatorMatch[1].toLowerCase();
+      
+      if (creator === '4dnote') {
+        result.fourDNoteSource = true;
+        result.source = 'local';
+      } else if (creator === 'outlook') {
+        result.fourDNoteSource = false;
+        result.source = 'outlook';
+      }
+    }
+    
+    // 🆕 提取修改者
+    // 支持格式：
+    // - "由 🔮 4DNote 最后修改于..."
+    // - "由 📧 Outlook 最后修改于..."
+    // - "由 🔮 4DNote 最后编辑于..."
+    const modifierPattern = /由\s+(?:🔮|📧|🟣)?\s*(4DNote|Outlook)\s*最后(?:修改|编辑)于/i;
+    const modifierMatch = content.match(modifierPattern);
+    
+    if (modifierMatch && modifierMatch[1]) {
+      const modifier = modifierMatch[1].toLowerCase();
+      result.lastModifiedSource = modifier === '4dnote' ? '4dnote' : 'outlook';
+    }
+    
+    return result;
+  }
   
+  /**
+   * 清理 Outlook Exchange Server 生成的多层嵌套 HTML
+   * 解决问题：Outlook 会对内容进行多次 HTML 转义，导致 &amp;lt; 这样的多层编码
+   */
+  private static cleanupOutlookHtml(html: string): string {
+    let cleaned = html;
+    
+    // 1️⃣ 递归解码 HTML 实体（最多解码 10 层，防止无限循环）
+    for (let i = 0; i < 10; i++) {
+      const before = cleaned;
+      cleaned = cleaned
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'");
+      
+      // 如果没有变化，说明解码完成
+      if (before === cleaned) break;
+    }
+    
+    // 2️⃣ 移除 Exchange Server 模板代码
+    cleaned = cleaned
+      // 移除 <head> 标签及其内容
+      .replace(/<head[^>]*>[\s\S]*?<\/head>/gi, '')
+      // 移除 meta 标签
+      .replace(/<meta[^>]*>/gi, '')
+      // 移除 style 标签
+      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+      // 移除注释
+      .replace(/<!--[\s\S]*?-->/g, '')
+      // 移除 font 和 span 包装（保留内容）
+      .replace(/<\/?font[^>]*>/gi, '')
+      .replace(/<\/?span[^>]*>/gi, '');
+    
+    // 3️⃣ 清理签名行（"由 XXX 创建于 YYYY-MM-DD HH:mm:ss"）
+    // 支持多种格式：
+    // - "---<br>由 🔮 4DNote 创建于 2025-12-07 02:05:42"
+    // - "由 📧 Outlook 编辑于 2025-12-07 02:05:42"
+    // - "由 4DNote 最后编辑于 2025-12-07 02:05:42"
+    cleaned = cleaned
+      .replace(/---\s*<br[^>]*>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:创建于|编辑于|最后编辑于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/gi, '')
+      .replace(/由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:创建于|编辑于|最后编辑于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/gi, '');
+    
+    // 4️⃣ 清理多余的 <br> 标签（连续 3 个以上）
+    cleaned = cleaned.replace(/(<br[^>]*>\s*){3,}/gi, '<br><br>');
+    
+    // 5️⃣ 提取 .PlainText 内容（如果存在）
+    const plainTextMatch = cleaned.match(/<div[^>]*class=["']PlainText["'][^>]*>([\s\S]*?)<\/div>/i);
+    if (plainTextMatch) {
+      cleaned = plainTextMatch[1];
+    }
+    
+    // 6️⃣ 清理多余的空白标签
+    cleaned = cleaned
+      .replace(/<div[^>]*>\s*<\/div>/gi, '')
+      .replace(/<p[^>]*>\s*<\/p>/gi, '');
+    
+    return cleaned.trim();
+  }
+
   /**
    * HTML 转换为 Slate JSON（含反向识别）
    * 从 Outlook 返回的 HTML 中识别出 App 元素（Tag、DateMention 等）
    */
   private static htmlToSlateJsonWithRecognition(html: string): string {
     try {
+      // 🔥 预处理：清理 Outlook Exchange Server 的多层嵌套和转义
+      const cleanedHtml = this.cleanupOutlookHtml(html);
+      
       const tempDiv = document.createElement('div');
-      tempDiv.innerHTML = html;
+      tempDiv.innerHTML = cleanedHtml;
       
       // 🔧 优先从 <body> 元素提取内容（处理完整 HTML 文档）
       const bodyElement = tempDiv.querySelector('body');
@@ -3518,11 +4570,10 @@ export class EventService {
                 for (const match of matches) {
                   try {
                     const timeStr = match[1];
-                    // 转换为 ISO 格式（空格 → T）然后解析
-                    const isoStr = timeStr.replace(' ', 'T');
-                    const timestampDate = new Date(isoStr);
+                    // ✅ 使用 parseLocalTimeString 解析 TimeSpec 格式
+                    const timestampDate = parseLocalTimeString(timeStr);
                     
-                    if (!isNaN(timestampDate.getTime())) {
+                    if (timestampDate) {
                       timestamps.push(timestampDate);
                       eventLogger.log('✅ [EventService] Extracted timestamp from text:', timeStr);
                     }
@@ -3616,8 +4667,10 @@ export class EventService {
       
       if (!finalEventLog || 
           (typeof finalEventLog === 'object' && finalEventLog.slateJson === '[]')) {
-        eventLogger.log('🔧 [EventService] Remote event eventlog 为空，从 description 重新生成');
-        finalEventLog = this.normalizeEventLog(undefined, event.description);
+        eventLogger.log('🔧 [EventService] Remote event eventlog 为空，从 description 重新生成（移除签名）');
+        // ✅ 从 description 中移除签名，提取核心内容
+        const coreContent = event.description ? this.extractCoreContentFromDescription(event.description) : '';
+        finalEventLog = this.normalizeEventLog(undefined, coreContent);
       }
       
       const finalEvent: Event = {
@@ -3641,6 +4694,17 @@ export class EventService {
       // 创建新事件（双写到 IndexedDB + SQLite）
       const storageEvent = this.convertEventToStorageEvent(finalEvent);
       await storageManager.createEvent(storageEvent);
+      
+      // 🚀 [PERFORMANCE] 同步写入 EventStats
+      await storageManager.createEventStats({
+        id: finalEvent.id,
+        tags: finalEvent.tags || [],
+        calendarIds: (finalEvent as any).calendarIds || [],
+        startTime: finalEvent.startTime,
+        endTime: finalEvent.endTime,
+        source: finalEvent.source,
+        updatedAt: finalEvent.updatedAt,
+      });
     }
     
     // 🆕 记录到事件历史（使用 outlook-sync 作为来源）
@@ -3693,10 +4757,12 @@ export class EventService {
    * 将 StorageEvent 转换为 Event（应用层模型）
    */
   private static convertStorageEventToEvent(storageEvent: StorageEvent): Event {
+    // ✅ 从 description 中移除签名，提取核心内容
+    const fallbackContent = storageEvent.description ? this.extractCoreContentFromDescription(storageEvent.description) : '';
     return {
       ...storageEvent,
       title: this.normalizeTitle(storageEvent.title),
-      eventlog: this.normalizeEventLog(storageEvent.eventlog, storageEvent.description),
+      eventlog: this.normalizeEventLog(storageEvent.eventlog, fallbackContent),
     } as Event;
   }
 

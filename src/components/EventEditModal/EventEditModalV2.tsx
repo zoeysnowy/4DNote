@@ -93,6 +93,7 @@ import { CalendarPicker } from '../../features/Calendar/components/CalendarPicke
 import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../../utils/calendarUtils';
+import { getLocationDisplayText } from '../../utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../ModalSlate';
 import { TitleSlate } from '../ModalSlate/TitleSlate';
@@ -104,6 +105,10 @@ import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../P
 import { formatTimeForStorage } from '../../utils/timeUtils';
 import { EventRelationSummary } from '../EventTree/EventRelationSummary';
 import { EventTreeViewer } from '../EventTree/EventTreeViewer';
+import { extractImagesFromHTML, extractedImagesToBlobs } from '../../utils/htmlImageExtractor';
+import { EventExtractionWorkflow } from '../../ai/workflows/EventExtractionWorkflow';
+import type { QRCodeInfo } from '../../types';
+import { QRCodeDisplay } from '../common/QRCodeDisplay';
 import './EventEditModalV2.css';
 
 // Import SVG icons
@@ -181,6 +186,10 @@ interface EventEditModalV2Props {
   } | null;
   onStartTimeChange?: (newStartTime: number) => void;
   onTimerAction?: (action: 'start' | 'pause' | 'resume' | 'stop' | 'cancel', tagIds?: string | string[], eventIdOrParentId?: string) => void; // 🔧 修改：统一参数格式
+  // 🆕 新建事件时的初始时间（从TimeCalendar传入）
+  initialStartTime?: string | null;
+  initialEndTime?: string | null;
+  initialIsAllDay?: boolean;
   // v1 兼容 props（保留但不使用）
   microsoftService?: any;
   availableCalendars?: any[];
@@ -198,6 +207,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   hierarchicalTags,
   globalTimer,
   onTimerAction,
+  initialStartTime,
+  initialEndTime,
+  initialIsAllDay,
 }) => {
   // 🔧 从 EventHub 获取最新的 event 数据（单一数据源）
   const [event, setEvent] = React.useState<Event | null>(null);
@@ -209,6 +221,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
     
     // 🔧 从 EventService 异步加载事件数据
+    // 现在所有事件（包括新建）都应该立即存在于 EventService
     EventService.getEventById(eventId).then(serviceEvent => {
       if (serviceEvent) {
         setEvent(serviceEvent);
@@ -222,22 +235,23 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // 🔧 模式检测：判断是父事件模式还是子事件模式
   const isParentMode = !event?.parentEventId;
   
-  console.log('🔍 [EventEditModalV2] 模式检测:', {
-    isParentMode,
-    eventId: event?.id,
-    parentEventId: event?.parentEventId,
-    isTimer: event?.isTimer
-  });
+  // 模式检测日志（已禁用，减少噪音）
+  // console.log('🔍 [EventEditModalV2] 模式检测:', {
+  //   isParentMode,
+  //   eventId: event?.id,
+  //   parentEventId: event?.parentEventId,
+  //   isTimer: event?.isTimer
+  // });
   
-  // 🎬 调试：打印传入的 event 对象的关键字段
-  console.log('🎬 [EventEditModalV2] 传入的 event 对象:', {
-    id: event?.id,
-    fourDNoteSource: event?.fourDNoteSource,
-    source: event?.source,
-    syncMode: event?.syncMode,
-    syncStatus: event?.syncStatus,
-    calendarIds: event?.calendarIds
-  });
+  // 🎬 调试：打印传入的 event 对象的关键字段（已禁用）
+  // console.log('🎬 [EventEditModalV2] 传入的 event 对象:', {
+  //   id: event?.id,
+  //   fourDNoteSource: event?.fourDNoteSource,
+  //   source: event?.source,
+  //   syncMode: event?.syncMode,
+  //   syncStatus: event?.syncStatus,
+  //   calendarIds: event?.calendarIds
+  // });
   
   // 🔍 检测 event 对象引用是否变化（用于诊断重新渲染）
   const eventRefTracker = React.useRef({ count: 0, lastEventId: null, lastEventRef: null });
@@ -392,42 +406,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         startTime: event.startTime || null,
         endTime: event.endTime || null,
         allDay: event.isAllDay || false,
-        location: event.location || '',
+        location: getLocationDisplayText(event.location) || '',
         organizer: event.organizer,
         attendees: event.attendees || [],
-        eventlog: (() => {
-          // 处理 eventlog 字段的多种格式，统一转换为 Descendant[] 对象
-          if (!event.eventlog) return [];
-          
-          if (typeof event.eventlog === 'string') {
-            // 如果是字符串（Slate JSON），解析为对象
-            try {
-              return JSON.parse(event.eventlog);
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
-              return [];
-            }
-          }
-          
-          // 如果是 EventLog 对象，提取 slateJson 字段并解析
-          if (event.eventlog.slateJson) {
-            try {
-              return typeof event.eventlog.slateJson === 'string' 
-                ? JSON.parse(event.eventlog.slateJson) 
-                : event.eventlog.slateJson;
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
-              return [];
-            }
-          }
-          
-          // 如果是数组，直接返回（已经是 Descendant[]）
-          if (Array.isArray(event.eventlog)) {
-            return event.eventlog;
-          }
-          
-          return [];
-        })(),
+        eventlog: typeof event.eventlog === 'string' ? event.eventlog : (event.eventlog?.slateJson || '[]'),
         description: event.description || '',
         // 🔧 日历同步配置（单一数据结构）
         calendarIds: event.calendarIds || [],
@@ -490,12 +472,12 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     };
   });
 
-  // 🔧 当 Modal 打开时，立即重置 formData 为新建事件的默认值（避免显示旧数据）
+  // 🔧 当 Modal 打开且没有 event 时，重置 formData 为空表单
   React.useEffect(() => {
-    if (isOpen && !eventId) {
-      // 新建事件：重置为空表单
+    if (isOpen && !event) {
+      console.log('🆕 [formData重置] 打开Modal但event未加载，重置表单');
       setFormData({
-        id: generateEventId(),
+        id: eventId || generateEventId(), // 使用传入的eventId或生成新的
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
         isTask: false,
@@ -504,9 +486,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         childEventIds: [],
         linkedEventIds: [],
         backlinks: [],
-        startTime: null,
-        endTime: null,
-        allDay: false,
+        startTime: initialStartTime || null, // 🆕 使用初始时间
+        endTime: initialEndTime || null, // 🆕 使用初始时间
+        allDay: initialIsAllDay || false, // 🆕 使用初始全天标志
         location: '',
         attendees: [],
         eventlog: [],
@@ -515,8 +497,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: 'bidirectional-private',
         subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
       });
+      // 同时重置 titleRef
+      titleRef.current = JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
     }
-  }, [isOpen, eventId]);
+  }, [isOpen, event, eventId, initialStartTime, initialEndTime, initialIsAllDay]);
 
   // 🔧 当从 EventHub 加载的 event 变化时重新初始化 formData
   React.useEffect(() => {
@@ -562,34 +546,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       startTime: event.startTime || null,
       endTime: event.endTime || null,
       allDay: event.isAllDay || false,
-      location: event.location || '',
+      location: getLocationDisplayText(event.location) || '',
       organizer: event.organizer,
       attendees: event.attendees || [],
-      eventlog: (() => {
-        if (!event.eventlog) return [];
-        if (typeof event.eventlog === 'string') {
-          try {
-            return JSON.parse(event.eventlog);
-          } catch (error) {
-            console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
-            return [];
-          }
-        }
-        if (event.eventlog.slateJson) {
-          try {
-            return typeof event.eventlog.slateJson === 'string' 
-              ? JSON.parse(event.eventlog.slateJson) 
-              : event.eventlog.slateJson;
-          } catch (error) {
-            console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
-            return [];
-          }
-        }
-        if (Array.isArray(event.eventlog)) {
-          return event.eventlog;
-        }
-        return [];
-      })(),
+      eventlog: typeof event.eventlog === 'string' ? event.eventlog : (event.eventlog?.slateJson || '[]'),
       description: event.description || '',
       calendarIds: event.calendarIds || [],
       syncMode: event.syncMode || (() => {
@@ -715,12 +675,17 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   
   // 🔧 [已删除] 调试日志 useEffect - 导致频繁 re-render，如需调试可在关键位置手动添加日志
 
-  // TimeLog 相关状态 - 直接使用 formData.eventlog（现在是对象或空数组）
-  const timelogContent = formData.eventlog || [];
+  // TimeLog 相关状态 - formData.eventlog 是 JSON 字符串
+  const timelogContent = formData.eventlog || '[]';
   
   const [activePickerIndex, setActivePickerIndex] = useState(-1);
   const [isSubPickerOpen, setIsSubPickerOpen] = useState(false); // 🆕 追踪子选择器（颜色选择器）是否打开
   const [currentActivePicker, setCurrentActivePicker] = useState<string | null>(null); // 🆕 追踪当前 activePicker 状态
+
+  // 图片上传和 AI 提取状态
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractedQRCodes, setExtractedQRCodes] = useState<QRCodeInfo[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 获取真实的可用日历数据
   const availableCalendars = getAvailableCalendarsForSettings();
@@ -1031,10 +996,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         if (formData.tags && formData.tags.length > 0) {
           const firstTag = TagService.getTagById(formData.tags[0]);
           if (firstTag) {
-            const tagTitleText = `${firstTag.emoji || ''}${firstTag.name}事项`.trim();
+            const tagTitleText = `${firstTag.emoji || ''}${firstTag.name}`.trim();
             // 将纯文本转换为 Slate JSON（colorTitle 格式）
             finalTitle = JSON.stringify([{ type: 'paragraph', children: [{ text: tagTitleText }] }]);
             console.log('🏷️ [EventEditModalV2] Using tag name as title:', tagTitleText);
+            // 🔧 同步回 formData，让 TitleSlate 显示标签名称（而不是 placeholder）
+            setFormData(prev => ({ ...prev, title: finalTitle as string }));
+            // 🔧 同步 titleRef，确保后续的 blur-to-save 能保存正确的标题
+            titleRef.current = finalTitle as string;
           } else {
             finalTitle = formData.title; // 空字符串
           }
@@ -1051,6 +1020,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       
       // 🔧 Step 2: 处理时间格式 - 确保符合 EventService 的要求
       // EventService 要求时间格式为 "YYYY-MM-DD HH:mm:ss"（空格分隔）
+      console.log('⏰ [EventEditModalV2] 处理时间字段:', {
+        'formData.startTime': formData.startTime,
+        'formData.endTime': formData.endTime,
+        'formData.allDay': formData.allDay,
+        'startTime类型': typeof formData.startTime,
+        'endTime类型': typeof formData.endTime
+      });
+      
       let startTimeForStorage = formData.startTime;
       let endTimeForStorage = formData.endTime;
       
@@ -1060,15 +1037,19 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const startDate = parseLocalTimeString(formData.startTime);
           startTimeForStorage = formatTimeForStorage(startDate);
+          console.log('✅ [EventEditModalV2] startTime 转换成功:', startTimeForStorage);
         } catch (parseError) {
           // 降级：尝试用 new Date 解析
           const startDate = new Date(formData.startTime);
           if (!isNaN(startDate.getTime())) {
             startTimeForStorage = formatTimeForStorage(startDate);
+            console.log('✅ [EventEditModalV2] startTime 转换成功(降级):', startTimeForStorage);
           } else {
             console.warn('[EventEditModalV2] 无法解析 startTime，保持原值:', formData.startTime);
           }
         }
+      } else {
+        console.warn('⚠️ [EventEditModalV2] formData.startTime 为空，跳过时间格式化');
       }
       
       if (formData.endTime) {
@@ -1077,15 +1058,19 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const endDate = parseLocalTimeString(formData.endTime);
           endTimeForStorage = formatTimeForStorage(endDate);
+          console.log('✅ [EventEditModalV2] endTime 转换成功:', endTimeForStorage);
         } catch (parseError) {
           // 降级：尝试用 new Date 解析
           const endDate = new Date(formData.endTime);
           if (!isNaN(endDate.getTime())) {
             endTimeForStorage = formatTimeForStorage(endDate);
+            console.log('✅ [EventEditModalV2] endTime 转换成功(降级):', endTimeForStorage);
           } else {
             console.warn('[EventEditModalV2] 无法解析 endTime，保持原值:', formData.endTime);
           }
         }
+      } else {
+        console.warn('⚠️ [EventEditModalV2] formData.endTime 为空，跳过时间格式化');
       }
       
       // 🔧 Step 3: 检查是否是运行中的 Timer
@@ -1117,11 +1102,33 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       }
       
       // 🔧 Step 5: 确定 syncStatus
-      const timerSyncStatus = isRunningTimer ? 'local-only' : (event?.syncStatus || 'pending');
+      // 🔧 v2.17.2: 智能判断 syncStatus
+      // - Timer 运行中：强制 'local-only'
+      // - 有标签或日历映射：'pending'（需要同步）
+      // - 否则：保留原始状态或默认 'local-only'
+      let finalSyncStatus: SyncStatus;
+      
+      if (isRunningTimer) {
+        finalSyncStatus = 'local-only';
+      } else {
+        const hasTags = formData.tags && formData.tags.length > 0;
+        const hasCalendars = formData.calendarIds && formData.calendarIds.length > 0;
+        
+        if (hasTags || hasCalendars) {
+          // 用户添加了标签或选择了日历，需要同步
+          finalSyncStatus = 'pending';
+        } else {
+          // 保持原始状态，或默认为仅本地
+          finalSyncStatus = event?.syncStatus || 'local-only';
+        }
+      }
       
       console.log('🔍 [EventEditModalV2] Final event ID and sync status:', {
         eventId,
-        syncStatus: timerSyncStatus
+        syncStatus: finalSyncStatus,
+        isRunningTimer,
+        hasTags: formData.tags?.length > 0,
+        hasCalendars: formData.calendarIds?.length > 0
       });
       
       // 🔧 Step 6: 处理 Private 模式（send-only-private, bidirectional-private）
@@ -1156,8 +1163,20 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
 
       // 🔧 Step 7: 构建完整的 Event 对象
       // ✨ 直接使用 fullTitle (Slate JSON)，保留富文本格式
+      console.log('🏷️ [EventEditModalV2] 构建 updatedEvent 前的 tags:', {
+        'formData.tags': formData.tags,
+        'finalTags': finalTags,
+        'finalTags数量': finalTags?.length
+      });
+      
+      console.log('⏰ [EventEditModalV2] 构建 updatedEvent 前的时间:', {
+        'startTimeForStorage': startTimeForStorage,
+        'endTimeForStorage': endTimeForStorage,
+        'formData.allDay': formData.allDay
+      });
+      
       const updatedEvent: Event = {
-        ...event, // 保留原有字段（如 createdAt, syncStatus 等）
+        ...(event || {}), // ✅ 如果event为null，使用空对象（新建事件）
         ...formData,
         id: eventId, // 使用验证后的 ID
         title: finalTitle, // ✅ 直接传 Slate JSON 字符串，EventService.normalizeTitle 会统一处理
@@ -1175,10 +1194,12 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // EventService 会从 eventlog 生成 description (html/plainText)
         eventlog: currentEventlogJson,  // ✅ Slate JSON 字符串（EventService 自动转换为 EventLog 对象）
         description: undefined, // ✅ 让 EventService 从 eventlog 自动提取
-        syncStatus: timerSyncStatus, // 🔧 Timer 运行中保持 local-only
+        syncStatus: finalSyncStatus, // 🔧 v2.17.2: 智能判断同步状态
         // 🔧 日历同步配置（单一数据结构）
         calendarIds: formData.calendarIds,
         syncMode: formData.syncMode,
+        // 🔧 [CRITICAL FIX] 显式包含 subEventConfig（防止被遗漏）
+        subEventConfig: formData.subEventConfig,
       } as Event;
 
       // 🔧 调试日志：验证同步配置
@@ -1188,9 +1209,21 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: formData.syncMode,
         '完整 updatedEvent.syncMode': updatedEvent.syncMode,
         '完整 updatedEvent.calendarIds': updatedEvent.calendarIds,
+        '完整 updatedEvent.subEventConfig': updatedEvent.subEventConfig,
+        '🏷️ updatedEvent.tags': updatedEvent.tags,
+        '🏷️ tags数量': updatedEvent.tags?.length,
+        '🏷️ tags详情': updatedEvent.tags?.map((id: string) => {
+          const tag = TagService.getTagById(id);
+          return { id, name: tag?.name, emoji: tag?.emoji };
+        }),
         hasEventlog: !!currentEventlogJson,
         eventlogType: typeof currentEventlogJson,
         eventlogLength: currentEventlogJson.length,
+        // 🔧 新增：子事件相关信息
+        isParentMode,
+        isSystemChild: !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp),
+        parentEventId: formData.parentEventId,
+        '子事件配置(subEventConfig)': formData.subEventConfig,
       });
       
       // 🔧 调试：对比保存前后的值（异步加载）
@@ -1323,6 +1356,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           syncMode: updatedEvent.syncMode
         });
         
+        // 🔧 [BUG FIX] 如果子事件的 calendarIds 为空，从父事件的 subEventConfig 继承
+        const parentEvent = await EventService.getEventById(formData.parentEventId);
+        if ((!updatedEvent.calendarIds || updatedEvent.calendarIds.length === 0) && parentEvent?.subEventConfig?.calendarIds) {
+          updatedEvent.calendarIds = parentEvent.subEventConfig.calendarIds;
+          console.log('🔧 [EventEditModalV2] 系统子事件：从父事件继承 calendarIds:', updatedEvent.calendarIds);
+        }
+        
         // 更新父事件的 subEventConfig（子事件配置模板）
         await EventHub.updateFields(formData.parentEventId, {
           subEventConfig: {
@@ -1336,7 +1376,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         console.log('✅ [EventEditModalV2] 父事件的 subEventConfig 已更新');
         
         // 🔧 批量更新父事件的所有系统子事件（保持一致性）
-        const parentEvent = await EventService.getEventById(formData.parentEventId);
+        // parentEvent 已在上面声明，直接使用
         const allSiblings = await EventService.getSubordinateEvents(formData.parentEventId);
         
         console.log('🔗 [EventEditModalV2] 批量更新所有兄弟系统子事件:', {
@@ -2245,27 +2285,181 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
    * @param slateJson - Slate JSON 字符串（从 ModalSlate 的 onChange 回调接收）
    */
   const handleTimelogChange = (slateJson: string) => {
-    // 🔧 将 JSON 字符串转换为对象（EventService 需要 Descendant[] 数组）
+    // 🔧 直接保存 JSON 字符串（EventService 会统一处理）
     console.log('📝 [EventEditModalV2] EventLog 变化:', {
       slateJsonLength: slateJson.length,
       preview: slateJson.substring(0, 100)
     });
     
-    try {
-      const slateNodes = JSON.parse(slateJson);
-      setFormData({
-        ...formData,
-        eventlog: slateNodes as any,  // ✅ Slate JSON 对象（Descendant[] 数组）
-      });
-    } catch (error) {
-      console.error('❌ [EventEditModalV2] Slate JSON 解析失败:', error);
-      // 保留字符串格式作为后备
-      setFormData({
-        ...formData,
-        eventlog: slateJson as any,
-      });
-    }
+    setFormData({
+      ...formData,
+      eventlog: slateJson,  // ✅ Slate JSON 字符串
+    });
   };
+
+  /**
+   * 图片上传处理
+   */
+  const handleImageUpload = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    setIsExtracting(true);
+    console.log(`[EventEditModalV2] 开始处理 ${files.length} 张图片...`);
+
+    try {
+      const workflow = new EventExtractionWorkflow();
+      const allQRCodes: QRCodeInfo[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        console.log(`[EventEditModalV2] 处理图片 ${i + 1}/${files.length}:`, file.name);
+
+        try {
+          // 执行工作流：OCR + QR识别 + 事件提取
+          const result = await workflow.execute(file);
+
+          if (result.qrCodes && result.qrCodes.length > 0) {
+            // EventExtractionWorkflow 已经添加了 id 和 extractedAt
+            allQRCodes.push(...(result.qrCodes as QRCodeInfo[]));
+            console.log(`[EventEditModalV2] ✅ 从 ${file.name} 提取了 ${result.qrCodes.length} 个二维码`);
+          }
+
+          // 如果提取到事件信息，自动填充表单
+          if (result.extractedEvent && !formData.title) {
+            console.log('[EventEditModalV2] 自动填充事件信息:', result.extractedEvent);
+            setFormData(prev => ({
+              ...prev,
+              title: result.extractedEvent!.title || prev.title,
+              startTime: result.extractedEvent!.startTime || prev.startTime,
+              endTime: result.extractedEvent!.endTime || prev.endTime,
+              location: result.extractedEvent!.location || prev.location,
+              description: result.extractedEvent!.description || prev.description,
+            }));
+          }
+        } catch (error) {
+          console.error(`[EventEditModalV2] ❌ 处理图片失败:`, file.name, error);
+        }
+      }
+
+      // 保存二维码到 EventLog
+      if (allQRCodes.length > 0) {
+        setExtractedQRCodes(prev => [...prev, ...allQRCodes]);
+        
+        // 更新 eventlog 中的 qrCodes
+        const currentEventLog = formData.eventlog;
+        let eventLogObj: any = {};
+        
+        if (typeof currentEventLog === 'string') {
+          try {
+            eventLogObj = { slateJson: currentEventLog };
+          } catch (e) {
+            eventLogObj = { slateJson: '[]' };
+          }
+        } else if (typeof currentEventLog === 'object') {
+          eventLogObj = currentEventLog;
+        }
+
+        eventLogObj.qrCodes = [...(eventLogObj.qrCodes || []), ...allQRCodes];
+        
+        setFormData(prev => ({
+          ...prev,
+          eventlog: eventLogObj
+        }));
+
+        console.log(`[EventEditModalV2] ✅ 保存了 ${allQRCodes.length} 个二维码到 EventLog`);
+        alert(`成功识别 ${allQRCodes.length} 个二维码！`);
+      } else {
+        alert('未识别到二维码，请检查图片质量。');
+      }
+
+    } catch (error) {
+      console.error('[EventEditModalV2] ❌ 图片处理失败:', error);
+      alert('图片处理失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setIsExtracting(false);
+      // 重置文件输入
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  }, [formData]);
+
+  /**
+   * 从 HTML 中提取图片并处理
+   */
+  const handleExtractFromHTML = useCallback(async () => {
+    console.log('[EventEditModalV2] 从 HTML 提取图片...');
+    
+    const html = typeof formData.eventlog === 'object' && formData.eventlog.html
+      ? formData.eventlog.html
+      : typeof formData.eventlog === 'string'
+      ? formData.eventlog
+      : '';
+
+    if (!html) {
+      alert('EventLog 中没有 HTML 内容');
+      return;
+    }
+
+    const images = extractImagesFromHTML(html);
+    if (images.length === 0) {
+      alert('HTML 中没有图片');
+      return;
+    }
+
+    setIsExtracting(true);
+
+    try {
+      const imageBlobs = await extractedImagesToBlobs(images);
+      console.log(`[EventEditModalV2] 提取了 ${imageBlobs.length} 张图片`);
+
+      const workflow = new EventExtractionWorkflow();
+      const allQRCodes: QRCodeInfo[] = [];
+
+      for (const { image, metadata } of imageBlobs) {
+        try {
+          const result = await workflow.execute(image);
+          if (result.qrCodes && result.qrCodes.length > 0) {
+            allQRCodes.push(...(result.qrCodes as QRCodeInfo[]));
+            console.log(`[EventEditModalV2] ✅ 从图片 ${metadata.index} 提取了 ${result.qrCodes.length} 个二维码`);
+          }
+        } catch (error) {
+          console.error(`[EventEditModalV2] ❌ 处理图片 ${metadata.index} 失败:`, error);
+        }
+      }
+
+      if (allQRCodes.length > 0) {
+        setExtractedQRCodes(prev => [...prev, ...allQRCodes]);
+        
+        // 更新 eventlog
+        const currentEventLog = formData.eventlog;
+        let eventLogObj: any = {};
+        
+        if (typeof currentEventLog === 'string') {
+          eventLogObj = { slateJson: currentEventLog };
+        } else if (typeof currentEventLog === 'object') {
+          eventLogObj = currentEventLog;
+        }
+
+        eventLogObj.qrCodes = [...(eventLogObj.qrCodes || []), ...allQRCodes];
+        
+        setFormData(prev => ({
+          ...prev,
+          eventlog: eventLogObj
+        }));
+
+        alert(`从 HTML 图片中识别到 ${allQRCodes.length} 个二维码！`);
+      } else {
+        alert('HTML 图片中未识别到二维码');
+      }
+
+    } catch (error) {
+      console.error('[EventEditModalV2] ❌ 从 HTML 提取失败:', error);
+      alert('提取失败: ' + (error instanceof Error ? error.message : '未知错误'));
+    } finally {
+      setIsExtracting(false);
+    }
+  }, [formData]);
 
   /**
    * Slate 编辑器就绪回调
@@ -2448,15 +2642,25 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                           const isLocalEvent = event?.fourDNoteSource === true || event?.source === 'local';
                           
                           // 提取标签的日历映射
+                          const allTags = TagService.getFlatTags();
+                          console.log('🔍 [EventEditModalV2] 所有标签:', allTags.map(t => ({ id: t.id, name: t.name, calendarMapping: t.calendarMapping })));
+                          
                           const mappedCalendars = selectedIds
                             .map(tagId => {
-                              const tag = TagService.getFlatTags().find(t => t.id === tagId);
+                              const tag = allTags.find(t => t.id === tagId);
+                              console.log('🔍 [EventEditModalV2] 标签映射检查:', {
+                                tagId,
+                                tagName: tag?.name,
+                                calendarMapping: tag?.calendarMapping,
+                                calendarId: tag?.calendarMapping?.calendarId
+                              });
                               return tag?.calendarMapping?.calendarId;
                             })
                             .filter((id): id is string => !!id);
                           
                           console.log('🏷️ [EventEditModalV2] 标签变更，自动映射日历:', {
                             selectedTags: selectedIds,
+                            selectedTagNames: selectedIds.map(id => allTags.find(t => t.id === id)?.name),
                             mappedCalendars,
                             isLocalEvent,
                             '当前syncMode': formData.syncMode,
@@ -2470,14 +2674,67 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                               tags: selectedIds
                             };
                             
+                            // 🔧 如果标题为空，立即用第一个标签名称填充标题
+                            // 🔥 需要解析JSON来检查真正的内容是否为空
+                            const isTitleEmpty = (() => {
+                              if (!prev.title || !prev.title.trim()) return true;
+                              try {
+                                const nodes = JSON.parse(prev.title);
+                                if (!Array.isArray(nodes) || nodes.length === 0) return true;
+                                // 检查第一个paragraph的text是否为空
+                                const firstNode = nodes[0];
+                                if (firstNode.type === 'paragraph' && firstNode.children) {
+                                  const allTextsEmpty = firstNode.children.every((child: any) => !child.text || child.text.trim() === '');
+                                  return allTextsEmpty;
+                                }
+                                return true;
+                              } catch (e) {
+                                return !prev.title.trim();
+                              }
+                            })();
+                            
+                            if (isTitleEmpty && selectedIds.length > 0) {
+                              const firstTag = allTags.find(t => t.id === selectedIds[0]);
+                              if (firstTag) {
+                                const tagTitleText = `${firstTag.emoji || ''}${firstTag.name}`.trim();
+                                const tagTitleJson = JSON.stringify([{ type: 'paragraph', children: [{ text: tagTitleText }] }]);
+                                updates.title = tagTitleJson;
+                                // 同步 titleRef
+                                titleRef.current = tagTitleJson;
+                                console.log('🏷️ [EventEditModalV2] 标题为空，使用标签名称填充title:', {
+                                  tagId: selectedIds[0],
+                                  tagName: firstTag.name,
+                                  tagEmoji: firstTag.emoji,
+                                  tagTitleText,
+                                  tagTitleJson,
+                                  '设置前title': prev.title,
+                                  '设置后title': tagTitleJson
+                                });
+                              } else {
+                                console.warn('⚠️ [EventEditModalV2] 找不到标签:', selectedIds[0]);
+                              }
+                            } else {
+                              console.log('🔍 [EventEditModalV2] 不填充标题:', {
+                                '标题是否为空': isTitleEmpty,
+                                'prev.title': prev.title,
+                                '是否有标签': selectedIds.length > 0,
+                                selectedIds
+                              });
+                            }
+                            
                             // 规则 1: 本地事件 - Plan 和 Actual 都自动添加映射日历
                             if (isLocalEvent) {
                               // ✅ 标签变更时不修改 syncMode（保留现有值或默认值）
                               // syncMode 只在初始化或用户手动修改时设置
                               
-                              // 自动添加标签映射的日历（智能合并）
+                              // 🔧 Plan 配置：自动添加标签映射的日历（智能合并）
                               if (mappedCalendars.length > 0) {
                                 updates.calendarIds = [...new Set([...(prev.calendarIds || []), ...mappedCalendars])];
+                                console.log('🔧 [EventEditModalV2] Plan: 添加标签映射日历', {
+                                  '原calendarIds': prev.calendarIds,
+                                  '标签映射': mappedCalendars,
+                                  '合并后': updates.calendarIds
+                                });
                               }
                               
                               // ✅ Actual 配置（subEventConfig）
@@ -2488,6 +2745,11 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                               
                               if (mappedCalendars.length > 0) {
                                 updates.subEventConfig.calendarIds = [...new Set([...(prev.subEventConfig?.calendarIds || []), ...mappedCalendars])];
+                                console.log('🔧 [EventEditModalV2] Actual: 添加标签映射日历', {
+                                  '原subEventConfig.calendarIds': prev.subEventConfig?.calendarIds,
+                                  '标签映射': mappedCalendars,
+                                  '合并后': updates.subEventConfig.calendarIds
+                                });
                               }
                               
                               console.log('✅ [EventEditModalV2] 本地事件：Plan + Actual 都添加映射日历', {
@@ -2501,6 +2763,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                             else {
                               // ⛔ Plan 保持不变（不添加映射日历，不修改 syncMode）
                               // 标签变更时不修改 syncMode
+                              console.log('🔧 [EventEditModalV2] 远程事件：Plan 保持不变', {
+                                '当前calendarIds': prev.calendarIds,
+                                '标签映射（不添加）': mappedCalendars
+                              });
                               
                               // ✅ Actual 配置
                               updates.subEventConfig = {
@@ -2511,6 +2777,11 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                               // ✅ Actual 添加映射日历
                               if (mappedCalendars.length > 0) {
                                 updates.subEventConfig.calendarIds = [...new Set([...(prev.subEventConfig?.calendarIds || []), ...mappedCalendars])];
+                                console.log('🔧 [EventEditModalV2] Actual: 添加标签映射日历', {
+                                  '原subEventConfig.calendarIds': prev.subEventConfig?.calendarIds,
+                                  '标签映射': mappedCalendars,
+                                  '合并后': updates.subEventConfig.calendarIds
+                                });
                               }
                               
                               console.log('✅ [EventEditModalV2] 远程事件：Actual 添加映射日历', {
@@ -2850,15 +3121,34 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                       >
                         {(() => {
                           // 🔧 父模式：显示mainEvent的calendarIds；子模式：显示parentEvent的calendarIds
-                          const selectedIds = isParentMode 
+                          let baseCalendarIds = isParentMode 
                             ? (formData.calendarIds || [])
                             : (parentEvent?.calendarIds || []);
+                          
+                          // 🔧 自动从标签映射中提取 calendarIds（与实际进展保持一致）
+                          const mappedCalendarIds: string[] = [];
+                          if (formData.tags && formData.tags.length > 0) {
+                            const flatTags = TagService.getFlatTags();
+                            formData.tags.forEach(tagId => {
+                              const tag = flatTags.find(t => t.id === tagId);
+                              if (tag?.calendarMapping?.calendarId) {
+                                if (!mappedCalendarIds.includes(tag.calendarMapping.calendarId)) {
+                                  mappedCalendarIds.push(tag.calendarMapping.calendarId);
+                                }
+                              }
+                            });
+                          }
+                          
+                          // 合并用户选择的日历和标签映射的日历
+                          const selectedIds = [...new Set([...baseCalendarIds, ...mappedCalendarIds])];
+                          
                           console.log('🎨 [计划日历选择器] 渲染:', {
                             isParentMode,
+                            baseCalendarIds,
+                            mappedCalendarIds,
                             selectedIds,
                             'selectedIds.length': selectedIds.length,
-                            'formData.calendarIds': formData.calendarIds,
-                            'parentEvent.calendarIds': parentEvent?.calendarIds,
+                            'formData.tags': formData.tags,
                             'availableCalendars数量': availableCalendars.length
                           });
                           
@@ -3552,6 +3842,108 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     className={`event-log-editor-wrapper ${showTopShadow ? 'show-top-shadow' : ''}`}
                     ref={rightPanelRef}
                   >
+                    {/* 图片上传工具栏 */}
+                    <div style={{
+                      display: 'flex',
+                      gap: '8px',
+                      padding: '8px 16px',
+                      borderBottom: '1px solid #e5e7eb',
+                      backgroundColor: '#f9fafb'
+                    }}>
+                      {/* 上传图片按钮 */}
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isExtracting}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '6px 12px',
+                          fontSize: '13px',
+                          backgroundColor: isExtracting ? '#e5e7eb' : '#3b82f6',
+                          color: isExtracting ? '#6b7280' : 'white',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: isExtracting ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isExtracting) {
+                            e.currentTarget.style.backgroundColor = '#2563eb';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isExtracting) {
+                            e.currentTarget.style.backgroundColor = '#3b82f6';
+                          }
+                        }}
+                        title="上传活动海报，自动识别二维码和活动信息"
+                      >
+                        {isExtracting ? '⏳ 处理中...' : '📸 上传海报'}
+                      </button>
+
+                      {/* 从HTML提取按钮 */}
+                      <button
+                        type="button"
+                        onClick={handleExtractFromHTML}
+                        disabled={isExtracting}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '6px 12px',
+                          fontSize: '13px',
+                          backgroundColor: isExtracting ? '#e5e7eb' : 'white',
+                          color: isExtracting ? '#6b7280' : '#6b7280',
+                          border: '1px solid #d1d5db',
+                          borderRadius: '6px',
+                          cursor: isExtracting ? 'not-allowed' : 'pointer',
+                          transition: 'all 0.2s'
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!isExtracting) {
+                            e.currentTarget.style.backgroundColor = '#f3f4f6';
+                          }
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!isExtracting) {
+                            e.currentTarget.style.backgroundColor = 'white';
+                          }
+                        }}
+                        title="从 EventLog 的 HTML 内容中提取图片并识别二维码"
+                      >
+                        🔍 提取HTML图片
+                      </button>
+
+                      {/* 显示提取的二维码数量 */}
+                      {extractedQRCodes.length > 0 && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          marginLeft: 'auto',
+                          padding: '6px 12px',
+                          fontSize: '13px',
+                          backgroundColor: '#dcfce7',
+                          color: '#166534',
+                          borderRadius: '6px'
+                        }}>
+                          ✅ {extractedQRCodes.length} 个二维码
+                        </div>
+                      )}
+
+                      {/* 隐藏的文件输入 */}
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        style={{ display: 'none' }}
+                        onChange={(e) => handleImageUpload(e.target.files)}
+                      />
+                    </div>
+
                     <ModalSlate
                       ref={slateEditorRef}
                       key={`editor-${formData.id}`}
@@ -3562,6 +3954,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                       onChange={handleTimelogChange}
                       className="eventlog-editor"
                     />
+
+                    {/* 显示提取的二维码 */}
+                    {extractedQRCodes.length > 0 && (
+                      <QRCodeDisplay
+                        qrCodes={extractedQRCodes}
+                        onRemove={(qrCodeId) => {
+                          setExtractedQRCodes(prev => prev.filter(qr => qr.id !== qrCodeId));
+                        }}
+                      />
+                    )}
                   </div>
 
                   {/* HeadlessFloatingToolbar */}

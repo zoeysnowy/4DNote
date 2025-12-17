@@ -372,8 +372,8 @@ export class AIConfigManager {
 ```typescript
 export interface ExtractedEventInfo {
   title: string;                    // 会议标题
-  startTime: string;                // ISO 8601 格式 (含时区)
-  endTime: string;                  // ISO 8601 格式
+  startTime: string;                // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  endTime: string;                  // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
   location?: string;                // 地点
   attendees?: Array<{               // 参与人列表
     name: string;

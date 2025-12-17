@@ -26,42 +26,30 @@ export const TimestampDividerElement: React.FC<RenderElementProps> = ({ attribut
         position: 'relative',
         display: 'flex',
         alignItems: 'center',
-        margin: '12px 0 8px 0',
+        marginBottom: '0',
+        paddingTop: '8px',
+        paddingBottom: '4px',
         paddingLeft: '20px',
+        opacity: 0.7,
         userSelect: 'none'
       }}
     >
-      {/* 左侧竖线标识 */}
-      <div
-        contentEditable={false}
-        style={{
-          position: 'absolute',
-          left: '8px',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          width: '3px',
-          height: '12px',
-          background: '#a855f7',
-          borderRadius: '2px',
-          pointerEvents: 'none'
-        }}
-      />
+      {/* timestamp 不绘制 preline，由后续段落向上连接 */}
       
-      {/* 时间戳文本 */}
+      {/* 时间戳文本 - 纯文字样式 */}
       <span 
         className="timestamp-text"
         style={{
           fontSize: '12px',
-          fontWeight: 500,
-          color: '#6b7280',
+          color: '#999',
           whiteSpace: 'nowrap',
           position: 'relative',
           zIndex: 1
         }}
       >
-        ▸ {node.displayText || new Date(node.timestamp).toLocaleString()}
+        {node.displayText || new Date(node.timestamp).toLocaleString()}
       </span>
-      
+
       {children}
     </div>
   );

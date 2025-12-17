@@ -11,7 +11,7 @@ import { formatTimeForStorage } from '../../utils/timeUtils';
 
 export interface AIConfig {
   /** 提供商类型 */
-  provider: 'ollama' | 'dashscope' | 'hunyuan' | 'google-ai';
+  provider: 'ollama' | 'dashscope' | 'hunyuan' | 'google-ai' | 'doubao';
   
   /** 当前使用的模型 */
   currentModel: 'qwen' | 'gemma';
@@ -43,6 +43,12 @@ export interface AIConfig {
   /** Google AI API Key（未来支持） */
   googleAIApiKey?: string;
   
+  /** 豆包/元宝 API Key（字节跳动） */
+  doubaoApiKey?: string;
+  
+  /** 豆包/元宝模型版本 */
+  doubaoModel?: 'doubao-pro-4k' | 'doubao-pro-32k' | 'doubao-lite-4k' | 'doubao-lite-32k';
+  
   /** 是否自动检测地区 */
   autoDetectRegion: boolean;
   
@@ -59,12 +65,14 @@ export interface AIConfig {
 export interface APIPreset {
   id: string;
   name: string;
-  provider: 'dashscope' | 'hunyuan';
+  provider: 'dashscope' | 'hunyuan' | 'doubao';
   dashscopeApiKey?: string;
   dashscopeModel?: 'qwen-plus' | 'qwen-turbo' | 'qwen-max';
   hunyuanSecretId?: string;
   hunyuanSecretKey?: string;
   hunyuanModel?: 'hunyuan-lite' | 'hunyuan-standard' | 'hunyuan-pro';
+  doubaoApiKey?: string;
+  doubaoModel?: 'doubao-pro-4k' | 'doubao-pro-32k' | 'doubao-lite-4k' | 'doubao-lite-32k';
   createdAt: string;
 }
 
@@ -311,6 +319,9 @@ export class AIConfigManager {
         update.hunyuanSecretId = preset.hunyuanSecretId;
         update.hunyuanSecretKey = preset.hunyuanSecretKey;
         update.hunyuanModel = preset.hunyuanModel;
+      } else if (preset.provider === 'doubao') {
+        update.doubaoApiKey = preset.doubaoApiKey;
+        update.doubaoModel = preset.doubaoModel;
       }
       
       this.saveConfig(update);

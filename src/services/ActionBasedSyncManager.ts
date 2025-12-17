@@ -4,6 +4,7 @@ import { STORAGE_KEYS } from '../constants/storage';
 import { logger } from '../utils/logger';
 import { EventService } from './EventService';
 import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
+import { SignatureUtils } from '../utils/signatureUtils';
 import { storageManager } from './storage/StorageManager';
 import { SyncStatus } from './storage/types';
 import type { SyncQueueItem } from './storage/types';
@@ -777,10 +778,10 @@ export class ActionBasedSyncManager {
         data: action.data,
         status: action.synchronized ? SyncStatus.Synced : SyncStatus.Pending,
         attempts: action.retryCount,
-        lastAttemptAt: action.lastAttemptTime?.toISOString(),
+        lastAttemptAt: action.lastAttemptTime ? formatTimeForStorage(action.lastAttemptTime) : undefined,
         error: action.lastError,
-        createdAt: action.timestamp.toISOString(),
-        updatedAt: action.synchronizedAt?.toISOString() || new Date().toISOString()
+        createdAt: formatTimeForStorage(action.timestamp),
+        updatedAt: action.synchronizedAt ? formatTimeForStorage(action.synchronizedAt) : formatTimeForStorage(new Date())
       }));
 
       // 批量保存（使用 put 操作，自动覆盖相同 ID）
@@ -1282,6 +1283,7 @@ export class ActionBasedSyncManager {
   }
 
   // 获取远程事件的描述内容 - 修复版本
+  // ⚠️ [DEPRECATED v2.18.0] 此方法已不推荐使用，应直接使用 convertRemoteEventToLocal
   private getEventDescription(event: any): string {
     // 尝试多个可能的描述字段
     const htmlContent = event.body?.content || 
@@ -1289,7 +1291,9 @@ export class ActionBasedSyncManager {
                        event.bodyPreview || 
                        '';
     
-    return this.processEventDescription(htmlContent, 'outlook', 'sync', event);
+    // ✅ [v2.18.0] 直接返回清理后的纯文本，不添加签名备注
+    // 因为 convertRemoteEventToLocal 会直接使用 HTML 传递给 normalizeEventLog
+    return this.cleanHtmlContent(htmlContent);
   }
 
   // 🆕 编辑锁定机制 - 防止远程同步覆盖本地正在编辑的事件
@@ -2463,9 +2467,14 @@ private getUserSettings(): any {
         const remoteEnd = this.safeFormatDateTime(action.data.end?.dateTime || action.data.end);
         const timeChanged = remoteStart !== localEvent.startTime || remoteEnd !== localEvent.endTime;
         
+        // ✅ [v2.18.0 优化] 比较核心内容，移除签名后再比较
+        // 数据流：Outlook HTML → 清理 HTML 标签 → 移除签名 → 比较
         const htmlContent = action.data.body?.content || action.data.description || action.data.bodyPreview || '';
-        const cleanDescription = this.processEventDescription(htmlContent, 'outlook', 'sync', action.data);
-        const descriptionChanged = cleanDescription !== localEvent.description;
+        const cleanDescription = this.cleanHtmlContent(htmlContent);
+        // 🔥 [CRITICAL FIX] 移除签名后再比较，避免误判变化
+        const remoteCoreContent = this.extractCoreContent(cleanDescription);
+        const localCoreContent = this.extractCoreContent(localEvent.description || '');
+        const descriptionChanged = remoteCoreContent !== localCoreContent;
         
         // 🔧 无变化则跳过
         if (!titleChanged && !timeChanged && !descriptionChanged) {
@@ -2487,16 +2496,39 @@ private getUserSettings(): any {
           });
         }
         
-        // 🔧 构建更新
+        // 🔧 构建增量更新（只更新 Outlook 返回的字段，保留本地专属字段）
         const updates: any = {
-          description: cleanDescription,
-          startTime: remoteStart,
-          endTime: remoteEnd,
-          location: action.data.location?.displayName || '',
-          isAllDay: action.data.isAllDay || false,
           lastSyncTime: formatTimeForStorage(new Date()),
           syncStatus: 'synced'
         };
+        
+        // ✅ 增量更新原则：只更新变化的字段
+        if (descriptionChanged) {
+          // 🔥 [CRITICAL FIX] 传递纯文本到 eventlog
+          // EventService.updateEvent 会自动：
+          // 1. 调用 normalizeEventLog 将纯文本转换为 EventLog 对象（自动处理 Block-Level Timestamp）
+          // 2. 从 eventlog.plainText 提取核心内容（移除签名）
+          // 3. 调用 SignatureUtils.addSignature 添加新签名到 description
+          
+          // ✅ 传递纯文本，让 normalizeEventLog 自动处理格式转换和时间戳
+          updates.eventlog = remoteCoreContent;  // 传递纯文本，不要手动构造 slateJson
+        }
+        
+        if (timeChanged) {
+          updates.startTime = remoteStart;
+          updates.endTime = remoteEnd;
+        }
+        
+        // ✅ location 和 isAllDay 也只在变化时更新
+        const remoteLocation = action.data.location?.displayName || '';
+        if (remoteLocation !== localEvent.location) {
+          updates.location = remoteLocation;
+        }
+        
+        const remoteIsAllDay = action.data.isAllDay || false;
+        if (remoteIsAllDay !== localEvent.isAllDay) {
+          updates.isAllDay = remoteIsAllDay;
+        }
         
         // ✅ 修复: bidirectional 模式下不覆盖本地富文本标题
         // 只有 receive-only 模式才从远程同步标题
@@ -2508,15 +2540,13 @@ private getUserSettings(): any {
           };
         }
         
-        // 🔧 同步 eventlog（使用 Slate JSON 格式，让 EventService 自动转换）
-        // EventService 会自动检测 Slate JSON 字符串并转换为 EventLog 对象
-        if (descriptionChanged) {
-          const slateJson = JSON.stringify([{ type: 'paragraph', children: [{ text: cleanDescription }] }]);
-          updates.eventlog = slateJson;  // ✅ 传递 Slate JSON 字符串，EventService 自动转换
-        }
+        // ✅ 明确保护本地专属字段（不被覆盖）
+        // tags, remarkableSource, childEventIds, parentEventId, linkedEventIds, backlinks
+        // 这些字段会被 EventService 自动保留，不需要显式传递
         
         // ✅ 通过 EventService 更新（自动触发 eventsUpdated）
-        const updatedEvent = await EventService.updateEvent(localEvent.id, updates, true);
+        // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
+        const updatedEvent = await EventService.updateEvent(localEvent.id, updates, true, { source: 'external-sync' });
         
         // 🔧 [CRITICAL FIX] 更新 IndexMap，避免下次同步再次检测到变化
         if (updatedEvent) {
@@ -2742,7 +2772,7 @@ private getUserSettings(): any {
               const taskData = {
                 title: action.data.title?.simpleTitle || 'Untitled Task',
                 body: action.data.description || action.data.eventlog?.plainText,
-                dueDate: action.data.endTime || action.data.startTime
+                dueDateTime: action.data.endTime || action.data.startTime
               };
               
               const createdTask = await this.microsoftService.syncTaskToTodoList(todoListId, taskData);
@@ -2763,22 +2793,13 @@ private getUserSettings(): any {
           
           // 同步到 Outlook Calendar (createSyncRoute.target === 'calendar')
 
-          // 🔧 使用新的描述处理方法
-          // 🆕 v2.14.1: 优先从 eventlog 对象提取 html
-          let descriptionSource = action.data.description || '';
-          if (action.data.eventlog && typeof action.data.eventlog === 'object') {
-            descriptionSource = action.data.eventlog.html || action.data.eventlog.plainText || descriptionSource;
-          }
-          
-          console.log('🔍 [ActionBasedSyncManager CREATE] Description extraction:', {
-            eventId: action.entityId,
-            hasEventlog: !!action.data.eventlog,
-            eventlogType: typeof action.data.eventlog,
-            hasHtml: !!(action.data.eventlog?.html),
-            hasPlainText: !!(action.data.eventlog?.plainText),
-            descriptionSourceLength: descriptionSource.length,
-            descriptionPreview: descriptionSource.substring(0, 100)
-          });
+          // ✅ [v2.18.1 架构优化] 单一数据源 - 直接使用 description
+          // 数据流：Event.description（含签名）→ processEventDescription（处理签名）→ Outlook
+          // 说明：description 字段已由 EventService.normalizeEvent 生成（包含签名）
+          //       processEventDescription 会智能处理：
+          //         - 移除旧签名
+          //         - 添加 4DNote 创建/编辑签名
+          const descriptionSource = action.data.description || '';
           
           const createDescription = this.processEventDescription(
             descriptionSource,
@@ -2865,7 +2886,12 @@ private getUserSettings(): any {
           // 🔧 如果没有标签映射，从 calendarIds 数组中获取第一个日历ID
           if (!syncTargetCalendarId && action.data.calendarIds && Array.isArray(action.data.calendarIds) && action.data.calendarIds.length > 0) {
             syncTargetCalendarId = action.data.calendarIds[0];
-            // console.log('🔍 [SYNC] Using direct calendar ID from array:', syncTargetCalendarId);
+            console.log('🔍 [SYNC] Using direct calendar ID from array:', {
+              calendarIds: action.data.calendarIds,
+              selectedCalendarId: syncTargetCalendarId,
+              eventId: action.entityId,
+              eventTitle: action.data.title?.simpleTitle
+            });
           }
           
           // console.log('🔍 [SYNC] Calendar ID resolution:', {
@@ -2878,8 +2904,15 @@ private getUserSettings(): any {
           
           // 🚨 只有在真的没有任何日历信息时才使用默认日历（全新创建的事件）
           if (!syncTargetCalendarId) {
-      // console.log('🔍 [SYNC] No calendar ID at all (new event), using default calendar');
-            syncTargetCalendarId = this.microsoftService.getSelectedCalendarId();
+            const defaultCalendarId = this.microsoftService.getSelectedCalendarId();
+            console.warn('⚠️ [SYNC] No calendar ID at all (new event), using default calendar:', {
+              eventId: action.entityId,
+              eventTitle: action.data.title?.simpleTitle,
+              'event.calendarIds': action.data.calendarIds,
+              'defaultCalendarId': defaultCalendarId,
+              'event.tags': action.data.tags
+            });
+            syncTargetCalendarId = defaultCalendarId;
           }
           
           // 🔧 [NEW] 验证目标日历是否存在，不存在则降级到默认日历
@@ -3055,12 +3088,25 @@ private getUserSettings(): any {
             // 🔧 如果没有标签映射，从 calendarIds 数组中获取第一个日历ID
             if (!syncTargetCalendarId && action.data.calendarIds && Array.isArray(action.data.calendarIds) && action.data.calendarIds.length > 0) {
               syncTargetCalendarId = action.data.calendarIds[0];
-              // console.log('🔍 [SYNC-UPDATE] Using direct calendar ID from array:', syncTargetCalendarId);
+              console.log('🔍 [SYNC-UPDATE] Using direct calendar ID from array:', {
+                calendarIds: action.data.calendarIds,
+                selectedCalendarId: syncTargetCalendarId,
+                eventId: action.entityId,
+                eventTitle: action.data.title?.simpleTitle
+              });
             }
             
             // 🚨 只有在真的没有任何日历信息时才使用默认日历
             if (!syncTargetCalendarId) {
-              syncTargetCalendarId = this.microsoftService.getSelectedCalendarId();
+              const defaultCalendarId = this.microsoftService.getSelectedCalendarId();
+              console.warn('⚠️ [SYNC-UPDATE] No calendar ID, using default calendar:', {
+                eventId: action.entityId,
+                eventTitle: action.data.title?.simpleTitle,
+                'event.calendarIds': action.data.calendarIds,
+                'defaultCalendarId': defaultCalendarId,
+                'event.tags': action.data.tags
+              });
+              syncTargetCalendarId = defaultCalendarId;
             }
             // 🔍 [NEW] 构建事件描述，保持原有的创建时间记录
             const originalCreateTime = this.extractOriginalCreateTime(action.data.description || '');
@@ -3190,11 +3236,8 @@ private getUserSettings(): any {
               
               try {
                 // 在新日历中创建事件（相当于迁移）
-                // 🆕 v2.14.1: 优先从 eventlog 对象提取 html
-                let descriptionSource = action.data.description || '';
-                if (action.data.eventlog && typeof action.data.eventlog === 'object') {
-                  descriptionSource = action.data.eventlog.html || action.data.eventlog.plainText || descriptionSource;
-                }
+                // ✅ [v2.18.1] 使用 description 字段（已包含签名，由 normalizeEvent 生成）
+                const descriptionSource = action.data.description || '';
                 
                 const migrateDescription = this.processEventDescription(
                   descriptionSource,
@@ -3260,11 +3303,8 @@ private getUserSettings(): any {
           
           // 描述处理：添加同步备注管理
           if (action.data.description !== undefined) {
-            // 🆕 v2.14.1: 优先从 eventlog 对象提取 html
-            let descriptionSource = action.data.description || '';
-            if (action.data.eventlog && typeof action.data.eventlog === 'object') {
-              descriptionSource = action.data.eventlog.html || action.data.eventlog.plainText || descriptionSource;
-            }
+            // ✅ [v2.18.1] 单一数据源 - 直接使用 description（已包含签名）
+            const descriptionSource = action.data.description || '';
             
             const updateDescription = this.processEventDescription(
               descriptionSource,
@@ -3503,11 +3543,8 @@ private getUserSettings(): any {
                 }
               
                 
-                // 🆕 v2.14.1: 优先从 eventlog 对象提取 html
-                let descriptionSource = action.data.description || '';
-                if (action.data.eventlog && typeof action.data.eventlog === 'object') {
-                  descriptionSource = action.data.eventlog.html || action.data.eventlog.plainText || descriptionSource;
-                }
+                // ✅ [v2.18.1] 单一数据源 - 使用 description
+                const descriptionSource = action.data.description || '';
                 
                 const recreateDescription = this.processEventDescription(
                   descriptionSource,
@@ -3762,6 +3799,12 @@ private getUserSettings(): any {
         // 已经是 Date 对象，直接使用
         dateObj = dateInput;
       } else if (typeof dateInput === 'string') {
+        // 🔍 [DEBUG v2.18.8] 记录原始输入
+        console.log('[safeFormatDateTime] 📅 解析字符串:', {
+          原始值: dateInput,
+          类型: 'string'
+        });
+        
         // 字符串（ISO 8601 或其他格式），转换为 Date
         // 使用 parseLocalTimeString 而不是 new Date()，避免时区问题
         dateObj = parseLocalTimeString(dateInput);
@@ -3771,6 +3814,12 @@ private getUserSettings(): any {
           console.error('❌ safeFormatDateTime: Invalid date string:', dateInput);
           return formatTimeForStorage(new Date());
         }
+        
+        // 🔍 [DEBUG v2.18.8] 记录转换结果
+        console.log('[safeFormatDateTime] ✅ 转换成功:', {
+          原始值: dateInput,
+          转换后: formatTimeForStorage(dateObj)
+        });
       } else if (typeof dateInput === 'object' && 'dateTime' in dateInput) {
         // 🔧 处理 Outlook API 返回的对象 { dateTime: '...', timeZone: '...' }
         dateObj = parseLocalTimeString(dateInput.dateTime);
@@ -4000,7 +4049,8 @@ private getUserSettings(): any {
               syncStatus: 'synced' as const,  // 标记为已同步
             };
             
-            const updatedEvent = await EventService.updateEvent(existingEvent.id, updates, true);
+            // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
+            const updatedEvent = await EventService.updateEvent(existingEvent.id, updates, true, { source: 'external-sync' });
             
             if (updatedEvent) {
               // 🔧 [IndexMap 优化] 更新索引
@@ -4052,14 +4102,19 @@ private getUserSettings(): any {
           const remoteEnd = this.safeFormatDateTime(action.data.end?.dateTime || action.data.end);
           const timeChanged = remoteStart !== oldEvent.startTime || remoteEnd !== oldEvent.endTime;
           
-          // 尝试多个可能的描述字段
+          // ✅ [v2.18.0 优化] 直接比较纯文本内容，不添加签名备注
+          // 因为实际数据流已改为：Outlook HTML → eventlog.html（无损保存）
           const htmlContent = action.data.body?.content || 
                              action.data.description || 
                              action.data.bodyPreview || 
                              '';
           
-          const cleanDescription = this.processEventDescription(htmlContent, 'outlook', 'sync', action.data);
-          const descriptionChanged = cleanDescription !== oldEvent.description;
+          const cleanDescription = this.cleanHtmlContent(htmlContent);
+          
+          // 🔥 [CRITICAL FIX] 移除签名后再比较，避免签名差异导致误判
+          const remoteCoreContent = this.extractCoreContent(cleanDescription);
+          const localCoreContent = this.extractCoreContent(oldEvent.description || '');
+          const descriptionChanged = remoteCoreContent !== localCoreContent;
           
           // 🔧 [PERFORMANCE DEBUG] 诊断：为什么 1016 个事件都检测到变化？
           if (Math.random() < 0.01) { // 只打印 1% 的样本，避免刷屏
@@ -4101,22 +4156,12 @@ private getUserSettings(): any {
           }
           
           // 🆕 v2.14.1: 同步 description 到 eventlog 对象
+          // 🔥 [CRITICAL FIX] 传递核心内容（无签名），EventService 会自动添加签名
           let updatedEventlog = oldEvent.eventlog;
           if (descriptionChanged) {
-            // description 有变化，需要同步到 eventlog
-            if (typeof updatedEventlog === 'object' && updatedEventlog !== null) {
-              // 保留 EventLog 对象的元数据（attachments、versions 等）
-              updatedEventlog = {
-                ...updatedEventlog,
-                content: JSON.stringify([{ type: 'paragraph', children: [{ text: cleanDescription }] }]),
-                descriptionHtml: cleanDescription,
-                descriptionPlainText: cleanDescription.replace(/<[^>]*>/g, ''),
-                updatedAt: formatTimeForStorage(new Date()),
-              };
-            } else {
-              // 旧格式，直接赋值字符串
-              updatedEventlog = cleanDescription;
-            }
+            // ✅ 传递纯文本，让 EventService.normalizeEventLog 自动处理格式转换
+            // normalizeEventLog 会自动添加 Block-Level Timestamp 元数据
+            updatedEventlog = remoteCoreContent;  // 传递纯文本，不要手动构造 slateJson
           }
           
           // 🔧 将 Outlook subject 转换为完整的 EventTitle 对象
@@ -4127,21 +4172,49 @@ private getUserSettings(): any {
             fullTitle: JSON.stringify([{ type: 'paragraph', children: [{ text: cleanTitle }] }])
           };
           
-          // 🔧 [v2.15.2 FIX] 明确保留本地自定义字段，防止远程回调覆盖
-          const updates = {
-            title: titleObject,
-            description: cleanDescription,
-            eventlog: updatedEventlog,
-            startTime: remoteStart,
-            endTime: remoteEnd,
-            location: action.data.location?.displayName || '',
-            isAllDay: action.data.isAllDay || false,
+          // 🔧 [v2.17.2 FIX] 增量更新机制：只更新变化的 Outlook 字段，保护本地专属字段
+          const updates: any = {
             lastSyncTime: formatTimeForStorage(new Date()),
             syncStatus: 'synced' as const
           };
           
+          // ✅ 只更新变化的字段
+          if (titleChanged) {
+            updates.title = titleObject;
+          }
+          
+          if (descriptionChanged && updatedEventlog) {
+            // ✅ 只设置 eventlog，EventService 会自动调用 normalizeEventLog 处理
+            updates.eventlog = updatedEventlog;
+          }
+          
+          if (timeChanged) {
+            updates.startTime = remoteStart;
+            updates.endTime = remoteEnd;
+          }
+          
+          // location 和 isAllDay 也检测变化
+          const remoteLocation = action.data.location?.displayName || '';
+          if (remoteLocation !== oldEvent.location) {
+            updates.location = remoteLocation;
+          }
+          
+          const remoteIsAllDay = action.data.isAllDay || false;
+          if (remoteIsAllDay !== oldEvent.isAllDay) {
+            updates.isAllDay = remoteIsAllDay;
+          }
+          
+          // ⚠️ 明确不传递以下本地专属字段（让 EventService 自动保留）：
+          // tags, remarkableSource, childEventIds, parentEventId, linkedEventIds, backlinks
+          
           // ✅ 使用 EventService 更新（会自动保存到 StorageManager）
-          const updatedEvent = await EventService.updateEvent(action.entityId, updates, true);
+          // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
+          const updatedEvent = await EventService.updateEvent(
+            action.entityId, 
+            updates, 
+            true,
+            { source: 'external-sync' }
+          );
           
           if (updatedEvent) {
             // 🔧 [IndexMap 优化] 更新事件索引
@@ -4607,7 +4680,8 @@ private getUserSettings(): any {
             description: description || existingEvent.description || ''
           };
           
-          const updatedEvent = await EventService.updateEvent(localEventId, updates, true);
+          // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
+          const updatedEvent = await EventService.updateEvent(localEventId, updates, true, { source: 'external-sync' });
           
           // 🔧 [IndexMap 优化] 更新事件索引
           if (updatedEvent) {
@@ -4643,7 +4717,8 @@ private getUserSettings(): any {
           lastSyncTime: this.safeFormatDateTime(new Date())
         };
         
-        const updatedEvent = await EventService.updateEvent(localEventId, updates, true);
+        // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
+        const updatedEvent = await EventService.updateEvent(localEventId, updates, true, { source: 'external-sync' });
         
         // 🔧 [IndexMap 优化] 更新事件索引
         if (updatedEvent) {
@@ -4662,47 +4737,82 @@ private getUserSettings(): any {
   private convertRemoteEventToLocal(remoteEvent: any): any {
     const cleanTitle = remoteEvent.subject || '';
     
-    // 尝试多个可能的描述字段
+    // 🔍 [DEBUG v2.18.8] 检查 Outlook 返回的时间字段
+    console.log('[convertRemoteEventToLocal] 🔍 Outlook 原始时间字段:', {
+      eventId: remoteEvent.id?.slice(-10),
+      hasCreatedDateTime: !!remoteEvent.createdDateTime,
+      createdDateTime: remoteEvent.createdDateTime,
+      hasLastModifiedDateTime: !!remoteEvent.lastModifiedDateTime,
+      lastModifiedDateTime: remoteEvent.lastModifiedDateTime
+    });
+    
+    // ✅ [v2.18.0 架构优化] 直接获取原始 HTML，让 normalizeEvent 统一处理
+    // 优势：保留 Outlook HTML 格式，避免 HTML → 纯文本 → 重新生成 HTML 的损失
     const htmlContent = remoteEvent.body?.content || 
                        remoteEvent.description || 
                        remoteEvent.bodyPreview || 
                        '';
-    const cleanDescription = this.processEventDescription(htmlContent, 'outlook', 'sync', remoteEvent);
-    
-    // 检查是否是4DNote创建的事件（通过描述中的标记判断）
-    const is4DNoteCreated = this.hasCreateNote(cleanDescription) && 
-                               cleanDescription.includes('由 🔮 4DNote 创建');
     
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
     // 不要重复添加前缀！同时 externalId 应该是纯 Outlook ID（不带前缀）
     const pureOutlookId = remoteEvent.id.replace(/^outlook-/, '');
     
-    // ✅ [v2.15.3 架构修复] 返回部分数据，让 EventService.normalizeEvent() 统一处理
-    // 原因：normalizeEvent() 会自动从 description 生成完整的 eventlog 对象
+    // ✅ [v2.18.1 架构优化] 单一职责原则：只传 description，让 normalizeEvent 统一处理
+    // 数据流：Outlook HTML → description → normalizeEvent 自动生成 eventlog
+    // 优势：
+    //   1. 单一数据源（description）
+    //   2. 逻辑集中（EventService 完全负责签名提取、eventlog 生成）
+    //   3. 接口简洁（ActionBasedSyncManager 不需要知道内部细节）
     const partialEvent = {
       id: remoteEvent.id, // 已经是 'outlook-AAMkAD...'
       title: cleanTitle,  // ✅ 传递字符串，让 normalizeTitle() 转换
-      description: cleanDescription,  // ✅ 传递字符串，让 normalizeEventLog() 生成 EventLog
+      description: htmlContent,  // ✅ 传递原始 HTML，normalizeEvent 会：
+                                 //    1. 提取签名中的时间戳和创建者
+                                 //    2. 移除签名后生成 eventlog
+                                 //    3. 重新生成带新签名的 description
       startTime: this.safeFormatDateTime(remoteEvent.start?.dateTime || remoteEvent.start),
       endTime: this.safeFormatDateTime(remoteEvent.end?.dateTime || remoteEvent.end),
       isAllDay: remoteEvent.isAllDay || false,
       location: remoteEvent.location?.displayName || '',
       reminder: 0,
+      // 🔥 [CRITICAL FIX v2.18.8] 总是传递 Outlook 的时间戳
+      // normalizeEvent 会收集3个候选：
+      //   1. 签名中的时间（extractedTimestamps.createdAt）
+      //   2. Outlook 的时间（event.createdAt，即下面传的值）
+      //   3. 同步时间（new Date()，作为最后回退）
+      // 然后取最早的时间，确保创建时间永远不会变晚
       createdAt: this.safeFormatDateTime(remoteEvent.createdDateTime || new Date()),
       updatedAt: this.safeFormatDateTime(remoteEvent.lastModifiedDateTime || new Date()),
       externalId: pureOutlookId, // 纯 Outlook ID，不带 'outlook-' 前缀
       calendarIds: remoteEvent.calendarIds || ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
-      source: 'outlook', // 🔧 设置source字段
+      source: 'outlook', // 🔧 设置source字段（默认值，extractCreatorFromSignature 会根据签名覆盖）
       syncStatus: 'synced',
-      fourDNoteSource: is4DNoteCreated, // 根据描述内容判断来源
+      // ✅ [v2.18.0] fourDNoteSource 由 extractCreatorFromSignature() 从签名中提取
       // 🔥 [CRITICAL FIX] 设置默认 syncMode，避免 undefined 导致单向覆盖
       // 规则：所有从 Outlook 同步的事件默认双向同步（bidirectional-private）
       //       用户可以在 UI 中随时修改同步模式
       syncMode: 'bidirectional-private'
     };
     
-    // ✅ 通过 EventService 规范化，自动生成 title 和 eventlog 对象
-    // 注意：EventService 已在文件顶部通过 import 引入（如果未引入则需添加）
+    // 🔍 [DEBUG v2.18.8] 调试时间戳问题
+    const extractedTimestamps = SignatureUtils.extractTimestamps(htmlContent);
+    console.log('[convertRemoteEventToLocal] 🔍 时间戳候选值:', {
+      eventId: remoteEvent.id?.slice(-10),
+      title: cleanTitle.slice(0, 30),
+      '1️⃣ 签名时间': extractedTimestamps.createdAt?.slice(0, 19),
+      '2️⃣ Outlook createdDateTime': remoteEvent.createdDateTime,
+      '2️⃣ 格式化后': this.safeFormatDateTime(remoteEvent.createdDateTime || new Date()).slice(0, 19),
+      '3️⃣ 同步时间（当前）': new Date().toISOString().slice(0, 19),
+      '🏆 应选择': '最早的时间'
+    });
+    
+    // ✅ 通过 EventService 规范化，自动处理所有字段
+    // normalizeEvent 会自动：
+    //   1. normalizeTitle(title) → 生成 EventTitle 对象
+    //   2. extractTimestampsFromSignature(description) → 提取创建/修改时间
+    //   3. extractCreatorFromSignature(description) → 提取创建者信息
+    //   4. normalizeEventLog(undefined, description) → 从 description 生成 EventLog
+    //   5. maintainDescriptionSignature(eventlog.plainText) → 重新生成签名
     const normalizedEvent = EventService.normalizeEvent(partialEvent);
     
     // 🔍 诊断日志：检查 eventlog 是否正确生成
@@ -4711,8 +4821,8 @@ private getUserSettings(): any {
         eventId: normalizedEvent.id.substring(0, 20),
         hasEventlog: !!normalizedEvent.eventlog,
         slateJson: normalizedEvent.eventlog?.slateJson?.substring(0, 50),
-        descriptionLength: cleanDescription.length,
-        descriptionPreview: cleanDescription.substring(0, 50)
+        htmlLength: htmlContent.length,
+        htmlPreview: htmlContent.substring(0, 100)
       });
     }
     
@@ -4770,37 +4880,13 @@ private getUserSettings(): any {
     return cleaned;
   }
 
-  // 🆕 提取纯净的核心内容用于比较 - 去除所有备注和格式差异
+  // 🆕 提取纯净的核心内容用于比较 - 使用统一的签名工具
   private extractCoreContent(description: string): string {
-    if (!description) return '';
-    
-    let core = description;
-    
-    // 1. 移除所有同步备注（创建和编辑）
-    core = core.replace(/\n---\n由 (?:📧 |🔮 )?(?:Outlook|4DNote) 创建于 [^\n]*/g, '');
-    core = core.replace(/\n由 (?:📧 |🔮 )?(?:Outlook|4DNote) (?:创建|最后编辑于|最新修改于) [^\n]*/g, '');
-    
-    // 2. 移除所有分隔线
-    core = core.replace(/\n?---\n?/g, '');
-    
-    // 3. 规范化空白字符 - 彻底统一格式
-    core = core
-      .replace(/\r\n/g, '\n')           // 统一换行符
-      .replace(/\r/g, '\n')
-      .replace(/[ \t]+/g, ' ')          // 多个空格/制表符压缩为单个空格
-      .replace(/\n[ \t]+/g, '\n')       // 移除行首空格
-      .replace(/[ \t]+\n/g, '\n')       // 移除行尾空格
-      .replace(/\n{2,}/g, '\n')         // 多个换行符压缩为单个
-      .trim();
-    
-    return core;
+    return SignatureUtils.extractCoreContent(description);
   }
 
-  // ❌ 删除：重复的 startSync() 方法，使用 start() 即可
-  // public async startSync() { ... }
-
   // 🔧 保留几个简化的调试方法
-  public debugActionQueue() {
+  public debugActionQueue(): void {
     const pending = this.actionQueue.filter(a => !a.synchronized);
     if (pending.length > 0) {
     }
@@ -5448,7 +5534,7 @@ private getUserSettings(): any {
         lastAttemptAt: action.lastAttemptTime,
         error: action.lastError,
         createdAt: action.timestamp,
-        updatedAt: action.synchronizedAt || new Date().toISOString()
+        updatedAt: action.synchronizedAt || formatTimeForStorage(new Date())
       }));
 
       // 4. 批量保存到 IndexedDB

@@ -46,6 +46,19 @@ export interface Tag {
 }
 
 /**
+ * 事件统计数据（轻量级，用于统计分析）
+ */
+export interface EventStats {
+  id: string;                    // 事件ID
+  tags: string[];                // 标签ID列表
+  calendarIds: string[];         // 日历ID列表
+  startTime: string;             // 开始时间（YYYY-MM-DD HH:mm:ss）
+  endTime: string;               // 结束时间
+  source?: string;               // 来源（outlook/google/local）
+  updatedAt: string;             // 最后更新时间
+}
+
+/**
  * 存储层级
  */
 export enum StorageLayer {

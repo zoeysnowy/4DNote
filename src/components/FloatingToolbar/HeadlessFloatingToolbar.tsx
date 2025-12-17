@@ -530,8 +530,17 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
       return null;
     }
 
+    // 🆕 检查当前选区是否已有该格式
+    const editor = slateEditorRef?.current?.editor;
+    const marks = editor ? Editor.marks(editor) : null;
+    const isActive = marks?.[feature as keyof typeof marks] === true;
+
     // 🆕 textColor 和 bgColor 使用 Tippy 展示 Picker
     if (feature === 'textColor' || feature === 'bgColor') {
+      // 🔍 检查是否有颜色 mark
+      const hasColorMark = feature === 'textColor' ? !!marks?.color : !!marks?.backgroundColor;
+      const isColorPickerOpen = activePicker === feature;
+      
       return (
         <Tippy
           key={feature}
@@ -654,7 +663,7 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
         >
           <button
             className={`headless-toolbar-btn headless-toolbar-text-btn ${
-              activePicker === feature ? 'headless-toolbar-btn-active' : ''
+              hasColorMark || isColorPickerOpen ? 'headless-toolbar-btn-active' : ''
             }`}
             data-submenu-trigger="true"
             onMouseDown={(e) => {
@@ -709,7 +718,9 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
     return (
       <Tippy key={feature} content={btnConfig.label} placement="top">
         <button
-          className="headless-toolbar-btn headless-toolbar-text-btn"
+          className={`headless-toolbar-btn headless-toolbar-text-btn ${
+            isActive ? 'headless-toolbar-btn-active' : ''
+          }`}
           onMouseDown={(e) => {
             e.preventDefault(); // 🔥 阻止焦点转移
             e.stopPropagation();

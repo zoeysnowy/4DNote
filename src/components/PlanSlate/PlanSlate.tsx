@@ -153,7 +153,8 @@ export interface PlanSlateProps {
   onSave?: (eventId: string, updates: any) => void;  // 🆕 保存事件回调
   onTimeClick?: (eventId: string, anchor: HTMLElement) => void;  // 🆕 时间点击回调
   onMoreClick?: (eventId: string) => void;  // 🆕 More 图标点击回调
-  getEventStatus?: (eventId: string, metadata?: any) => 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined; // 🆕 获取事件状态
+  getEventStatus?: (eventId: string, metadata?: any) => Promise<'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined>; // 🆕 获取事件状态 - ✅ 改为异步版本（已废弃，使用 eventStatusMap）
+  eventStatusMap?: Map<string, 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined>; // 🆕 事件状态映射表（同步访问）
   eventId?: string;  // 🆕 当前编辑的事件ID（用于 timestamp 功能）
   enableTimestamp?: boolean;  // 🆕 是否启用 timestamp 自动插入
   className?: string;
@@ -531,7 +532,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   onSave,  // 🆕 保存回调
   onTimeClick,  // 🆕 时间点击回调
   onMoreClick,  // 🆕 More 图标点击回调
-  getEventStatus,  // 🆕 获取事件状态
+  getEventStatus,  // 🆕 获取事件状态（已废弃）
+  eventStatusMap,  // 🆕 事件状态映射表（新方案）
   eventId,  // 🆕 当前事件ID
   enableTimestamp = false,  // 🆕 是否启用 timestamp
   className = '',
@@ -621,8 +623,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         });
       }
       
-      // 🔧 包含时间字段：startTime、endTime、dueDate、isAllDay
-      const timeStr = `${item.startTime || ''}-${item.endTime || ''}-${item.dueDate || ''}-${item.isAllDay ? '1' : '0'}`;
+      // 🔧 包含时间字段：startTime、endTime、dueDateTime、isAllDay
+      const timeStr = `${item.startTime || ''}-${item.endTime || ''}-${item.dueDateTime || ''}-${item.isAllDay ? '1' : '0'}`;
       
       const itemHash = `${item.id}-${titleStr}-${tagsStr}-${eventlogStr}-${timeStr}-${item.updatedAt}`;
       
@@ -1016,7 +1018,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           const newMetadata = {
             startTime: updatedEvent.startTime,
             endTime: updatedEvent.endTime,
-            dueDate: updatedEvent.dueDate,
+            dueDateTime: updatedEvent.dueDateTime,
             isAllDay: updatedEvent.isAllDay,
             timeSpec: updatedEvent.timeSpec,
             emoji: updatedEvent.emoji,
@@ -2636,6 +2638,28 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // 🔥 立即保存当前内容
       flushPendingChanges();
       
+      // 🔧 获取当前光标位置的文本内容
+      const { selection } = editor;
+      let textAfterCursor = '';
+      let textBeforeCursor = '';
+      
+      if (selection) {
+        try {
+          // 获取当前段落节点
+          const [paragraphNode, paragraphPath] = Editor.node(editor, selection.anchor.path.slice(0, -1));
+          const paragraphText = Node.string(paragraphNode);
+          const cursorOffset = selection.anchor.offset;
+          
+          // 分割文本
+          textBeforeCursor = paragraphText.substring(0, cursorOffset);
+          textAfterCursor = paragraphText.substring(cursorOffset);
+          
+          console.log('[Enter] 文本分割:', { textBeforeCursor, textAfterCursor, cursorOffset });
+        } catch (e) {
+          console.warn('[Enter] 获取文本失败:', e);
+        }
+      }
+      
       let insertIndex = currentPath[0] + 1;
       let newLine: EventLineNode;
       
@@ -2663,14 +2687,29 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           lineId: `${eventLine.lineId}-${Date.now()}`, // 生成唯一 lineId
           level: eventLine.level,
           mode: 'eventlog',
-          children: [{ type: 'paragraph', ...paragraphProps, children: [{ text: '' }] }],
+          children: [{ type: 'paragraph', ...paragraphProps, children: [{ text: textAfterCursor }] }], // 🔧 使用光标后的文字
           metadata: eventLine.metadata, // 继承 metadata
         };
+        
+        // 🔧 删除当前行光标后的文字
+        if (textAfterCursor && selection) {
+          try {
+            Transforms.delete(editor, {
+              at: {
+                anchor: selection.anchor,
+                focus: Editor.end(editor, selection.anchor.path.slice(0, -1))
+              }
+            });
+          } catch (e) {
+            console.warn('[Enter] 删除光标后文字失败:', e);
+          }
+        }
         
         logOperation('Enter (eventlog) - 创建新 eventlog 行', {
           currentLine: currentPath[0],
           eventId: eventLine.eventId,
           newLineId: newLine.lineId.slice(-10) + '...',
+          textAfterCursor: textAfterCursor.substring(0, 20) + (textAfterCursor.length > 20 ? '...' : ''),
         }, 'background: #9C27B0; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;');
       } else {
         // Title 行：查找所有属于同一个 eventId 的 eventlog 行，在最后一个之后插入
@@ -2762,20 +2801,34 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         const nextSibling = currentSiblingIndex >= 0 ? siblings[currentSiblingIndex + 1] : undefined;
         
         const beforePos = (eventLine.metadata?.position) || undefined;
-        const afterPos = nextSibling ? (nextSibling[0] as any).metadata?.position : undefined;
-        const newPosition = calculatePositionBetween(beforePos, afterPos);
-        
-        console.log('[Enter] 🆕 计算新行位置:', {
-          currentLevel,
-          parentEventId: parentEventId?.slice(-8),
-          beforePos,
-          afterPos,
-          newPosition,
-          siblingsCount: siblings.length
-        });
+        const afterPos = nextSibling ? ((nextSibling[0] as any).metadata?.position || undefined) : undefined;
+        const newPosition = beforePos !== undefined && afterPos !== undefined 
+          ? (beforePos + afterPos) / 2 
+          : beforePos !== undefined 
+            ? beforePos + 1000 
+            : 1000;
         
         // 🆕 v2.16: createEmptyEventLine 现在接受 parentEventId 和 position 参数
         newLine = createEmptyEventLine(currentLevel, parentEventId, newPosition);
+        
+        // 🔧 将光标后的文字添加到新行
+        if (textAfterCursor) {
+          newLine.children = [{ type: 'paragraph', children: [{ text: textAfterCursor }] }];
+        }
+        
+        // 🔧 删除当前行光标后的文字
+        if (textAfterCursor && selection) {
+          try {
+            Transforms.delete(editor, {
+              at: {
+                anchor: selection.anchor,
+                focus: Editor.end(editor, selection.anchor.path.slice(0, -1))
+              }
+            });
+          } catch (e) {
+            console.warn('[Enter] 删除光标后文字失败:', e);
+          }
+        }
         
         console.log('[🆕 Position] 创建新事件:', {
           eventId: newLine.eventId.slice(-8),
@@ -2783,7 +2836,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           parentEventId: parentEventId?.slice(-8),
           position: newPosition,
           metadata_position: newLine.metadata?.position,
-          确认position存入metadata: newLine.metadata?.position === newPosition
+          确认position存入metadata: newLine.metadata?.position === newPosition,
+          textAfterCursor: textAfterCursor.substring(0, 20) + (textAfterCursor.length > 20 ? '...' : ''),
+          afterPos,
+          newPosition,
+          siblingsCount: siblings.length
         });
         
         logOperation('Enter (title) - 创建新 title 行', {
@@ -2836,15 +2893,26 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       event.preventDefault();
       
       if (eventLine.mode === 'title') {
-        // 创建 Eventlog 行
+        // 🔧 创建 Eventlog 行，继承标题行的 metadata（包含 checkType 等信息）
         const descLine: EventLineNode = {
           type: 'event-line',
           eventId: eventLine.eventId,
           lineId: `${eventLine.lineId}-desc`,
           level: eventLine.level,
           mode: 'eventlog',
+          metadata: eventLine.metadata, // 🔧 继承 metadata，确保 eventlog 能正确计算占位符宽度
           children: [{ type: 'paragraph', children: [{ text: '' }] }],
         };
+        
+        console.log('[Shift+Enter] 创建 eventlog 行:', {
+          titleEventId: eventLine.eventId?.slice(-8),
+          titleLineId: eventLine.lineId,
+          newEventlogLineId: descLine.lineId,
+          titleLevel: eventLine.level,
+          eventlogLevel: descLine.level,
+          hasMetadata: !!descLine.metadata,
+          checkType: descLine.metadata?.checkType
+        });
         
         Transforms.insertNodes(editor, descLine as unknown as Node, {
           at: [currentPath[0] + 1],
@@ -2863,9 +2931,53 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       return;
     }
     
-    // Tab 键 - 创建父子关系（乐观更新 + 异步持久化）
+    // Tab 键 - 区分两种情况：bullet缩进 vs event层级变化
     if (event.key === 'Tab' && !event.shiftKey) {
       event.preventDefault();
+      
+      // 🔍 检查当前光标是否在 bullet paragraph 内
+      const { selection } = editor;
+      let isInBulletParagraph = false;
+      let currentParagraphPath: Path | null = null;
+      
+      if (selection) {
+        try {
+          const [paragraphNode, paragraphPath] = Editor.node(editor, selection.anchor.path.slice(0, -1));
+          if (SlateElement.isElement(paragraphNode) && (paragraphNode as any).type === 'paragraph') {
+            if ((paragraphNode as any).bullet === true) {
+              isInBulletParagraph = true;
+              currentParagraphPath = paragraphPath;
+            }
+          }
+        } catch (e) {
+          // 忽略错误
+        }
+      }
+      
+      // 🔧 情况1: 在 bullet paragraph 内 → 增加 bulletLevel
+      if (isInBulletParagraph && currentParagraphPath && eventLine.mode === 'eventlog') {
+        const paragraphNode = Node.get(editor, currentParagraphPath) as any;
+        const currentBulletLevel = paragraphNode.bulletLevel || 0;
+        const newBulletLevel = Math.min(currentBulletLevel + 1, 4); // 最大4级
+        
+        console.log('[Tab] 🎯 Bullet indent:', {
+          mode: 'eventlog',
+          currentBulletLevel,
+          newBulletLevel,
+          paragraphPath: currentParagraphPath
+        });
+        
+        Transforms.setNodes(
+          editor,
+          { bulletLevel: newBulletLevel } as any,
+          { at: currentParagraphPath }
+        );
+        
+        return;
+      }
+      
+      // 🔧 情况2: 在 title 行或非 bullet 内容 → 改变 event line 层级
+      console.log('[Tab] 🎯 Event line indent (create parent-child relationship)');
       
       // 🎯 步骤 1: 找到上一行（潜在父事件）
       const previousEventLine = findPreviousEventLine(currentPath);
@@ -2934,7 +3046,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             const updatedMetadata = {
               ...(currentNode.metadata || {}),
               parentEventId: previousEventId, // 🆕 添加到 metadata
-              bulletLevel: newBulletLevel, // 🔥 同步更新 bulletLevel
             };
             
             console.log('[Tab] 🔥 Updating Slate metadata:', {
@@ -2952,6 +3063,25 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
               } as unknown as Partial<Node>,
               { at: currentPath }
             );
+            
+            // 🔧 更新所有子段落的 bulletLevel（如果是bullet paragraph）
+            try {
+              const paragraphs = Array.from(Node.children(editor, currentPath));
+              paragraphs.forEach(([para, paraPath], index) => {
+                if (SlateElement.isElement(para) && (para as any).bullet) {
+                  const oldBulletLevel = (para as any).bulletLevel || 0;
+                  const newParagraphBulletLevel = oldBulletLevel; // 保持段落内部的相对层级不变
+                  
+                  Transforms.setNodes(
+                    editor,
+                    { bulletLevel: newParagraphBulletLevel } as any,
+                    { at: [...currentPath, index] }
+                  );
+                }
+              });
+            } catch (e) {
+              console.warn('[Tab] 更新段落bulletLevel失败:', e);
+            }
           });
           
           console.log('[Tab] ⚡ Optimistic update complete (Slate metadata updated)');
@@ -3016,7 +3146,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         const updatedMetadata = {
           ...(currentNode.metadata || {}),
           parentEventId: newParentEventId, // 🔥 更新父事件ID
-          bulletLevel: newLevel, // 🔥 同步更新 bulletLevel
         };
         
         Transforms.setNodes(
@@ -3027,6 +3156,25 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           } as unknown as Partial<Node>,
           { at: currentPath }
         );
+        
+        // 🔧 更新所有子段落的 bulletLevel（如果是bullet paragraph）
+        try {
+          const paragraphs = Array.from(Node.children(editor, currentPath));
+          paragraphs.forEach(([para, paraPath], index) => {
+            if (SlateElement.isElement(para) && (para as any).bullet) {
+              const oldBulletLevel = (para as any).bulletLevel || 0;
+              const newParagraphBulletLevel = oldBulletLevel; // 保持段落内部的相对层级不变
+              
+              Transforms.setNodes(
+                editor,
+                { bulletLevel: newParagraphBulletLevel } as any,
+                { at: [...currentPath, index] }
+              );
+            }
+          });
+        } catch (e) {
+          console.warn('[Shift+Tab] 更新段落bulletLevel失败:', e);
+        }
       });
       
       console.log('[Shift+Tab] ⚡ Optimistic update complete');
@@ -3101,25 +3249,127 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (event.key === 'Tab' && event.shiftKey) {
       event.preventDefault();
       
-      let currentEventId = eventLine.eventId;
-      const currentLevel = eventLine.level || 0;
+      // 🔍 检查当前光标是否在 bullet paragraph 内
+      const { selection } = editor;
+      let isInBulletParagraph = false;
+      let currentParagraphPath: Path | null = null;
       
-      // Eventlog 模式：切换回 Title 模式
-      if (eventLine.mode === 'eventlog') {
-        // 生成新的 lineId（避免与其他行冲突）
-        const newLineId = `${eventLine.eventId}-title-${Date.now()}`;
+      if (selection) {
+        try {
+          const [paragraphNode, paragraphPath] = Editor.node(editor, selection.anchor.path.slice(0, -1));
+          if (SlateElement.isElement(paragraphNode) && (paragraphNode as any).type === 'paragraph') {
+            if ((paragraphNode as any).bullet === true) {
+              isInBulletParagraph = true;
+              currentParagraphPath = paragraphPath;
+            }
+          }
+        } catch (e) {
+          // 忽略错误
+        }
+      }
+      
+      // 🔧 情况1: 在 bullet paragraph 内 → 减少 bulletLevel
+      if (isInBulletParagraph && currentParagraphPath && eventLine.mode === 'eventlog') {
+        const paragraphNode = Node.get(editor, currentParagraphPath) as any;
+        const currentBulletLevel = paragraphNode.bulletLevel || 0;
         
+        if (currentBulletLevel === 0) {
+          // 已经是最小层级，移除bullet
+          console.log('[Shift+Tab] 🎯 Remove bullet (bulletLevel = 0)');
+          
+          Transforms.setNodes(
+            editor,
+            { bullet: undefined, bulletLevel: undefined } as any,
+            { at: currentParagraphPath }
+          );
+        } else {
+          const newBulletLevel = currentBulletLevel - 1;
+          
+          console.log('[Shift+Tab] 🎯 Bullet outdent:', {
+            mode: 'eventlog',
+            currentBulletLevel,
+            newBulletLevel,
+            paragraphPath: currentParagraphPath
+          });
+          
+          Transforms.setNodes(
+            editor,
+            { bulletLevel: newBulletLevel } as any,
+            { at: currentParagraphPath }
+          );
+        }
+        
+        return;
+      }
+      
+      // 🔧 情况2: 在eventlog的非bullet内容 → 转换为新的独立event（新eventId）
+      if (eventLine.mode === 'eventlog') {
+        console.log('[Shift+Tab] 🎯 Convert eventlog to new title (new eventId)');
+        
+        // 创建新的event（与当前行同级，继承父事件关系）
+        // 🆕 v2.17: 直接使用 UUID 生成
+        const newEventId = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const newLineId = `${newEventId}-title`;
+        const currentLevel = eventLine.level || 0;
+        const parentEventId = eventLine.metadata?.parentEventId;
+        
+        // 计算position（在同级事件中的位置）
+        const allTitleNodes = Array.from(Editor.nodes(editor, {
+          at: [],
+          match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
+        }));
+        
+        const siblings = allTitleNodes.filter(([node, path]) => {
+          const n = node as any;
+          return (n.level || 0) === currentLevel &&
+                 (n.metadata?.parentEventId || undefined) === parentEventId;
+        });
+        
+        // 新event插入在当前行之后
+        const nextSibling = siblings.find(([node, path]) => (path as number[])[0] > currentPath[0]);
+        const currentSibling = siblings.filter(([node, path]) => (path as number[])[0] < currentPath[0]).pop();
+        
+        const beforePos = currentSibling ? (currentSibling[0] as any).metadata?.position : undefined;
+        const afterPos = nextSibling ? (nextSibling[0] as any).metadata?.position : undefined;
+        const newPosition = beforePos !== undefined && afterPos !== undefined 
+          ? (beforePos + afterPos) / 2 
+          : beforePos !== undefined 
+            ? beforePos + 1000 
+            : 1000;
+        
+        // 转换当前行为新的title行
         Transforms.setNodes(
           editor,
           { 
             mode: 'title',
+            eventId: newEventId,
             lineId: newLineId,
+            level: currentLevel,
+            metadata: {
+              ...eventLine.metadata,
+              parentEventId: parentEventId,
+              position: newPosition,
+              checkType: eventLine.metadata?.checkType || 'once',
+            }
           } as unknown as Partial<Node>,
           { at: currentPath }
         );
         
+        console.log('[Shift+Tab] ✅ Converted to new title:', {
+          newEventId: newEventId.slice(-8),
+          level: currentLevel,
+          parentEventId: parentEventId?.slice(-8),
+          position: newPosition
+        });
+        
         return;
       }
+      
+      // 🔧 情况3: 在 title 行 → 改变 event line 层级
+      console.log('[Shift+Tab] 🎯 Event line outdent (remove parent-child relationship)');
+      
+      let currentEventId = eventLine.eventId;
+      const currentLevel = eventLine.level || 0;
       
       // Title 模式：减少层级（解除父子关系）
       if (currentLevel === 0) {
@@ -3452,8 +3702,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     switch (element.type) {
       case 'event-line':
         const eventLineElement = element as EventLineNode;
-        const eventStatus = getEventStatus && eventLineElement.eventId 
-          ? getEventStatus(eventLineElement.eventId, eventLineElement.metadata) 
+        // ✅ 从 eventStatusMap 同步读取状态（替代异步的 getEventStatus）
+        const eventStatus = eventStatusMap && eventLineElement.eventId 
+          ? eventStatusMap.get(eventLineElement.eventId) 
           : undefined;
         return (
           <EventLineElement
@@ -3498,7 +3749,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }
-  }, [onSave, onTimeClick, onMoreClick, handlePlaceholderClick, getEventStatus]);
+  }, [onSave, onTimeClick, onMoreClick, handlePlaceholderClick, eventStatusMap]);
   
   const renderLeaf = useCallback((props: RenderLeafProps) => {
     let { children } = props;

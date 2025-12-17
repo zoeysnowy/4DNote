@@ -20,10 +20,12 @@ import type {
   QueryOptions, 
   QueryResult,
   BatchResult,
-  StorageStats
+  StorageStats,
+  EventStats
 } from './types';
 
 import { SyncStatus } from './types';
+import { formatTimeForStorage } from '../../utils/timeUtils';
 
 import StorageManagerVersionExt from './StorageManagerVersionExt';
 import type { EventLog } from '../../types';
@@ -428,7 +430,7 @@ export class StorageManager {
     console.log('[StorageManager] Soft deleting event:', id);
 
     try {
-      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const now = formatTimeForStorage(new Date());
       
       // 软删除：设置 deletedAt 字段
       await this.updateEvent(id, { deletedAt: now } as Partial<StorageEvent>);
@@ -826,7 +828,7 @@ export class StorageManager {
     console.log('[StorageManager] Soft-deleting tag:', id);
 
     // 🔧 [TIMESPEC] 使用 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
-    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    const now = formatTimeForStorage(new Date());
 
     // 软删除：设置 deletedAt
     await this.updateTag(id, {
@@ -1109,7 +1111,7 @@ export class StorageManager {
 
       const contact = result.items[0];
       // 🔧 [TIMESPEC] 使用 TimeSpec 格式
-      const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      const now = formatTimeForStorage(new Date());
       const deletedContact = {
         ...contact,
         deletedAt: now,
@@ -1246,6 +1248,25 @@ export class StorageManager {
   }
 
   /**
+   * 删除单条事件历史记录
+   */
+  async deleteEventHistory(id: string): Promise<void> {
+    await this.ensureInitialized();
+
+    // 从 IndexedDB 删除
+    await this.indexedDBService.deleteEventHistory(id);
+
+    // 同步删除 SQLite（如果可用）
+    if (this.sqliteService) {
+      try {
+        await this.sqliteService.deleteEventHistory(id);
+      } catch (error) {
+        console.warn('[StorageManager] SQLite deleteEventHistory failed:', error);
+      }
+    }
+  }
+
+  /**
    * 清理旧的事件历史记录
    */
   async cleanupEventHistory(olderThan: string): Promise<number> {
@@ -1355,7 +1376,7 @@ export class StorageManager {
     const updatedItem = {
       ...item,
       ...updates,
-      updatedAt: new Date().toISOString()
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     await this.indexedDBService.addToSyncQueue(updatedItem);
@@ -1390,7 +1411,7 @@ export class StorageManager {
     const allItems = await this.indexedDBService.getSyncQueue();
     // 🔧 [TIMESPEC] 使用 TimeSpec 格式
     const defaultCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const cutoffDate = olderThan || (defaultCutoff.toISOString().replace('T', ' ').substring(0, 19)); // 7天前
+    const cutoffDate = olderThan || formatTimeForStorage(defaultCutoff); // 7天前
     
     const itemsToDelete = allItems.filter(item => 
       item.status === SyncStatus.Synced && 
@@ -1403,6 +1424,96 @@ export class StorageManager {
 
     console.log(`[StorageManager] Cleaned up ${itemsToDelete.length} completed sync actions`);
     return itemsToDelete.length;
+  }
+
+  // ========== EventStats Methods (Performance Optimization) ==========
+  
+  /**
+   * 创建统计记录
+   */
+  async createEventStats(stats: EventStats): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.createEventStats(stats);
+  }
+
+  /**
+   * 批量创建统计记录（用于迁移）
+   */
+  async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.bulkCreateEventStats(statsList);
+  }
+
+  /**
+   * 更新统计记录
+   */
+  async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.updateEventStats(id, updates);
+  }
+
+  /**
+   * 删除统计记录
+   */
+  async deleteEventStats(id: string): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.deleteEventStats(id);
+  }
+
+  /**
+   * 查询统计记录（按时间范围）
+   */
+  async queryEventStats(options: {
+    startDate?: string;
+    endDate?: string;
+  }): Promise<EventStats[]> {
+    await this.ensureInitialized();
+    
+    // 转换 string → Date（符合 QueryOptions 接口）
+    const queryOptions: QueryOptions = {
+      startDate: options.startDate ? new Date(options.startDate) : undefined,
+      endDate: options.endDate ? new Date(options.endDate) : undefined,
+    };
+    
+    const result = await this.indexedDBService.queryEventStats(queryOptions);
+    return result.items;
+  }
+
+  /**
+   * 一次性数据迁移：将现有 Event 转换为 EventStats
+   */
+  async migrateToEventStats(): Promise<void> {
+    await this.ensureInitialized();
+    
+    const migrationKey = '4dnote-stats-migrated';
+    if (localStorage.getItem(migrationKey) === 'true') {
+      console.log('[StorageManager] EventStats migration already completed');
+      return;
+    }
+
+    console.log('[StorageManager] Starting EventStats migration...');
+    const startTime = performance.now();
+
+    // 🚀 直接从 IndexedDB 提取轻量级字段（避免读取完整 Event）
+    const statsList = await this.indexedDBService.extractEventStatsFromEvents();
+    console.log(`[StorageManager] Migrating ${statsList.length} events...`);
+
+    if (statsList.length === 0) {
+      console.log('[StorageManager] ⚠️ No events to migrate, skipping EventStats creation');
+      localStorage.setItem(migrationKey, 'true');
+      return;
+    }
+
+    // 批量插入
+    console.log('[StorageManager] 🚀 Starting bulk insert...');
+    await this.bulkCreateEventStats(statsList);
+    console.log('[StorageManager] ✅ Bulk insert completed');
+
+    const elapsed = performance.now() - startTime;
+    console.log(`[StorageManager] ✅ EventStats migration completed in ${elapsed.toFixed(0)}ms`);
+    
+    // 标记迁移完成
+    localStorage.setItem(migrationKey, 'true');
   }
 
   /**

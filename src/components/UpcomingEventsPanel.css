@@ -1,7 +1,10 @@
 /* Upcoming Events Panel Styles */
 .upcoming-events-panel {
   width: 317px;
-  height: 829px;
+  min-width: 317px;
+  max-width: 317px;
+  height: 100%;
+  min-height: 600px;
   background: white;
   border-radius: 20px;
   box-shadow: 5px 5px 10px 0px rgba(0, 0, 0, 0.05);
@@ -10,6 +13,7 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   font-family: 'Microsoft YaHei', Arial, sans-serif;
 }
 
@@ -367,6 +371,23 @@
   line-clamp: 5;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* 隐藏 ModalSlate 内的 timestamp 和 preline */
+.event-log-text .slate-paragraph .paragraph-preline {
+  display: none !important;
+}
+
+.event-log-text .slate-paragraph.with-preline {
+  padding-left: 0 !important;
+}
+
+.event-log-text .slate-paragraph.with-timestamp {
+  padding-top: 0 !important;
+}
+
+.event-log-text .slate-paragraph > div[style*="position: absolute"][style*="fontSize: 12px"] {
+  display: none !important;
 }
 
 /* Action Indicator Labels (matching Figma design) */

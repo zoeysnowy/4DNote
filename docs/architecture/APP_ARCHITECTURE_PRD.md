@@ -1,7 +1,7 @@
 # App 组件架构文档 (PRD)
 
-**版本**: v1.1  
-**最后更新**: 2025-11-25  
+**版本**: v1.8  
+**最后更新**: 2025-12-15  
 **文档类型**: 架构设计文档（逆向工程）
 
 ---
@@ -34,11 +34,324 @@
 - **tag**: `TagManager` (FigmaTagManager)
 - **settings**: `SettingsModal`
 
+### 1.3 模块事件处理规则 (v2.17.5)
+
+各模块在创建和过滤事件时的字段使用规范：
+
+#### 1.3.1 TimeCalendar - 日历事件创建
+
+**创建场景**: 用户在日历上选择时间段
+
+**必需字段**:
+```typescript
+{
+  id: generateEventId(),           // UUID 格式: evt_<timestamp>_<random>
+  title: { simpleTitle: '' },      // 空标题，用户在 Modal 中填写
+  startTime: string,               // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  endTime: string,                 // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  isAllDay: boolean,               // 根据选择判断
+  createdAt: string,               // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  updatedAt: string                // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+}
+```
+
+**默认值**:
+```typescript
+{
+  tags: [],                        // 空数组
+  calendarIds: [],                 // 空数组，不强制同步
+  syncStatus: 'local-only',        // v2.17.5: 默认仅本地
+  fourDNoteSource: true,           // 标记为 4DNote 创建
+  location: '',
+  description: ''
+}
+```
+
+**同步规则**:
+- ✅ 初始创建时不同步（`syncStatus: 'local-only'`）
+- ✅ 用户添加标签/日历后自动升级为 `'pending'`
+- ✅ ActionBasedSyncManager 跳过 `local-only` 事件
+
+**代码位置**: `TimeCalendar.tsx` L1785-1816
+
+---
+
+#### 1.3.2 TimeLog - 笔记创建
+
+**创建场景**: 用户创建时间轴笔记
+
+**必需字段**:
+```typescript
+{
+  id: generateEventId(),
+  title: { simpleTitle: '' },
+  startTime: string,               // 笔记时间 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  endTime: string,                 // 同 startTime
+  createdAt: string,               // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  updatedAt: string,               // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  isTimeLog: true                  // 标记为时间日志
+}
+```
+
+**默认值**:
+```typescript
+{
+  tags: [],
+  calendarIds: [],                 // 不需要日历同步
+  syncStatus: 'local-only',        // 笔记永远本地
+  fourDNoteSource: true,
+  eventlog: slateJson              // 富文本内容
+}
+```
+
+**同步规则**:
+- ❌ 笔记永不同步到日历（纯本地数据）
+- ✅ 可添加标签用于分类
+
+**代码位置**: `TimeLog.tsx` L1262
+
+---
+
+#### 1.3.3 App.tsx - Timer 事件创建
+
+**创建场景**: 用户启动计时器
+
+**必需字段**:
+```typescript
+{
+  id: `timer-${tagId}-${timestamp}`, // 特殊 ID 格式
+  title: { simpleTitle: string },    // 标签名称 + emoji
+  startTime: string,                 // 计时开始时间 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  endTime: string,                   // 初始为确认时间 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  tags: string[],                    // 计时器关联的标签
+  createdAt: string,                 // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  updatedAt: string,                 // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  isTimer: true                      // 标记为计时器事件
+}
+```
+
+**默认值**:
+```typescript
+{
+  calendarIds: tag.calendarId ? [tag.calendarId] : [], // 继承标签的日历映射
+  syncStatus: 'local-only',          // 运行中强制本地
+  fourDNoteSource: true,
+  location: '',
+  description: '计时中的事件'
+}
+```
+
+**同步规则**:
+- ❌ 运行中不同步（`syncStatus: 'local-only'`）
+- ✅ 停止后自动切换为 `'pending'`，启动同步
+- ✅ 支持升级为父子事件结构（二次计时）
+
+**父子事件升级**:
+```typescript
+// 检测到已存在的 Timer 事件时
+if (existingEvent && existingEvent.isTimer && !existingEvent.parentEventId) {
+  // 创建父事件
+  const parentEvent = {
+    id: generateEventId(),
+    title: existingEvent.title,
+    tags: existingEvent.tags,
+    // ... 继承元数据
+  };
+  
+  // 将原 Timer 设置为子事件
+  await EventService.updateEvent(existingEvent.id, {
+    parentEventId: parentEvent.id
+  });
+}
+```
+
+**代码位置**: `App.tsx` L1100-1150, L500-550
+
+---
+
+#### 1.3.4 PlanManager - Plan 事件创建
+
+**创建场景**: 用户在 Plan 编辑器中创建事件
+
+**必需字段**:
+```typescript
+{
+  id: generateEventId(),
+  title: { simpleTitle: string, fullTitle: slateJson },
+  tags: string[],                  // 从 # 标签提取
+  createdAt: string,               // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+  updatedAt: string                // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
+}
+```
+
+**可选字段**（从内容解析）:
+```typescript
+{
+  startTime?: string,              // 从 @date 解析 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  endTime?: string,                // 从 @date 解析 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  isAllDay?: boolean,              // 从时间格式判断
+  parentEventId?: string,          // Tab 缩进创建子事件
+  childEventIds?: string[],        // 自动维护
+  eventlog: slateJson              // 完整富文本内容
+}
+```
+
+**默认值**:
+```typescript
+{
+  calendarIds: [],                 // 由用户选择或标签映射
+  syncStatus: 'local-only',        // 默认本地
+  fourDNoteSource: true
+}
+```
+
+**同步规则**:
+- ✅ 用户添加标签后，自动升级为 `'pending'`
+- ✅ 支持父子事件层级（Tab/Shift+Tab）
+- ✅ EventTree 双向关联自动维护
+
+**EventTree 维护**:
+- Tab 键创建子事件：自动设置 `parentEventId`
+- 父事件自动更新 `childEventIds` 数组
+- 删除事件时自动清理父子关系
+
+**代码位置**: `PlanManager.tsx` L1500-1550, L2540-2570
+
+---
+
+#### 1.3.5 EventEditModal - 事件编辑和创建
+
+**智能 syncStatus 判断** (v2.17.5):
+
+```typescript
+let finalSyncStatus: SyncStatus;
+
+if (isRunningTimer) {
+  finalSyncStatus = 'local-only';  // Timer 运行中强制本地
+} else {
+  const hasTags = formData.tags && formData.tags.length > 0;
+  const hasCalendars = formData.calendarIds && formData.calendarIds.length > 0;
+  
+  if (hasTags || hasCalendars) {
+    finalSyncStatus = 'pending';   // 有标签/日历，需要同步
+  } else {
+    finalSyncStatus = event?.syncStatus || 'local-only'; // 保持原状态或默认本地
+  }
+}
+```
+
+**字段验证规则**:
+- ✅ 时间完整性：`startTime` 和 `endTime` 必须同时存在或同时为空
+- ✅ 标题非空：至少有 `simpleTitle` 或富文本内容
+- ✅ 标签存在性：`tags` 中的 ID 必须在 TagService 中存在
+
+**自动字段生成**:
+- `calendarIds`: 从标签的 calendarMapping 自动提取
+- `description`: 从 `eventlog.plainText` 自动生成
+- `updatedAt`: 每次保存自动更新
+
+**代码位置**: `EventEditModalV2.tsx` L1151-1171
+
+---
+
+#### 1.3.6 模块事件过滤规则
+
+**TimeCalendar 显示过滤**:
+```typescript
+// 过滤条件
+const shouldShow = (event) => {
+  // 1. 可见日历过滤
+  const hasVisibleCalendar = event.calendarIds?.some(id => visibleCalendars.includes(id));
+  
+  // 2. 本地事件过滤
+  const isLocalCreated = event.fourDNoteSource && visibleCalendars.includes('local-created');
+  
+  // 3. 标签过滤
+  const hasVisibleTag = event.tags?.some(id => visibleTags.includes(id));
+  
+  return hasVisibleCalendar || isLocalCreated || hasVisibleTag;
+};
+```
+
+**TimeLog 时间轴过滤**:
+```typescript
+// 专门显示时间日志类型
+const timelineEvents = events.filter(e => 
+  e.isTimeLog === true ||           // 明确标记为日志
+  (!e.isTimer && !e.isTask)         // 或非计时器/任务的普通事件
+);
+```
+
+**DailyStatsCard 统计过滤**:
+```typescript
+// 统计当天的计时器事件
+const todayTimers = events.filter(e => 
+  e.isTimer === true &&             // 计时器事件
+  isSameDay(e.startTime, today) &&  // 今天创建
+  e.endTime !== e.startTime         // 已停止（有时长）
+);
+```
+
+**PlanManager 显示过滤**:
+```typescript
+// 显示非子事件（顶层事件）
+const topLevelEvents = events.filter(e => 
+  !e.parentEventId                  // 没有父事件
+);
+
+// EventTree 递归显示子事件
+const getChildren = (parentId) => {
+  return events.filter(e => e.parentEventId === parentId);
+};
+```
+
+---
+
+#### 1.3.7 同步字段保护规则 (v2.17.2)
+
+**本地专属字段**（永不被远程同步覆盖）:
+```typescript
+const localOnlyFields = new Set([
+  'tags',                   // 标签
+  'remarkableSource',       // 来源标记
+  'childEventIds',          // 子事件列表
+  'parentEventId',          // 父事件 ID
+  'linkedEventIds',         // 关联事件
+  'backlinks',              // 反向链接
+  'fourDNoteSource',        // 4DNote 来源
+  'isTimer',                // 计时器标记
+  'isTimeLog',              // 时间日志标记
+  'isOutsideApp'            // 外部应用标记
+]);
+```
+
+**远程同步字段**（从 Outlook 同步）:
+```typescript
+const outlookFields = [
+  'title',                  // 标题（receive-only 模式）
+  'description',            // 描述
+  'startTime',              // 开始时间
+  'endTime',                // 结束时间
+  'location',               // 地点
+  'isAllDay',               // 全天事件
+  'attendees',              // 参与者
+  'organizer'               // 组织者
+];
+```
+
+**双重保护机制**:
+1. **ActionBasedSyncManager**: 只传递变化的 Outlook 字段
+2. **EventService**: 检测 `source: 'external-sync'`，过滤本地专属字段
+
+**代码位置**: 
+- ActionBasedSyncManager.ts L2536, L4045, L4680, L4716
+- EventService.ts L1100-1140
+
 ---
 
 ## 2. 状态管理
 
-### 2.1 State 完整清单（共18个）
+### 2.1 State 完整清单（共17个）
 
 #### 2.1.1 计时器相关（1个）
 
@@ -50,15 +363,18 @@
 
 **🎯 v1.7.1 优化**: 移除旧计时器系统（6个状态）和死代码，TimerCard 自行管理时间显示更新
 
-#### 2.1.2 同步相关（3个）
+#### 2.1.2 同步相关（4个）
 
 | State | 类型 | 用途 | 触发渲染场景 |
 |-------|------|------|------------|
 | `lastSyncTime` | `Date \| null` | 最后同步时间 | 同步完成后更新 |
 | `syncManager` | `ActionBasedSyncManager \| null` | 同步管理器实例 | 初始化时（仅一次） |
+| `microsoftService` | `MicrosoftCalendarService` | Microsoft 日历服务实例 | 初始化时（仅一次） |
 | `lastAuthState` | `boolean` | 认证状态 | 登录/登出 |
 
 **渲染频率**: 低频（初始化、同步完成、认证变化时）
+
+**🔧 架构说明**: `microsoftService` 使用 useState 而非直接引用全局变量，以确保 React 组件生命周期管理
 
 #### 2.1.3 事件编辑相关（6个）
 
@@ -67,35 +383,38 @@
 | `editingEventId` | `string` | 编辑中的事件ID | 打开编辑框 |
 | `editingEventTitle` | `string` | 编辑中的标题 | 用户输入 |
 | `editingEventDescription` | `string` | 编辑中的描述 | 用户输入 |
-| `editingEventTagId` | `string` | 编辑中的标签ID | 选择标签 |
+| `editingEventTagIds` | `string[]` | 编辑中的标签IDs（多标签） | 选择标签 |
 | `availableTagsForEdit` | `FlatTag[]` | 可用标签列表 | TagService 更新 |
 | `showEventEditModal` | `boolean` | 是否显示编辑框 | 打开/关闭 |
 
 **渲染频率**: 中频（用户编辑事件时）
 
-#### 2.1.4 标签和事件数据（2个） ⚠️ 性能关键
+#### 2.1.4 标签和计时器编辑（2个）
 
 | State | 类型 | 用途 | 触发渲染场景 | 性能影响 |
 |-------|------|------|------------|----------|
-| ~~`appTags`~~ | ~~`any[]`~~ | ~~标签数据~~ | **已移除** | **高** - 已优化为 `tagsVersion` |
 | `tagsVersion` | `number` | 标签版本号 | TagService 更新 | **低** - 版本号变化时 |
-| `allEvents` | `Event[]` | 所有事件数据 | 事件增删改 | **高** - 每次事件变化都触发 |
+| `timerEditModal` | `{ isOpen: boolean, event: Event \| null }` | Timer 编辑模态框状态 | 打开 Timer 编辑框 | **低** - 仅编辑时 |
 
-**性能优化记录**:
-- ✅ **v1.7.0 优化**: 移除 `appTags` state，改用 `tagsVersion` 触发更新
 **性能优化记录**:
 - ✅ **v1.7.0**: 移除 `appTags` state，改用 `tagsVersion` 触发更新
-- ✅ **v1.7.1**: 移除旧计时器系统和死代码
-- ⚠️ **待优化**: `allEvents` 主要用于首页统计，但会导致全局重渲染
+- ✅ **v1.7.1**: 移除旧计时器系统（6个状态）和死代码
+- ✅ **v1.7.1**: 移除 `allEvents` state，各组件自行监听 EventHub 更新
+- ✅ **v2.17**: 移除 EventIdPool 系统，改用 UUID 直接生成
 
-#### 2.1.5 设置和UI（2个）
+#### 2.1.5 设置和UI（4个）
 
 | State | 类型 | 用途 | 触发渲染场景 |
 |-------|------|------|------------|
 | `appSettings` | `AppSettings` | 应用设置 | 用户修改设置 |
-| `clickTrackerEnabled` | `boolean` | 调试工具开关 | 开发调试 |
+| `settingsLoaded` | `boolean` | 设置是否已加载 | 初始化时 |
+| `currentPage` | `PageType` | 当前页面 | 页面切换 |
+| `isPanelVisible` | `boolean` | 侧边栏可见性 | 用户切换侧边栏 |
+| `showSettingsModal` | `boolean` | 设置模态框显示状态 | 打开/关闭设置 |
 
-**渲染频率**: 低频（用户修改设置、开发调试时）
+**渲染频率**: 低频（用户修改设置、页面切换时）
+
+**🔧 架构变更**: 移除 `clickTrackerEnabled`（调试工具已废弃）
 
 ---
 
@@ -137,17 +456,15 @@ App 组件会在以下情况重新渲染：
 
 #### 3.1.1 高频触发（可能导致性能问题）
 
-1. **事件数据变化** - `allEvents` 更新
-   - 触发场景: 
-     - PlanManager 创建/更新/删除事件
-     - localStorage 变化（跨标签页）
-   - 影响: 触发 App 重渲染，但主要用于首页统计
-   - ⚠️ 待优化: TimeCalendar 删除事件时，会触发不必要的 App 重渲染
+1. ~~**事件数据变化** - `allEvents` 更新~~
+   - ✅ **已移除** (v1.7.1): 各组件自行监听 EventHub，避免 App 不必要的重渲染
+   - DailyStatsCard 自己监听 `eventsUpdated` 事件
+   - PlanManager 自己监听 EventHub 更新
 
 #### 3.1.2 中频触发
 
 1. **用户交互** - 编辑事件、选择标签等
-   - `editingEventTitle`, `editingEventDescription`, `editingEventTagId` 等
+   - `editingEventTitle`, `editingEventDescription`, `editingEventTagIds` 等
    - 影响范围: 编辑相关组件
 
 2. **标签数据更新** - `tagsVersion` 增加
@@ -182,12 +499,13 @@ App 组件会在以下情况重新渲染：
 
 #### 3.2.2 待优化项
 
-1. **allEvents 全局状态**
-   - 问题: 主要用于首页统计，但触发全局重渲染
-   - 建议: 
-     - 使用 Context 隔离状态
-     - 只在首页时监听更新
-     - 按需加载策略
+1. ~~**allEvents 全局状态**~~
+   - ✅ **已优化** (v1.7.1): 移除全局 state，各组件自行监听
+
+2. **编辑相关 states 可合并**
+   - 问题: `editingEventId`, `editingEventTitle`, `editingEventDescription`, `editingEventTagIds` 可以合并为单个对象
+   - 建议: 使用 `useReducer` 管理编辑状态
+   - 优先级: P3（低）
 
 ---
 
@@ -196,22 +514,156 @@ App 组件会在以下情况重新渲染：
 ### 4.1 服务初始化顺序
 
 ```
+组件外部（模块加载时）
+  ↓
+1. microsoftCalendarService 实例创建
+  ↓
+2. 挂载到 window.microsoftCalendarService
+  ↓
+3. 挂载 EventService, EventHub, TimeHub 到 window（同步挂载）
+  ↓
 App Component Mount
   ↓
-1. CacheManager.checkAndClearOldCache()
+4. CacheManager.checkAndClearOldCache()
   ↓
-2. TagService.initialize()
+5. TagService.initialize()
   ↓
-3. MicrosoftCalendarService (已在组件外创建)
+6. ActionBasedSyncManager 创建 (setSyncManager)
   ↓
-4. ActionBasedSyncManager (setSyncManager)
-  ↓
-5. EventService (静态方法调用)
+7. EventHub/TimeHub 静态方法调用（已在 window 上）
 ```
 
-### 4.2 服务通信机制
+**🔧 关键架构点**:
+- EventHub 和 TimeHub **必须同步挂载** 到 window，在 ActionBasedSyncManager 初始化前
+- microsoftService 通过 useState 管理，确保 React 生命周期正确
 
-#### 4.2.1 TagService ↔ App
+---
+
+### 4.2 UUID 创建机制 (v2.17)
+
+**ID 生成策略**:
+```typescript
+// EventService.createEvent() 自动生成 UUID
+if (!event.id || !isValidId(event.id, 'event')) {
+  event.id = generateEventId(); // ✅ 生成 UUID v4 格式
+}
+
+// UUID 格式: evt_<timestamp>_<random>
+// 示例: evt_1702656000000_abc123def
+```
+
+**ID 格式验证**:
+- ✅ **有效格式**: `evt_` 开头的 UUID
+- ❌ **临时 ID**: `line-`, `temp-`, `timer-` 开头（会被替换）
+- ⚠️ **兼容性**: 支持旧格式 `event_` 开头的短 ID（遗留数据）
+
+**关键特性**:
+- 🔧 **自动修复**: 无效 ID 自动生成新 UUID
+- 📝 **日志追踪**: 记录 ID 替换过程
+- 🚀 **性能**: UUID 生成无需查询数据库，避免 ID 冲突
+
+---
+
+### 4.3 父子事件 EventTree 维护
+
+#### 4.3.1 双向关联机制
+
+**创建子事件时自动维护**:
+```typescript
+// EventService.createEvent() 自动维护父子关系
+if (finalEvent.parentEventId) {
+  const parentEvent = await this.getEventById(finalEvent.parentEventId);
+  
+  if (parentEvent) {
+    // 🔗 自动添加到父事件的 childEventIds
+    const childIds = parentEvent.childEventIds || [];
+    if (!childIds.includes(finalEvent.id)) {
+      await this.updateEvent(parentEvent.id, {
+        childEventIds: [...childIds, finalEvent.id]
+      }, true); // skipSync=true 避免递归同步
+    }
+  }
+}
+```
+
+**更新父事件时维护**:
+```typescript
+// EventService.updateEvent() 自动处理父事件变更
+if (updates.parentEventId !== undefined) {
+  // 1. 从旧父事件的 childEventIds 移除
+  if (oldParentId && oldParentId !== updates.parentEventId) {
+    await this.updateEvent(oldParentId, {
+      childEventIds: oldParent.childEventIds.filter(id => id !== eventId)
+    });
+  }
+  
+  // 2. 添加到新父事件的 childEventIds
+  if (updates.parentEventId) {
+    await this.updateEvent(newParentId, {
+      childEventIds: [...newParent.childEventIds, eventId]
+    });
+  }
+}
+```
+
+**删除事件时清理**:
+```typescript
+// EventService.deleteEvent() 自动清理父子关系
+if (event.parentEventId) {
+  const parent = await this.getEventById(event.parentEventId);
+  if (parent?.childEventIds) {
+    await this.updateEvent(parent.id, {
+      childEventIds: parent.childEventIds.filter(id => id !== eventId)
+    });
+  }
+}
+```
+
+#### 4.3.2 EventTree 数据结构
+
+```typescript
+interface Event {
+  id: string;                    // 事件唯一 ID (UUID)
+  parentEventId?: string;        // 父事件 ID
+  childEventIds?: string[];      // 子事件 ID 数组
+  // ... 其他字段
+}
+```
+
+**树形结构示例**:
+```
+Parent Event (evt_xxx_parent)
+  ├─ childEventIds: ['evt_xxx_child1', 'evt_xxx_child2']
+  │
+  ├─ Child Event 1 (evt_xxx_child1)
+  │   └─ parentEventId: 'evt_xxx_parent'
+  │
+  └─ Child Event 2 (evt_xxx_child2)
+      └─ parentEventId: 'evt_xxx_parent'
+```
+
+#### 4.3.3 应用场景
+
+**Timer 父子事件管理**:
+- globalTimer 包含 `parentEventId` 字段
+- Timer 停止时自动关联到父事件
+- 二次计时自动升级为父子结构
+
+**PlanManager 事件层级**:
+- Tab 键创建子事件，自动设置 `parentEventId`
+- Shift+Tab 调整层级，自动更新 EventTree
+- 详见: `docs/PRD/PLANMANAGER_MODULE_PRD.md`
+
+**架构优势**:
+- ✅ **自动化**: 无需手动维护双向关联
+- ✅ **一致性**: EventService 统一管理，避免数据不一致
+- ✅ **可追溯**: 完整的父子关系链路，便于调试和查询
+
+---
+
+### 4.4 服务通信机制
+
+#### 4.4.1 TagService ↔ App
 
 ```
 TagService.updateTags()
@@ -227,7 +679,7 @@ hierarchicalTags useMemo 重新执行
 EventEditModal 收到新 prop
 ```
 
-#### 4.2.2 FigmaTagManager ↔ App ↔ TagService
+#### 4.4.2 FigmaTagManager ↔ App ↔ TagService
 
 ```
 FigmaTagManager 用户修改标签
@@ -243,21 +695,30 @@ setTagsVersion(v => v + 1)
 hierarchicalTags 更新
 ```
 
-#### 4.2.3 EventService ↔ App
+#### 4.4.3 EventHub ↔ 各组件 (v1.7.1 架构)
 
 ```
 PlanManager 事件操作
   ↓
-EventService.createEvent() / updateEvent() / deleteEvent()
+EventHub.createEvent() / updateEvent() / deleteEvent()
   ↓
-localStorage 更新
+EventService 更新 + localStorage 持久化
   ↓
-App: onEventCreated / onEventUpdated / onEventDeleted
+EventHub.emit('eventsUpdated')
   ↓
-setAllEvents(EventService.getAllEvents())
+各组件自行监听:
+  - DailyStatsCard: 监听 'eventsUpdated'，更新统计
+  - PlanManager: 监听 EventHub，刷新显示
+  - TimeCalendar: 监听 EventHub，刷新日历
   ↓
-App 重渲染
+❌ App 组件不再维护 allEvents state
+✅ 避免不必要的全局重渲染
 ```
+
+**架构优化**:
+- ✅ 各组件自行订阅需要的事件
+- ✅ App 不再作为数据中转站
+- ✅ 符合「增量更新架构」设计原则
 
 ---
 
@@ -434,16 +895,17 @@ const availableCalendars = useMemo(() => {
 | 问题 | 影响 | 优先级 | 状态 |
 |------|------|--------|------|
 | ~~计时器每秒触发 App 重渲染~~ | ~~高~~ | ~~P1~~ | **✅ 已修复 v1.7.1** |
-| allEvents 触发全局重渲染 | 中 | P2 | 使用 Context 或按需加载 |
-| storage 事件监听无效 | 低 | P3 | 改用自定义事件通信 |
+| ~~allEvents 触发全局重渲染~~ | ~~中~~ | ~~P2~~ | **✅ 已修复 v1.7.1** - 移除全局 state |
+| storage 事件监听无效 | 低 | P3 | 改用 EventHub 自定义事件通信 |
+| editingEvent* states 可合并 | 低 | P3 | 使用 useReducer 优化 |
 
 ### 7.2 代码可维护性
 
 | 问题 | 影响 | 优先级 | 状态 |
 |------|------|--------|------|
-| ~~21个 states 在一个组件~~ | ~~中~~ | ~~P2~~ | **✅ 已优化至18个** |
-| 过多的 useEffect 依赖 | 中 | P2 | 使用 useReducer 合并状态 |
-| 服务调用分散 | 低 | P3 | 统一服务管理层 |
+| ~~21个 states 在一个组件~~ | ~~中~~ | ~~P2~~ | **✅ 已优化至17个** (v1.7.1) |
+| 过多的 useEffect 依赖 | 中 | P2 | 使用 useReducer 合并编辑状态 |
+| 服务调用分散 | 低 | P3 | 已统一通过 EventHub/TimeHub |
 
 ---
 
@@ -480,6 +942,23 @@ const availableCalendars = useMemo(() => {
 ---
 
 ## 9. 版本历史
+
+### v1.8 (2025-12-15)
+
+**架构清理 - EventIdPool 移除**:
+- ✅ 完全移除 EventIdPool 系统（v2.17 已迁移至 UUID）
+  - 删除 `src/services/EventIdPool.ts` 文件
+  - 修复 PlanSlate.tsx 中的遗留代码
+  - 清理所有文档中的 EventIdPool 引用
+  - UUID 创建机制：`generateEventId()` 生成 `evt_<timestamp>_<random>` 格式
+  - 父子事件 EventTree 自动维护：创建/更新/删除时自动同步 `parentEventId` 和 `childEventIds`
+  
+**文档更新**:
+- ✅ 修正 State 数量统计（18个 → 17个）
+- ✅ 补充缺失的 states 说明（microsoftService, timerEditModal 等）
+- ✅ 更新服务初始化顺序图
+- ✅ 反映 v1.7.1 的 allEvents 移除架构
+- ✅ 修正字段名：editingEventTagId → editingEventTagIds（多标签支持）
 
 ### v1.7.2 (2025-11-10)
 

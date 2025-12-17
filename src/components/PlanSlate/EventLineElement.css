@@ -36,6 +36,7 @@
 .event-line-content {
   flex: 1;
   min-width: 0;
+  position: relative; /* 🔧 确保内容区域有正确的定位上下文 */
 }
 
 .event-line-suffix {

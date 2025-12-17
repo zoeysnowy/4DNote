@@ -76,7 +76,7 @@ const PlanItemTimeDisplay = React.memo<{
   // 🔧 [FIX] 空字符串视为 undefined（TimeHub 用空字符串清空时间字段）
   const startTime = (eventTime.start && eventTime.start !== '') ? new Date(eventTime.start) : (item.startTime ? new Date(item.startTime) : null);
   const endTime = (eventTime.end && eventTime.end !== '') ? new Date(eventTime.end) : (item.endTime ? new Date(item.endTime) : null);
-  const dueDate = item.dueDate ? new Date(item.dueDate) : null;
+  const dueDateTime = item.dueDateTime ? new Date(item.dueDateTime) : null;
   const isAllDay = eventTime.timeSpec?.allDay ?? item.isAllDay;
   // displayHint 已移除，使用动态计算
   
@@ -91,7 +91,7 @@ const PlanItemTimeDisplay = React.memo<{
   // 🆕 v1.2: 获取原始的本地时间字符串（用于 formatRelativeTimeDisplay）
   const startTimeStr = (eventTime.start && eventTime.start !== '') ? eventTime.start : (item.startTime || null);
   const endTimeStr = (eventTime.end && eventTime.end !== '') ? eventTime.end : (item.endTime || null);
-  const dueDateStr = item.dueDate || null;
+  const dueDateTimeStr = item.dueDateTime || null;
   
   // 清理定时器
   useEffect(() => {
@@ -162,14 +162,14 @@ const PlanItemTimeDisplay = React.memo<{
   };
 
   // ✅ v2.8: 简化逻辑 - 只要有任何时间信息就显示
-  if (!startTime && !dueDate) return null;
+  if (!startTime && !dueDateTime) return null;
 
   // 使用相对时间格式化（动态计算）
   const relativeTimeDisplay = formatRelativeTimeDisplay(
     startTimeStr,
     endTimeStr,
     isAllDay ?? false,
-    dueDateStr
+    dueDateTimeStr
   );
 
   // 🎨 统一的渲染组件
@@ -179,7 +179,7 @@ const PlanItemTimeDisplay = React.memo<{
         <TimeHoverCard
           startTime={startTimeStr}
           endTime={endTimeStr}
-          dueDate={dueDateStr}
+          dueDateTime={dueDateTimeStr}
           isAllDay={isAllDay ?? false}
           onEditClick={handleEditClick}
           onMouseEnter={handleCardMouseEnter}
@@ -217,7 +217,7 @@ const PlanItemTimeDisplay = React.memo<{
     prevProps.item.id === nextProps.item.id &&
     prevProps.item.startTime === nextProps.item.startTime &&
     prevProps.item.endTime === nextProps.item.endTime &&
-    prevProps.item.dueDate === nextProps.item.dueDate &&
+    prevProps.item.dueDateTime === nextProps.item.dueDateTime &&
     prevProps.item.isAllDay === nextProps.item.isAllDay
   );
 });
@@ -343,8 +343,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // 🚀 性能优化: 缓存事件状态查询结果
   const eventStatusCacheRef = useRef<Map<string, { status: 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined, timestamp: number }>>(new Map());
   
-  // 🆕 事件状态计算函数 (带缓存)
-  const getEventStatus = useCallback((eventId: string, metadata?: any): 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined => {
+  // 🆕 事件状态计算函数 (带缓存) - ⚠️ 异步版本
+  const getEventStatus = useCallback(async (eventId: string, metadata?: any): Promise<'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined> => {
     if (!dateRange) return undefined;
     
     // 🔧 首先检查是否是 ghost 事件（Snapshot 模式下显示为已删除）
@@ -367,7 +367,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // 从EventHistoryService获取事件在指定时间段的历史记录
       const startTime = formatTimeForStorage(dateRange.start);
       const endTime = formatTimeForStorage(dateRange.end);
-      const history = EventHistoryService.queryHistory({ 
+      const history = await EventHistoryService.queryHistory({ 
         eventId, 
         startTime, 
         endTime 
@@ -1314,7 +1314,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         !updatedItem.eventlog?.trim() && // 🆕 v1.8: 检测富文本描述
         !updatedItem.startTime &&
         !updatedItem.endTime &&
-        !updatedItem.dueDate &&
+        !updatedItem.dueDateTime &&
         // 🔧 [FIX] 避免删除测试事件或有特殊来源的事件
         !updatedItem.source?.includes('test') &&
         !updatedItem.id?.includes('test') &&
@@ -1466,7 +1466,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         actions.save.push(eventItem);
         
         // 判断是否需要同步到 Calendar
-        const hasAnyTime = !!(eventItem.startTime || eventItem.endTime || eventItem.dueDate);
+        const hasAnyTime = !!(eventItem.startTime || eventItem.endTime || eventItem.dueDateTime);
         if (hasAnyTime) {
           actions.sync.push(eventItem);
         }
@@ -1631,7 +1631,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             !item.description?.trim() &&
             !item.startTime &&
             !item.endTime &&
-            !item.dueDate
+            !item.dueDateTime
           );
           
           // 检查创建时间是否超过5分钟
@@ -1670,7 +1670,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         !updatedItem.description?.trim() &&
         !updatedItem.startTime &&
         !updatedItem.endTime &&
-        !updatedItem.dueDate
+        !updatedItem.dueDateTime
       );
       
       if (isEmpty && !existingItem) {
@@ -2154,8 +2154,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
   }, []);
 
-  // 🆕 获取事件的所有状态（支持多状态）
-  const getEventStatuses = useCallback((eventId: string): Array<'new' | 'updated' | 'done' | 'missed' | 'deleted'> => {
+  // 🆕 获取事件的所有状态（支持多状态）- ⚠️ 异步版本
+  const getEventStatuses = useCallback(async (eventId: string): Promise<Array<'new' | 'updated' | 'done' | 'missed' | 'deleted'>> => {
     if (!dateRange) return [];
     
     try {
@@ -2171,16 +2171,15 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       const startTime = formatTimeForStorage(dateRange.start);
       const endTime = formatTimeForStorage(dateRange.end);
       
-      // TODO: 这些异步调用需要重构为异步版本
-      // 暂时跳过事件详情和签到状态检查
+      // ✅ 已修复：使用 await 正确处理异步调用
       const eventTitle = eventId.substring(0, 15);
       
-      console.log(`[getEventStatuses] 🔍 ${eventTitle} 查询状态（简化版本）:`, {
+      console.log(`[getEventStatuses] 🔍 ${eventTitle} 查询状态（异步版本）:`, {
         事件ID: eventId
       });
       
-      // 查询历史记录（已经按时间范围过滤）
-      const history = EventHistoryService.queryHistory({ 
+      // 查询历史记录（已经按时间范围过滤）- ✅ 添加 await
+      const history = await EventHistoryService.queryHistory({ 
         eventId, 
         startTime, 
         endTime 
@@ -2274,60 +2273,82 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
   }, [dateRange, items]);
 
-  // 🆕 计算状态竖线段 - 支持多状态显示
-  const statusLineSegments = useMemo((): StatusLineSegment[] => {
-    const segments: StatusLineSegment[] = [];
-    
-    console.log('[PlanManager] 📊 开始生成segments:', {
-      dateRange: dateRange ? {
-        start: formatTimeForStorage(dateRange.start),
-        end: formatTimeForStorage(dateRange.end)
-      } : null,
-      editorItems数量: editorItems.length,
-      前3个: editorItems.slice(0, 3).map((item, idx) => ({
-        index: idx,
-        id: item.id?.substring(0, 10),
-        title: item.title?.simpleTitle?.substring(0, 20) || ''
-      }))
-    });
-    
-    editorItems.forEach((item, index) => {
-      if (!item.id) return;
+  // 🆕 计算状态竖线段 - 支持多状态显示 - ✅ 改用 useEffect + useState 处理异步
+  const [statusLineSegments, setStatusLineSegments] = useState<StatusLineSegment[]>([]);
+  const [eventStatusMap, setEventStatusMap] = useState<Map<string, 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined>>(new Map());
+  
+  useEffect(() => {
+    // 异步计算 segments 和 statusMap
+    const computeSegments = async () => {
+      const segments: StatusLineSegment[] = [];
+      const statusMap = new Map<string, 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined>();
       
-      const eventStatuses = getEventStatuses(item.id);
-      
-      console.log(`[PlanManager] Event[${index}] ${item.title?.simpleTitle?.substring(0, 20) || ''}: ${eventStatuses.length}个状态 ${JSON.stringify(eventStatuses)}`);
-      
-      // 为每个状态创建一个segment
-      eventStatuses.forEach(status => {
-        const statusConfig = getStatusConfig(status);
-        if (statusConfig) {
-          segments.push({
-            startIndex: index,
-            endIndex: index,
-            status: status,
-            label: statusConfig.label
-          });
-        }
+      console.log('[PlanManager] 📊 开始生成segments (异步版本):', {
+        dateRange: dateRange ? {
+          start: formatTimeForStorage(dateRange.start),
+          end: formatTimeForStorage(dateRange.end)
+        } : null,
+        editorItems数量: editorItems.length,
+        前3个: editorItems.slice(0, 3).map((item, idx) => ({
+          index: idx,
+          id: item.id?.substring(0, 10),
+          title: item.title?.simpleTitle?.substring(0, 20) || ''
+        }))
       });
-    });
+      
+      // 并行查询所有事件的状态（性能优化）
+      const statusPromises = editorItems.map(async (item, index) => {
+        if (!item.id) return { index, eventId: '', statuses: [] };
+        
+        const eventStatuses = await getEventStatuses(item.id);
+        
+        console.log(`[PlanManager] Event[${index}] ${item.title?.simpleTitle?.substring(0, 20) || ''}: ${eventStatuses.length}个状态 ${JSON.stringify(eventStatuses)}`);
+        
+        return { index, eventId: item.id, statuses: eventStatuses };
+      });
+      
+      const results = await Promise.all(statusPromises);
+      
+      // 为每个状态创建一个segment，同时填充 statusMap
+      results.forEach(({ index, eventId, statuses }) => {
+        if (eventId) {
+          // 存储第一个状态到 map（用于 PlanSlate 渲染）
+          statusMap.set(eventId, statuses[0] || undefined);
+        }
+        
+        statuses.forEach(status => {
+          const statusConfig = getStatusConfig(status);
+          if (statusConfig) {
+            segments.push({
+              startIndex: index,
+              endIndex: index,
+              status: status,
+              label: statusConfig.label
+            });
+          }
+        });
+      });
+      
+      console.log('[PlanManager] 📊 生成segments详情:', {
+        总数: segments.length,
+        详细列表: segments.map(s => ({
+          index: s.startIndex,
+          status: s.status,
+          label: s.label
+        })),
+        deleted数量: segments.filter(s => s.status === 'deleted').length,
+        deleted详情: segments.filter(s => s.status === 'deleted').map(s => ({
+          index: s.startIndex,
+          eventId: editorItems[s.startIndex]?.id?.slice(-10),
+          title: editorItems[s.startIndex]?.title?.simpleTitle?.substring(0, 20)
+        }))
+      });
+      
+      setStatusLineSegments(segments);
+      setEventStatusMap(statusMap);
+    };
     
-    console.log('[PlanManager] 📊 生成segments详情:', {
-      总数: segments.length,
-      详细列表: segments.map(s => ({
-        index: s.startIndex,
-        status: s.status,
-        label: s.label
-      })),
-      deleted数量: segments.filter(s => s.status === 'deleted').length,
-      deleted详情: segments.filter(s => s.status === 'deleted').map(s => ({
-        index: s.startIndex,
-        eventId: editorItems[s.startIndex]?.id?.slice(-10),
-        title: editorItems[s.startIndex]?.title?.simpleTitle?.substring(0, 20)
-      }))
-    });
-    
-    return segments;
+    computeSegments();
   }, [editorItems, getEventStatuses, getStatusConfig, dateRange]);
 
   // 处理编辑器内容变化
@@ -2478,7 +2499,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           // ✅ 默认不设置时间，用户通过 FloatingBar 或 @chrono 自行定义
           startTime: '', // ✅ 空字符串表示无时间
           endTime: '',   // ✅ 空字符串表示无时间
-          dueDate: undefined, // ✅ 不预设截止日期
+          dueDateTime: undefined, // ✅ 不预设截止日期/时间
           isAllDay: false,
           createdAt: nowLocal, // ✅ 使用 timeUtils 格式化，避免时区问题
           updatedAt: nowLocal,
@@ -2569,10 +2590,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       id: item.id || generateEventId(),
       title: item.title,
       description: item.notes || sanitize(item.description || item.content || ''),
-      startTime: item.startTime || item.dueDate || '', // 🔧 没有时间的任务保持为空字符串
-      endTime: item.endTime || item.dueDate || '', // 🔧 没有时间的任务保持为空字符串
+      startTime: item.startTime || item.dueDateTime || '', // 🔧 没有时间的任务保持为空字符串
+      endTime: item.endTime || item.dueDateTime || '', // 🔧 没有时间的任务保持为空字符串
       location: '', // Event 没有 location 字段，保留空值
-      isAllDay: !item.startTime && !!item.dueDate,
+      isAllDay: !item.startTime && !!item.dueDateTime,
       tags: mappedTags,
       calendarIds: item.calendarIds || (calendarIds.length > 0 ? calendarIds : undefined), // 🔧 优先保留已有值，否则使用标签映射
       todoListIds: item.todoListIds, // 🔧 保留 To Do Lists 映射
@@ -2613,7 +2634,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       eventId: item.id,
       startTime: item.startTime,
       endTime: item.endTime,
-      dueDate: item.dueDate,
+      dueDateTime: item.dueDateTime,
       调用栈: new Error().stack?.split('\n').slice(1, 5).join('\n')
     });
     
@@ -2621,7 +2642,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     const eventTime = getEventTime(item.id, {
       start: item.startTime || null,
       end: item.endTime || null,
-      dueDate: item.dueDate || null,
+      dueDate: item.dueDateTime || null,
       isAllDay: item.isAllDay,
       timeSpec: (item as any).timeSpec,
     });
@@ -2843,7 +2864,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             key={dateRange ? `snapshot-${dateRange.start.getTime()}-${dateRange.end.getTime()}` : 'normal'}
             items={editorItems}
             onChange={debouncedOnChange}
-            getEventStatus={getEventStatus}
+            eventStatusMap={eventStatusMap}
           onFocus={(lineId) => {
             // ✅ 重构: 直接从 lineId 判断模式
             setCurrentFocusedLineId(lineId);

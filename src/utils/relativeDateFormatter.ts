@@ -281,7 +281,7 @@ export function formatCountdown(targetDate: Date, now: Date = new Date()): {
  * @param startTime 开始时间（可选）
  * @param endTime 结束时间（可选）
  * @param isAllDay 是否全天事件
- * @param dueDate 截止日期（可选）
+ * @param dueDateTime 截止日期/时间（可选）
  * @returns 格式化的时间显示字符串
  * 
  * @example
@@ -301,12 +301,12 @@ export function formatRelativeTimeDisplay(
   startTime?: string | null,
   endTime?: string | null,
   isAllDay?: boolean,
-  dueDate?: string | null
+  dueDateTime?: string | null
 ): string {
   const now = new Date();
   
-  // 优先使用开始时间，其次是截止日期
-  const primaryDate = startTime || dueDate;
+  // 优先使用开始时间，其次是截止日期/时间
+  const primaryDate = startTime || dueDateTime;
   
   if (!primaryDate) {
     return ''; // 没有任何日期信息

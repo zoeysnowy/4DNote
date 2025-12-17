@@ -37,8 +37,33 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
   const isDeleted = (element.metadata as any)?._isDeleted || eventStatus === 'deleted';
   
   // 🔧 缩进计算：标题行和 eventlog 行使用相同的 paddingLeft
-  // eventlog 通过占位元素来补偿标题行的前缀宽度
   const paddingLeft = `${element.level * 24}px`;
+  
+  // 🔧 动态计算 eventlog 占位符宽度
+  const metadata = element.metadata || {};
+  const checkType = metadata.checkType;
+  const showCheckbox = checkType === 'once' || checkType === 'recurring';
+  
+  // 计算前缀宽度：只为 checkbox 预留空间，emoji 视为文字的一部分
+  // 如果没有 checkbox，则不需要占位符
+  let prefixWidth = 0;
+  if (showCheckbox) {
+    prefixWidth = 16 + 4; // checkbox(16px) + gap(4px)
+  }
+  
+  // 🔧 调试：记录 eventlog 行的关键信息
+  if (isEventlogMode && process.env.NODE_ENV === 'development') {
+    console.log('[EventLineElement] eventlog 渲染:', {
+      eventId: element.eventId?.slice(-8),
+      lineId: element.lineId,
+      level: element.level,
+      paddingLeft,
+      showCheckbox,
+      prefixWidth,
+      hasMetadata: !!metadata,
+      checkType
+    });
+  }
   
   // 🆕 处理 placeholder 点击
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -68,7 +93,7 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
         paddingLeft,
         display: 'flex',
         alignItems: isEventlogMode ? 'flex-start' : 'center',
-        gap: '8px',
+        gap: '4px', // 🔧 减少 gap，与 EventLinePrefix 内部 gap 一致
         minHeight: isEventlogMode ? '20px' : '32px', // 🔧 eventlog 模式更紧凑
         textDecoration: isDeleted ? 'line-through' : 'none',  // ✅ 删除线
         opacity: isDeleted ? 0.6 : 1,  // ✅ 降低透明度
@@ -82,13 +107,13 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
         </div>
       )}
       
-      {/* Eventlog 模式：添加占位符，与标题行的 checkbox + gap 等宽，确保文字对齐 */}
-      {isEventlogMode && (
+      {/* Eventlog 模式：动态计算占位符宽度，与标题行的内容首字符对齐 */}
+      {isEventlogMode && prefixWidth > 0 && (
         <div 
           className="event-line-prefix-spacer" 
           contentEditable={false}
           style={{
-            width: '24px', // checkbox(16px) + gap(8px) = 24px，确保与标题行首字符对齐
+            width: `${prefixWidth}px`, // 🔧 动态计算：根据是否有 checkbox 和 emoji
             flexShrink: 0,
           }}
         />

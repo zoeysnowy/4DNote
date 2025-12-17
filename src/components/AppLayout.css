@@ -67,7 +67,7 @@
   border-bottom: none;
   box-shadow: none;
   position: relative;
-  z-index: 1000; /* 最低层 */
+  z-index: 10; /* 🔧 降低 z-index，确保不遮挡模态框遮罩层 */
   pointer-events: none; /* 让整个header不拦截点击，在子元素中选择性启用 */
 }
 
@@ -267,6 +267,8 @@
   justify-content: center;
   cursor: pointer;
   transition: all 0.2s ease;
+  position: relative;
+  z-index: 10; /* 🔧 确保不遮挡模态框遮罩层 */
 }
 
 .user-profile span {
@@ -294,7 +296,7 @@
   display: flex;
   flex-direction: column;
   position: relative;
-  z-index: 1100; /* 最高层 - menubar */
+  z-index: 10; /* 🔧 降低 z-index，确保不遮挡 statusbar */
   -webkit-app-region: no-drag;
   pointer-events: auto;
   user-select: none;
@@ -468,8 +470,8 @@
    =================== */
 .app-main {
   grid-area: main;
-  padding: 0; /* 🔧 [FIX] 移除所有padding，由子组件控制 */
-  overflow: auto;
+  padding: 0; /* 🔧 [FIX] 移除padding，由子页面控制底部间距 */
+  overflow: hidden; /* 🔧 移除滚动条，由内部页面控制滚动 */
   background: none; /* 🎨 Figma: 移除背景，显示渐变 */
   position: relative; /* 🔧 [FIX] 确保正确的堆叠上下文 */
   z-index: 10; /* 🔧 提升 z-index，确保在渐变背景之上 */

@@ -83,6 +83,7 @@ type CustomText = TextNode;
 
 // 导入 EventHistoryService 获取创建时间
 import { EventHistoryService } from '../../services/EventHistoryService';
+import { formatTimeForStorage } from '../../utils/timeUtils';
 
 // 样式复用 PlanSlate 的样式
 import './ModalSlate.css';
@@ -143,7 +144,7 @@ export interface ModalSlateRef {
 const createTimestampDivider = (timestamp: Date): TimestampDividerType => {
   return {
     type: 'timestamp-divider',
-    timestamp: timestamp.toISOString(),
+    timestamp: formatTimeForStorage(timestamp),
     displayText: timestamp.toLocaleString(),
     children: [{ text: '' }]
   };
@@ -533,51 +534,58 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         
         let createLog = createLogs[0];
         
-        // 🔧 如果没有创建日志，尝试从 eventlog 的 timestamp 节点补录
+        // 🆕 Block-Level Timestamp 方案：直接从 paragraph[0].createdAt 获取创建时间
         if (!createLog) {
-          // console.log('[ModalSlate] 未找到创建日志，尝试从 timestamp 节点补录');
+          console.log('[ModalSlate] 未找到创建日志，尝试从 Block-Level Timestamp 获取');
           const event = EventService.getEventById(parentEventId);
           if (event && event.eventlog) {
-            const backfilledCount = EventService.backfillEventHistoryFromTimestamps(
-              parentEventId, 
-              event.eventlog
-            );
-            
-            if (backfilledCount > 0) {
-              console.log('[ModalSlate] 补录成功，重新查询创建日志');
-              // 重新查询
-              const retryLogs = EventHistoryService.queryHistory({
-                eventId: parentEventId,
-                operations: ['create'],
-                limit: 1
-              });
-              createLog = retryLogs[0];
-            } else {
-              // 🔧 补录失败（eventlog 中没有 timestamp 节点），使用 event.createdAt 作为 fallback
-              console.log('[ModalSlate] 补录失败，使用 event.createdAt 作为 fallback');
-              if (event.createdAt) {
-                // 创建一个临时的 createLog 对象
+            try {
+              // 解析 slateJson
+              const slateNodes = typeof event.eventlog.slateJson === 'string' 
+                ? JSON.parse(event.eventlog.slateJson) 
+                : event.eventlog.slateJson;
+              
+              // 从第一个 paragraph 获取 createdAt
+              const firstParagraph = slateNodes.find((node: any) => node.type === 'paragraph');
+              if (firstParagraph && firstParagraph.createdAt) {
+                console.log('[ModalSlate] ✅ 从 Block-Level Timestamp 获取创建时间:', firstParagraph.createdAt);
+                const createTime = new Date(firstParagraph.createdAt);
                 createLog = {
-                  id: 'fallback-' + parentEventId,
+                  id: 'block-timestamp-' + parentEventId,
                   eventId: parentEventId,
                   operation: 'create',
-                  timestamp: event.createdAt,
-                  source: 'fallback-createdAt',
+                  timestamp: formatTimeForStorage(createTime),
+                  source: 'block-level-timestamp',
                   changes: []
                 } as any;
-                console.log('[ModalSlate] 使用 event.createdAt:', event.createdAt);
-              } else if (event.updatedAt) {
-                // 如果连 createdAt 都没有，使用 updatedAt
-                createLog = {
-                  id: 'fallback-' + parentEventId,
-                  eventId: parentEventId,
-                  operation: 'create',
-                  timestamp: event.updatedAt,
-                  source: 'fallback-updatedAt',
-                  changes: []
-                } as any;
-                console.log('[ModalSlate] 使用 event.updatedAt:', event.updatedAt);
               }
+            } catch (error) {
+              console.warn('[ModalSlate] 解析 slateJson 失败:', error);
+            }
+          }
+          
+          // Fallback: 使用 event.createdAt
+          if (!createLog && event) {
+            if (event.createdAt) {
+              createLog = {
+                id: 'fallback-' + parentEventId,
+                eventId: parentEventId,
+                operation: 'create',
+                timestamp: event.createdAt,
+                source: 'fallback-createdAt',
+                changes: []
+              } as any;
+              console.log('[ModalSlate] 使用 event.createdAt:', event.createdAt);
+            } else if (event.updatedAt) {
+              createLog = {
+                id: 'fallback-' + parentEventId,
+                eventId: parentEventId,
+                operation: 'create',
+                timestamp: event.updatedAt,
+                source: 'fallback-updatedAt',
+                changes: []
+              } as any;
+              console.log('[ModalSlate] 使用 event.updatedAt:', event.updatedAt);
             }
           }
         }
@@ -589,7 +597,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           // 创建 timestamp 节点（使用创建时间）
           const timestampNode = {
             type: 'timestamp-divider',
-            timestamp: createTime.toISOString(),
+            timestamp: formatTimeForStorage(createTime),
             displayText: formatDateTime(createTime),
             isFirstOfDay: true,
             children: [{ text: '' }]
@@ -668,48 +676,17 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         const isBullet = para.bullet === true;
         const bulletLevel = para.bulletLevel ?? 0;
         
-        // 检查是否应该绘制 preline
+        // 🆕 [Block-Level Timestamp] 检查是否应该显示时间戳（基于 createdAt 元数据）
+        const hasBlockTimestamp = !!(para.createdAt && typeof para.createdAt === 'number');
+        const shouldShowTimestamp = hasBlockTimestamp && enableTimestamp;
+        
+        // 🆕 [Block-Level Timestamp] 检查是否应该绘制 preline
         const needsPreline = (() => {
-          try {
-            const path = ReactEditor.findPath(editor, element);
-            if (!path) return false;
-            
-            // 🔧 向上查找最近的 timestamp（必须是紧邻的，中间不能有其他非 paragraph 节点）
-            let hasTimestamp = false;
-            let timestampIndex = -1;
-            
-            for (let i = path[0] - 1; i >= 0; i--) {
-              const node = editor.children[i] as any;
-              if (node.type === 'timestamp-divider') {
-                hasTimestamp = true;
-                timestampIndex = i;
-                break;
-              }
-              // 如果遇到非 paragraph 且非 timestamp 的节点，停止查找
-              if (node.type !== 'paragraph') {
-                break;
-              }
-            }
-            
-            if (!hasTimestamp) return false;
-            
-            // 🔧 检查 timestamp 和当前段落之间是否只有 paragraph 节点（确保连续性）
-            for (let i = timestampIndex + 1; i < path[0]; i++) {
-              const node = editor.children[i] as any;
-              if (node.type !== 'paragraph') {
-                return false; // 中间有其他类型节点，不属于这个 timestamp 组
-              }
-            }
-            
-            // 如果有内容，显示 preline
-            const hasContent = (element as any).children?.some((child: any) => child.text?.trim());
-            if (hasContent) return true;
-            
-            // 空段落：只有当它紧跟在 timestamp 之后（或中间只有空 paragraph）时才显示 preline
-            return true;
-          } catch {
-            return false;
-          }
+          if (!enableTimestamp) return false;
+          
+          // ✅ 只要当前paragraph有timestamp就显示preline（包括第一个）
+          // preline会从timestamp位置向下延伸，视觉上更连贯
+          return hasBlockTimestamp;
         })();
         
         // 检查是否是最后一个非空段落（光标可能到达过的最远位置）
@@ -734,27 +711,52 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         // 计算 bullet 符号（使用 SlateCore 的统一符号）
         const bulletSymbol = isBullet ? getBulletChar(bulletLevel) : null;
         
+        // 🆕 格式化时间戳显示
+        const timestampDisplay = shouldShowTimestamp 
+          ? formatDateTime(new Date(para.createdAt))
+          : null;
+        
         return (
           <div
             {...props.attributes}
-            className={`slate-paragraph ${needsPreline ? 'with-preline' : ''} ${isBullet ? 'bullet-paragraph' : ''}`}
+            className={`slate-paragraph ${needsPreline ? 'with-preline' : ''} ${isBullet ? 'bullet-paragraph' : ''} ${shouldShowTimestamp ? 'with-timestamp' : ''}`}
             style={{
               position: 'relative',
               paddingLeft: needsPreline ? '20px' : '0',
-              minHeight: needsPreline ? '20px' : 'auto'
+              minHeight: needsPreline ? '20px' : 'auto',
+              paddingTop: shouldShowTimestamp ? '28px' : '0'
             }}
           >
-            {needsPreline && isFocused && (
+            {/* 🆕 Block-Level Timestamp 显示 */}
+            {shouldShowTimestamp && (
+              <div
+                contentEditable={false}
+                style={{
+                  position: 'absolute',
+                  left: needsPreline ? '20px' : '0',
+                  top: '0',
+                  fontSize: '12px',
+                  color: '#999',
+                  userSelect: 'none',
+                  opacity: 0.7,
+                  zIndex: 1,
+                  whiteSpace: 'nowrap'  // 🔧 确保 "| 14min later" 和时间戳在同一行
+                }}
+              >
+                {timestampDisplay}
+              </div>
+            )}
+            {needsPreline && (
               <div
                 className="paragraph-preline"
                 contentEditable={false}
                 style={{
                   position: 'absolute',
                   left: '8px',
-                  top: '-20px', // 向上延伸到 timestamp（调整为更自然的位置）
+                  top: shouldShowTimestamp ? '0' : '-28px',
                   bottom: isLastContentParagraph ? '-8px' : '0',
-                  width: '1px',
-                  background: '#d1d5db',
+                  width: '2px',
+                  background: '#e5e7eb',
                   zIndex: 0,
                   pointerEvents: 'none'
                 }}
@@ -767,7 +769,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
                 style={{
                   position: 'absolute',
                   left: needsPreline ? `${20 + bulletLevel * 24}px` : `${bulletLevel * 24}px`,
-                  top: '0',
+                  top: shouldShowTimestamp ? '28px' : '0',
                   userSelect: 'none',
                   color: '#6b7280',
                   fontWeight: 'bold',
@@ -797,6 +799,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
         return <EventMentionElement {...props} element={props.element as any} />;
         
       case 'timestamp-divider':
+        // 🔧 兼容旧格式，但不再使用（Block-Level Timestamp 已取代）
         return <TimestampDividerElement {...props} />;
         
       default:
@@ -806,7 +809,7 @@ export const ModalSlate = forwardRef<ModalSlateRef, ModalSlateProps>((
           </div>
         );
     }
-  }, [hasPrecedingTimestamp, editor]);
+  }, [editor, enableTimestamp]);
   
   /**
    * 渲染叶子节点（文本格式）

@@ -13,6 +13,7 @@
 
 import { Descendant, Text as SlateText } from 'slate';
 import type { EventLog } from '../types';
+import { formatTimeForStorage } from './timeUtils';
 
 // ==================== EventLog 转换 ====================
 
@@ -333,13 +334,20 @@ export function extractDateMentions(nodes: Descendant[]): Array<{
 }
 
 /**
- * 提取所有时间戳
+ * 🆕 提取所有时间戳（Block-Level Timestamp）
+ * 优先从 paragraph.createdAt 提取，向后兼容 timestamp-divider
  */
 export function extractTimestamps(nodes: Descendant[]): string[] {
   const timestamps: string[] = [];
   
   function traverse(node: any) {
-    if (node.type === 'timestamp-divider') {
+    // 🆕 优先: 从 paragraph.createdAt 提取
+    if (node.type === 'paragraph' && node.createdAt) {
+      const timestamp = formatTimeForStorage(new Date(node.createdAt));
+      timestamps.push(timestamp);
+    }
+    // 🔄 向后兼容: timestamp-divider 节点
+    else if (node.type === 'timestamp-divider' && node.timestamp) {
       timestamps.push(node.timestamp);
     }
     

@@ -1,11 +1,11 @@
 ﻿# 📸 Snapshot 状态可视化系统 PRD
 
-**版本**: v2.2 (矩阵算法优化版)  
+**版本**: v2.3 (存储架构适配版)  
 **创建日期**: 2025-11-23  
-**更新日期**: 2025-11-30  
+**更新日期**: 2025-12-15  
 **模块路径**: `src/components/StatusLineContainer.tsx` & `PlanManager.tsx`  
 **设计参考**: [Figma - ReMarkable 0.1](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646&m=dev)  
-**状态**: ✅ 已完成并性能优化
+**状态**: ✅ 已完成并性能优化 | 🔧 存储架构适配完成 (2025-12-15)
 
 ---
 
@@ -21,6 +21,7 @@
 - [8. 性能优化](#8-性能优化)
 - [9. 测试验证](#9-测试验证)
 - [10. 文档一致性检查](#10-文档一致性检查)
+- [11. 存储架构迁移适配 (v2.3)](#11-存储架构迁移适配-v23) 🆕
 
 ---
 
@@ -1005,10 +1006,392 @@ segments.forEach(segment => {
 - **相关文档**:
   - `PLANMANAGER_MODULE_PRD.md` - PlanManager 模块总览
   - `EVENT_HISTORY_SERVICE.md` - 历史记录服务文档
+  - `STORAGE_ARCHITECTURE.md` - 存储架构设计文档
 
 ---
 
-**文档版本**: v2.2.1  
-**最后更新**: 2025-11-30  
+## 11. 存储架构迁移适配 (v2.3)
+
+> 🔧 **重大更新** (2025-12-15): 适配存储架构从 localStorage 到 IndexedDB 的迁移
+
+### 11.1 问题背景
+
+#### 存储架构变更
+
+| 维度 | v1.0 (变更前) | v3.0 (变更后, 2025-12-06) |
+|------|--------------|---------------------------|
+| **存储方式** | localStorage (同步) | IndexedDB (异步) |
+| **EventHistoryService.queryHistory()** | 同步函数，返回 `EventChangeLog[]` | **异步函数**，返回 `Promise<EventChangeLog[]>` |
+| **调用方式** | `const history = queryHistory()` | `const history = await queryHistory()` |
+
+#### 问题发现
+
+**症状**: Snapshot 模式下状态竖线不显示，控制台报错或无响应
+
+**根本原因**: PlanManager 中的状态查询函数仍以同步方式调用异步的 `queryHistory()`
+
+```typescript
+// ❌ 错误代码 (v2.2)
+const getEventStatus = useCallback((eventId: string) => {
+  const history = EventHistoryService.queryHistory({ eventId }); 
+  // ❌ history 实际上是 Promise<EventChangeLog[]>，而非数组
+  
+  if (!history || history.length === 0) { 
+    // ❌ Promise.length === undefined，条件判断错误
+    return undefined;
+  }
+  
+  const latestAction = history[0]; 
+  // ❌ Promise[0] === undefined
+  
+  // ❌ 所有后续状态计算都失败
+}, [dateRange]);
+```
+
+**影响范围**:
+- ✅ StatusLineContainer 渲染正常（无需修改）
+- ❌ PlanManager 状态查询失败
+- ❌ eventStatusMap 为空
+- ❌ segments 数组为空
+- ❌ 竖线不显示
+
+### 11.2 修复方案
+
+#### 方案概述
+
+**核心思路**: 使用 `eventStatusMap` 预计算 + 同步传递
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 修复前 (v2.2) - 同步调用异步函数                        │
+├─────────────────────────────────────────────────────────┤
+│ renderElement() [同步]                                  │
+│   └─> getEventStatus(id) [同步]                        │
+│         └─> queryHistory() [异步 - ❌ 无 await]        │
+│               └─> 返回 Promise (被误当作数组)           │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│ 修复后 (v2.3) - 预计算 + Map 缓存                      │
+├─────────────────────────────────────────────────────────┤
+│ useEffect() [组件级别]                                  │
+│   └─> computeSegments() [异步函数]                     │
+│         └─> Promise.all([                              │
+│               getEventStatuses(id1) [async],           │
+│               getEventStatuses(id2) [async],           │
+│               ... (并行查询)                            │
+│             ])                                          │
+│             └─> 每个 await queryHistory() ✅           │
+│   └─> setEventStatusMap(map) [更新状态]                │
+│                                                         │
+│ renderElement() [同步]                                  │
+│   └─> eventStatusMap.get(id) [同步读取 ✅]             │
+└─────────────────────────────────────────────────────────┘
+```
+
+#### 代码修改
+
+**1. 将状态查询函数改为异步**
+
+```typescript
+// ✅ 修复 1: getEventStatus 改为异步
+const getEventStatus = useCallback(async (
+  eventId: string, 
+  metadata?: any
+): Promise<'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined> => {
+  if (!dateRange) return undefined;
+  
+  // ... ghost 事件检查 ...
+  
+  try {
+    const startTime = formatTimeForStorage(dateRange.start);
+    const endTime = formatTimeForStorage(dateRange.end);
+    
+    // ✅ 添加 await 关键字
+    const history = await EventHistoryService.queryHistory({ 
+      eventId, 
+      startTime, 
+      endTime 
+    });
+    
+    if (!history || history.length === 0) {
+      return undefined;
+    }
+    
+    // ✅ 现在 history 是真正的数组
+    const sortedHistory = history.sort((a, b) => 
+      parseLocalTimeString(b.timestamp).getTime() - 
+      parseLocalTimeString(a.timestamp).getTime()
+    );
+    
+    const latestAction = sortedHistory[0]; // ✅ 正确获取
+    // ... 状态计算逻辑 ...
+  } catch (error) {
+    console.warn(`[getEventStatus] Error:`, error);
+    return undefined;
+  }
+}, [dateRange, items]);
+
+// ✅ 修复 2: getEventStatuses 改为异步
+const getEventStatuses = useCallback(async (
+  eventId: string
+): Promise<Array<'new' | 'updated' | 'done' | 'missed' | 'deleted'>> => {
+  if (!dateRange) return [];
+  
+  try {
+    const startTime = formatTimeForStorage(dateRange.start);
+    const endTime = formatTimeForStorage(dateRange.end);
+    
+    // ✅ 添加 await 关键字
+    const history = await EventHistoryService.queryHistory({ 
+      eventId, 
+      startTime, 
+      endTime 
+    });
+    
+    const statuses = new Set();
+    history.forEach(log => {
+      if (log.operation === 'create') statuses.add('new');
+      if (log.operation === 'update') statuses.add('updated');
+      if (log.operation === 'delete') statuses.add('deleted');
+      // ... 其他状态判断 ...
+    });
+    
+    return Array.from(statuses);
+  } catch (error) {
+    console.error('[getEventStatuses] 错误:', error);
+    return [];
+  }
+}, [dateRange, items]);
+```
+
+**2. useMemo 改为 useEffect + useState**
+
+```typescript
+// ❌ 旧代码: useMemo 不支持异步
+const statusLineSegments = useMemo((): StatusLineSegment[] => {
+  const segments = [];
+  editorItems.forEach(item => {
+    const statuses = getEventStatuses(item.id); // ❌ 返回 Promise
+    // ...
+  });
+  return segments;
+}, [editorItems]);
+
+// ✅ 新代码: useEffect 支持异步
+const [statusLineSegments, setStatusLineSegments] = useState<StatusLineSegment[]>([]);
+const [eventStatusMap, setEventStatusMap] = useState(new Map());
+
+useEffect(() => {
+  const computeSegments = async () => {
+    const segments = [];
+    const statusMap = new Map();
+    
+    // ✅ 并行查询所有事件状态（性能优化）
+    const statusPromises = editorItems.map(async (item, index) => {
+      if (!item.id) return { index, eventId: '', statuses: [] };
+      
+      const eventStatuses = await getEventStatuses(item.id); // ✅ await
+      
+      return { index, eventId: item.id, statuses: eventStatuses };
+    });
+    
+    const results = await Promise.all(statusPromises); // ✅ 并行等待
+    
+    // 构建 segments 和 statusMap
+    results.forEach(({ index, eventId, statuses }) => {
+      if (eventId) {
+        statusMap.set(eventId, statuses[0]); // 存储第一个状态
+      }
+      
+      statuses.forEach(status => {
+        segments.push({
+          startIndex: index,
+          endIndex: index,
+          status: status,
+          label: getStatusConfig(status)?.label
+        });
+      });
+    });
+    
+    setStatusLineSegments(segments);
+    setEventStatusMap(statusMap);
+  };
+  
+  computeSegments();
+}, [editorItems, getEventStatuses, dateRange]);
+```
+
+**3. PlanSlate 接口适配**
+
+```typescript
+// PlanSlate.tsx - Props 接口更新
+interface PlanSlateProps {
+  // ... 其他 props ...
+  
+  // ❌ 废弃: getEventStatus (异步函数无法在 renderElement 中调用)
+  getEventStatus?: (eventId: string) => Promise<...>;
+  
+  // ✅ 新增: eventStatusMap (同步访问)
+  eventStatusMap?: Map<string, 'new' | 'updated' | 'done' | 'missed' | 'deleted'>;
+}
+
+// renderElement 中同步读取
+const renderElement = useCallback((props: RenderElementProps) => {
+  const element = props.element as any;
+  
+  if (element.type === 'event-line') {
+    const eventLineElement = element as EventLineNode;
+    
+    // ✅ 从 Map 同步读取状态
+    const eventStatus = eventStatusMap?.get(eventLineElement.eventId);
+    
+    return (
+      <EventLineElement
+        {...props}
+        eventStatus={eventStatus} // ✅ 直接传递
+      />
+    );
+  }
+  // ...
+}, [eventStatusMap]); // ✅ 依赖 eventStatusMap
+
+// PlanManager.tsx - 传递 eventStatusMap
+<PlanSlate
+  items={editorItems}
+  onChange={debouncedOnChange}
+  eventStatusMap={eventStatusMap} // ✅ 传递 Map
+/>
+```
+
+### 11.3 性能优化
+
+#### 并行查询优化
+
+```typescript
+// ✅ 使用 Promise.all 并行查询，而非串行
+const statusPromises = editorItems.map(item => 
+  getEventStatuses(item.id)
+);
+
+const results = await Promise.all(statusPromises);
+
+// 性能对比:
+// - 串行查询 (旧): 50个事件 × 10ms = 500ms
+// - 并行查询 (新): max(10ms) = 10ms ⚡ 50倍提升
+```
+
+#### 缓存策略
+
+```typescript
+// 事件状态缓存 (5秒 TTL)
+const eventStatusCacheRef = useRef(new Map());
+
+const cached = eventStatusCacheRef.current.get(eventId);
+if (cached && Date.now() - cached.timestamp < 5000) {
+  return cached.status; // ✅ 命中缓存，无需查询
+}
+
+// 查询后更新缓存
+eventStatusCacheRef.current.set(eventId, { 
+  status: result, 
+  timestamp: Date.now() 
+});
+```
+
+### 11.4 测试验证
+
+#### 功能测试
+
+| 测试项 | 预期结果 | 验证方法 |
+|--------|---------|---------|
+| **Snapshot 模式激活** | 左侧竖线正常显示 | 切换日期范围，观察竖线 |
+| **New 状态** | 蓝色竖线 + "New" 标签 | 创建新事件 |
+| **Updated 状态** | 橙色竖线 + "Updated" 标签 | 编辑现有事件 |
+| **Deleted 状态** | 灰色竖线 + "Del" 标签 | 删除事件（Ghost） |
+| **Done 状态** | 绿色竖线 + "Done" 标签 | 勾选任务 |
+| **多状态显示** | 同一事件多条竖线 | Ghost 事件（New+Updated+Del） |
+
+#### 性能测试
+
+```javascript
+// 控制台检查日志
+console.log('[PlanManager] 📊 生成segments (异步版本):', {
+  editorItems数量: 50,
+  查询耗时: '12ms', // ✅ 应该 < 50ms
+  segments总数: 75,  // ✅ 应该 > 0
+  statusMap大小: 50  // ✅ 应该 = editorItems数量
+});
+```
+
+#### 错误场景
+
+| 场景 | 行为 | 验证 |
+|------|------|------|
+| **IndexedDB 不可用** | 降级到 localStorage | 检查控制台警告 |
+| **查询超时** | 返回空数组，不阻塞渲染 | segments = [] |
+| **无历史记录** | 不显示竖线 | segments = [] |
+
+### 11.5 迁移检查清单
+
+- [x] **EventHistoryService.queryHistory() 添加 await**
+  - PlanManager.tsx L370
+  - PlanManager.tsx L2183
+  
+- [x] **getEventStatus 改为 async 函数**
+  - PlanManager.tsx L347
+  
+- [x] **getEventStatuses 改为 async 函数**
+  - PlanManager.tsx L2158
+  
+- [x] **statusLineSegments 改用 useEffect + useState**
+  - PlanManager.tsx L2277
+  
+- [x] **新增 eventStatusMap 状态**
+  - PlanManager.tsx L2278
+  
+- [x] **PlanSlate 接口添加 eventStatusMap**
+  - PlanSlate.tsx L157
+  
+- [x] **renderElement 改用 eventStatusMap**
+  - PlanSlate.tsx L3702
+  
+- [x] **更新 useCallback 依赖项**
+  - PlanSlate.tsx L3748
+
+### 11.6 已知问题和限制
+
+#### 当前限制
+
+1. **首次加载延迟**: useEffect 异步计算导致竖线有短暂延迟（约 10-50ms）
+   - **影响**: 可接受，用户无明显感知
+   - **缓解**: 并行查询 + 缓存策略
+
+2. **eventStatusMap 只存储第一个状态**: 多状态事件只在 Map 中保留一个
+   - **影响**: EventLineElement 只显示一个状态标识
+   - **解决**: segments 数组仍包含完整多状态信息
+
+3. **缓存一致性**: 5秒 TTL 可能导致状态变化延迟
+   - **影响**: 极少数情况下状态更新不及时
+   - **缓解**: dateRange 变化时强制刷新缓存
+
+#### 后续优化方向
+
+- [ ] Web Worker 后台查询（超过 100 个事件时）
+- [ ] 增量更新机制（只查询变化的事件）
+- [ ] 预测性加载（提前查询相邻日期范围）
+- [ ] IndexedDB 索引优化（按 timestamp 范围查询）
+
+### 11.7 相关 Commit
+
+- **修复 Commit**: `e092175` (2025-12-15)
+- **修改文件**:
+  - `src/components/PlanManager.tsx` (+68 -32 lines)
+  - `src/components/PlanSlate/PlanSlate.tsx` (+4 -3 lines)
+
+---
+
+**文档版本**: v2.3  
+**最后更新**: 2025-12-15  
 **维护者**: 4DNote Team
 

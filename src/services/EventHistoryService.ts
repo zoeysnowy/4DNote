@@ -25,20 +25,34 @@ import { STORAGE_KEYS } from '../constants/storage';
 import { logger } from '../utils/logger';
 import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
 import { StorageManager } from './storage/StorageManager';
+import { SignatureUtils } from '../utils/signatureUtils';
 
 const historyLogger = logger.module('EventHistory');
 
 // 历史记录存储键（降级方案 - 仅用于迁移）
 const HISTORY_STORAGE_KEY = '4dnote_event_history';
 
-// 默认保留历史记录的天数（90天 - SQLite无配额限制）
-const DEFAULT_RETENTION_DAYS = 90;
+// 默认保留历史记录的天数（🆕 30天 - Block-Level 优化）
+const DEFAULT_RETENTION_DAYS = 30;
 
-// 最大历史记录数（SQLite支持无限增长，仅用于性能优化）
-const MAX_HISTORY_COUNT = 50000;
+// 最大历史记录数（🆕 10,000 - Block-Level 优化）
+const MAX_HISTORY_COUNT = 10000;
 
 // 全局 StorageManager 实例
 let storageManager: StorageManager | null = null;
+
+// 🆕 [v2.18.8] 去重缓存：防止1秒内重复记录同一事件
+const recentCallsCache = new Map<string, number>();
+
+// 🆕 [v2.18.8] 定期清理过期的去重缓存（每10秒清理一次）
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, timestamp] of recentCallsCache.entries()) {
+    if (now - timestamp > 5000) { // 5秒后清理
+      recentCallsCache.delete(key);
+    }
+  }
+}, 10000);
 
 /**
  * 🔧 自动获取 StorageManager 实例
@@ -83,7 +97,7 @@ const FIELD_DISPLAY_NAMES: Record<string, string> = {
   fullTitle: '富文本标题',
   timeSpec: '时间规范',
   displayHint: '显示提示',
-  dueDate: '截止日期'
+  dueDateTime: '截止日期/时间'
 };
 
 export class EventHistoryService {
@@ -96,6 +110,21 @@ export class EventHistoryService {
     
     // 迁移 localStorage 数据到 SQLite（仅执行一次）
     await this.migrateFromLocalStorage();
+    
+    // 🆕 [v2.18.2] 启动定期清理任务
+    this.startPeriodicCleanup();
+    
+    // 🆕 [v2.18.3] 延迟执行清理，避免阻塞应用启动
+    setTimeout(async () => {
+      try {
+        const deleted = await this.autoCleanup();
+        if (deleted > 0) {
+          historyLogger.log(`🧹 初始清理: 删除 ${deleted} 条记录`);
+        }
+      } catch (error) {
+        historyLogger.error('❌ 初始清理失败:', error);
+      }
+    }, 2000); // 延迟2秒执行
   }
 
   /**
@@ -153,8 +182,63 @@ export class EventHistoryService {
   /**
    * 记录事件创建
    * @param customTimestamp - 可选，指定创建时间（用于补录历史记录）
+   * 
+   * 🆕 [v2.18.8] 添加去重机制：同一个事件1秒内只记录一次 CREATE
    */
   static logCreate(event: Event, source: string = 'user', customTimestamp?: Date): EventChangeLog {
+    // 🆕 [v2.18.8] 去重检查：1秒内同一个事件只记录一次 CREATE
+    const dedupeKey = `create_${event.id}_${source}`;
+    const now = Date.now();
+    const lastCallTime = recentCallsCache.get(dedupeKey);
+    
+    if (lastCallTime && now - lastCallTime < 1000) {
+      const stackTrace = new Error().stack?.split('\n').slice(1, 5).join('\n') || 'unknown';
+      const debugInfo = {
+        eventId: event.id?.slice(-10),
+        source,
+        timeSinceLastCall: now - lastCallTime,
+        stackTrace,
+        timestamp: new Date().toISOString()
+      };
+      
+      // 🔍 [DEBUG v2.18.8] 更显眼的去重日志
+      console.warn(`%c[EventHistoryService] ⚠️ CREATE 去重拦截`, 'color: #FF9800; font-weight: bold', {
+        eventId: debugInfo.eventId,
+        source,
+        时间差: `${debugInfo.timeSinceLastCall}ms`
+      });
+      
+      // 🆕 分发到 test-event-history.html（包含完整堆栈）
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('create-dedupe', { detail: debugInfo }));
+      }
+      
+      return null as any; // 返回 null 表示跳过
+    }
+    
+    recentCallsCache.set(dedupeKey, now);
+    
+    // 获取调用堆栈（用于调试重复调用来源）
+    const stackTrace = new Error().stack?.split('\n').slice(1, 5).join('\n') || 'unknown';
+    const createInfo = {
+      eventId: event.id?.slice(-10),
+      source,
+      stackTrace,
+      timestamp: new Date().toISOString()
+    };
+    
+    // 🔍 [DEBUG v2.18.8] 精简控制台日志，堆栈发送到页面
+    console.log(`%c[EventHistoryService] 📝 CREATE 已记录`, 'color: #4CAF50; font-weight: bold', {
+      eventId: createInfo.eventId,
+      source,
+      timestamp: new Date().toLocaleTimeString()
+    });
+    
+    // 🆕 分发到 test-event-history.html（包含完整堆栈）
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('create-logged', { detail: createInfo }));
+    }
+    
     const log: EventChangeLog = {
       id: this.generateLogId(),
       eventId: event.id,
@@ -170,7 +254,9 @@ export class EventHistoryService {
       fullEventId: event.id,
       timestamp: log.timestamp,
       title: event.title,
-      source
+      source,
+      // 🆕 [v2.18.8] 添加调用堆栈，诊断重复调用
+      stack: new Error().stack?.split('\n').slice(2, 6).join('\n')
     });
     
     this.saveLog(log);
@@ -195,6 +281,11 @@ export class EventHistoryService {
     
     // 如果没有实质性变更，不记录
     if (changes.length === 0) {
+      historyLogger.log('⏭️ [Update] 无实质性变更，跳过记录:', {
+        eventId: eventId.slice(-8),
+        source,
+        传入字段: Object.keys(after).join(', ')
+      });
       return null as any;
     }
 
@@ -210,6 +301,11 @@ export class EventHistoryService {
     };
 
     this.saveLog(log);
+    historyLogger.log('📝 [Update] 记录变更:', {
+      eventId: eventId.slice(-8),
+      source,
+      变更字段: changes.map(c => c.field).join(', ')
+    });
     return log;
   }
 
@@ -388,7 +484,7 @@ export class EventHistoryService {
     
     console.log('[EventHistoryService] 📊 getExistingEventsAtTime 步骤1:', {
       timestamp,
-      targetTime: targetTime.toISOString(),
+      targetTime: formatTimeForStorage(targetTime),
       当前事件总数: existingEvents.size,
       历史记录总数: allLogs.length
     });
@@ -724,7 +820,12 @@ export class EventHistoryService {
   }
 
   /**
-   * 自动清理历史记录（保留策略）
+   * 🆕 智能清理历史记录（v2.18.8 - 只清理脏数据）
+   * 
+   * 策略：
+   * 1. 删除无意义变更（只改了 updatedAt、tags 等的脏数据）
+   * 2. 删除 backfill 记录（临时数据）
+   * 3. **保留所有有意义的变更**（不限制数量）
    */
   static async autoCleanup(): Promise<number> {
     const sm = await getStorageManager();
@@ -734,19 +835,199 @@ export class EventHistoryService {
     }
 
     try {
-      const cutoffDate = new Date();
-      cutoffDate.setDate(cutoffDate.getDate() - DEFAULT_RETENTION_DAYS);
-      
-      const deleted = await sm.cleanupEventHistory(
-        formatTimeForStorage(cutoffDate)
-      );
+      const stats = await this.getBasicStatistics();
+      const totalCount = stats?.total || 0;
+      let totalDeleted = 0;
 
-      historyLogger.log(`✅ 清理完成: 删除 ${deleted} 条过期记录（保留 ${DEFAULT_RETENTION_DAYS} 天）`);
-      return deleted;
+      historyLogger.log(`🧹 开始智能清理: 当前 ${totalCount} 条记录`);
+
+      // 🔧 获取所有记录
+      const allLogs = await sm.queryEventHistory({ limit: totalCount + 1000 });
+      historyLogger.log(`  📊 查询到 ${allLogs.length} 条记录，开始分析...`);
+
+      // 🔴 层级1: 删除无意义变更（脏数据）
+      const meaninglessLogs = allLogs.filter(log => {
+        if (!log.changes || log.changes.length === 0) {
+          return true; // 没有变更记录
+        }
+        
+        // 检查是否只改了无意义字段
+        const meaningfulChanges = log.changes.filter(change => {
+          // updatedAt 变更不算有意义（之前的 bug）
+          if (change.field === 'updatedAt') return false;
+          
+          // tags 从 undefined → [] 不算有意义（之前的 bug）
+          if (change.field === 'tags' && 
+              (change.oldValue === undefined || change.oldValue === 'undefined') && 
+              (change.newValue === '[]' || change.newValue === '' || !change.newValue)) {
+            return false;
+          }
+          
+          // description 签名变更不算有意义（之前的 bug）
+          if (change.field === 'description') {
+            const oldCore = this.extractCoreContent(change.oldValue || '');
+            const newCore = this.extractCoreContent(change.newValue || '');
+            return oldCore !== newCore;
+          }
+          
+          return true; // 其他变更都算有意义
+        });
+        
+        return meaningfulChanges.length === 0; // 没有有意义的变更
+      });
+
+      if (meaninglessLogs.length > 0) {
+        historyLogger.log(`  🗑️ 层级1: 发现 ${meaninglessLogs.length} 条脏数据（无意义变更）`);
+        await Promise.all(meaninglessLogs.map(log => sm.deleteEventHistory(log.id)));
+        totalDeleted += meaninglessLogs.length;
+        historyLogger.log(`  🔴 层级1: 删除 ${meaninglessLogs.length} 条脏数据`);
+      } else {
+        historyLogger.log(`  ✅ 层级1: 没有发现脏数据`);
+      }
+
+      // 🟡 层级2: 删除 backfill 记录
+      const remainingLogs = allLogs.filter(log => !meaninglessLogs.includes(log));
+      const backfillLogs = remainingLogs.filter(log => log.source === 'backfill-from-timestamp');
+      
+      if (backfillLogs.length > 0) {
+        historyLogger.log(`  🟡 层级2: 发现 ${backfillLogs.length} 条 backfill 记录`);
+        await Promise.all(backfillLogs.map(log => sm.deleteEventHistory(log.id)));
+        totalDeleted += backfillLogs.length;
+        historyLogger.log(`  🟡 层级2: 删除 ${backfillLogs.length} 条 backfill 记录`);
+      }
+
+      // ✅ 保留所有有意义的变更
+      const meaningfulLogs = remainingLogs.filter(log => 
+        !meaninglessLogs.includes(log) && !backfillLogs.includes(log)
+      );
+      
+      if (meaningfulLogs.length > 0) {
+        historyLogger.log(`  ✅ 保留 ${meaningfulLogs.length} 条有意义的变更记录`);
+      }
+
+      const finalCount = totalCount - totalDeleted;
+      historyLogger.log(`✅ 清理完成: 删除 ${totalDeleted} 条记录，剩余 ${finalCount} 条`);
+      return totalDeleted;
     } catch (error) {
       historyLogger.error('❌ 清理失败:', error);
       return 0;
     }
+  }
+
+  /**
+   * 🆕 健康检查：诊断 EventHistory 状态
+   */
+  static async healthCheck(): Promise<{
+    total: number;
+    bySource: Record<string, number>;
+    oldestRecord: string;
+    newestRecord: string;
+    recommendCleanup: boolean;
+    estimatedCleanupCount: number;
+  }> {
+    const sm = await getStorageManager();
+    if (!sm) {
+      return {
+        total: 0,
+        bySource: {},
+        oldestRecord: '',
+        newestRecord: '',
+        recommendCleanup: false,
+        estimatedCleanupCount: 0
+      };
+    }
+
+    try {
+      const stats = await this.getBasicStatistics();
+      if (!stats) {
+        return {
+          total: 0,
+          bySource: {},
+          oldestRecord: '',
+          newestRecord: '',
+          recommendCleanup: false,
+          estimatedCleanupCount: 0
+        };
+      }
+
+      // 统计按来源分类
+      const logs = await this.queryHistory({ limit: 100000 });
+      const bySource: Record<string, number> = {};
+      logs.forEach(log => {
+        const source = log.source || 'unknown';
+        bySource[source] = (bySource[source] || 0) + 1;
+      });
+
+      // 估算清理数量
+      const backfillCount = bySource['backfill-from-timestamp'] || 0;
+      const oldCount = await this.estimateOldRecords(DEFAULT_RETENTION_DAYS);
+
+      return {
+        total: stats.total || 0,
+        bySource,
+        oldestRecord: stats.dateRange?.earliest || '',
+        newestRecord: stats.dateRange?.latest || '',
+        recommendCleanup: (stats.total || 0) > MAX_HISTORY_COUNT * 0.8,
+        estimatedCleanupCount: backfillCount + oldCount
+      };
+    } catch (error) {
+      historyLogger.error('❌ healthCheck 失败:', error);
+      return {
+        total: 0,
+        bySource: {},
+        oldestRecord: '',
+        newestRecord: '',
+        recommendCleanup: false,
+        estimatedCleanupCount: 0
+      };
+    }
+  }
+
+  /**
+   * 🆕 估算超过保留期的记录数
+   */
+  static async estimateOldRecords(retentionDays: number): Promise<number> {
+    const sm = await getStorageManager();
+    if (!sm) return 0;
+
+    try {
+      const cutoffDate = new Date();
+      cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+
+      // 🔧 修复：使用 sqliteService.db 而不是 sm.db
+      const sqliteService = (sm as any).sqliteService;
+      if (!sqliteService?.db) {
+        historyLogger.warn('⚠️ SQLite service not available');
+        return 0;
+      }
+
+      const result = await sqliteService.db.get(`
+        SELECT COUNT(*) as count 
+        FROM eventHistory 
+        WHERE timestamp < ?
+      `, [formatTimeForStorage(cutoffDate)]);
+
+      return result?.count || 0;
+    } catch (error) {
+      historyLogger.error('❌ estimateOldRecords 失败:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * 🆕 启动定期清理任务（每小时）
+   */
+  static startPeriodicCleanup(): void {
+    const interval = 60 * 60 * 1000; // 每小时
+
+    setInterval(async () => {
+      const deleted = await this.autoCleanup();
+      if (deleted > 0) {
+        historyLogger.log(`🧹 定期清理: 删除 ${deleted} 条记录`);
+      }
+    }, interval);
+
+    historyLogger.log('✅ 已启动定期清理任务（每小时）');
   }
 
   /**
@@ -777,15 +1058,20 @@ export class EventHistoryService {
    */
   private static extractChanges(before: Partial<Event>, after: Partial<Event>): ChangeDetail[] {
     const changes: ChangeDetail[] = [];
-    const allKeys = new Set([...Object.keys(before), ...Object.keys(after)]);
+    
+    // 🔥 [CRITICAL FIX] 只遍历 after 中存在的字段
+    // 避免将 after 中不存在的字段（如本地专属字段）误判为删除
+    // 之前：allKeys = before的所有字段 + after的字段
+    // 问题：如果 after 只包含 {description}，但 before 有 {tags: ['tag1']}
+    //      会遍历到 tags，导致 oldValue=['tag1'], newValue=undefined → 误判为变更
+    const allKeys = new Set(Object.keys(after));
 
-    // 忽略的字段（自动更新的元数据）
+    // 忽略的字段（只忽略同步元数据，不忽略 createdAt/updatedAt）
     const ignoredFields = new Set([
-      'updatedAt', 
       'localVersion', 
       'lastLocalChange', 
       'lastSyncTime',
-      'position'  // ✅ position 只是排序字段，不应触发历史记录
+      'position'     // ✅ position 只是排序字段，不应触发历史记录
     ]);
 
     allKeys.forEach(key => {
@@ -794,8 +1080,87 @@ export class EventHistoryService {
       const oldValue = (before as any)[key];
       const newValue = (after as any)[key];
 
-      // 深度比较（处理数组和对象）
-      if (JSON.stringify(oldValue) !== JSON.stringify(newValue)) {
+      // � [v2.18.8] 调试 description 变更
+      // 🔍 [v2.18.8] 调试 description 变更
+      // ✅ 只在 UPDATE 操作时触发（before 有值），CREATE 操作不触发
+      if (key === 'description' && before && oldValue !== undefined) {
+        const debugData = {
+          eventId: (before as any).id?.slice(-8) || 'unknown',
+          before_length: typeof oldValue === 'string' ? oldValue.length : 'N/A',
+          after_length: typeof newValue === 'string' ? newValue.length : 'N/A',
+          before_first_150: typeof oldValue === 'string' ? oldValue.substring(0, 150) : oldValue,
+          after_first_150: typeof newValue === 'string' ? newValue.substring(0, 150) : newValue,
+          equal: oldValue === newValue
+        };
+        
+        console.log('[extractChanges] 🔍 description 检查 (UPDATE):', debugData);
+        
+        // 🆕 发送自定义事件到页面（供 test-event-history.html 监听）
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('description-debug', { detail: debugData }));
+        }
+      }
+
+      // �🔧 特殊处理: eventlog 字段（只比较文本内容，忽略 Block Timestamp 元数据）
+      if (key === 'eventlog') {
+        const oldText = this.extractTextFromEventLog(oldValue);
+        const newText = this.extractTextFromEventLog(newValue);
+        
+        if (oldText !== newText) {
+          changes.push({
+            field: key,
+            oldValue,
+            newValue,
+            displayName: FIELD_DISPLAY_NAMES[key] || key
+          });
+        }
+        return;
+      }
+
+      // 🔧 特殊处理: title 对象（深度比较）
+      if (key === 'title') {
+        if (!this.isTitleEqual(oldValue, newValue)) {
+          changes.push({
+            field: key,
+            oldValue,
+            newValue,
+            displayName: FIELD_DISPLAY_NAMES[key] || key
+          });
+        }
+        return;
+      }
+
+      // 🔧 特殊处理: tags 数组（规范化后比较）
+      if (key === 'tags') {
+        if (!this.isTagsEqual(oldValue, newValue)) {
+          changes.push({
+            field: key,
+            oldValue,
+            newValue,
+            displayName: FIELD_DISPLAY_NAMES[key] || key
+          });
+        }
+        return;
+      }
+
+      // 🔧 特殊处理: description（移除签名后比较核心内容）
+      if (key === 'description') {
+        // 移除签名，只比较核心内容
+        const oldCore = this.extractCoreContent(oldValue || '');
+        const newCore = this.extractCoreContent(newValue || '');
+        if (oldCore !== newCore) {
+          changes.push({
+            field: key,
+            oldValue,
+            newValue,
+            displayName: FIELD_DISPLAY_NAMES[key] || key
+          });
+        }
+        return;
+      }
+
+      // 深度比较（处理其他数组和对象）
+      if (!this.isDeepEqual(oldValue, newValue)) {
         changes.push({
           field: key,
           oldValue,
@@ -806,5 +1171,122 @@ export class EventHistoryService {
     });
 
     return changes;
+  }
+  
+  /**
+   * 🆕 从 EventLog 中提取纯文本内容（忽略 Block Timestamp 元数据）
+   */
+  private static extractTextFromEventLog(eventlog: any): string {
+    if (!eventlog) return '';
+    
+    try {
+      // 处理 EventLog 对象
+      if (typeof eventlog === 'object' && 'slateJson' in eventlog) {
+        const parsed = JSON.parse(eventlog.slateJson || '[]');
+        return this.extractTextFromSlateNodes(parsed);
+      }
+      
+      // 处理直接的 Slate JSON 字符串
+      if (typeof eventlog === 'string') {
+        const parsed = JSON.parse(eventlog);
+        return this.extractTextFromSlateNodes(parsed);
+      }
+    } catch {
+      // 解析失败，直接返回空字符串
+    }
+    
+    return '';
+  }
+  
+  /**
+   * 🆕 从 Slate 节点中提取纯文本（忽略时间戳元数据）
+   */
+  private static extractTextFromSlateNodes(nodes: any[]): string {
+    if (!Array.isArray(nodes)) return '';
+    
+    return nodes.map(node => {
+      if (node.type === 'paragraph' && node.children) {
+        return node.children.map((child: any) => child.text || '').join('');
+      }
+      return '';
+    }).join('\n').trim();
+  }
+  
+  /**
+   * 🆕 从 description 中移除签名，提取核心内容
+   * 用于变更检测时只比较实际内容，忽略签名中的时间戳变化
+   */
+  private static extractCoreContent(description: string): string {
+    if (!description) return '';
+    
+    // ✅ 使用 SignatureUtils 统一处理（支持所有签名格式，包括 TimeLog 前缀）
+    return SignatureUtils.extractCoreContent(description);
+  }
+
+  /**
+   * 🆕 深度比较两个值是否相等
+   */
+  private static isDeepEqual(a: any, b: any): boolean {
+    // 处理 null/undefined
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    
+    // 处理基本类型
+    if (typeof a !== 'object' || typeof b !== 'object') {
+      return a === b;
+    }
+    
+    // 处理数组
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false;
+      return a.every((val, idx) => this.isDeepEqual(val, b[idx]));
+    }
+    
+    // 处理对象
+    const keysA = Object.keys(a);
+    const keysB = Object.keys(b);
+    if (keysA.length !== keysB.length) return false;
+    
+    return keysA.every(key => this.isDeepEqual(a[key], b[key]));
+  }
+
+  /**
+   * 🆕 比较 title 对象是否相等
+   */
+  private static isTitleEqual(a: any, b: any): boolean {
+    // 处理 null/undefined
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    
+    // 提取实际标题文本
+    const titleA = typeof a === 'object' ? (a.simpleTitle || a.text || '') : String(a);
+    const titleB = typeof b === 'object' ? (b.simpleTitle || b.text || '') : String(b);
+    
+    return titleA.trim() === titleB.trim();
+  }
+
+  /**
+   * 🆕 比较 tags 数组是否相等（忽略顺序和空值）
+   */
+  private static isTagsEqual(a: any, b: any): boolean {
+    // 处理 null/undefined
+    if (a == null && b == null) return true;
+    if (a == null || b == null) return false;
+    
+    // 规范化 tags 数组：过滤空值、排序、去重
+    const normalize = (tags: any[]) => {
+      if (!Array.isArray(tags)) return [];
+      return [...new Set(
+        tags
+          .filter(tag => tag != null && tag !== '')
+          .map(tag => String(tag).trim())
+      )].sort();
+    };
+    
+    const tagsA = normalize(a);
+    const tagsB = normalize(b);
+    
+    if (tagsA.length !== tagsB.length) return false;
+    return tagsA.every((tag, idx) => tag === tagsB[idx]);
   }
 }

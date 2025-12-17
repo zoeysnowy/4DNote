@@ -417,8 +417,8 @@ interface Event {
                             // - ❌ 用户界面永远不显示此字段
   
   // === 时间信息 ===
-  startTime?: string;       // 计划开始时间（📅 日历 icon 依据）
-  endTime?: string;         // 计划结束时间
+  startTime?: string;       // 计划开始时间（📅 日历 icon 依据）(TimeSpec: 'YYYY-MM-DD HH:mm:ss')
+  endTime?: string;         // 计划结束时间 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
   timeSpec?: TimeSpec;      // 完整时间对象（权威来源）
   
   // === Timer 计时信息 ===
@@ -453,6 +453,54 @@ interface Event {
 ```
 
 ### 决策 3：Timestamp 分隔线记录编辑行为
+
+**🆕 v2.18.0 更新：Block-Level Timestamp 架构**
+- **旧方案 (v2.17)**: 使用独立的 `timestamp-divider` 节点（需要折叠逻辑、preline 计算复杂）
+- **新方案 (v2.18)**: Timestamp 直接作为 `paragraph` 节点的元数据（`createdAt` 字段）
+- **优势**: 更简洁的数据结构，渲染逻辑更清晰，自动迁移兼容旧数据
+
+**Block-Level Timestamp 数据结构：**
+```typescript
+[
+  {
+    type: 'paragraph',
+    createdAt: 1734268078000,  // Unix milliseconds（自动注入）
+    children: [{ text: '处理完了一些出差的logistics...' }]
+  },
+  {
+    type: 'paragraph',
+    createdAt: 1734269062000,  // Unix milliseconds（16 分钟后）
+    children: [{ text: '双击"Alt"召唤美桶...' }]
+  }
+]
+```
+
+**渲染层处理（ModalSlate/LogSlate）：**
+```typescript
+// 检测 Block-Level Timestamp
+const hasBlockTimestamp = !!(para.createdAt && typeof para.createdAt === 'number');
+
+// 格式化显示（YYYY-MM-DD HH:mm:ss）
+const timestampDisplay = hasBlockTimestamp 
+  ? formatDateTime(new Date(para.createdAt))
+  : null;
+
+// 渲染时间戳（浅灰色，opacity: 0.7）
+if (hasBlockTimestamp) {
+  return (
+    <div style={{ paddingTop: '28px' }}>
+      <div style={{ color: '#999', opacity: 0.7, fontSize: '11px' }}>
+        {timestampDisplay}
+      </div>
+      <p>{children}</p>
+    </div>
+  );
+}
+```
+
+---
+
+**⚠️ 以下为旧的 timestamp-divider 方案（v2.17，已废弃）：**
 
 **Timestamp 的本质：**
 - **不是** Event 的 startTime/endTime（那是计划时间）
@@ -1596,6 +1644,653 @@ const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 - 事件段独立，互不重叠
 - 间隙段虚线，hover 时变蓝色实线
 - 空日段短线，桥接单独空白日
+
+---
+
+#### EventLog 段落 Preline 架构
+
+**设计决策：** EventLog 内容在不同页面显示时，preline 行为需要差异化控制。
+
+**📍 用户需求（2025-12-08）：**
+> "在 timelog 页面的时候，让 timestamp 与文字左对齐显示，取消 Event 段落的 preline"
+
+**🆕 v2.18.0 更新：Block-Level Timestamp 渲染**
+- **新架构**: Timestamp 作为 `paragraph.createdAt` 元数据（Unix milliseconds）
+- **渲染方式**: ModalSlate/LogSlate 在 `renderElement()` 中检测 `createdAt` 字段
+- **显示格式**: YYYY-MM-DD HH:mm:ss（浅灰色，opacity: 0.7）
+
+**实现方案：** LogSlate 组件添加 `showPreline` 属性控制
+
+**三种渲染模式：**
+
+| 页面 | showPreline | Timestamp 来源 | Timestamp 样式 | 段落 Preline | 说明 |
+|------|-------------|---------------|---------------|--------------|------|
+| **TimeLog 页面** | `false` | `paragraph.createdAt` | 左对齐，浅灰色文本（无 preline） | ❌ 无 | 干净的时间轴视图，避免视觉混乱 |
+| **LogTab (日志窗口)** | `true` (默认) | `paragraph.createdAt` | 浅灰色时间戳 + preline | ✅ 有 | 完整时间线显示，带垂直连接线 |
+| **ModalSlate (弹窗编辑)** | `true` (默认) | `paragraph.createdAt` | 浅灰色时间戳 + preline | ✅ 有 | 与 LogTab 保持一致的编辑体验 |
+
+**LogSlate 组件接口：**
+
+```typescript
+interface LogSlateProps {
+  // ... 其他属性
+  showPreline?: boolean;  // 控制是否显示段落前导线，默认 true
+}
+
+function LogSlate({ 
+  showPreline = true,  // 默认开启 preline（LogTab/ModalSlate 模式）
+  // ... 其他参数
+}: LogSlateProps) {
+  // ...
+  
+  const renderElement = useCallback(
+    (props: RenderElementProps) => {
+      const { attributes, children, element } = props;
+
+      switch (element.type) {
+        case 'paragraph':
+          const para = element as ParagraphElement;
+          const hasBlockTimestamp = !!(para.createdAt && typeof para.createdAt === 'number');
+
+          if (!showPreline && hasBlockTimestamp) {
+            // TimeLog 模式：左对齐浅灰色时间戳，无 preline
+            return (
+              <div style={{ paddingTop: '28px' }}>
+                <div style={{ 
+                  color: '#999', 
+                  opacity: 0.7, 
+                  fontSize: '11px',
+                  marginBottom: '4px'
+                }}>
+                  {formatDateTime(new Date(para.createdAt))}
+                </div>
+                <p {...attributes}>{children}</p>
+              </div>
+            );
+          }
+
+          if (showPreline && hasBlockTimestamp) {
+            // LogTab/ModalSlate 模式：时间戳 + preline
+            return (
+              <div style={{ paddingTop: '28px', position: 'relative' }}>
+                <div style={{ 
+                  color: '#999', 
+                  opacity: 0.7, 
+                  fontSize: '11px',
+                  marginBottom: '4px'
+                }}>
+                  {formatDateTime(new Date(para.createdAt))}
+                </div>
+                {/* Preline 逻辑：连接到前一个有时间戳的段落 */}
+                <div className="preline" />
+                <p {...attributes}>{children}</p>
+              </div>
+            );
+          }
+
+          // 无时间戳的段落
+          return <p {...attributes}>{children}</p>;
+          
+        default:
+          return <p {...attributes}>{children}</p>;
+      }
+    },
+    [showPreline]  // 依赖 showPreline 变化重新渲染
+  );
+}
+```
+
+**TimeLog 页面使用示例：**
+
+```typescript
+// TimeLog.tsx (Line 2365)
+<LogSlate
+  value={localEventlog}
+  onChange={handleEventlogChange}
+  placeholder="记录工作日志..."
+  showPreline={false}  // ⚠️ TimeLog 模式：关闭 preline
+/>
+```
+
+**LogTab 页面使用示例：**
+
+```typescript
+// LogTab.tsx (Line 227)
+<LogSlate
+  value={parsedEventlog}
+  onChange={handleEventlogChange}
+  placeholder="记录工作日志..."
+  // showPreline 默认 true，无需显式传递
+/>
+```
+
+**CSS 样式对比：**
+
+```css
+/* TimeLog 模式（showPreline=false） - 段落样式 */
+p {
+  /* 无特殊样式，标准段落 */
+  margin: 4px 0;
+  line-height: 1.6;
+}
+
+/* LogTab 模式（showPreline=true） - 段落样式 */
+.slate-paragraph-with-preline {
+  position: relative;
+  padding-left: 24px;  /* 为 preline 留出空间 */
+  margin: 4px 0;
+}
+
+.slate-paragraph-with-preline::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: #E5E7EB;  /* 灰色前导线 */
+}
+```
+
+**技术细节：**
+
+1. **needsPreline 逻辑（仅 showPreline=true 时生效）：**
+   ```typescript
+   const needsPreline = 
+     showPreline &&
+     !isAfterTimestamp &&
+     !isFirstParagraph &&
+     !isEmpty;
+   ```
+
+2. **Timestamp 渲染差异：**
+   - TimeLog 模式：纯文本，11px，灰色（#9CA3AF）
+   - LogTab 模式：TimestampDividerElement 组件，带折叠按钮、相对时间、选项菜单
+
+3. **性能优化：**
+   - `renderElement` 依赖 `showPreline`，值变化时重新渲染
+   - 避免不必要的 DOM 计算（TimeLog 模式跳过 needsPreline 判断）
+
+**设计理由：**
+
+| 场景 | 需求 | 解决方案 |
+|------|------|---------|
+| TimeLog 大量事件 | 简洁清晰，减少视觉噪音 | 关闭 preline，timestamp 左对齐 |
+| LogTab 单事件 | 完整时间线，详细编辑 | 开启 preline，使用 TimestampDividerElement |
+| ModalSlate 编辑 | 与 LogTab 一致的编辑体验 | 开启 preline，保持交互一致性 |
+
+**相关文件：**
+- `src/components/EventEditModal/LogSlate.tsx` (Lines 28-44, 45-60, 263-370)
+- `src/components/TimeLog.tsx` (Line 2365)
+- `src/components/EventEditModal/LogTab.tsx` (Line 227)
+- `src/components/EventEditModal/TimestampDividerElement.tsx`
+- `src/services/EventService.ts` - `normalizeEventLog`, `cleanEmptyTimestampPairs`
+
+---
+
+#### EventLog 空时间戳自动清理
+
+**📍 用户需求（2025-12-15）：**
+> "为什么这个 event 里面还是有空的时间戳？"
+
+**问题描述：** 用户在编辑 EventLog 时，可能产生以下两种空时间戳场景：
+1. **纯文本粘贴**：从 Outlook/外部复制时间戳 + 空行
+2. **编辑器操作**：删除时间戳后的内容，但时间戳本身未删除
+
+**清理策略：** 自动删除「时间戳 + 空段落」对
+
+**实现架构：**
+
+```typescript
+// EventService.ts
+
+/**
+ * 清理空的时间戳+段落对
+ * 如果时间戳后面紧跟一个空段落，删除这两个节点
+ */
+private static cleanEmptyTimestampPairs(slateNodes: any[]): any[] {
+  const cleanedNodes: any[] = [];
+  
+  for (let i = 0; i < slateNodes.length; i++) {
+    const currentNode = slateNodes[i];
+    const nextNode = slateNodes[i + 1];
+    
+    // 检查是否是时间戳节点
+    if (currentNode.type === 'timestamp-divider') {
+      // 检查下一个节点是否是空段落
+      if (nextNode && nextNode.type === 'paragraph') {
+        const paragraphText = nextNode.children
+          ?.map((child: any) => child.text || '')
+          .join('')
+          .trim();
+        
+        if (!paragraphText || paragraphText === '---') {
+          // 跳过当前时间戳和下一个空段落（包括只有"---"的段落）
+          i++; // 跳过空段落
+          continue;
+        }
+      }
+    }
+    
+    // 保留非空节点
+    cleanedNodes.push(currentNode);
+  }
+  
+  // 确保至少有一个节点
+  if (cleanedNodes.length === 0) {
+    cleanedNodes.push({
+      type: 'paragraph',
+      children: [{ text: '' }]
+    });
+  }
+  
+  return cleanedNodes;
+}
+```
+
+**调用时机：**
+
+| 调用位置 | 触发场景 | 处理内容 |
+|---------|---------|---------|
+| `parseTextWithTimestamps()` | 纯文本 → Slate JSON 转换 | 从 HTML/文本解析时清理空段落 |
+| `normalizeEventLog()` 早期退出 | 已规范化内容检查 | 处理用户在编辑器中直接创建的空段落 |
+
+**清理规则：**
+
+```typescript
+// ❌ 被删除的模式
+[
+  { type: 'timestamp-divider', timestamp: '2025-12-07 02:05:42' },
+  { type: 'paragraph', children: [{ text: '' }] },  // 空段落
+]
+
+// ❌ 被删除的模式（只有分隔线）
+[
+  { type: 'timestamp-divider', timestamp: '2025-12-07 02:05:42' },
+  { type: 'paragraph', children: [{ text: '---' }] },  // 只有分隔线
+]
+
+// ✅ 保留的模式（有内容）
+[
+  { type: 'timestamp-divider', timestamp: '2025-12-07 02:05:42' },
+  { type: 'paragraph', children: [{ text: '测试内容' }] },  // 有实际内容
+]
+```
+
+**normalizeEventLog 集成：**
+
+```typescript
+public static normalizeEventLog(
+  eventlogInput: EventLog | string | null | undefined,
+  fallbackDescription?: string
+): EventLog {
+  // ... 早期退出检查
+  
+  if (hasTimestampDivider && !hasParagraphTimestamp) {
+    // 🔧 清理空的时间戳+段落对（用户在编辑器中直接创建的）
+    const cleanedNodes = this.cleanEmptyTimestampPairs(slateNodes);
+    if (cleanedNodes.length !== slateNodes.length) {
+      console.log('🗑️ [normalizeEventLog] 清理了空的时间戳+段落对:', {
+        before: slateNodes.length,
+        after: cleanedNodes.length
+      });
+      return this.convertSlateJsonToEventLog(JSON.stringify(cleanedNodes));
+    }
+    return eventLog; // 已经规范化，跳过解析
+  }
+  
+  // ... 其他逻辑
+}
+```
+
+**parseTextWithTimestamps 集成：**
+
+```typescript
+private static parseTextWithTimestamps(text: string): any[] {
+  const slateNodes: any[] = [];
+  
+  // ... 解析时间戳和段落
+  
+  // 🔧 清理空的时间戳+段落对
+  return this.cleanEmptyTimestampPairs(slateNodes);
+}
+```
+
+**用户体验：**
+
+| 场景 | 操作前 | 操作后 |
+|------|--------|--------|
+| Outlook 同步 | `2025-12-07 02:05:42\n\n---\n\n由 🟣 4DNote 创建...` | 空时间戳被自动删除，只保留有内容的部分 |
+| 编辑器删除内容 | 用户删除时间戳后的文字 → 空段落残留 | 下次 `normalizeEventLog` 时自动清理 |
+| 批量加载 | 100 个事件中有 20 个空时间戳 | 加载时自动清理，无需手动处理 |
+
+**技术要点：**
+
+1. **递归清理**：循环检查所有时间戳+段落对，而非单次清理
+2. **边界保护**：确保至少保留一个空段落节点（Slate 编辑器要求）
+3. **特殊字符处理**：`---` 分隔线也视为空内容
+4. **性能优化**：只在节点数量变化时才重新生成 EventLog 对象
+
+**相关文件：**
+- `src/services/EventService.ts` (Lines 2577-2619: cleanEmptyTimestampPairs)
+- `src/services/EventService.ts` (Line 2250: normalizeEventLog 调用)
+- `src/services/EventService.ts` (Line 2687: parseTextWithTimestamps 调用)
+- `src/pages/LogTab.tsx` (Line 1068: handleSave 保存前清理)
+
+---
+
+#### EventLog 签名管理
+
+**📍 用户需求（2025-12-15）：**
+> "我希望 normalizeEventLog 还能添加一个功能，就是管理签名 '---\n由 🔮 4DNote 创建于 2025-12-07 02:05:42'，我们内部不显示签名，只有同步到 Outlook 的内容需要签名。"
+
+**设计原则：** 签名只用于外部同步，4DNote 内部存储和显示不包含签名。
+
+**🔥 签名管理策略（2025-12-15 更新）：**
+
+| 字段 | 是否包含签名 | 管理位置 | 说明 |
+|------|------------|---------|------|
+| **Event.eventlog** | ❌ 无 | `EventService.cleanEmptyTimestampPairs()` | 内部显示字段，永不包含签名 |
+| **Event.description** | ✅ 有 | `EventService.maintainDescriptionSignature()` | 同步字段，自动维护签名 |
+
+**核心原则：**
+1. **EventLog（内部）**：`normalizeEventLog` 调用 `cleanEmptyTimestampPairs` 移除所有签名
+2. **Description（同步）**：`normalizeEvent` 和 `updateEvent` 自动调用 `maintainDescriptionSignature` 添加/更新签名
+
+**签名格式规范：**
+
+| 场景 | 签名格式 | emoji | 时间格式 |
+|------|---------|-------|---------|
+| 4DNote 创建 | `由 🔮 4DNote 创建于 YYYY-MM-DD HH:mm:ss` | 🔮 | `YYYY-MM-DD HH:mm:ss` |
+| Outlook 创建 | `由 📧 Outlook 创建于 YYYY-MM-DD HH:mm:ss` | 📧 | `YYYY-MM-DD HH:mm:ss` |
+| 4DNote 编辑 | `由 🔮 4DNote 最后编辑于 YYYY-MM-DD HH:mm:ss` | 🔮 | `YYYY-MM-DD HH:mm:ss` |
+| Outlook 编辑 | `由 📧 Outlook 编辑于 YYYY-MM-DD HH:mm:ss` | 📧 | `YYYY-MM-DD HH:mm:ss` |
+
+**签名结构：**
+
+```
+[正文内容]
+
+---
+由 🔮 4DNote 创建于 2025-12-07 02:05:42
+```
+
+**签名生命周期：**
+
+| 阶段 | EventLog | Description | 处理位置 | 说明 |
+|------|---------|------------|---------|------|
+| **创建事件** | ❌ 无签名 | ✅ 自动添加 | `EventService.normalizeEvent()` | description 包含"由 XX 创建于" |
+| **更新事件** | ❌ 移除签名 | ✅ 更新签名 | `EventService.updateEvent()` | description 更新"最后修改于" |
+| **内部显示** | ❌ 无签名 | 不显示 | LogTab/TimeLog/ModalSlate | UI 只显示 eventlog |
+| **同步到 Outlook** | N/A | ✅ 包含签名 | `ActionBasedSyncManager` | body.content = description |
+| **从 Outlook 拉取** | ❌ 移除签名 | ✅ 重新生成签名 | `EventService.normalizeEventLog()` + `updateEvent()` | 清理旧签名，生成新签名 |
+
+**实现架构：**
+
+```typescript
+// 1. EventService.cleanEmptyTimestampPairs() - 从 EventLog 移除签名
+private static cleanEmptyTimestampPairs(slateNodes: any[]): any[] {
+  const cleanedNodes: any[] = [];
+  
+  // 签名模式：匹配 "由 [emoji] 4DNote/Outlook 创建/编辑于 YYYY-MM-DD HH:mm:ss"
+  const signaturePattern = /^(?:---\s*)?由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:创建于|编辑于|最后修辑于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/;
+  
+  for (let i = 0; i < slateNodes.length; i++) {
+    const currentNode = slateNodes[i];
+    
+    // 检查 1: 移除签名段落
+    if (currentNode.type === 'paragraph') {
+      const paragraphText = currentNode.children
+        ?.map((child: any) => child.text || '')
+        .join('')
+        .trim();
+      
+      if (signaturePattern.test(paragraphText)) {
+        console.log('🗑️ 移除签名段落:', paragraphText.substring(0, 50));
+        continue; // 跳过签名段落
+      }
+    }
+    
+    // 保留非签名节点
+    cleanedNodes.push(currentNode);
+  }
+  
+  return cleanedNodes;
+}
+
+// 2. EventService.maintainDescriptionSignature() - 为 Description 维护签名
+private static maintainDescriptionSignature(coreContent: string, event: Partial<Event>): string {
+  const lines: string[] = [];
+  
+  // 1. 添加核心内容
+  if (coreContent && coreContent.trim()) {
+    lines.push(coreContent.trim());
+    lines.push(''); // 空行
+  }
+  
+  // 2. 添加分隔线
+  lines.push('---');
+  
+  // 3. 确定创建来源和时间
+  const isLocalCreated = event.fourDNoteSource === true || event.source === 'local' || !event.source;
+  const createSource = isLocalCreated ? '🔮 4DNote' : '📧 Outlook';
+  const createTime = event.createdAt || formatTimeForStorage(new Date());
+  
+  lines.push(`由 ${createSource} 创建于 ${createTime}`);
+  
+  // 4. 添加修改信息（如果有）
+  if (event.updatedAt && event.updatedAt !== event.createdAt) {
+    const modifyTime = event.updatedAt;
+    lines.push(`最后修改于 ${modifyTime}`);
+  }
+  
+  return lines.join('\n');
+}
+
+// 3. EventService.extractCoreContentFromDescription() - 从 Description 提取核心内容
+private static extractCoreContentFromDescription(description: string): string {
+  if (!description) return '';
+  
+  // 移除签名部分（支持多种格式）
+  let core = description
+    // 移除完整签名块（---\n由...创建于...\n最后修改于...）
+    .replace(/\n---\n由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*创建于\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*$/i, '')
+    // 移除单行签名
+    .replace(/\n由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:创建于|编辑于|最后修改于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/gi, '');
+  
+  return core.trim();
+}
+
+// 4. EventService.normalizeEvent() - 创建时自动添加签名
+private static normalizeEvent(event: Partial<Event>): Event {
+  // ... 规范化 eventlog
+  const normalizedEventLog = this.normalizeEventLog(event.eventlog, event.description);
+  
+  // 从 eventlog 提取核心内容 + 添加签名
+  const coreContent = normalizedEventLog.plainText || '';
+  const eventMeta = {
+    ...event,
+    createdAt: event.createdAt || formatTimeForStorage(new Date()),
+    updatedAt: event.updatedAt || formatTimeForStorage(new Date())
+  };
+  const normalizedDescription = this.maintainDescriptionSignature(coreContent, eventMeta);
+  
+  return {
+    ...event,
+    eventlog: normalizedEventLog,
+    description: normalizedDescription,  // 包含签名
+    // ...
+  };
+}
+
+// 5. EventService.updateEvent() - 更新时维护签名
+static async updateEvent(eventId: string, updates: Partial<Event>): Promise<...> {
+  // 场景1: eventlog 有变化 → 同步到 description（带签名）
+  if (updates.eventlog !== undefined) {
+    const normalizedEventLog = this.normalizeEventLog(updates.eventlog);
+    updatesWithSync.eventlog = normalizedEventLog;
+    
+    if (updates.description === undefined) {
+      const coreContent = normalizedEventLog.plainText || '';
+      const eventMeta = {
+        ...originalEvent,
+        ...updates,
+        updatedAt: formatTimeForStorage(new Date())
+      };
+      updatesWithSync.description = this.maintainDescriptionSignature(coreContent, eventMeta);
+    }
+  }
+  
+  // 场景2: description 有变化 → 移除旧签名，生成新签名
+  else if (updates.description !== undefined) {
+    const coreContent = this.extractCoreContentFromDescription(updates.description);
+    const normalizedEventLog = this.normalizeEventLog(coreContent);
+    updatesWithSync.eventlog = normalizedEventLog;
+    
+    const eventMeta = {
+      ...originalEvent,
+      ...updates,
+      updatedAt: formatTimeForStorage(new Date())
+    };
+    updatesWithSync.description = this.maintainDescriptionSignature(coreContent, eventMeta);
+  }
+}
+```
+
+**LogTab.handleSave() 不再需要签名处理：**
+
+```typescript
+const handleSave = async () => {
+  // Step 0b: 准备 eventlog（Slate JSON 字符串）
+  // ✅ 只需清理空时间戳，签名由 EventService 自动管理
+  let cleanedEventlog = formData.eventlog || [];
+  try {
+    const normalized = (EventService as any).normalizeEventLog(
+      { slateJson: JSON.stringify(cleanedEventlog) }
+    );
+    cleanedEventlog = JSON.parse(normalized.slateJson);
+    // 签名已被 cleanEmptyTimestampPairs 移除
+  } catch (error) {
+    console.error('❌ eventlog 清理失败:', error);
+  }
+  const currentEventlogJson = JSON.stringify(cleanedEventlog);
+  
+  // ... 调用 EventHub.updateFields()
+  // EventHub → EventService.updateEvent() → maintainDescriptionSignature()
+  // description 自动添加/更新签名
+}
+```
+
+**数据流示意图：**
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ 用户编辑 EventLog                                         │
+│ "2025-12-07 02:05:42\n测试内容"                          │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               │ handleSave()
+               │ → normalizeEventLog()
+               │ → cleanEmptyTimestampPairs()  // 移除签名
+               ↓
+┌─────────────────────────────────────────────────────────┐
+│ Event.eventlog (Slate JSON)                             │
+│ ✅ 无签名                                                │
+│ [                                                       │
+│   { type: 'timestamp-divider', timestamp: '...' },      │
+│   { type: 'paragraph', children: [{ text: '测试内容' }] }│
+│ ]                                                       │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               │ updateEvent()
+               │ → maintainDescriptionSignature()  // 添加签名
+               ↓
+┌─────────────────────────────────────────────────────────┐
+│ Event.description (String)                              │
+│ ✅ 包含签名                                              │
+│ "2025-12-07 02:05:42\n测试内容\n\n---\n                 │
+│  由 🔮 4DNote 创建于 2025-12-07 02:05:42\n              │
+│  最后修改于 2025-12-15 14:30:25"                         │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               │ 同步到 Outlook
+               │ → ActionBasedSyncManager.createOutlookEvent()
+               ↓
+┌─────────────────────────────────────────────────────────┐
+│ Outlook Event body.content                              │
+│ = Event.description（直接使用，已包含签名）               │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               │ 从 Outlook 拉取更新
+               │ → fetchOutlookChanges()
+               │ → cleanupOutlookHtml()  // 移除 HTML 中的签名
+               │ → updateEvent()
+               │ → maintainDescriptionSignature()  // 重新生成签名
+               ↓
+┌─────────────────────────────────────────────────────────┐
+│ 4DNote 内部存储                                          │
+│ eventlog: ❌ 无签名                                      │
+│ description: ✅ 有签名（规范格式）                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+**签名示例：**
+
+```
+// 场景 1: 本地创建的新事件
+测试内容
+
+---
+由 🔮 4DNote 创建于 2025-12-07 02:05:42
+
+// 场景 2: 本地创建并修改
+测试内容
+
+---
+由 🔮 4DNote 创建于 2025-12-07 02:05:42
+最后修改于 2025-12-15 14:30:25
+
+// 场景 3: Outlook 创建的事件
+会议记录
+
+---
+由 📧 Outlook 创建于 2025-12-07 10:00:00
+
+// 场景 4: Outlook 创建，4DNote 修改
+会议记录
+
+---
+由 📧 Outlook 创建于 2025-12-07 10:00:00
+最后修改于 2025-12-15 14:30:25
+```
+
+**关键技术点：**
+
+1. **签名移除时机**：每次 `normalizeEventLog` 调用时，`cleanEmptyTimestampPairs` 自动移除所有签名段落
+2. **签名添加时机**：每次 `normalizeEvent`（创建）或 `updateEvent`（更新）时，自动维护 description 签名
+3. **双向同步保证**：
+   - eventlog → description: 提取核心内容 + 添加签名
+   - description → eventlog: 移除签名 + 规范化内容
+4. **来源识别**：通过 `fourDNoteSource` 和 `source` 字段判断创建来源（4DNote/Outlook）
+5. **修改时间追踪**：通过 `createdAt` 和 `updatedAt` 判断是否需要显示"最后修改于"
+
+**用户体验：**
+
+| 场景 | 用户操作 | EventLog | Description | 结果 |
+|------|---------|---------|------------|------|
+| 创建事件 | 编辑 EventLog → 保存 | 无签名 | 自动添加签名 | 内部干净，同步完整 |
+| 修改事件 | 编辑 EventLog → 保存 | 签名自动移除 | 签名自动更新 | updatedAt 更新 |
+| 查看 TimeLog | 打开页面 | 显示纯内容 | 不显示 | 界面永不显示签名 |
+| 同步到 Outlook | 后台自动 | N/A | body.content = description | Outlook 显示完整签名 |
+| 从 Outlook 拉取 | 后台自动 | 签名被移除 | 签名被重新生成 | 数据格式统一 |
+
+**相关文件：**
+- `src/services/EventService.ts` (Lines 2720-2789: 签名管理方法)
+- `src/services/EventService.ts` (Lines 2577-2624: cleanEmptyTimestampPairs - 移除签名)
+- `src/services/EventService.ts` (Lines 840-892: updateEvent - 更新时维护签名)
+- `src/services/EventService.ts` (Lines 2488-2512: normalizeEvent - 创建时添加签名)
+- `src/services/EventService.ts` (Lines 2796-2801: cleanupOutlookHtml - 清理 HTML 签名)
+- `src/pages/LogTab.tsx` (Lines 1068-1083: handleSave - 签名由 EventService 自动管理)
 
 ---
 
@@ -2845,8 +3540,8 @@ const handleCreateEvent = useCallback(() => {
   if (!hoverTime) return;
   
   onCreateEvent?.({
-    startTime: hoverTime.toISOString(),
-    suggestedEndTime: new Date(hoverTime.getTime() + 60 * 60 * 1000).toISOString(), // +1h
+    startTime: formatTimeForStorage(hoverTime),
+    suggestedEndTime: formatTimeForStorage(new Date(hoverTime.getTime() + 60 * 60 * 1000)), // +1h
   });
   
   setIsHovered(false);
@@ -8954,8 +9649,8 @@ interface Event {
   titleContent?: string;      // 富文本 HTML（Slate 输出，用于编辑恢复）
   
   // 时间字段（保留字符串用于快速查询和向后兼容）
-  startTime: string;     // ISO 字符串，用于数据库索引和 UI 显示
-  endTime: string;
+  startTime: string;     // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'，用于数据库索引和 UI 显示
+  endTime: string;       // TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'
   
   // 完整时间对象（TimeSpec 架构）
   timeSpec?: TimeSpec;   // 包含 kind, source, policy, resolved
@@ -8988,8 +9683,8 @@ interface Event {
   };
   
   // 🆕 签到功能字段
-  checked?: string[];              // 签到时间戳数组（ISO格式）
-  unchecked?: string[];            // 取消签到时间戳数组（ISO格式）
+  checked?: string[];              // 签到时间戳数组（TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'）
+  unchecked?: string[];            // 取消签到时间戳数组（TimeSpec 格式: 'YYYY-MM-DD HH:mm:ss'）
   
   // 其他现有字段
   isTimer?: boolean;

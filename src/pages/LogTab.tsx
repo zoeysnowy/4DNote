@@ -412,39 +412,44 @@ const LogTabComponent: React.FC<LogTabProps> = ({
           
           if (!event.eventlog) return [];
           
-          if (typeof event.eventlog === 'string') {
-            // 如果是字符串（Slate JSON），解析为对象
-            try {
-              const parsed = JSON.parse(event.eventlog);
-              console.log('🔍 [LogTab] eventlog 解析（string）:', { eventId: event.id, nodes: parsed });
-              return parsed;
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
-              return [];
+          // 🔧 使用 EventService.normalizeEventLog 统一处理所有格式
+          // 这样可以自动处理时间戳文本的解析（如 "2025/12/7 21:39:42"）
+          try {
+            const normalized = (EventService as any).normalizeEventLog(event.eventlog);
+            
+            const parsed = typeof normalized.slateJson === 'string' 
+              ? JSON.parse(normalized.slateJson) 
+              : normalized.slateJson;
+            
+            return parsed;
+          } catch (error) {
+            console.error('❌ [LogTab] eventlog 规范化失败:', error);
+            
+            // 降级处理：按原逻辑解析
+            if (typeof event.eventlog === 'string') {
+              try {
+                return JSON.parse(event.eventlog);
+              } catch {
+                return [];
+              }
             }
-          }
-          
-          // 如果是 EventLog 对象，提取 slateJson 字段并解析
-          if (event.eventlog.slateJson) {
-            try {
-              const parsed = typeof event.eventlog.slateJson === 'string' 
-                ? JSON.parse(event.eventlog.slateJson) 
-                : event.eventlog.slateJson;
-              console.log('🔍 [LogTab] eventlog 解析（EventLog）:', { eventId: event.id, nodes: parsed, types: parsed.map((n: any) => n.type) });
-              return parsed;
-            } catch (error) {
-              console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
-              return [];
+            
+            if (event.eventlog.slateJson) {
+              try {
+                return typeof event.eventlog.slateJson === 'string' 
+                  ? JSON.parse(event.eventlog.slateJson) 
+                  : event.eventlog.slateJson;
+              } catch {
+                return [];
+              }
             }
+            
+            if (Array.isArray(event.eventlog)) {
+              return event.eventlog;
+            }
+            
+            return [];
           }
-          
-          // 如果是数组，直接返回（已经是 Descendant[]）
-          if (Array.isArray(event.eventlog)) {
-            console.log('🔍 [LogTab] eventlog 解析（array）:', { eventId: event.id, nodes: event.eventlog, types: event.eventlog.map((n: any) => n.type) });
-            return event.eventlog;
-          }
-          
-          return [];
         })(),
         description: event.description || '',
         // 🔧 日历同步配置（单一数据结构）
@@ -584,29 +589,47 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       organizer: event.organizer,
       attendees: event.attendees || [],
       eventlog: (() => {
+        // 🔧 使用 EventService.normalizeEventLog 统一处理所有格式
+        // 这样可以自动处理时间戳文本的解析（如 "2025/12/7 21:39:42"）
+        
         if (!event.eventlog) return [];
-        if (typeof event.eventlog === 'string') {
-          try {
-            return JSON.parse(event.eventlog);
-          } catch (error) {
-            console.error('❌ [EventEditModalV2] eventlog 解析失败:', error);
-            return [];
+        
+        try {
+          const normalized = (EventService as any).normalizeEventLog(event.eventlog);
+          
+          const parsed = typeof normalized.slateJson === 'string' 
+            ? JSON.parse(normalized.slateJson) 
+            : normalized.slateJson;
+          
+          return parsed;
+        } catch (error) {
+          console.error('❌ [LogTab useEffect] eventlog 规范化失败:', error);
+          
+          // 降级处理：按原逻辑解析
+          if (typeof event.eventlog === 'string') {
+            try {
+              return JSON.parse(event.eventlog);
+            } catch {
+              return [];
+            }
           }
-        }
-        if (event.eventlog.slateJson) {
-          try {
-            return typeof event.eventlog.slateJson === 'string' 
-              ? JSON.parse(event.eventlog.slateJson) 
-              : event.eventlog.slateJson;
-          } catch (error) {
-            console.error('❌ [EventEditModalV2] eventlog.slateJson 解析失败:', error);
-            return [];
+          
+          if (event.eventlog.slateJson) {
+            try {
+              return typeof event.eventlog.slateJson === 'string' 
+                ? JSON.parse(event.eventlog.slateJson) 
+                : event.eventlog.slateJson;
+            } catch {
+              return [];
+            }
           }
+          
+          if (Array.isArray(event.eventlog)) {
+            return event.eventlog;
+          }
+          
+          return [];
         }
-        if (Array.isArray(event.eventlog)) {
-          return event.eventlog;
-        }
-        return [];
       })(),
       description: event.description || '',
       calendarIds: event.calendarIds || [],
@@ -1039,8 +1062,22 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       }
       
       // 🔧 Step 0b: 准备 eventlog（Slate JSON 字符串）
-      // ✅ 简化：formData.eventlog 已通过 ModalSlate blur-to-save 更新，直接使用
-      const currentEventlogJson = JSON.stringify(formData.eventlog || []);
+      // ✅ 清理：移除空时间戳+段落对、移除签名（签名只在同步到 Outlook 时添加）
+      let cleanedEventlog = formData.eventlog || [];
+      try {
+        // 调用 normalizeEventLog 清理和规范化
+        const normalized = (EventService as any).normalizeEventLog(
+          { slateJson: JSON.stringify(cleanedEventlog) }
+        );
+        cleanedEventlog = JSON.parse(normalized.slateJson);
+        console.log('🧹 [handleSave] eventlog 已清理:', {
+          before: (formData.eventlog || []).length,
+          after: cleanedEventlog.length
+        });
+      } catch (error) {
+        console.error('❌ [handleSave] eventlog 清理失败，使用原始数据:', error);
+      }
+      const currentEventlogJson = JSON.stringify(cleanedEventlog);
       
       // 🔧 Step 1: 确定最终标题
       // formData.title 是 Slate JSON 字符串（colorTitle - 不含标签元素，只有文本和格式）
@@ -2268,29 +2305,49 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   /**
    * TimeLog 内容变化处理（ModalSlate）
    * @param slateJson - Slate JSON 字符串（从 ModalSlate 的 onChange 回调接收）
+   * 
+   * 🔧 blur-to-save 机制：
+   * - ModalSlate blur 时自动调用 onChange
+   * - 立即保存到 EventHub（同步机制）
+   * - 参考 TimeLog.tsx 的 handleLogChange 实现
    */
-  const handleTimelogChange = (slateJson: string) => {
-    // 🔧 将 JSON 字符串转换为对象（EventService 需要 Descendant[] 数组）
-    console.log('📝 [EventEditModalV2] EventLog 变化:', {
+  const handleTimelogChange = useCallback(async (slateJson: string) => {
+    console.log('📝 [LogTab] EventLog 变化:', {
+      eventId: formData.id,
       slateJsonLength: slateJson.length,
       preview: slateJson.substring(0, 100)
     });
     
     try {
       const slateNodes = JSON.parse(slateJson);
-      setFormData({
-        ...formData,
+      
+      // Step 1: 更新本地 state（保持 UI 响应）
+      setFormData(prev => ({
+        ...prev,
         eventlog: slateNodes as any,  // ✅ Slate JSON 对象（Descendant[] 数组）
-      });
+      }));
+      
+      // Step 2: 立即保存到 EventHub（blur-to-save）
+      // ✅ 只在有效 eventId 时保存（避免保存临时/新建事件）
+      if (formData.id && formData.id !== 'new-event' && !formData.id.startsWith('local-')) {
+        await EventHub.updateFields(formData.id, {
+          eventlog: slateJson  // EventService 会自动处理格式转换
+        }, {
+          source: 'LogTab-eventlogChange'
+        });
+        console.log('✅ [LogTab] EventLog 已自动保存到 EventHub');
+      } else {
+        console.log('ℹ️ [LogTab] 跳过保存（临时事件）:', formData.id);
+      }
     } catch (error) {
-      console.error('❌ [EventEditModalV2] Slate JSON 解析失败:', error);
+      console.error('❌ [LogTab] EventLog 保存失败:', error);
       // 保留字符串格式作为后备
-      setFormData({
-        ...formData,
+      setFormData(prev => ({
+        ...prev,
         eventlog: slateJson as any,
-      });
+      }));
     }
-  };
+  }, [formData.id]); // 依赖 formData.id，确保使用最新的事件ID
 
   /**
    * Slate 编辑器就绪回调

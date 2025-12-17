@@ -453,12 +453,13 @@
 }
 
 .unified-datetime-picker .calendar-grid {
-  width: 100%;
+  width: 100% !important;
+  display: block !important;
 }
 
 .unified-datetime-picker .weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  display: grid !important;
+  grid-template-columns: repeat(7, 1fr) !important;
   gap: 2px;
   margin-bottom: 4px;
 }
@@ -474,8 +475,8 @@
 }
 
 .unified-datetime-picker .dates {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  display: grid !important;
+  grid-template-columns: repeat(7, 1fr) !important;
   gap: 2px;
 }
 
