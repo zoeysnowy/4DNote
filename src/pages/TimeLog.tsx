@@ -2439,17 +2439,24 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     onClick={(e) => handleEventClick(e, event.id)}
                     style={{ cursor: 'default' }}
                   >
-                    {/* Title & Source */}
-                    <div 
-                      className="event-row event-title-row"
-                      onMouseEnter={() => setHoveredTitleId(event.id)}
-                      onMouseLeave={() => setHoveredTitleId(null)}
-                      style={{ paddingTop: '4px', minHeight: '28px' }}
-                    >
-                      {event.emoji && <span className="event-emoji">{event.emoji}</span>}
+                    {/* Title & Source - 空标题时完全隐藏 */}
+                    {(() => {
+                      const titleObj = typeof event.title === 'object' ? event.title : null;
+                      const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
                       
-                      {/* 标题始终可编辑，像 PlanSlate 一样 */}
-                      <div className="event-title">
+                      if (!hasTitle) return null; // 空标题时不渲染标题行
+                      
+                      return (
+                        <div 
+                          className="event-row event-title-row"
+                          onMouseEnter={() => setHoveredTitleId(event.id)}
+                          onMouseLeave={() => setHoveredTitleId(null)}
+                          style={{ paddingTop: '4px', minHeight: '28px' }}
+                        >
+                          {event.emoji && <span className="event-emoji">{event.emoji}</span>}
+                          
+                          {/* 标题始终可编辑，像 PlanSlate 一样 */}
+                          <div className="event-title">
                         <LogSlate
                           mode="title"
                           placeholder="无标题笔记" 
@@ -2658,7 +2665,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               
                               return (
                                 <span key={idx} className="tag-item">
-                                  #{emoji}{name}
+                                  {'#'}{emoji}{name}
                                 </span>
                               );
                             })
