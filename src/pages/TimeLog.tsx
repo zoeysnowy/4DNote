@@ -2304,7 +2304,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </div>,
                         document.body
                       )}
-                    </div>
                     
                     {/* Right按钮 - 空标题时显示在时间右侧 */}
                     {(() => {
@@ -2332,26 +2331,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       }
                       return null;
                     })()}
-                    
-                    {/* 原有的 action buttons（隐藏，功能已移到幽灵菜单） */}
-                    <div className="event-time-actions" style={{ display: 'none' }}>
-                      <button className="time-action-btn" title="收藏">
-                        <img src={FavoriteIconSvg} alt="favorite" />
-                      </button>
-                      <button className="time-action-btn" title="添加截止日">
-                        <img src={DdlIconSvg} alt="ddl" />
-                      </button>
-                      <button className="time-action-btn" title="循环">
-                        <img src={RotationIconSvg} alt="rotation" />
-                      </button>
-                      <button className="time-action-btn" title="添加子任务">
-                        <img src={AddTaskIconSvg} alt="add task" />
-                      </button>
-                      <button className="time-action-btn" title="开始计时">
-                        <img src={TimerStartIconSvg} alt="timer start" />
-                      </button>
                     </div>
-                  </div>
                   
                   {/* 🆕 日历来源信息（右对齐） */}
                   <div className="time-calendar-source-wrapper">
