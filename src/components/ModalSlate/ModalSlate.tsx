@@ -386,43 +386,19 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
         const hasTimestamp = nodes.some((node: any) => node.type === 'timestamp-divider');
         
         if (hasActualContent && !hasTimestamp) {
-          // 从 EventHistoryService 获取创建时间
-          let createLog = EventHistoryService.queryHistory({
-            eventId: parentEventId,
-            operations: ['create'],
-            limit: 1
-          })[0];
+          // 🚀 [PERFORMANCE FIX] 直接从 EventService 同步获取创建时间（避免异步查询）
+          const event = (EventService as any).getEventById?.(parentEventId);
+          let createTime: Date | null = null;
           
-          // 🔧 如果没有创建日志，使用 event.createdAt 或 event.updatedAt 作为 fallback
-          if (!createLog) {
-            const event = EventService.getEventById(parentEventId);
-            if (event) {
-              if (event.createdAt) {
-                createLog = {
-                  id: 'fallback-' + parentEventId,
-                  eventId: parentEventId,
-                  operation: 'create',
-                  timestamp: event.createdAt,
-                  source: 'fallback-createdAt',
-                  changes: []
-                } as any;
-                console.log('[ModalSlate initialValue] 使用 event.createdAt fallback:', event.createdAt);
-              } else if (event.updatedAt) {
-                createLog = {
-                  id: 'fallback-' + parentEventId,
-                  eventId: parentEventId,
-                  operation: 'create',
-                  timestamp: event.updatedAt,
-                  source: 'fallback-updatedAt',
-                  changes: []
-                } as any;
-                console.log('[ModalSlate initialValue] 使用 event.updatedAt fallback:', event.updatedAt);
-              }
-            }
+          if (event?.createdAt) {
+            createTime = new Date(event.createdAt);
+            console.log('[ModalSlate] 使用 event.createdAt:', event.createdAt);
+          } else if (event?.updatedAt) {
+            createTime = new Date(event.updatedAt);
+            console.log('[ModalSlate] fallback 到 event.updatedAt:', event.updatedAt);
           }
           
-          if (createLog) {
-            const createTime = new Date(createLog.timestamp);
+          if (createTime) {
             console.log('[ModalSlate] 在 initialValue 中添加 timestamp:', createTime);
             
             // ✅ 使用 Time Architecture 规范格式
