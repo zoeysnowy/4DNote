@@ -2308,7 +2308,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Right按钮 - 空标题时显示在时间右侧 */}
                     {(() => {
                       const titleObj = typeof event.title === 'object' ? event.title : null;
-                      const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                      
+                      // 检查实际内容是否为空
+                      let hasTitle = false;
+                      if (titleObj?.simpleTitle?.trim()) {
+                        hasTitle = true;
+                      } else if (titleObj?.colorTitle) {
+                        try {
+                          const parsed = JSON.parse(titleObj.colorTitle);
+                          const text = parsed[0]?.children?.[0]?.text || '';
+                          hasTitle = text.trim().length > 0;
+                        } catch (e) {
+                          hasTitle = false;
+                        }
+                      }
                       
                       if (!hasTitle) {
                         return (
@@ -2415,7 +2428,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Title & Source - 空标题时完全隐藏 */}
                     {(() => {
                       const titleObj = typeof event.title === 'object' ? event.title : null;
-                      const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                      
+                      // 检查实际内容是否为空
+                      let hasTitle = false;
+                      if (titleObj?.simpleTitle?.trim()) {
+                        hasTitle = true;
+                      } else if (titleObj?.colorTitle) {
+                        try {
+                          const parsed = JSON.parse(titleObj.colorTitle);
+                          const text = parsed[0]?.children?.[0]?.text || '';
+                          hasTitle = text.trim().length > 0;
+                        } catch (e) {
+                          hasTitle = false;
+                        }
+                      }
                       
                       if (!hasTitle) return null; // 空标题时不渲染标题行
                       
@@ -2474,7 +2500,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       {/* Title right icon - toggle log + ghost menu - 仅有标题时显示 */}
                       {(() => {
                         const titleObj = typeof event.title === 'object' ? event.title : null;
-                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                        
+                        // 检查实际内容是否为空
+                        let hasTitle = false;
+                        if (titleObj?.simpleTitle?.trim()) {
+                          hasTitle = true;
+                        } else if (titleObj?.colorTitle) {
+                          try {
+                            const parsed = JSON.parse(titleObj.colorTitle);
+                            const text = parsed[0]?.children?.[0]?.text || '';
+                            hasTitle = text.trim().length > 0;
+                          } catch (e) {
+                            hasTitle = false;
+                          }
+                        }
                         
                         if (!hasTitle) return null; // 空标题时不在这里显示right按钮
                         
