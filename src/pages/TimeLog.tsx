@@ -2102,6 +2102,33 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </span>
                       )}
                       
+                      {/* Right按钮 - 空标题时显示在时间右侧 */}
+                      {(() => {
+                        const titleObj = typeof event.title === 'object' ? event.title : null;
+                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                        
+                        if (!hasTitle) {
+                          return (
+                            <img 
+                              src={RightIconSvg} 
+                              alt="right" 
+                              className="title-right-icon"
+                              onClick={() => toggleLogExpanded(event.id)}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                opacity: 0.6,
+                                cursor: 'pointer',
+                                marginLeft: '8px',
+                                transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s'
+                              }}
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
+                      
                       {/* 幽灵菜单 - 空标题时显示三行分组菜单 */}
                       {hoveredTimeId === event.id && (() => {
                         // 判断标题是否为空
@@ -2109,25 +2136,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
                         
                         if (!hasTitle) {
-                          // 空标题：显示right按钮 + 三行分组菜单
+                          // 空标题：显示三行分组菜单
                           return (
-                            <>
-                              {/* Right按钮 - 展开/折叠log */}
-                              <img 
-                                src={RightIconSvg} 
-                                alt="right" 
-                                className="title-right-icon"
-                                onClick={() => toggleLogExpanded(event.id)}
-                                style={{
-                                  width: '16px',
-                                  height: '16px',
-                                  opacity: 0.6,
-                                  cursor: 'pointer',
-                                  marginLeft: '8px',
-                                  transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                                  transition: 'transform 0.2s'
-                                }}
-                              />
                               <div className="ghost-menu ghost-menu-grouped">
                               {/* 第一行：编辑相关 */}
                               <div className="ghost-menu-row">
@@ -2245,7 +2255,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 </Tippy>
                               </div>
                             </div>
-                            </>
                           );
                         } else {
                           // 有标题：显示简化的单行菜单
