@@ -491,8 +491,9 @@ private static normalizeEvent(event: Partial<Event>): Event {
 ```
 
 **架构约定**:
-- ✅ Description: 存储 HTML（来自 Outlook 或用户输入）
-- ✅ EventLog: 存储纯文本 Slate JSON（Block-Level Timestamps）
+- ✅ Description: 存储包含 Block-Level Timestamps 的文本（HTML 已转换）
+- ✅ EventLog: 存储纯文本 Slate JSON（Block-Level Timestamps 元数据）
+- ✅ **同步到 Outlook**: 使用 `eventlog.html`（包含 YYYY-MM-DD HH:mm:ss 格式的 timestamps）
 - ✅ HTML→纯文本转换: 在 normalizeEvent 中统一处理
 - ✅ 条件字段设置: undefined（不存在）→ 不设置，[]（空数组）→ 清空
 - ✅ **Note 事件时间标准化** (v2.19):
@@ -500,6 +501,42 @@ private static normalizeEvent(event: Partial<Event>): Event {
   - 虚拟时间: 仅在 Outlook 同步时临时添加 `endTime = startTime + 1h`
   - 签名标记: `"📝 笔记由"` 识别需要虚拟时间的 note 事件
   - 往返保护: Outlook → 4DNote 检测标记，过滤虚拟 endTime
+
+**🔥 v2.18.8 重大更新：Block-Level Timestamp 推送到 Outlook**
+
+**问题背景**：
+- 之前：`normalizeEvent` 生成 `description` 时使用 `eventlog.plainText`（**不包含** Block-Level Timestamps）
+- 导致：推送到 Outlook 后，timestamps 丢失，同步回来时无法还原
+
+**修复方案**：
+1. **slateNodesToHtml** (serialization.ts)：
+   - 在每个 paragraph 前添加 `YYYY-MM-DD HH:mm:ss` 格式的 timestamp
+   - 输出格式：`2025-12-03 14:30:00\n第一段内容\n2025-12-03 14:31:00\n第二段内容`
+
+2. **normalizeEvent** (EventService.ts L3192)：
+   - 改用 `eventlog.html` 而非 `plainText` 生成 description
+   - 数据流：Slate JSON → eventlog.html (含 timestamps) → description → Outlook
+
+**数据流（修复后）**：
+```
+Slate JSON (含 createdAt/updatedAt)
+  ↓
+slateNodesToHtml() → eventlog.html
+  "2025-12-03 14:30:00\n第一段\n2025-12-03 14:31:00\n第二段"
+  ↓
+cleanHtmlContent() → 纯文本（保留 timestamps）
+  ↓
+SignatureUtils.addSignature() → description
+  ↓
+推送到 Outlook (body.content)
+  ↓
+同步回来 → parseTextWithBlockTimestamps() 识别 timestamps ✅
+```
+
+**关键点**：
+- `processEventDescription` 调用 `cleanHtmlContent` 移除 HTML 标签，但**保留纯文本格式的 timestamps**
+- Outlook 同步回来时，正则 `/^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/gm` 可识别行首 timestamps
+- 确保 Block-Level Timestamps 在 Outlook 往返后完整保留
 
 ### 2. normalizeTitle() - 标题三层架构
 

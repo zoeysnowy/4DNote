@@ -519,6 +519,178 @@ if (event.todoListIds && !event.startTime) {
   - [ ] localStorage 持久化
   - [ ] 跨页面跳转集成
 
+#### Note 事件创建与生命周期管理
+
+##### 创建流程
+
+**1. 用户触发创建**
+- 点击 TimeGap 的"添加笔记"按钮
+- 调用 `handleCreateNote()` 函数
+
+**2. 立即生成 UUID 并插入数据库**
+```typescript
+const handleCreateNote = async (_suggestedStartTime?: Date) => {
+  // 🎯 创建一个纯笔记：无时间、无标题、无标签，只记录 createdAt
+  const createdAt = formatTimeForStorage(new Date());
+  const newEvent: Event = {
+    id: generateEventId(),  // ✅ 立即生成 UUID
+    title: { simpleTitle: '', colorTitle: '', fullTitle: '' },
+    startTime: '',  // 空字符串（会被 normalizeEvent 转为虚拟时间）
+    endTime: '',
+    tags: [],
+    isAllDay: false,
+    isPlan: false,
+    isTimeCalendar: false,
+    isTask: false,
+    eventlog: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
+    createdAt,
+    updatedAt: createdAt,
+  };
+  
+  // ✅ 立即插入数据库
+  const result = await EventService.createEvent(newEvent);
+  
+  // ✅ 添加到空 Note 追踪集合
+  emptyNotesRef.current.add(newEvent.id);
+  
+  // ✅ 插入到列表顶部并展开
+  setAllEvents(prev => [savedNote, ...prev]);
+  setExpandedLogs(prev => new Set([...prev, newEvent.id]));
+};
+```
+
+**3. 自动展开并聚焦**
+- eventlog 自动展开
+- 光标自动聚焦到编辑器
+- 用户可以立即开始输入内容
+
+##### 自动清理机制
+
+**空 Note 追踪系统**
+```typescript
+// 追踪所有未编辑的空 Note
+const emptyNotesRef = useRef<Set<string>>(new Set());
+
+// 创建时添加到追踪
+emptyNotesRef.current.add(newEvent.id);
+
+// 编辑后移除追踪
+const handleLogChange = async (eventId: string, slateJson: string) => {
+  if (emptyNotesRef.current.has(eventId)) {
+    // 检查是否真的有内容
+    const nodes = JSON.parse(slateJson);
+    const hasContent = nodes.some((node: any) => {
+      if (node.type === 'paragraph') {
+        return node.children.some((child: any) => 
+          child.text && child.text.trim() !== ''
+        );
+      }
+      return true;
+    });
+    
+    if (hasContent) {
+      emptyNotesRef.current.delete(eventId);
+      console.log('✅ Note has content, removed from empty tracking');
+    }
+  }
+  
+  await EventHub.updateFields(eventId, { eventlog: slateJson }, {
+    source: 'TimeLog-eventlogChange'
+  });
+};
+```
+
+**清理触发时机**
+
+1. **用户折叠 eventlog**
+```typescript
+const toggleLogExpanded = async (eventId: string) => {
+  // 折叠前检查是否是空 Note
+  if (expandedLogs.has(eventId) && emptyNotesRef.current.has(eventId)) {
+    console.log('🗑️ Deleting empty note on collapse');
+    
+    try {
+      // 从数据库删除
+      await EventService.deleteEvent(eventId);
+      
+      // 从列表中移除
+      setAllEvents(prev => prev.filter(e => e.id !== eventId));
+      allEventsRef.current = allEventsRef.current.filter(e => e.id !== eventId);
+      
+      // 从追踪中移除
+      emptyNotesRef.current.delete(eventId);
+      
+      return; // 不执行折叠逻辑，因为事件已删除
+    } catch (error) {
+      console.error('❌ Failed to delete empty note:', error);
+    }
+  }
+  
+  // 正常的折叠/展开逻辑
+  setExpandedLogs(prev => {
+    const next = new Set(prev);
+    next.has(eventId) ? next.delete(eventId) : next.add(eventId);
+    return next;
+  });
+};
+```
+
+2. **页面卸载时批量清理**
+```typescript
+useEffect(() => {
+  return () => {
+    // 组件卸载时删除所有仍为空的 Note
+    const emptyNoteIds = Array.from(emptyNotesRef.current);
+    if (emptyNoteIds.length > 0) {
+      console.log('🗑️ Cleaning up empty notes on unmount:', emptyNoteIds);
+      
+      // 异步删除，不阻塞卸载
+      Promise.all(
+        emptyNoteIds.map(async (eventId) => {
+          try {
+            await EventService.deleteEvent(eventId);
+            console.log('✅ Deleted empty note:', eventId);
+          } catch (error) {
+            console.error('❌ Failed to delete empty note:', eventId, error);
+          }
+        })
+      );
+    }
+  };
+}, []);
+```
+
+##### 完整生命周期
+
+```
+1. 用户点击 TimeGap "添加笔记"
+   ↓
+2. 立即生成 UUID 并插入数据库
+   ↓
+3. 添加到 emptyNotesRef 追踪集合
+   ↓
+4. 插入到列表顶部并自动展开
+   ↓
+5a. 用户编辑内容 
+    → 检测到内容 
+    → 从 emptyNotesRef 移除 
+    → ✅ 保留事件
+   ↓
+5b. 用户折叠未编辑的 Note 
+    → 自动删除 
+    → 从列表和数据库移除
+   ↓
+5c. 用户离开页面（切换路由/关闭应用）
+    → 批量清理所有空 Note
+    → ✅ 避免数据库污染
+```
+
+**优势**：
+- ✅ 无临时 ID 问题（立即生成 UUID）
+- ✅ 用户体验流畅（无需手动删除空事件）
+- ✅ 自动清理（多重保护机制）
+- ✅ 数据完整性（已编辑的内容不会被误删）
+
 ---
 
 ## 🔄 v2.5 更新日志 (2025-12-09)

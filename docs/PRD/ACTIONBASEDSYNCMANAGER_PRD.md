@@ -464,6 +464,128 @@ class ActionBasedSyncManager {
 
 ## 3. 核心功能
 
+### 3.0 Block-Level Timestamp 同步架构（v1.8.1 更新 - 2025-12-18）
+
+**🔥 重大更新**：修复 Block-Level Timestamp 推送到 Outlook 时丢失的问题
+
+**问题背景**：
+- **v2.18.7 及之前**：`normalizeEvent` 生成 `description` 时使用 `eventlog.plainText`（**不包含** Block-Level Timestamps）
+- **导致问题**：本地创建含多个 timestamp 的事件 → 推送到 Outlook → timestamps 全部丢失 → 同步回来时只剩第一段
+
+**修复方案（v2.18.8）**：
+
+#### 3.0.1 本地推送到 Outlook 数据流
+
+```
+Slate JSON (含 paragraph.createdAt/updatedAt 元数据)
+  ↓
+slateNodesToHtml() [serialization.ts L150-175]
+  → 在每个 paragraph 前添加 "YYYY-MM-DD HH:mm:ss" 格式的 timestamp
+  ↓
+eventlog.html = "2025-12-03 14:30:00\n第一段内容\n2025-12-03 14:31:00\n第二段内容"
+  ↓
+normalizeEvent() [EventService.ts L3192]
+  → 改用 eventlog.html 而非 plainText 生成 description
+  → coreContent = normalizedEventLog.html || normalizedEventLog.plainText || ''
+  ↓
+SignatureUtils.addSignature(coreContent, ...)
+  → description = coreContent + "\n\n---\n由 4DNote 创建于 ..."
+  ↓
+ActionBasedSyncManager.syncSingleAction() [L2865-2871]
+  → descriptionSource = action.data.description
+  → processEventDescription(descriptionSource, '4dnote', 'create', ...)
+  ↓
+cleanHtmlContent(htmlContent) [L5026-5072]
+  → 移除 HTML 标签，保留纯文本（包含 timestamps）
+  → output = "2025-12-03 14:30:00\n第一段内容\n2025-12-03 14:31:00\n第二段内容\n\n---\n由 4DNote 创建于 ..."
+  ↓
+推送到 Outlook (body.content)
+```
+
+#### 3.0.2 Outlook 同步回来数据流
+
+```
+Outlook 返回 description (纯文本，包含 timestamps)
+  ↓
+applyRemoteActionToLocal() [L2472-2490]
+  → htmlContent = action.data.body?.content || action.data.description
+  → cleanDescription = processEventDescription(htmlContent, 'outlook', 'sync', ...)
+  ↓
+normalizeEvent({ description: cleanDescription })
+  → fallbackContent = SignatureUtils.extractCoreContent(cleanDescription)
+  ↓
+normalizeEventLog(undefined, fallbackContent) [EventService.ts L2740-2880]
+  → 检测时间戳正则: /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/gm
+  → matches.length > 0 → 调用 parseTextWithBlockTimestamps()
+  ↓
+parseTextWithBlockTimestamps(text) [EventService.ts L3456-3585]
+  → 按行扫描，识别行首时间戳
+  → 创建 paragraph 节点，设置 createdAt 元数据
+  ↓
+生成 EventLog 对象
+  {
+    slateJson: '[{"type":"paragraph","createdAt":1733203800000,"children":[{"text":"第一段"}]},...]',
+    html: "2025-12-03 14:30:00\n第一段内容\n2025-12-03 14:31:00\n第二段内容",
+    plainText: "第一段内容\n第二段内容"
+  }
+  ↓
+保存到本地，Block-Level Timestamps 完整保留 ✅
+```
+
+#### 3.0.3 关键修复点
+
+| 修复点 | 文件位置 | 修复内容 |
+|-------|---------|---------|
+| **slateNodesToHtml** | `serialization.ts` L150-175 | 添加 `timestampPrefix = "${year}-${month}-${day} ${hours}:${minutes}:${seconds}\n"` |
+| **normalizeEvent** | `EventService.ts` L3192 | 改用 `eventlog.html \|\| eventlog.plainText` 而非只用 `plainText` |
+| **To Do 同步** | `ActionBasedSyncManager.ts` L2837, L3494, L3530 | 改用 `action.data.description` 而非 `eventlog.plainText` |
+
+#### 3.0.4 验证方法
+
+```typescript
+// 1. 本地创建含多个 timestamp 的事件
+const event = {
+  title: "测试事件",
+  eventlog: {
+    slateJson: '[
+      {"type":"paragraph","createdAt":1733203800000,"children":[{"text":"第一段"}]},
+      {"type":"paragraph","createdAt":1733204460000,"children":[{"text":"第二段"}]}
+    ]'
+  }
+};
+
+// 2. 检查 eventlog.html
+console.log(event.eventlog.html);
+// 应输出：
+// 2025-12-03 14:30:00
+// 第一段
+// 2025-12-03 14:41:00
+// 第二段
+
+// 3. 检查 description
+console.log(event.description);
+// 应包含：
+// 2025-12-03 14:30:00
+// 第一段
+// 2025-12-03 14:41:00
+// 第二段
+// 
+// ---
+// 由 🔮 4DNote 创建于 ...
+
+// 4. 推送到 Outlook 后同步回来
+const syncedEvent = await EventService.getEventById(event.id);
+const slateNodes = JSON.parse(syncedEvent.eventlog.slateJson);
+console.log(slateNodes.map(n => ({ text: n.children[0].text, createdAt: n.createdAt })));
+// 应输出：
+// [
+//   { text: "第一段", createdAt: 1733203800000 },
+//   { text: "第二段", createdAt: 1733204460000 }
+// ]
+```
+
+---
+
 ### 3.1 远程同步到本地（Outlook → 4DNote）
 
 **🔥 关键架构原则**：

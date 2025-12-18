@@ -2834,7 +2834,7 @@ private getUserSettings(): any {
               
               const taskData = {
                 title: action.data.title?.simpleTitle || 'Untitled Task',
-                body: action.data.description || action.data.eventlog?.plainText,
+                body: action.data.description || '',
                 dueDateTime: action.data.endTime || action.data.startTime
               };
               
@@ -3491,7 +3491,7 @@ private getUserSettings(): any {
               
               const taskData = {
                 title: action.data.title?.simpleTitle || localEvent?.title?.simpleTitle || 'Untitled Task',
-                body: action.data.description || action.data.eventlog?.plainText || localEvent?.description,
+                body: action.data.description || localEvent?.description || '',
                 dueDate: mergedEventData.endTime || mergedEventData.startTime
               };
               
@@ -3527,7 +3527,7 @@ private getUserSettings(): any {
               
               const taskData = {
                 title: action.data.title?.simpleTitle || localEvent?.title?.simpleTitle || 'Untitled Task',
-                body: action.data.description || action.data.eventlog?.plainText || localEvent?.description,
+                body: action.data.description || localEvent?.description || '',
                 dueDate: mergedEventData.endTime || mergedEventData.startTime
               };
               

@@ -109,6 +109,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [tabManagerEvents, setTabManagerEvents] = useState<Event[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('timelog'); // 'timelog' 或事件ID
 
+  // 🆕 v2.19: 追踪空 Note 事件（用于自动清理）
+  const emptyNotesRef = useRef<Set<string>>(new Set());
+
   // 🆕 v2.19: 从 localStorage 恢复 LogTab 状态
   useEffect(() => {
     const restoreLogTabs = async () => {
@@ -192,6 +195,29 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     };
 
     handleNavigation();
+  }, []);
+
+  // 🆕 v2.19: 页面卸载时清理所有空 Note
+  useEffect(() => {
+    return () => {
+      // 组件卸载时删除所有仍为空的 Note
+      const emptyNoteIds = Array.from(emptyNotesRef.current);
+      if (emptyNoteIds.length > 0) {
+        console.log('🗑️ [TimeLog] Cleaning up empty notes on unmount:', emptyNoteIds);
+        
+        // 异步删除，不阻塞卸载
+        Promise.all(
+          emptyNoteIds.map(async (eventId) => {
+            try {
+              await EventService.deleteEvent(eventId);
+              console.log('✅ [TimeLog] Deleted empty note:', eventId);
+            } catch (error) {
+              console.error('❌ [TimeLog] Failed to delete empty note:', eventId, error);
+            }
+          })
+        );
+      }
+    };
   }, []);
 
   // Handler: Open event in tab manager or separate window
@@ -1017,7 +1043,30 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   // 切换 eventlog 展开/折叠
-  const toggleLogExpanded = (eventId: string) => {
+  const toggleLogExpanded = async (eventId: string) => {
+    // 🆕 v2.19: 折叠前检查是否是空 Note，如果是则删除
+    if (expandedLogs.has(eventId) && emptyNotesRef.current.has(eventId)) {
+      console.log('🗑️ [TimeLog] Deleting empty note on collapse:', eventId);
+      
+      try {
+        // 从数据库删除
+        await EventService.deleteEvent(eventId);
+        
+        // 从列表中移除
+        setAllEvents(prev => prev.filter(e => e.id !== eventId));
+        allEventsRef.current = allEventsRef.current.filter(e => e.id !== eventId);
+        
+        // 从追踪中移除
+        emptyNotesRef.current.delete(eventId);
+        
+        console.log('✅ [TimeLog] Empty note deleted:', eventId);
+        return; // 不需要切换展开状态，因为事件已删除
+      } catch (error) {
+        console.error('❌ [TimeLog] Failed to delete empty note:', error);
+        // 删除失败，继续正常的折叠逻辑
+      }
+    }
+    
     setExpandedLogs(prev => {
       const next = new Set(prev);
       if (next.has(eventId)) {
@@ -1090,6 +1139,27 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 处理 eventlog 内容变化
   const handleLogChange = async (eventId: string, slateJson: string) => {
     console.log('📝 [TimeLog] Saving eventlog for:', eventId);
+    
+    // 🆕 v2.19: 用户编辑了 eventlog，从空 Note 追踪中移除
+    if (emptyNotesRef.current.has(eventId)) {
+      // 检查是否真的有内容（不是空 paragraph）
+      try {
+        const nodes = JSON.parse(slateJson);
+        const hasContent = nodes.some((node: any) => {
+          if (node.type === 'paragraph') {
+            return node.children.some((child: any) => child.text && child.text.trim() !== '');
+          }
+          return true; // 其他类型节点视为有内容
+        });
+        
+        if (hasContent) {
+          emptyNotesRef.current.delete(eventId);
+          console.log('✅ [TimeLog] Note has content, removed from empty tracking:', eventId);
+        }
+      } catch (error) {
+        console.error('❌ [TimeLog] Failed to parse eventlog:', error);
+      }
+    }
     
     // 使用 EventHub 保存（带循环更新防护）
     await EventHub.updateFields(eventId, {
@@ -1396,6 +1466,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         return newList;
       });
       allEventsRef.current = [savedNote, ...allEventsRef.current];
+      
+      // 🆕 v2.19: 追踪空 Note（用于自动清理）
+      emptyNotesRef.current.add(newEvent.id);
+      console.log('📝 [TimeLog] Tracking empty note:', newEvent.id);
       
       // 自动展开新创建的笔记
       setExpandedLogs(prev => new Set([...prev, newEvent.id]));
