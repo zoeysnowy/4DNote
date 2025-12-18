@@ -59,6 +59,13 @@ import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 import DeleteIconSvg from '../assets/icons/delete.svg';
 import ProjectIconSvg from '../assets/icons/project.svg';
+import EventManagerIconSvg from '../assets/icons/EventManager.svg';
+import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
+import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
+import EventManagerIconSvg from '../assets/icons/EventManager.svg';
+import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
+import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
+import ProjectIconSvg from '../assets/icons/project.svg';
 
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
@@ -2139,139 +2146,132 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       )}
                     
                     {/* Right按钮 - 统一显示，带三组分层菜单 */}
-                    <Tippy
-                      content={
-                        <div className="right-menu-groups">
-                          {/* 组1: EventManager */}
-                          <Tippy
-                            content={
-                              <div className="right-submenu">
-                                <div className="right-submenu-item" onClick={() => handleToggleIsNote(event)}>
-                                  <img src={NotetreeIconSvg} className="right-submenu-icon" alt="favorite" />
-                                  <span className="right-submenu-text">收藏事件</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={() => handleEditEvent(event)}>
-                                  <img src={FullsizeIconSvg} className="right-submenu-icon" alt="fullsize" />
-                                  <span className="right-submenu-text">展开详情</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenInTab(event); }}>
-                                  <img src={TabIconSvg} className="right-submenu-icon" alt="tab" />
-                                  <span className="right-submenu-text">在新标签页打开</span>
-                                </div>
-                                <div className="right-submenu-item">
-                                  <img src={ProjectIconSvg} className="right-submenu-icon" alt="project" />
-                                  <span className="right-submenu-text">查看事件树</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={() => handleDelete(event)}>
-                                  <img src={DeleteIconSvg} className="right-submenu-icon" alt="delete" />
-                                  <span className="right-submenu-text">删除</span>
-                                </div>
+                    <img 
+                      src={RightIconSvg} 
+                      alt="right" 
+                      className="title-right-icon"
+                      onClick={() => toggleLogExpanded(event.id)}
+                      onMouseEnter={() => setHoveredRightId(event.id)}
+                      onMouseLeave={() => setHoveredRightId(null)}
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        opacity: 0.6,
+                        cursor: 'pointer',
+                        marginLeft: '8px',
+                        transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.2s'
+                      }}
+                    />
+                    
+                    {/* 三组分层菜单 - 横向延伸 */}
+                    {hoveredRightId === event.id && (
+                      <div className="right-menu-groups">
+                        {/* 组1: EventManager */}
+                        <Tippy
+                          content={
+                            <div className="right-submenu">
+                              <div className="right-submenu-item" onClick={() => handleToggleIsNote(event)}>
+                                <img src={NotetreeIconSvg} className="right-submenu-icon" alt="favorite" />
+                                <span className="right-submenu-text">收藏事件</span>
                               </div>
-                            }
-                            placement="bottom"
-                            interactive={true}
-                            arrow={false}
-                            offset={[0, 4]}
-                          >
-                            <button className="right-menu-group-btn ghost-menu-btn">
-                              <img src={NotetreeIconSvg} alt="event-manager" />
-                            </button>
-                          </Tippy>
+                              <div className="right-submenu-item" onClick={() => handleEditEvent(event)}>
+                                <img src={FullsizeIconSvg} className="right-submenu-icon" alt="fullsize" />
+                                <span className="right-submenu-text">展开详情</span>
+                              </div>
+                              <div className="right-submenu-item" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenInTab(event); }}>
+                                <img src={TabIconSvg} className="right-submenu-icon" alt="tab" />
+                                <span className="right-submenu-text">在新标签页打开</span>
+                              </div>
+                              <div className="right-submenu-item">
+                                <img src={ProjectIconSvg} className="right-submenu-icon" alt="project" />
+                                <span className="right-submenu-text">查看事件树</span>
+                              </div>
+                              <div className="right-submenu-item" onClick={() => handleDelete(event)}>
+                                <img src={DeleteIconSvg} className="right-submenu-icon" alt="delete" />
+                                <span className="right-submenu-text">删除</span>
+                              </div>
+                            </div>
+                          }
+                          placement="bottom"
+                          interactive={true}
+                          arrow={false}
+                          offset={[0, 4]}
+                        >
+                          <button className="right-menu-group-btn ghost-menu-btn">
+                            <img src={EventManagerIconSvg} alt="event-manager" />
+                          </button>
+                        </Tippy>
 
-                          {/* 组2: Edit */}
-                          <Tippy
-                            content={
-                              <div className="right-submenu">
-                                <div className="right-submenu-item" onClick={() => setEditingTitleId(event.id)}>
-                                  <img src={EditIconSvg} className="right-submenu-icon" alt="title-edit" />
-                                  <span className="right-submenu-text">添加标题</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={() => handleTagsClick(event)}>
-                                  <img src={TagIconSvg} className="right-submenu-icon" alt="tag" />
-                                  <span className="right-submenu-text">添加标签</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={() => handleAttendeesEdit(event)}>
-                                  <img src={AttendeeIconSvg} className="right-submenu-icon" alt="attendees" />
-                                  <span className="right-submenu-text">添加参与者</span>
-                                </div>
-                                <div className="right-submenu-item" onClick={() => handleLocationEdit(event)}>
-                                  <img src={LocationIconSvg} className="right-submenu-icon" alt="location" />
-                                  <span className="right-submenu-text">添加地点</span>
-                                </div>
-                                <div className="right-submenu-item">
-                                  <img src={FullsizeIconSvg} className="right-submenu-icon" alt="allmenu" />
-                                  <span className="right-submenu-text">展开所有属性</span>
-                                </div>
+                        {/* 组2: Edit */}
+                        <Tippy
+                          content={
+                            <div className="right-submenu">
+                              <div className="right-submenu-item" onClick={() => setEditingTitleId(event.id)}>
+                                <img src={EditIconSvg} className="right-submenu-icon" alt="title-edit" />
+                                <span className="right-submenu-text">添加标题</span>
                               </div>
-                            }
-                            placement="bottom"
-                            interactive={true}
-                            arrow={false}
-                            offset={[0, 4]}
-                          >
-                            <button className="right-menu-group-btn ghost-menu-btn">
-                              <img src={EditIconSvg} alt="edit" />
-                            </button>
-                          </Tippy>
+                              <div className="right-submenu-item" onClick={() => handleTagsClick(event)}>
+                                <img src={TagIconSvg} className="right-submenu-icon" alt="tag" />
+                                <span className="right-submenu-text">添加标签</span>
+                              </div>
+                              <div className="right-submenu-item" onClick={() => handleAttendeesEdit(event)}>
+                                <img src={AttendeeIconSvg} className="right-submenu-icon" alt="attendees" />
+                                <span className="right-submenu-text">添加参与者</span>
+                              </div>
+                              <div className="right-submenu-item" onClick={() => handleLocationEdit(event)}>
+                                <img src={LocationIconSvg} className="right-submenu-icon" alt="location" />
+                                <span className="right-submenu-text">添加地点</span>
+                              </div>
+                              <div className="right-submenu-item">
+                                <img src={AllMenuIconSvg} className="right-submenu-icon" alt="allmenu" />
+                                <span className="right-submenu-text">展开所有属性</span>
+                              </div>
+                            </div>
+                          }
+                          placement="bottom"
+                          interactive={true}
+                          arrow={false}
+                          offset={[0, 4]}
+                        >
+                          <button className="right-menu-group-btn ghost-menu-btn">
+                            <img src={EditIconSvg} alt="edit" />
+                          </button>
+                        </Tippy>
 
-                          {/* 组3: Time */}
-                          <Tippy
-                            content={
-                              <div className="right-submenu">
-                                <div className="right-submenu-item" onClick={() => handleTimeEdit(event)}>
-                                  <img src={EditIconSvg} className="right-submenu-icon" alt="edit-time" />
-                                  <span className="right-submenu-text">编辑时间</span>
-                                </div>
-                                <div className="right-submenu-item">
-                                  <img src={DdlIconSvg} className="right-submenu-icon" alt="ddl" />
-                                  <span className="right-submenu-text">添加截止日</span>
-                                </div>
-                                <div className="right-submenu-item">
-                                  <img src={RotationIconSvg} className="right-submenu-icon" alt="rotation" />
-                                  <span className="right-submenu-text">循环事件</span>
-                                </div>
-                                <div className="right-submenu-item">
-                                  <img src={TimerStartIconSvg} className="right-submenu-icon" alt="timer-start" />
-                                  <span className="right-submenu-text">开始计时</span>
-                                </div>
+                        {/* 组3: Time */}
+                        <Tippy
+                          content={
+                            <div className="right-submenu">
+                              <div className="right-submenu-item" onClick={() => handleTimeEdit(event)}>
+                                <img src={EditIconSvg} className="right-submenu-icon" alt="edit-time" />
+                                <span className="right-submenu-text">编辑时间</span>
                               </div>
-                            }
-                            placement="bottom"
-                            interactive={true}
-                            arrow={false}
-                            offset={[0, 4]}
-                          >
-                            <button className="right-menu-group-btn ghost-menu-btn">
-                              <img src={TimerStartIconSvg} alt="time" />
-                            </button>
-                          </Tippy>
-                        </div>
-                      }
-                      visible={hoveredRightId === event.id}
-                      placement="bottom-start"
-                      interactive={true}
-                      arrow={false}
-                      offset={[0, 4]}
-                      onClickOutside={() => setHoveredRightId(null)}
-                    >
-                      <img 
-                        src={RightIconSvg} 
-                        alt="right" 
-                        className="title-right-icon"
-                        onClick={() => toggleLogExpanded(event.id)}
-                        onMouseEnter={() => setHoveredRightId(event.id)}
-                        onMouseLeave={() => setHoveredRightId(null)}
-                        style={{
-                          width: '16px',
-                          height: '16px',
-                          opacity: 0.6,
-                          cursor: 'pointer',
-                          marginLeft: '8px',
-                          transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                          transition: 'transform 0.2s'
-                        }}
-                      />
-                    </Tippy>
+                              <div className="right-submenu-item">
+                                <img src={DdlIconSvg} className="right-submenu-icon" alt="ddl" />
+                                <span className="right-submenu-text">添加截止日</span>
+                              </div>
+                              <div className="right-submenu-item">
+                                <img src={RotationIconSvg} className="right-submenu-icon" alt="rotation" />
+                                <span className="right-submenu-text">循环事件</span>
+                              </div>
+                              <div className="right-submenu-item">
+                                <img src={TimerStartIconSvg} className="right-submenu-icon" alt="timer-start" />
+                                <span className="right-submenu-text">开始计时</span>
+                              </div>
+                            </div>
+                          }
+                          placement="bottom"
+                          interactive={true}
+                          arrow={false}
+                          offset={[0, 4]}
+                        >
+                          <button className="right-menu-group-btn ghost-menu-btn">
+                            <img src={TimePropertyIconSvg} alt="time" />
+                          </button>
+                        </Tippy>
+                      </div>
+                    )}
                     </div> {/* 关闭 time-display-wrapper */}
                   </div> {/* 关闭 event-time-col */}
                   
