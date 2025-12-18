@@ -2451,7 +2451,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           <div className="event-title">
                         <LogSlate
                           mode="title"
-                          placeholder="无标题笔记" 
+                          placeholder="添加标题..."
                           value={(() => {
                             // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编辑
                             const colorTitle = typeof event.title === 'object' 
@@ -2487,7 +2487,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               });
                             }
                           }}
-                          placeholder="添加标题..."
                         />
                       </div>
                       
