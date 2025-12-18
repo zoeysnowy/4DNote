@@ -2608,8 +2608,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </div>,
                         document.body
                       )}
-                    </div> {/* 关闭 event-title-row */}
-                  )})()}
+                    </div>
+                  )})()}  {/* 关闭 Title IIFE - 返回event-title-row */}
                   
                   {/* Meta Fields: Tags, Attendees, Location */}
                     {/* Row 1: Tags field (show when has content OR editing) */}
