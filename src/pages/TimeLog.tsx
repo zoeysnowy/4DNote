@@ -2331,7 +2331,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       }
                       return null;
                     })()}
-                    </div>
+                    </div> {/* 关闭 time-display-wrapper */}
+                  </div> {/* 关闭 event-time-col */}
                   
                   {/* 🆕 日历来源信息（右对齐） */}
                   <div className="time-calendar-source-wrapper">
