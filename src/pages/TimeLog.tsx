@@ -2109,9 +2109,26 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
                         
                         if (!hasTitle) {
-                          // 空标题：显示三行分组菜单
+                          // 空标题：显示right按钮 + 三行分组菜单
                           return (
-                            <div className="ghost-menu ghost-menu-grouped">
+                            <>
+                              {/* Right按钮 - 展开/折叠log */}
+                              <img 
+                                src={RightIconSvg} 
+                                alt="right" 
+                                className="title-right-icon"
+                                onClick={() => toggleLogExpanded(event.id)}
+                                style={{
+                                  width: '16px',
+                                  height: '16px',
+                                  opacity: 0.6,
+                                  cursor: 'pointer',
+                                  marginLeft: '8px',
+                                  transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                                  transition: 'transform 0.2s'
+                                }}
+                              />
+                              <div className="ghost-menu ghost-menu-grouped">
                               {/* 第一行：编辑相关 */}
                               <div className="ghost-menu-row">
                                 <Tippy content="添加标题" placement="top">
@@ -2228,6 +2245,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 </Tippy>
                               </div>
                             </div>
+                            </>
                           );
                         } else {
                           // 有标题：显示简化的单行菜单
@@ -2456,10 +2474,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         />
                       </div>
                       
-                      {/* Title right icon - toggle log + ghost menu */}
+                      {/* Title right icon - toggle log + ghost menu - 仅有标题时显示 */}
                       {(() => {
                         const titleObj = typeof event.title === 'object' ? event.title : null;
                         const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                        
+                        if (!hasTitle) return null; // 空标题时不在这里显示right按钮
                         
                         return (
                           <div 
@@ -2481,8 +2501,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 transition: 'transform 0.2s'
                               }}
                             />
-                            {/* Ghost menu - 有标题时才在这里显示 */}
-                            {hasTitle && hoveredRightMenuId === event.id && (
+                            {/* Ghost menu */}
+                            {hoveredRightMenuId === event.id && (
                           <div className="ghost-menu title-ghost-menu">
                             <button 
                               className="ghost-menu-btn"
