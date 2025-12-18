@@ -59,7 +59,6 @@ import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 import DeleteIconSvg from '../assets/icons/delete.svg';
 import ProjectIconSvg from '../assets/icons/project.svg';
-import ProjectIconSvg from '../assets/icons/project.svg';
 
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
