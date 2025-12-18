@@ -3048,12 +3048,15 @@ export class EventService {
       ? new Date(event.updatedAt).getTime() 
       : eventCreatedAt;
     
+    // 🆕 获取旧 eventlog（如果有的话，用于 diff）
+    const oldEventLog = options?.oldEvent?.eventlog;
+    
     const normalizedEventLog = this.normalizeEventLog(
       event.eventlog, 
       fallbackContent,   // 回退用的核心内容（已移除签名 + 转换为纯文本）
       eventCreatedAt,    // 🆕 Event.createdAt (number)
-      eventUpdatedAt     // 🆕 Event.updatedAt (number)
-      // 没有旧 eventlog，因为 normalizeEvent 是规范化新事件
+      eventUpdatedAt,    // 🆕 Event.updatedAt (number)
+      oldEventLog        // 🆕 旧 eventlog（用于 Diff，保留 Block-Level Timestamp）
     );
     
     // 🆕 [v2.18.0] 优先从 Block-Level Timestamp 中提取时间戳
