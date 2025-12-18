@@ -2057,12 +2057,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       alt="status" 
                     />
                   </div>
-                  <div className="event-time-col">
+                  <div className="event-time-col"
+                    onMouseEnter={() => setHoveredTimeId(event.id)}
+                    onMouseLeave={() => setHoveredTimeId(null)}
+                  >
                     {/* 时间显示区域（带幽灵菜单） */}
                     <div 
                       className="time-display-wrapper"
-                      onMouseEnter={() => setHoveredTimeId(event.id)}
-                      onMouseLeave={() => setHoveredTimeId(null)}
                     >
                       {!event.startTime && !event.endTime && event.eventlog ? (
                         // 笔记事件：显示 createdAt 时间
