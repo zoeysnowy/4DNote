@@ -3160,6 +3160,29 @@ export class EventService {
       : event.fourDNoteSource;
     const finalSource = extractedCreator.source || event.source;
     
+    // 🆕 [v2.19] Note 事件时间标准化：startTime = createdAt（统一处理）
+    let isVirtualTime = false;
+    let syncStartTime = event.startTime;
+    let syncEndTime = event.endTime;
+    
+    // 检测 note 事件：没有真实时间的事件
+    if (!event.startTime && !event.endTime) {
+      const createdDate = new Date(finalCreatedAt);
+      syncStartTime = formatTimeForStorage(createdDate);
+      syncEndTime = null;  // ⚠️ endTime 保持为空，虚拟时间仅在同步时添加
+      
+      // 标记是否需要虚拟时间（用于同步标识）
+      isVirtualTime = !!(event.calendarIds && event.calendarIds.length > 0);
+      
+      console.log('[normalizeEvent] 📝 Note事件时间标准化:', {
+        eventId: event.id?.slice(-8),
+        startTime: syncStartTime,
+        endTime: syncEndTime,
+        needsVirtualTimeForSync: isVirtualTime,
+        hasCalendarIds: event.calendarIds?.length
+      });
+    }
+    
     // 🔥 Description 规范化（从 eventlog 提取 + 添加签名）
     let normalizedDescription: string;
     
@@ -3180,7 +3203,8 @@ export class EventService {
         || (finalSource === 'outlook' ? 'outlook' : '4dnote');
       normalizedDescription = SignatureUtils.addSignature(coreContent, {
         ...eventMeta,
-        lastModifiedSource
+        lastModifiedSource,
+        isVirtualTime  // 🆕 传递虚拟时间标记
       });
     }
     
@@ -3224,11 +3248,14 @@ export class EventService {
       eventlog: normalizedEventLog,
       description: normalizedDescription,
       
-      // 时间字段
-      startTime: event.startTime,
-      endTime: event.endTime,
+      // 时间字段（使用虚拟时间或真实时间）
+      startTime: syncStartTime,
+      endTime: syncEndTime,
       isAllDay: event.isAllDay || false,
       dueDateTime: event.dueDateTime,
+      
+      // 🆕 [v2.19] 虚拟时间标记（内部字段，不存储）
+      _isVirtualTime: isVirtualTime,
       
       // 分类字段
       // 🔥 [CRITICAL FIX] 只有 tags 字段存在时才设置，避免强制覆盖为空数组
@@ -5161,6 +5188,27 @@ export class EventService {
     try {
       // ⚠️ 注意：event 已经过 convertRemoteEventToLocal 中的 normalizeEvent 处理
       // 但如果 eventlog 为空或是空数组，需要从 description 重新生成
+      
+      // 🆕 v2.19: 检测虚拟时间标记，恢复note事件的标准时间字段
+      const hasVirtualTimeMarker = event.description?.includes('📝 笔记由');
+      
+      if (hasVirtualTimeMarker) {
+        eventLogger.log('🔧 [EventService] 检测到虚拟时间标记（笔记由），恢复note标准时间');
+        // 检查本地原始事件
+        const localEvent = await this.getEventById(event.id);
+        
+        // 恢复note标准时间：startTime = createdAt, endTime = null
+        const createdDate = new Date(event.createdAt);
+        event.startTime = formatTimeForStorage(createdDate);
+        event.endTime = null;
+        
+        eventLogger.log('📝 [EventService] Note时间恢复:', {
+          startTime: event.startTime,
+          endTime: event.endTime,
+          createdAt: event.createdAt
+        });
+      }
+      
       let finalEventLog = event.eventlog;
       
       if (!finalEventLog || 
@@ -5347,6 +5395,98 @@ export class EventService {
     if (event.isOutsideApp) return 'OutsideApp';
     if (event.isPlan) return 'UserSubTask';
     return 'Event';
+  }
+
+  /**
+   * 获取虚拟标题（用于无标题的 Note 事件）
+   * @param event - 事件对象
+   * @param maxLength - 最大字符长度（默认30）
+   * @returns 虚拟标题字符串
+   * 
+   * 使用场景：
+   * - EventEditModal 右侧面板标题
+   * - LogTab 标签页标题 (maxLength=15)
+   * - TimeCalendar 日历格子显示 (maxLength=20)
+   * - Outlook Subject 字段 (maxLength=50)
+   */
+  static getVirtualTitle(event: Event, maxLength: number = 30): string {
+    // 1. 优先使用真实标题
+    if (event.title?.simpleTitle) {
+      return event.title.simpleTitle;
+    }
+    
+    // 2. 从 eventlog 提取纯文本
+    const plainText = this.extractPlainTextFromEventlog(event.eventlog);
+    
+    // 3. 清理格式并截取
+    const virtualTitle = plainText
+      .replace(/\n+/g, ' ')           // 换行转空格
+      .replace(/\s+/g, ' ')           // 合并多个空格为一个
+      .trim()
+      .slice(0, maxLength);
+    
+    // 4. 返回虚拟标题或默认值
+    return virtualTitle || '无内容笔记';
+  }
+
+  /**
+   * 从 EventLog 中提取纯文本
+   * @param eventlog - EventLog 对象或 JSON 字符串
+   * @returns 提取的纯文本
+   */
+  private static extractPlainTextFromEventlog(eventlog: any): string {
+    if (!eventlog) return '';
+    
+    // 1. 如果已有 plainText 字段，直接使用
+    if (typeof eventlog === 'object' && eventlog.plainText) {
+      return eventlog.plainText;
+    }
+    
+    // 2. 如果是字符串，尝试解析为 Slate JSON
+    let slateNodes: any[];
+    try {
+      if (typeof eventlog === 'string') {
+        // 可能是 Slate JSON 字符串
+        const parsed = JSON.parse(eventlog);
+        slateNodes = Array.isArray(parsed) ? parsed : (parsed.slateJson ? JSON.parse(parsed.slateJson) : []);
+      } else if (eventlog.slateJson) {
+        // EventLog 对象，提取 slateJson
+        slateNodes = typeof eventlog.slateJson === 'string' 
+          ? JSON.parse(eventlog.slateJson) 
+          : eventlog.slateJson;
+      } else {
+        return '';
+      }
+    } catch (error) {
+      console.warn('[extractPlainTextFromEventlog] Failed to parse eventlog:', error);
+      return '';
+    }
+    
+    // 3. 从 Slate 节点提取文本
+    return this.extractTextFromSlateNodes(slateNodes);
+  }
+
+  /**
+   * 从 Slate 节点数组提取纯文本
+   * @param nodes - Slate 节点数组
+   * @returns 提取的纯文本
+   */
+  private static extractTextFromSlateNodes(nodes: any[]): string {
+    if (!Array.isArray(nodes)) return '';
+    
+    return nodes.map(node => {
+      // 处理文本节点
+      if (node.text !== undefined) {
+        return node.text;
+      }
+      
+      // 递归处理子节点
+      if (node.children && Array.isArray(node.children)) {
+        return this.extractTextFromSlateNodes(node.children);
+      }
+      
+      return '';
+    }).join('');
   }
 
   /**

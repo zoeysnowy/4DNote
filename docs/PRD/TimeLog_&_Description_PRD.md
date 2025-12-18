@@ -1,14 +1,523 @@
 ﻿# TimeLog 页面 & Event.eventlog 字段 PRD
 
-> **版本**: v2.5  
+> **版本**: v2.6
 > **创建时间**: 2024-01-XX  
-> **最后更新**: 2025-12-09  
+> **最后更新**: 2025-12-18
 > **Figma 设计稿**: [TimeLog 页面设计](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=333-1178&m=dev)  
 > **依赖模块**: EventService, PlanSlateEditor, TimeHub, EventHub  
 > **关联文档**:
 > - [EventEditModal v2 PRD](./EVENTEDITMODAL_V2_PRD.md)
 > - [TIME_ARCHITECTURE.md](../TIME_ARCHITECTURE.md)
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
+
+---
+
+## 🔄 v2.6 更新日志 (2025-12-18)
+
+### 笔记事件（Note）完整功能设计 ✨
+
+#### 1. 时间显示架构（已验证 ✅）
+
+TimeLog 已完整支持四种时间显示模式（无需改动）：
+
+| 场景 | 显示逻辑 | 代码位置 |
+|------|---------|---------|
+| **startTime & endTime** | 显示时间段 + 时长箭头 | L1862-1877 |
+| **仅 startTime** | 显示单一开始时间 | L1878-1884 |
+| **仅 endTime** | 显示单一结束时间 | L1885-1890 |
+| **两者都无** | 显示 `createdAt`（笔记创建时间） | L1857-1861 |
+
+**排序规则**（已验证 ✅）：
+```typescript
+// TimeLog.tsx L534-535
+const timeA = a.startTime || a.endTime || a.createdAt || '';
+const timeB = b.startTime || b.endTime || b.createdAt || '';
+```
+
+✅ **结论**：Note事件无需单独的时间显示逻辑，使用现有架构即可。
+
+---
+
+#### 2. 标题处理策略
+
+##### 2.1 TimeLog 页面：动态标题行插入
+
+**默认行为**：
+- 无标题（`title.simpleTitle === ''`）→ 不显示标题行
+- 用户看到的是 `eventlog` 内容直接展示（类似笔记本流式记录）
+
+**标题行插入交互**：
+1. **触发方式**：
+   - 鼠标悬停在事件时间区域 → 显示幽灵菜单
+   - 点击 `title_edit` 图标按钮（Assets/icon/title_edit.svg）
+
+2. **插入行为**：
+   - 在 `eventlog` 上方动态插入标题编辑行
+   - 使用 `LogSlate` 组件（mode="title"）
+   - 显示灰色 placeholder: "为笔记添加标题..."
+   - 自动聚焦到标题输入框
+
+3. **保存逻辑**：
+   - 用户输入内容后失焦 → 保存到 `event.title`
+   - 若用户未输入直接失焦 → 移除标题行，恢复无标题状态
+
+4. **状态管理**：
+```typescript
+const [editingTitleEventId, setEditingTitleEventId] = useState<string | null>(null);
+
+// 幽灵菜单点击处理
+const handleInsertTitle = (eventId: string) => {
+  setEditingTitleEventId(eventId);
+};
+
+// 渲染逻辑
+{event.title?.simpleTitle || editingTitleEventId === event.id ? (
+  <div className="event-title-row">
+    <LogSlate
+      mode="title"
+      placeholder="为笔记添加标题..."
+      value={event.title?.colorTitle || ''}
+      autoFocus={editingTitleEventId === event.id}
+      onBlur={(isEmpty) => {
+        if (isEmpty) setEditingTitleEventId(null);
+      }}
+    />
+  </div>
+) : null}
+```
+
+**图标资源**：
+- `Assets/icon/title_edit.svg` - 标题编辑按钮（幽灵菜单中）
+
+##### 2.2 其他场景：虚拟标题生成
+
+**适用场景**：
+- EventEditModal（右侧面板）
+- LogTab（标签页标题）
+- TimeCalendar（日历格子显示）
+- Outlook/外部同步（Subject字段）
+
+**生成规则**：
+```typescript
+// EventService.ts 新增工具方法
+static getVirtualTitle(event: Event, maxLength: number = 30): string {
+  // 1. 优先使用真实标题
+  if (event.title?.simpleTitle) {
+    return event.title.simpleTitle;
+  }
+  
+  // 2. 从 eventlog 提取纯文本
+  const plainText = typeof event.eventlog === 'string'
+    ? this.extractPlainTextFromEventlog(event.eventlog)
+    : event.eventlog?.plainText || '';
+  
+  // 3. 清理格式并截取
+  const virtualTitle = plainText
+    .replace(/\n+/g, ' ')           // 换行转空格
+    .replace(/\s+/g, ' ')           // 合并空格
+    .slice(0, maxLength)
+    .trim();
+  
+  return virtualTitle || '无内容笔记';
+}
+
+// 使用示例
+const displayTitle = EventService.getVirtualTitle(event, 15); // "双击Alt召唤美桶..."
+```
+
+**显示效果**：
+| 场景 | maxLength | 格式 |
+|------|-----------|------|
+| LogTab 标签 | 15字符 | "双击Alt召唤..." |
+| TimeCalendar | 20字符 | "双击Alt召唤美桶、格式..." |
+| Outlook Subject | 50字符 | "4DNote笔记 - 双击Alt召唤美桶、格式等..." |
+
+---
+
+#### 3. isNote 字段：重要笔记标记系统
+
+##### 3.1 功能定义
+
+**`isNote: boolean`** - 用户主动标记的重要笔记（类似收藏夹/书签功能）
+
+**关键特性**：
+- ❌ **非自动标记**：创建无标题事件不会自动设置 `isNote=true`
+- ✅ **用户主动操作**：通过幽灵菜单的 NoteTree 图标手动切换
+- ✅ **EventTree 打包**：标记后，整个事件树（父节点 + 子节点）统一标记
+- ✅ **侧边栏快捷访问**：标记的笔记显示在"事件选择"菜单中
+- ✅ **跨页面跳转**：任何页面点击侧边栏笔记 → 跳转到TimeLog + LogTab打开
+
+##### 3.2 交互流程
+
+**标记流程**：
+1. 鼠标悬停在事件上 → 显示幽灵菜单
+2. 点击 NoteTree 图标（Assets/icon/Notetree.svg）
+3. 系统检测 EventTree 结构：
+   - 查找父事件（`event.parentEventId`）
+   - 查找所有子事件（`event.childEventIds`）
+4. 批量更新：
+   ```typescript
+   // 示例：标记整个树
+   const treeEvents = [parent, ...children, currentEvent];
+   for (const evt of treeEvents) {
+     await EventService.updateEvent(evt.id, { isNote: true }, false, {
+       source: 'user-edit',
+       originComponent: 'TimeLog'
+     });
+   }
+   ```
+
+**取消标记流程**：
+1. 点击已标记笔记的 NoteTree 图标（图标状态为激活）
+2. 弹出确认对话框：
+   ```
+   ┌────────────────────────────────────┐
+   │ 移除笔记标记                        │
+   ├────────────────────────────────────┤
+   │ 此事件包含 3 个关联事件：           │
+   │ • 父事件：Project Ace              │
+   │ • 当前事件：准备演讲稿              │
+   │ • 子事件：演讲PPT草稿               │
+   │                                    │
+   │ [仅移除本事件] [移除整个笔记树]     │
+   └────────────────────────────────────┘
+   ```
+3. 用户选择：
+   - **仅移除本事件**：只设置 `currentEvent.isNote = false`
+   - **移除整个笔记树**：批量设置树中所有事件 `isNote = false`
+
+##### 3.3 侧边栏显示
+
+**位置**：左侧控制区 → "事件选择" 菜单下方
+
+**UI 设计**：
+```
+┌──────────────────┐
+│ 🔍 智能搜索       │
+└──────────────────┘
+
+┌──────────────────┐
+│ 📅 日历选择器     │
+└──────────────────┘
+
+┌──────────────────┐
+│ 🏷️ 标签/事件/收藏 │
+│ #工作 37          │
+│ #PRD交流 12       │
+└──────────────────┘
+
+┌──────────────────┐
+│ 📝 重要笔记 (3)   │ ← 新增区域
+├──────────────────┤
+│ ┬ Project Ace    │ ← 树根事件（展开/折叠）
+│ ├─ 准备演讲稿     │ ← 子事件1
+│ └─ 演讲PPT草稿    │ ← 子事件2
+│                  │
+│ • 技术架构规划    │ ← 独立笔记（无树结构）
+└──────────────────┘
+```
+
+**数据查询**：
+```typescript
+// 获取所有 isNote=true 的事件
+const noteEvents = await EventService.getAllEvents()
+  .then(events => events.filter(e => e.isNote === true));
+
+// 按 EventTree 结构分组
+const noteTrees = groupByEventTree(noteEvents);
+```
+
+##### 3.4 跨页面跳转逻辑
+
+**触发场景**：
+- 用户在任何页面（Plan/TimeCalendar/Timer）
+- 点击侧边栏"重要笔记"中的某个事件
+
+**跳转行为**：
+1. **导航到 TimeLog 页面**：
+   ```typescript
+   navigate('/timelog');
+   ```
+
+2. **滚动到事件位置**：
+   ```typescript
+   // 等待 TimeLog 渲染完成
+   setTimeout(() => {
+     const eventElement = document.querySelector(`[data-event-id="${eventId}"]`);
+     eventElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+   }, 300);
+   ```
+
+3. **以 LogTab 形式打开**：
+   ```typescript
+   // TimeLog 组件维护 LogTab 状态
+   const [openLogTabs, setOpenLogTabs] = useState<Set<string>>(new Set());
+   
+   // 打开 LogTab
+   setOpenLogTabs(prev => new Set([...prev, eventId]));
+   ```
+
+**LogTab 持久化**：
+```typescript
+// 使用 localStorage 记住用户打开的 LogTabs
+useEffect(() => {
+  const saved = localStorage.getItem('timelog_open_logtabs');
+  if (saved) {
+    setOpenLogTabs(new Set(JSON.parse(saved)));
+  }
+}, []);
+
+useEffect(() => {
+  localStorage.setItem('timelog_open_logtabs', JSON.stringify([...openLogTabs]));
+}, [openLogTabs]);
+```
+
+**LogTab 关闭**：
+```typescript
+// 用户点击 LogTab 的关闭按钮（×）
+const handleCloseLogTab = (eventId: string) => {
+  setOpenLogTabs(prev => {
+    const next = new Set(prev);
+    next.delete(eventId);
+    return next;
+  });
+};
+```
+
+**LogTab UI 示例**：
+```
+┌─────────────────────────────────────────────────┐
+│ TimeLog 页面                                     │
+├─────────────────────────────────────────────────┤
+│ 已打开的笔记：                                    │
+│ [准备演讲稿 ×] [技术架构规划 ×] [+ 新建笔记]      │
+│                                                 │
+│ ↓ 点击标签页切换内容，点击×关闭                    │
+└─────────────────────────────────────────────────┘
+```
+
+##### 3.5 图标资源
+
+- **Assets/icon/Notetree.svg** - NoteTree 标记按钮
+  - 未激活状态：灰色边框
+  - 激活状态（`isNote=true`）：紫色填充
+
+---
+
+#### 4. Note 事件 Outlook 同步策略
+
+##### 4.1 问题背景
+
+Note 类型事件（无标题、无时间的快速记录）在同步到 Outlook Calendar 时面临两个挑战：
+1. **Outlook 要求**：Calendar 事件必须有 `subject` 和时间字段
+2. **数据保护**：同步回来时不能污染本地的纯净 note 数据
+
+##### 4.2 本地→远端同步（虚拟时间生成）
+
+**触发条件**：
+- 事件设置了 `calendarIds`（用户明确要求同步）
+- 无 `startTime` 或 `endTime`（note 特征）
+
+**虚拟时间规则**：
+```typescript
+// normalizeEvent() 中处理
+if (event.calendarIds && event.calendarIds.length > 0) {
+  // 检测是否为需要虚拟时间的 note
+  if (!event.startTime && !event.endTime) {
+    // 生成虚拟时间（仅用于同步）
+    const createdDate = new Date(event.createdAt);
+    event._syncStartTime = formatTimeForStorage(createdDate);  // 虚拟开始时间
+    event._syncEndTime = formatTimeForStorage(
+      new Date(createdDate.getTime() + 60 * 60 * 1000)  // +1小时
+    );
+    event._isVirtualTime = true;  // 标记为虚拟时间
+  }
+}
+```
+
+**虚拟标题处理**（已实现）：
+```typescript
+const subject = EventService.getVirtualTitle(event, 50) || '4DNote笔记';
+```
+
+**签名标记**：
+在 description 签名中添加虚拟时间标记：
+```
+[内容...]
+
+---
+📝 笔记由 🔮 4DNote 创建于 2025-12-18 14:30:00  ← 注意"笔记"前缀
+```
+
+普通事件签名（对比）：
+```
+[内容...]
+
+---
+由 🔮 4DNote 创建于 2025-12-18 14:30:00
+```
+
+##### 4.3 远端→本地同步（虚拟时间过滤）
+
+**识别逻辑**：
+```typescript
+// createEventFromRemoteSync() 中处理
+const hasVirtualTimeMarker = event.description?.includes('� 笔记由');
+
+if (hasVirtualTimeMarker) {
+  // 检查本地原始事件是否无时间
+  const localEvent = await EventService.getEventById(event.id);
+  if (localEvent && !localEvent.startTime && !localEvent.endTime) {
+    // 丢弃远端的虚拟时间，恢复本地原始状态
+    delete event.startTime;
+    delete event.endTime;
+    
+    console.log('🔧 [Sync] 检测到虚拟时间标记，已移除远端时间字段');
+  }
+}
+```
+
+**更新逻辑**：
+```typescript
+// updateEvent() 中处理（如需要）
+if (updates.description && updates.description.includes('📝 笔记由')) {
+  // 远端更新时保护本地时间字段
+  const existingEvent = await EventService.getEventById(eventId);
+  if (existingEvent && !existingEvent.startTime) {
+    delete updates.startTime;  // 不接受远端的虚拟时间
+    delete updates.endTime;
+  }
+}
+```
+
+##### 4.4 数据流示例
+
+**场景1：本地 note 首次同步到 Outlook**
+```
+本地数据:
+{
+  id: "event_xxx",
+  title: { simpleTitle: "" },
+  startTime: null,
+  endTime: null,
+  createdAt: "2025-12-18 14:30:00",
+  calendarIds: ["calendar_work"]
+}
+
+↓ normalizeEvent() 处理
+
+同步数据:
+{
+  subject: "双击Alt召唤美桶...",  // 虚拟标题
+  start: "2025-12-18T14:30:00",   // 虚拟开始时间
+  end: "2025-12-18T15:30:00",     // 虚拟结束时间
+  body: "[内容...]\n---\n📝 笔记由 🔮 4DNote 创建于 2025-12-18 14:30:00"
+}
+
+↓ 同步到 Outlook
+
+Outlook Calendar:
+显示为 14:30-15:30 的事件
+```
+
+**场景2：Outlook 编辑后同步回本地**
+```
+Outlook 数据:
+{
+  subject: "双击Alt召唤美桶...",
+  start: "2025-12-18T14:30:00",
+  end: "2025-12-18T15:30:00",     // Outlook 可能修改了时间
+  body: "[用户在Outlook中修改的内容]\n---\n📝 笔记由 🔮 4DNote 创建于 2025-12-18 14:30:00"
+}
+
+↓ createEventFromRemoteSync() 处理
+
+本地恢复:
+{
+  id: "event_xxx",
+  title: { simpleTitle: "" },     // 不接受虚拟标题
+  startTime: null,                // 不接受远端时间
+  endTime: null,
+  eventlog: "[用户在Outlook中修改的内容]",  // 接受内容更新
+  updatedAt: "2025-12-18 15:45:00"
+}
+```
+
+##### 4.5 特殊情况处理
+
+**用户在本地添加真实时间**：
+```typescript
+// 用户点击幽灵菜单"设置时间"
+await EventService.updateEvent(eventId, {
+  startTime: "2025-12-19 10:00:00",
+  endTime: "2025-12-19 11:00:00"
+});
+
+// normalizeEvent() 检测到真实时间
+if (event.startTime && event.endTime) {
+  // 移除虚拟时间标记
+  delete event._isVirtualTime;
+  // description 签名中不添加虚拟标记
+}
+```
+
+**同步到 Microsoft To Do**：
+```typescript
+// note 事件不推荐同步到 To Do（日志性质）
+if (event.todoListIds && !event.startTime) {
+  console.warn('⚠️ [Sync] Note 事件不适合同步到 Microsoft To Do');
+  // 用户可手动转换为 Task 后同步
+}
+```
+
+##### 4.6 实现要点
+
+1. **签名标记规范**：
+   - 固定格式：`📝 笔记由 🔮 4DNote 创建于 ...`
+   - 关键识别词：`📝 笔记由`
+   - 位置：签名开头
+
+2. **虚拟时间字段**：
+   - `_isVirtualTime` - 内部标记（normalizeEvent 中使用，不存储）
+   - `startTime` / `endTime` - 同步时使用虚拟值，本地保持 null
+
+3. **向后兼容**：
+   - 检测本地事件是否有 `startTime`，有则认为是用户添加的真实时间
+   - 远端更新时保护本地真实时间不被虚拟时间覆盖
+
+---
+
+### 技术实现清单
+
+#### 必需完成的功能
+
+- [ ] **TimeLog 标题行插入**
+  - [ ] 添加 `editingTitleEventId` 状态管理
+  - [ ] 幽灵菜单添加 `title_edit` 按钮
+  - [ ] 动态标题行渲染逻辑
+  - [ ] 空标题失焦移除逻辑
+
+- [ ] **虚拟标题生成**
+  - [ ] `EventService.getVirtualTitle()` 方法
+  - [ ] `extractPlainTextFromEventlog()` 工具函数
+  - [ ] LogTab/TimeCalendar/Outlook 集成
+
+- [ ] **isNote 标记系统**
+  - [ ] `types.ts` 添加 `isNote?: boolean` 字段
+  - [ ] 幽灵菜单添加 NoteTree 图标按钮
+  - [ ] EventTree 批量标记逻辑
+  - [ ] 取消标记确认对话框
+
+- [ ] **侧边栏重要笔记**
+  - [ ] 新增"重要笔记"区域UI
+  - [ ] EventTree 分组显示逻辑
+  - [ ] 点击跳转到 TimeLog + 滚动定位
+
+- [ ] **LogTab 系统**
+  - [ ] LogTab 状态管理（`openLogTabs`）
+  - [ ] LogTab UI 组件（标签页 + 关闭按钮）
+  - [ ] localStorage 持久化
+  - [ ] 跨页面跳转集成
 
 ---
 

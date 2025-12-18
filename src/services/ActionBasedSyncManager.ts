@@ -2875,6 +2875,17 @@ private getUserSettings(): any {
           let startDateTime = action.data.startTime;
           let endDateTime = action.data.endTime;
           
+          // 🆕 [v2.19] Note 事件虚拟时间处理：如果签名包含"📝 笔记由"，临时添加 endTime
+          const isNoteWithVirtualTime = createDescription.includes('📝 笔记由');
+          if (isNoteWithVirtualTime && startDateTime && !endDateTime) {
+            const startDate = new Date(startDateTime);
+            endDateTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+            console.log('[Sync] 📝 Note事件添加虚拟endTime:', {
+              startTime: startDateTime,
+              virtualEndTime: endDateTime
+            });
+          }
+          
           // 🔧 [FIX] 全天事件必须强制设置为午夜 00:00:00（Outlook 要求）
           if (action.data.isAllDay) {
             if (!startDateTime || !endDateTime) {
@@ -2897,9 +2908,11 @@ private getUserSettings(): any {
             }
           }
           
-          // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
+          // 🆕 使用虚拟标题生成（支持 Note 事件）
+          const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+          
           const eventData = {
-            subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
+            subject: virtualTitle,
             body: { 
               contentType: 'Text', 
               content: createDescription
@@ -3188,6 +3201,17 @@ private getUserSettings(): any {
             let updateToCreateStartTime = action.data.startTime;
             let updateToCreateEndTime = action.data.endTime;
             
+            // 🆕 [v2.19] Note 事件虚拟时间处理
+            const isNoteWithVirtualTime_updateToCreate = createDescription.includes('📝 笔记由');
+            if (isNoteWithVirtualTime_updateToCreate && updateToCreateStartTime && !updateToCreateEndTime) {
+              const startDate = new Date(updateToCreateStartTime);
+              updateToCreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+              console.log('[Sync] 📝 Note事件添加虚拟endTime (update→create):', {
+                startTime: updateToCreateStartTime,
+                virtualEndTime: updateToCreateEndTime
+              });
+            }
+            
             // 🔧 [FIX] 全天事件必须强制设置为午夜 00:00:00（Outlook 要求）
             if (action.data.isAllDay) {
               if (!updateToCreateStartTime || !updateToCreateEndTime) {
@@ -3210,8 +3234,11 @@ private getUserSettings(): any {
               }
             }
             
+            // 🆕 使用虚拟标题生成（支持 Note 事件）
+            const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+            
             const eventData = {
-              subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
+              subject: virtualTitle,
               body: { 
                 contentType: 'text', 
                 content: createDescription
@@ -3309,18 +3336,34 @@ private getUserSettings(): any {
                   action.data
                 );
                 
+                // 🆕 [v2.19] Note 事件虚拟时间处理
+                let migrateStartTime = action.data.startTime;
+                let migrateEndTime = action.data.endTime;
+                const isNoteWithVirtualTime_migrate = migrateDescription.includes('📝 笔记由');
+                if (isNoteWithVirtualTime_migrate && migrateStartTime && !migrateEndTime) {
+                  const startDate = new Date(migrateStartTime);
+                  migrateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+                  console.log('[Sync] 📝 Note事件添加虚拟endTime (migrate):', {
+                    startTime: migrateStartTime,
+                    virtualEndTime: migrateEndTime
+                  });
+                }
+                
+                // 🆕 使用虚拟标题生成（支持 Note 事件）
+                const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+                
                 const migrateEventData = {
-                  subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
+                  subject: virtualTitle,
                   body: { 
                     contentType: 'text', 
                     content: migrateDescription
                   },
                   start: {
-                    dateTime: this.safeFormatDateTime(action.data.startTime),
+                    dateTime: this.safeFormatDateTime(migrateStartTime),
                     timeZone: 'Asia/Shanghai'
                   },
                   end: {
-                    dateTime: this.safeFormatDateTime(action.data.endTime),
+                    dateTime: this.safeFormatDateTime(migrateEndTime),
                     timeZone: 'Asia/Shanghai'
                   },
                   location: action.data.location ? { displayName: action.data.location } : undefined,
@@ -3360,8 +3403,9 @@ private getUserSettings(): any {
           
           // 📝 文本字段处理
           if (action.data.title) {
-            // 🔧 从 colorTitle 提取完整文本（包含 emoji，但不包含 tag 元素）
-            updateData.subject = (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event';
+            // 🆕 使用虚拟标题生成（支持 Note 事件）
+            const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+            updateData.subject = virtualTitle;
           }
           
           // 描述处理：添加同步备注管理
@@ -3528,6 +3572,18 @@ private getUserSettings(): any {
                 ? this.safeFormatDateTime(mergedEventData.endTime)
                 : null;
               
+              // 🆕 [v2.19] Note 事件虚拟时间处理：如果 description 包含"📝 笔记由"，临时添加 endTime
+              const updateDescriptionContent = updateData.body?.content || action.data.description || '';
+              const isNoteWithVirtualTime_update = updateDescriptionContent.includes('📝 笔记由');
+              if (isNoteWithVirtualTime_update && mergedEventData.startTime && !mergedEventData.endTime) {
+                const startDate = new Date(mergedEventData.startTime);
+                endDateTime = this.safeFormatDateTime(formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000))); // +1小时
+                console.log('[Sync] 📝 Note事件添加虚拟endTime (update):', {
+                  startTime: mergedEventData.startTime,
+                  virtualEndTime: endDateTime
+                });
+              }
+              
               // 🔧 [FIX] 全天事件必须强制设置为午夜 00:00:00（Outlook 要求）
               if (isAllDayEvent) {
                 if (!startDateTime || !endDateTime) {
@@ -3619,6 +3675,17 @@ private getUserSettings(): any {
                 let recreateStartTime = action.data.startTime;
                 let recreateEndTime = action.data.endTime;
                 
+                // 🆕 [v2.19] Note 事件虚拟时间处理
+                const isNoteWithVirtualTime_recreate = recreateDescription.includes('📝 笔记由');
+                if (isNoteWithVirtualTime_recreate && recreateStartTime && !recreateEndTime) {
+                  const startDate = new Date(recreateStartTime);
+                  recreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+                  console.log('[Sync] 📝 Note事件添加虚拟endTime (recreate):', {
+                    startTime: recreateStartTime,
+                    virtualEndTime: recreateEndTime
+                  });
+                }
+                
                 // 🔧 [FIX] 全天事件必须强制设置为午夜 00:00:00（Outlook 要求）
                 if (action.data.isAllDay) {
                   if (!recreateStartTime || !recreateEndTime) {
@@ -3641,9 +3708,11 @@ private getUserSettings(): any {
                   }
                 }
                 
-                // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
+                // 🆕 使用虚拟标题生成（支持 Note 事件）
+                const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+                
                 const recreateEventData = {
-                  subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
+                  subject: virtualTitle,
                   body: { 
                     contentType: 'text', 
                     content: recreateDescription

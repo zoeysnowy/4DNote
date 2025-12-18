@@ -1,12 +1,13 @@
 ﻿# ActionBasedSyncManager PRD
 
-> **文档版本**: v1.6  
+> **文档版本**: v1.8  
 > **创建日期**: 2025-11-08  
-> **最后更新**: 2025-12-07  
+> **最后更新**: 2025-12-18  
 > **文档状态**: ✅ 从代码反向生成  
 > **参考框架**: Copilot PRD Reverse Engineering Framework v1.0
 > **v1.6 更新**: 全表查询优化 - 移除 5 处冗余 getAllEvents() 调用，日志噪音降低 80%+  
-**v1.7 更新** (2025-12-07): IndexMap 架构优化 - 解决队列爆炸和持久化问题，实现零 Mismatch
+> **v1.7 更新** (2025-12-07): IndexMap 架构优化 - 解决队列爆炸和持久化问题，实现零 Mismatch  
+> **v1.8 更新** (2025-12-18): Note Event 虚拟时间同步 - 5 路径覆盖，签名标记系统，往返数据保护
 
 ---
 
@@ -1023,6 +1024,133 @@ async handleLocalCreate(action: SyncAction) {
 
 ---
 
+#### Note Event 虚拟时间处理 (v1.8 新增)
+
+**背景**: Note 事件（无标题/时间的笔记）需要同步到 Outlook，但 Outlook Calendar API 要求所有事件必须有 `start` 和 `end` 时间。
+
+**解决方案**: 虚拟时间机制
+- 📝 **本地存储**: `startTime = createdAt, endTime = null`（永久）
+- ⏰ **同步传输**: 临时添加 `endTime = startTime + 1h`（仅用于 Outlook API）
+- 🔖 **签名标记**: 使用 `"📝 笔记由"` 标识需要虚拟时间的 note 事件
+- 🔄 **往返保护**: Outlook → 4DNote 检测标记，自动过滤虚拟 `endTime`
+
+**代码位置**: Lines ~2876, ~3188, ~3319, ~3557, ~3619
+
+**5 个同步路径的虚拟时间处理**:
+
+##### 1. CREATE 路径 (Line ~2876)
+```typescript
+// 构建事件对象
+let startDateTime = action.data.startTime;
+let endDateTime = action.data.endTime;
+
+// 🆕 [v2.19] Note 事件虚拟时间处理
+const isNoteWithVirtualTime = createDescription.includes('📝 笔记由');
+if (isNoteWithVirtualTime && startDateTime && !endDateTime) {
+  const startDate = new Date(startDateTime);
+  endDateTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+  console.log('[Sync] 📝 Note事件添加虚拟endTime:', {
+    startTime: startDateTime,
+    virtualEndTime: endDateTime
+  });
+}
+
+const eventData = {
+  subject: action.data.title?.simpleTitle || 'Untitled Event',
+  body: { contentType: 'Text', content: createDescription },
+  start: { dateTime: this.safeFormatDateTime(startDateTime), timeZone: 'Asia/Shanghai' },
+  end: { dateTime: this.safeFormatDateTime(endDateTime), timeZone: 'Asia/Shanghai' },
+  // ...
+};
+```
+
+##### 2. UPDATE → CREATE 路径 (Line ~3188)
+```typescript
+// 当事件未同步时，将 update 转为 create
+let updateToCreateStartTime = action.data.startTime;
+let updateToCreateEndTime = action.data.endTime;
+
+// 🆕 Note 事件虚拟时间处理
+const isNoteWithVirtualTime_updateToCreate = createDescription.includes('📝 笔记由');
+if (isNoteWithVirtualTime_updateToCreate && updateToCreateStartTime && !updateToCreateEndTime) {
+  const startDate = new Date(updateToCreateStartTime);
+  updateToCreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000));
+  console.log('[Sync] 📝 Note事件添加虚拟endTime (update→create)');
+}
+```
+
+##### 3. MIGRATE 路径 (Line ~3319)
+```typescript
+// 日历迁移时（标签变更导致日历变化）
+let migrateStartTime = action.data.startTime;
+let migrateEndTime = action.data.endTime;
+
+const isNoteWithVirtualTime_migrate = migrateDescription.includes('📝 笔记由');
+if (isNoteWithVirtualTime_migrate && migrateStartTime && !migrateEndTime) {
+  const startDate = new Date(migrateStartTime);
+  migrateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000));
+  console.log('[Sync] 📝 Note事件添加虚拟endTime (migrate)');
+}
+```
+
+##### 4. UPDATE 路径 (Line ~3557)
+```typescript
+// 正常更新流程
+let startDateTime = mergedEventData.startTime 
+  ? this.safeFormatDateTime(mergedEventData.startTime)
+  : null;
+  
+let endDateTime = mergedEventData.endTime
+  ? this.safeFormatDateTime(mergedEventData.endTime)
+  : null;
+
+// 🆕 Note 事件虚拟时间处理
+const updateDescriptionContent = updateData.body?.content || action.data.description || '';
+const isNoteWithVirtualTime_update = updateDescriptionContent.includes('📝 笔记由');
+if (isNoteWithVirtualTime_update && mergedEventData.startTime && !mergedEventData.endTime) {
+  const startDate = new Date(mergedEventData.startTime);
+  endDateTime = this.safeFormatDateTime(formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)));
+  console.log('[Sync] 📝 Note事件添加虚拟endTime (update)');
+}
+```
+
+##### 5. RECREATE 路径 (Line ~3619)
+```typescript
+// 更新失败时重新创建
+let recreateStartTime = action.data.startTime;
+let recreateEndTime = action.data.endTime;
+
+const isNoteWithVirtualTime_recreate = recreateDescription.includes('📝 笔记由');
+if (isNoteWithVirtualTime_recreate && recreateStartTime && !recreateEndTime) {
+  const startDate = new Date(recreateStartTime);
+  recreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000));
+  console.log('[Sync] 📝 Note事件添加虚拟endTime (recreate)');
+}
+```
+
+**关键设计原则**:
+1. **检测逻辑**: 通过签名 `"📝 笔记由"` 识别 note 事件
+2. **条件判断**: `startTime` 存在且 `endTime` 为空
+3. **时间生成**: `endTime = startTime + 1小时`
+4. **临时性**: 虚拟时间仅在同步传输时添加，不修改本地存储
+5. **往返保护**: `EventService.createEventFromRemoteSync` 检测标记，过滤虚拟 `endTime`
+
+**数据流示例**:
+```
+创建 Note
+  → normalizeEvent: startTime=createdAt, endTime=null → IndexedDB
+  → ActionBasedSyncManager: 检测签名 → 临时添加 endTime → Outlook API
+  → Outlook 返回: 包含虚拟 endTime
+  → createEventFromRemoteSync: 检测标记 → 移除 endTime → 保持本地 endTime=null
+```
+
+**相关代码**:
+- EventService.normalizeEvent (L3173-3192): Note 事件时间标准化
+- SignatureUtils.addSignature: 签名生成（包含 `isVirtualTime` 标记）
+- EventService.createEventFromRemoteSync (L5160-5230): 虚拟时间过滤
+
+---
+
 #### handleLocalUpdate(action)
 
 **功能**: 更新 Outlook 中的事件
@@ -1662,6 +1790,12 @@ debugSyncManager.triggerSync();    // 手动触发同步
 - ✅ **联系人信息**: 没有邮箱的联系人整合到描述中
 - ✅ **时区转换**: 统一使用 `Asia/Shanghai`
 - ✅ **HTML 格式**: 描述转为 HTML 格式
+- ✅ **Note 事件虚拟时间** (v1.8):
+  - **检测**: 签名包含 `"📝 笔记由"` 且 `endTime` 为 `null`
+  - **处理**: 临时添加 `endTime = startTime + 1小时`
+  - **目的**: 满足 Outlook Calendar API 要求
+  - **路径**: CREATE、UPDATE、UPDATE→CREATE、MIGRATE、RECREATE 全部覆盖
+  - **保护**: 本地存储永久保持 `endTime = null`
 
 ---
 
@@ -1706,6 +1840,30 @@ debugSyncManager.triggerSync();    // 手动触发同步
 - ✅ **描述解析**: 从 HTML 提取纯文本和联系人信息
 - ✅ **时区转换**: UTC → 北京时间
 - ✅ **标签映射**: 根据 calendarId 自动分配 tagId
+- ✅ **Note 事件虚拟时间过滤** (v1.8):
+  - **检测**: 签名包含 `"📝 笔记由"`
+  - **验证**: 本地事件 `startTime` 存在且 `endTime` 为 `null`
+  - **过滤**: `delete remoteEvent.endTime` - 移除 Outlook 返回的虚拟 `endTime`
+  - **保护**: 确保本地数据不被虚拟字段污染
+  - **代码**: `EventService.createEventFromRemoteSync` (L5160-5230)
+
+**Note Event 往返流程**:
+```typescript
+// EventService.createEventFromRemoteSync
+const hasNoteMarker = cleanDescription.includes('📝 笔记由');
+
+if (hasNoteMarker) {
+  // 检查本地事件是否也是 note（startTime 存在但 endTime 为 null）
+  const localEvent = await this.getEventById(localEventId);
+  
+  if (localEvent && localEvent.startTime && !localEvent.endTime) {
+    console.log('[Sync] 检测到 note 事件，保留 startTime，移除虚拟 endTime');
+    
+    // 保留 startTime（= createdAt），移除 endTime
+    delete remoteEvent.endTime;
+  }
+}
+```
 
 ---
 
@@ -3000,6 +3158,48 @@ if (oldContent !== newContent) {
 - ✅ 避免冗余版本（只在真正有修改时保存）
 - ✅ 节省存储空间（减少无意义的版本记录）
 - ✅ 性能提升（减少 SQLite 写入次数）
+
+### 8.6 EventHistory 忽略字段配置（v2.19）
+
+**目的**: 过滤非实质性变更字段，避免无效 EventHistory 记录
+
+**忽略字段列表**:
+```typescript
+// 📍 EventHistoryService.ts L1015-1023
+const ignoredFields = new Set([
+  'localVersion',      // 本地版本号（同步元数据）
+  'lastLocalChange',   // 本地最后修改时间（同步元数据）
+  'lastSyncTime',      // 最后同步时间（同步元数据）
+  'position',          // 排序字段（不影响内容）
+  'updatedAt',         // 更新时间戳（每次更新都变）
+  'fourDNoteSource',   // 4DNote 来源标记（同步标记）
+  '_isVirtualTime'     // 🆕 虚拟时间标记（内部字段，不持久化）
+]);
+```
+
+**为何忽略 `_isVirtualTime`**:
+- ✅ **内部标记字段**：仅用于区分 Note Event 的虚拟时间和真实时间
+- ✅ **不持久化**：不存储到数据库，只在内存中使用
+- ✅ **非实质性变更**：不影响事件的核心内容
+- ✅ **避免误判**：防止每次虚拟时间计算触发 EventHistory 更新
+
+**使用场景**:
+```typescript
+// Note Event 使用虚拟时间（跟随父事件）
+const noteEvent = {
+  startTime: parentEvent.startTime,  // 虚拟时间
+  endTime: parentEvent.endTime,      // 虚拟时间
+  _isVirtualTime: true               // 🏷️ 内部标记
+};
+
+// Diff 时自动忽略 _isVirtualTime
+// → 避免每次父事件时间变化时，Note Event 都创建 EventHistory
+```
+
+**收益**:
+- ✅ 减少无效 EventHistory 记录（Note Event 时间跟随父事件时不创建记录）
+- ✅ 提升性能（减少 diff 比较和数据库写入）
+- ✅ 更清晰的历史记录（只记录实质性内容变更）
 
 ---
 

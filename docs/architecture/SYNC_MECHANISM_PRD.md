@@ -10,6 +10,52 @@
 
 ## 📋 更新日志
 
+### 2025-12-18
+
+#### v1.9.0 - Note Event 虚拟时间同步机制
+- 📝 **Note Event 支持**: 无标题/时间的笔记事件，自动生成 `startTime = createdAt`
+- ⏰ **虚拟时间机制**: Outlook 同步时临时添加 `endTime = startTime + 1h`，本地永久保存 `endTime = null`
+- 🔖 **签名标记系统**: 使用 `"📝 笔记由"` 标识需要虚拟时间的 note 事件
+- 🔄 **往返数据保护**: Outlook → 4DNote 检测标记，自动过滤虚拟 `endTime`
+- 🎯 **5路径覆盖**: CREATE、UPDATE、UPDATE→CREATE、MIGRATE、RECREATE 全部支持虚拟时间
+- ✅ **数据一致性**: 本地存储不含虚拟字段，避免数据污染
+- 📝 **代码位置**:
+  - 时间标准化: `EventService.ts` L3173-3192 (normalizeEvent)
+  - 签名生成: `SignatureUtils.ts` addSignature
+  - 虚拟时间添加: `ActionBasedSyncManager.ts` 5个同步路径
+  - 虚拟时间过滤: `EventService.ts` L5160-5230 (createEventFromRemoteSync)
+- 📚 **架构文档**: [NOTE_EVENT_ARCHITECTURE_v2.19.md](../NOTE_EVENT_ARCHITECTURE_v2.19.md)
+
+**核心设计**:
+```typescript
+// 1. normalizeEvent: 本地存储统一模型
+if (!event.startTime && !event.endTime) {
+  syncStartTime = createdAt;      // ✅ 永久字段
+  syncEndTime = null;             // ✅ 永久字段
+  isVirtualTime = !!calendarIds;  // 标记是否需要同步
+}
+
+// 2. ActionBasedSyncManager: 同步时临时添加虚拟时间
+const isNote = description.includes('📝 笔记由');
+if (isNote && startTime && !endTime) {
+  endTime = startTime + 1小时;  // ⚠️ 仅用于 Outlook API
+}
+
+// 3. createEventFromRemoteSync: 往返时过滤虚拟时间
+if (description.includes('📝 笔记由') && localEvent.endTime === null) {
+  delete remoteEvent.endTime;  // 🔒 保护本地数据
+}
+```
+
+**数据流示例**:
+```
+创建 Note → startTime=createdAt, endTime=null → IndexedDB
+                ↓
+同步到 Outlook → 临时添加 endTime=startTime+1h → Outlook API
+                ↓
+Outlook 返回 → 检测签名 → 移除 endTime → 保持 endTime=null
+```
+
 ### 2025-12-08
 
 #### v1.8.0 - 增量同步优化与速率限制修复

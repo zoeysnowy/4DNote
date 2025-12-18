@@ -473,11 +473,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   });
 
   // 🔧 当 Modal 打开且没有 event 时，重置 formData 为空表单
+  // 🐛 [BUG FIX] 区分"创建新事件"和"加载中的已有事件"
+  // - 创建新事件：!event && !eventId（既没有event对象，也没有eventId）
+  // - 加载中：!event && eventId（有eventId但event还在异步加载）
   React.useEffect(() => {
-    if (isOpen && !event) {
-      console.log('🆕 [formData重置] 打开Modal但event未加载，重置表单');
+    // ✅ 只在创建新事件时重置（!event && !eventId）
+    // ❌ 不在加载中触发（!event && eventId），避免清空 eventlog
+    if (isOpen && !event && !eventId) {
+      console.log('🆕 [formData重置] 创建新事件，初始化空表单');
       setFormData({
-        id: eventId || generateEventId(), // 使用传入的eventId或生成新的
+        id: generateEventId(), // 生成新ID
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
         isTask: false,
@@ -491,7 +496,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         allDay: initialIsAllDay || false, // 🆕 使用初始全天标志
         location: '',
         attendees: [],
-        eventlog: [],
+        eventlog: '[]', // ✅ 新事件：空 Slate JSON
         description: '',
         calendarIds: [],
         syncMode: 'bidirectional-private',
@@ -560,6 +565,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         calendarIds: [], 
         syncMode: 'bidirectional-private'
       },
+    });
+    
+    // 🐛 [DEBUG] 输出 eventlog 初始化日志
+    console.log('🔍 [EventEditModal] formData 初始化 eventlog:', {
+      eventId: event?.id?.substring(0, 20),
+      eventlogType: typeof event?.eventlog,
+      eventlogLength: typeof event?.eventlog === 'string' ? event.eventlog.length : event?.eventlog?.slateJson?.length,
+      eventlogPreview: typeof event?.eventlog === 'string' 
+        ? event.eventlog.substring(0, 100) 
+        : event?.eventlog?.slateJson?.substring(0, 100)
     });
   }, [
     event?.id, 

@@ -407,6 +407,7 @@ export interface Event {
   isTask?: boolean;      // 🆕 添加：标记为任务事件
   isPlan?: boolean;      // 🆕 添加：标记为计划页面事件
   isTimeCalendar?: boolean; // 🆕 添加：标记为 TimeCalendar 页面创建的事件
+  isNote?: boolean;      // 🆕 v2.19: 用户标记的重要笔记（NoteTree功能）- 在侧边栏快速访问
   // 🆕 统一时间规范（不破坏现有 startTime/endTime，作为"意图+解析"来源）
   timeSpec?: import('./types/time').TimeSpec;
   displayHint?: string | null; // 🆕 v1.1: 模糊时间表述（"本周"、"下周"等），用于保留用户原始输入

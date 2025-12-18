@@ -396,7 +396,8 @@ private static normalizeEvent(event: Partial<Event>): Event
 2. 调用 `normalizeEventLog()` - 时间日志规范化
 3. 调用 `normalizeLocation()` - 位置对象转换
 4. 调用 `maintainDescriptionSignature()` - 签名维护
-5. 条件字段设置 - 本地专属字段保护
+5. **Note 事件时间标准化** - 笔记事件时间处理（v2.19）
+6. 条件字段设置 - 本地专属字段保护
 
 **关键实现** (L2719-L3000):
 
@@ -431,18 +432,34 @@ private static normalizeEvent(event: Partial<Event>): Event {
     fallbackContent
   );
   
-  // 3. Description 签名维护
+  // 3. Note 事件时间标准化（v2.19）
+  // 检测 note 事件：没有真实时间的事件
+  let isVirtualTime = false;
+  let syncStartTime = event.startTime;
+  let syncEndTime = event.endTime;
+  
+  if (!event.startTime && !event.endTime) {
+    const createdDate = new Date(finalCreatedAt);
+    syncStartTime = formatTimeForStorage(createdDate);
+    syncEndTime = null;  // ⚠️ endTime 保持为空，虚拟时间仅在同步时添加
+    
+    // 标记是否需要虚拟时间（用于同步标识）
+    isVirtualTime = !!(event.calendarIds && event.calendarIds.length > 0);
+  }
+  
+  // 4. Description 签名维护
   const normalizedDescription = this.maintainDescriptionSignature(
     event.description,
     normalizedEventLog,
     {
       ...event,
       title: normalizedTitle,
-      eventlog: normalizedEventLog
+      eventlog: normalizedEventLog,
+      isVirtualTime  // 传递虚拟时间标记给签名生成
     }
   );
   
-  // 4. Location 规范化
+  // 5. Location 规范化
   const normalizedLocation = this.normalizeLocation(event.location);
   
   // 5. 条件字段设置（本地专属字段保护）
@@ -453,10 +470,13 @@ private static normalizeEvent(event: Partial<Event>): Event {
     description: normalizedDescription,
     location: normalizedLocation,
     
-    // 时间字段
-    startTime: event.startTime,
-    endTime: event.endTime,
+    // 时间字段（Note 事件时间标准化）
+    startTime: syncStartTime,  // Note: startTime = createdAt
+    endTime: syncEndTime,      // Note: endTime = null
     isAllDay: event.isAllDay || false,
+    
+    // 🆕 [v2.19] 虚拟时间标记（内部字段，不存储）
+    _isVirtualTime: isVirtualTime,
     
     // 🔥 [v2.18.4] 只有字段存在时才设置，避免强制覆盖为空数组
     ...(event.tags !== undefined ? { tags: event.tags || [] } : {}),
@@ -475,6 +495,11 @@ private static normalizeEvent(event: Partial<Event>): Event {
 - ✅ EventLog: 存储纯文本 Slate JSON（Block-Level Timestamps）
 - ✅ HTML→纯文本转换: 在 normalizeEvent 中统一处理
 - ✅ 条件字段设置: undefined（不存在）→ 不设置，[]（空数组）→ 清空
+- ✅ **Note 事件时间标准化** (v2.19):
+  - 本地存储: `startTime = createdAt, endTime = null`（永久）
+  - 虚拟时间: 仅在 Outlook 同步时临时添加 `endTime = startTime + 1h`
+  - 签名标记: `"📝 笔记由"` 识别需要虚拟时间的 note 事件
+  - 往返保护: Outlook → 4DNote 检测标记，过滤虚拟 endTime
 
 ### 2. normalizeTitle() - 标题三层架构
 

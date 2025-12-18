@@ -1218,6 +1218,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         endTime: null, // 无结束时间
         tags: [], // 允许空标签
         isAllDay: false,
+        // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤）
+        isPlan: false,
+        isTimeCalendar: false,
+        isTask: false, // 明确标记为非Task
         // ⚠️ 空笔记不应该有 Block-Level Timestamp（避免显示时间戳）
         eventlog: JSON.stringify([
           {
@@ -1254,7 +1258,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         createdAt: savedNote.createdAt
       });
       
-      // 刷新事件列表（使用 getTimelineEvents 过滤）
+      // 🔧 刷新事件列表（重新加载全部事件，确保新笔记在列表中）
+      // 注意：这里不使用日期范围过滤，因为新笔记的createdAt可能在当前加载范围外
       const events = await EventService.getTimelineEvents();
       console.log('📋 [TimeLog] Reloaded events:', events.length);
       
@@ -2060,6 +2065,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       <div className="event-title">
                         <LogSlate
                           mode="title"
+                          placeholder="无标题笔记" 
                           value={(() => {
                             // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编辑
                             const colorTitle = typeof event.title === 'object' 

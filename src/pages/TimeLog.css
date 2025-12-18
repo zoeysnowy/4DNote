@@ -639,6 +639,10 @@
   position: relative;
   display: inline-flex;
   align-items: center;
+  /* 🔧 修复空标题导致的DOM塌陷 */
+  min-height: 24px;
+  max-height: 48px; /* 防止标题过高 */
+  overflow: hidden;
 }
 
 .event-title-editing {

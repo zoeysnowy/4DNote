@@ -1052,6 +1052,12 @@ EventHub 和 TimeHub 构成 4DNote 的**双缓存架构**，通过**增量更新
   - 第二层（updateEvent）：全局 JSON 比较 → 决定是否保存 EventHistory
   - 避免版本爆炸（Outlook 同步时跳过无变化的保存）
 
+- 🔧 **EventHistory 忽略字段**（v2.19）
+  - 过滤非实质性变更字段，避免无效历史记录
+  - 忽略字段：`localVersion`, `lastLocalChange`, `lastSyncTime`, `position`, `updatedAt`, `fourDNoteSource`, `_isVirtualTime`
+  - 🆕 `_isVirtualTime`：Note Event 虚拟时间标记（不持久化，仅内存使用）
+  - 收益：减少 Note Event 时间跟随父事件时的无效 EventHistory
+
 ---
 
 ## 总结

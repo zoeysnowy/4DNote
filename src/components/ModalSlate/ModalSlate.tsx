@@ -328,14 +328,19 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
   const initialValue = useMemo(() => {
     // 如果 content 没变，直接返回缓存
     if (content === lastParsedContentRef.current) {
-      console.log('[ModalSlate] ⚡ 使用缓存节点，跳过解析');
+      console.log('[ModalSlate] ⚡ 使用缓存节点，跳过解析', {
+        contentPreview: content?.substring(0, 100),
+        cachedNodesCount: cachedNodesRef.current?.length,
+        parentEventId
+      });
       return cachedNodesRef.current;
     }
     
     console.log('[ModalSlate] 🔄 初始化/重置编辑器，解析 content:', {
       contentLength: content?.length || 0,
       contentPreview: content?.substring(0, 200),
-      parentEventId
+      parentEventId,
+      lastParsedContentPreview: lastParsedContentRef.current?.substring(0, 100)
     });
     
     try {

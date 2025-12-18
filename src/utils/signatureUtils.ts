@@ -220,6 +220,7 @@ export class SignatureUtils {
       fourDNoteSource?: boolean;
       source?: 'local' | 'outlook';
       lastModifiedSource?: SignatureSource;
+      isVirtualTime?: boolean;  // 🆕 v2.19: 虚拟时间标记（note同步）
     }
   ): string {
     // 🔥 [CRITICAL] 始终先清理旧签名（避免重复累积）
@@ -246,21 +247,24 @@ export class SignatureUtils {
     const modifySourceKey = options.lastModifiedSource || createSourceKey;
     const modifySource = modifySourceKey === '4dnote' ? '🔮 4DNote' : '📧 Outlook';
 
+    // 🆕 v2.19: 虚拟时间标记（note同步）- 使用"笔记"前缀
+    const notePrefix = options.isVirtualTime ? '📝 笔记' : '';
+
     // 5. 生成签名
     if (options.updatedAt && options.updatedAt !== options.createdAt) {
       const modifyTime = options.updatedAt;
 
       if (createSourceKey === modifySourceKey) {
         // 同一来源：一行签名
-        lines.push(`由 ${createSource} 创建于 ${createTime}，最后修改于 ${modifyTime}`);
+        lines.push(`${notePrefix ? notePrefix + '由' : '由'} ${createSource} 创建于 ${createTime}，最后修改于 ${modifyTime}`);
       } else {
         // 不同来源：两行签名
-        lines.push(`由 ${createSource} 创建于 ${createTime}`);
+        lines.push(`${notePrefix ? notePrefix + '由' : '由'} ${createSource} 创建于 ${createTime}`);
         lines.push(`由 ${modifySource} 最后修改于 ${modifyTime}`);
       }
     } else {
       // 未修改：只显示创建信息
-      lines.push(`由 ${createSource} 创建于 ${createTime}`);
+      lines.push(`${notePrefix ? notePrefix + '由' : '由'} ${createSource} 创建于 ${createTime}`);
     }
 
     return lines.join('\n');

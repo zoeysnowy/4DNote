@@ -1018,7 +1018,8 @@ export class EventHistoryService {
       'lastSyncTime',
       'position',          // ✅ position 只是排序字段，不应触发历史记录
       'updatedAt',         // 🆕 忽略 updatedAt（每次更新都会变，非实质性变更）
-      'fourDNoteSource'    // 🆕 忽略 fourDNoteSource（同步标记，非实质性变更）
+      'fourDNoteSource',   // 🆕 忽略 fourDNoteSource（同步标记，非实质性变更）
+      '_isVirtualTime'     // 🆕 忽略 _isVirtualTime（内部标记，非持久化字段）
     ]);
 
     allKeys.forEach(key => {
