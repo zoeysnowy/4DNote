@@ -2109,6 +2109,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         const titleObj = typeof event.title === 'object' ? event.title : null;
                         const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
                         
+                        console.log('🔍 [TimeLog] 幽灵菜单判断', {
+                          eventId: event.id.slice(-8),
+                          titleObj,
+                          hasTitle,
+                          simpleTitle: titleObj?.simpleTitle,
+                          colorTitle: titleObj?.colorTitle
+                        });
+                        
                         if (!hasTitle) {
                           // 空标题：显示三行分组菜单
                           return (
