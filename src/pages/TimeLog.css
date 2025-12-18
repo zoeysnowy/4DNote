@@ -1044,18 +1044,43 @@
    Right按钮三组分层菜单样式
    ======================================== */
 
-/* 第一层：三组菜单容器 */
+/* 第一层：三组菜单容器（幽灵菜单风格：无阴影，透明背景） */
 .right-menu-groups {
   display: flex;
   gap: 2px;
-  background: #FAFAFA;
-  border-radius: 6px;
-  padding: 4px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+  margin-left: 4px;
 }
 
 .right-menu-group-btn {
-  /* 复用ghost-menu-btn样式 */
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 3px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  padding: 4px;
+}
+
+.right-menu-group-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.right-menu-group-btn img {
+  width: 16px;
+  height: 16px;
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
+}
+
+.right-menu-group-btn:hover img {
+  filter: brightness(0) saturate(100%) invert(27%) sepia(8%) saturate(1041%) hue-rotate(182deg) brightness(95%) contrast(89%);
 }
 
 /* 第二层：子菜单 */

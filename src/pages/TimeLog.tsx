@@ -62,10 +62,6 @@ import ProjectIconSvg from '../assets/icons/project.svg';
 import EventManagerIconSvg from '../assets/icons/EventManager.svg';
 import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
 import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
-import EventManagerIconSvg from '../assets/icons/EventManager.svg';
-import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
-import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
-import ProjectIconSvg from '../assets/icons/project.svg';
 
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
@@ -2198,7 +2194,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           arrow={false}
                           offset={[0, 4]}
                         >
-                          <button className="right-menu-group-btn ghost-menu-btn">
+                          <button className="right-menu-group-btn">
                             <img src={EventManagerIconSvg} alt="event-manager" />
                           </button>
                         </Tippy>
@@ -2234,7 +2230,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           arrow={false}
                           offset={[0, 4]}
                         >
-                          <button className="right-menu-group-btn ghost-menu-btn">
+                          <button className="right-menu-group-btn">
                             <img src={EditIconSvg} alt="edit" />
                           </button>
                         </Tippy>
@@ -2266,7 +2262,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           arrow={false}
                           offset={[0, 4]}
                         >
-                          <button className="right-menu-group-btn ghost-menu-btn">
+                          <button className="right-menu-group-btn">
                             <img src={TimePropertyIconSvg} alt="time" />
                           </button>
                         </Tippy>
