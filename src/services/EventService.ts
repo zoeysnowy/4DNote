@@ -3583,7 +3583,7 @@ export class EventService {
     context: ParseContext
   ): any[] {
     const { eventCreatedAt, eventUpdatedAt, oldEventLog } = context;
-    const slateNodes: any[] = [];
+    let slateNodes: any[] = [];
     const lines = text.split('\n');
     
     console.log('[parseTextWithBlockTimestamps] 🔍 开始解析:', {
