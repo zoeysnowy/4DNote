@@ -911,9 +911,10 @@
   transition: background 0.15s ease;
 }
 
-.time-display-wrapper:hover {
+/* 移除hover背景，时间区域不参与幽灵菜单阴影 */
+/* .time-display-wrapper:hover {
   background: #FAFAFA;
-}
+} */
 
 /* Ghost menu base styles */
 .ghost-menu {
@@ -1041,8 +1042,43 @@
 }
 
 /* ========================================
+   时间选择器遮罩层
+   ======================================== */
+
+.datetime-picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100000;
+}
+
+/* ========================================
    Right按钮三组分层菜单样式
    ======================================== */
+
+/* Right按钮 + 菜单的包裹容器 */
+.right-menu-wrapper {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 6px;
+  margin: -2px -6px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
+  transform: translateX(8px);
+  position: relative;
+  z-index: 100;
+}
+
+.right-menu-wrapper:hover {
+  background: #FAFAFA;
+}
 
 /* 第一层：三组菜单容器（幽灵菜单风格：无阴影，透明背景） */
 .right-menu-groups {
@@ -1090,6 +1126,8 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   padding: 4px;
   min-width: 160px;
+  z-index: 1000;
+  position: relative;
 }
 
 .right-submenu-item {
@@ -1113,6 +1151,18 @@
   flex-shrink: 0;
   /* 默认灰色滤镜（与ghost-menu-btn一致） */
   filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
+}
+
+/* title_edit图标稍大 */
+.right-submenu-icon[alt="title-edit"] {
+  width: 18px;
+  height: 18px;
+}
+
+/* tag图标稍小 */
+.right-submenu-icon[alt="tag"] {
+  width: 14px;
+  height: 14px;
 }
 
 /* Timer图标保持原始渐变色 */

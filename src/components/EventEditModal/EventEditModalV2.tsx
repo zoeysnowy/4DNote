@@ -4050,8 +4050,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         </>
   );
 
-  // 🖼️ 模态框模式：带遮罩层
-  return (
+  // 🖼️ 模态框模式：带遮罩层，使用Portal渲染到body确保z-index正确
+  return createPortal(
     <div className="event-edit-modal-v2-overlay" onClick={onClose}>
       <div 
         className={`event-edit-modal-v2 ${isDetailView ? 'detail-view' : 'compact-view'}`}
@@ -4059,7 +4059,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       >
         {renderModalContent()}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

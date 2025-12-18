@@ -59,6 +59,8 @@ import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 import DeleteIconSvg from '../assets/icons/delete.svg';
 import ProjectIconSvg from '../assets/icons/project.svg';
+import TitleEditIconSvg from '../assets/icons/title_edit.svg';
+import DatetimeIconSvg from '../assets/icons/datetime.svg';
 import EventManagerIconSvg from '../assets/icons/EventManager.svg';
 import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
 import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
@@ -92,6 +94,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [hoveredRightId, setHoveredRightId] = useState<string | null>(null); // Right按钮hover状态
   const [hoveredRightMenuId, setHoveredRightMenuId] = useState<string | null>(null);
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
+  
+  // Right菜单延迟隐藏的timer
+  const rightMenuHideTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   // 🆕 日历和同步模式相关状态
   const [showCalendarPicker, setShowCalendarPicker] = useState<string | null>(null); // 当前打开日历选择器的事件ID
@@ -2141,28 +2146,43 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         document.body
                       )}
                     
-                    {/* Right按钮 - 统一显示，带三组分层菜单 */}
-                    <img 
-                      src={RightIconSvg} 
-                      alt="right" 
-                      className="title-right-icon"
-                      onClick={() => toggleLogExpanded(event.id)}
-                      onMouseEnter={() => setHoveredRightId(event.id)}
-                      onMouseLeave={() => setHoveredRightId(null)}
-                      style={{
-                        width: '16px',
-                        height: '16px',
-                        opacity: 0.6,
-                        cursor: 'pointer',
-                        marginLeft: '8px',
-                        transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                        transition: 'transform 0.2s'
+                    {/* Right按钮 + 幽灵菜单容器 */}
+                    <div 
+                      className="right-menu-wrapper"
+                      onMouseEnter={() => {
+                        // 清除延迟隐藏timer
+                        if (rightMenuHideTimerRef.current) {
+                          clearTimeout(rightMenuHideTimerRef.current);
+                          rightMenuHideTimerRef.current = null;
+                        }
+                        setHoveredRightId(event.id);
                       }}
-                    />
-                    
-                    {/* 三组分层菜单 - 横向延伸 */}
-                    {hoveredRightId === event.id && (
-                      <div className="right-menu-groups">
+                      onMouseLeave={() => {
+                        // 延迟隐藏，给用户时间移到Tippy子菜单
+                        rightMenuHideTimerRef.current = setTimeout(() => {
+                          setHoveredRightId(null);
+                        }, 200);
+                      }}
+                    >
+                      {/* Right按钮 */}
+                      <img 
+                        src={RightIconSvg} 
+                        alt="right" 
+                        className="title-right-icon"
+                        onClick={() => toggleLogExpanded(event.id)}
+                        style={{
+                          width: '16px',
+                          height: '16px',
+                          opacity: 0.6,
+                          cursor: 'pointer',
+                          transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s'
+                        }}
+                      />
+                      
+                      {/* 三组分层菜单 - 横向延伸 */}
+                      {hoveredRightId === event.id && (
+                        <div className="right-menu-groups">
                         {/* 组1: EventManager */}
                         <Tippy
                           content={
@@ -2193,6 +2213,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           interactive={true}
                           arrow={false}
                           offset={[0, 4]}
+                          onShow={() => {
+                            // Tippy显示时清除隐藏timer
+                            if (rightMenuHideTimerRef.current) {
+                              clearTimeout(rightMenuHideTimerRef.current);
+                              rightMenuHideTimerRef.current = null;
+                            }
+                          }}
                         >
                           <button className="right-menu-group-btn">
                             <img src={EventManagerIconSvg} alt="event-manager" />
@@ -2204,7 +2231,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           content={
                             <div className="right-submenu">
                               <div className="right-submenu-item" onClick={() => setEditingTitleId(event.id)}>
-                                <img src={EditIconSvg} className="right-submenu-icon" alt="title-edit" />
+                                <img src={TitleEditIconSvg} className="right-submenu-icon" alt="title-edit" />
                                 <span className="right-submenu-text">添加标题</span>
                               </div>
                               <div className="right-submenu-item" onClick={() => handleTagsClick(event)}>
@@ -2229,6 +2256,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           interactive={true}
                           arrow={false}
                           offset={[0, 4]}
+                          onShow={() => {
+                            if (rightMenuHideTimerRef.current) {
+                              clearTimeout(rightMenuHideTimerRef.current);
+                              rightMenuHideTimerRef.current = null;
+                            }
+                          }}
                         >
                           <button className="right-menu-group-btn">
                             <img src={EditIconSvg} alt="edit" />
@@ -2239,10 +2272,41 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         <Tippy
                           content={
                             <div className="right-submenu">
-                              <div className="right-submenu-item" onClick={() => handleTimeEdit(event)}>
-                                <img src={EditIconSvg} className="right-submenu-icon" alt="edit-time" />
-                                <span className="right-submenu-text">编辑时间</span>
-                              </div>
+                              <Tippy
+                                content={
+                                  editingTimeId === event.id ? (
+                                    <div onClick={(e) => e.stopPropagation()}>
+                                      <UnifiedDateTimePicker
+                                        initialStart={event.startTime}
+                                        initialEnd={event.endTime}
+                                        onSelect={(start, end) => {
+                                          if (start || end) {
+                                            handleTimeChange(event.id, {
+                                              startTime: start || undefined,
+                                              endTime: end || undefined
+                                            });
+                                          }
+                                        }}
+                                        onClose={handleTimePickerClose}
+                                      />
+                                    </div>
+                                  ) : null
+                                }
+                                visible={editingTimeId === event.id}
+                                interactive={true}
+                                placement="right-start"
+                                appendTo={document.body}
+                                onClickOutside={handleTimePickerClose}
+                                arrow={false}
+                                offset={[0, 8]}
+                                zIndex={100000}
+                                maxWidth="none"
+                              >
+                                <div className="right-submenu-item" onClick={() => handleTimeEdit(event)}>
+                                  <img src={DatetimeIconSvg} className="right-submenu-icon" alt="edit-time" />
+                                  <span className="right-submenu-text">编辑时间</span>
+                                </div>
+                              </Tippy>
                               <div className="right-submenu-item">
                                 <img src={DdlIconSvg} className="right-submenu-icon" alt="ddl" />
                                 <span className="right-submenu-text">添加截止日</span>
@@ -2261,6 +2325,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           interactive={true}
                           arrow={false}
                           offset={[0, 4]}
+                          onShow={() => {
+                            if (rightMenuHideTimerRef.current) {
+                              clearTimeout(rightMenuHideTimerRef.current);
+                              rightMenuHideTimerRef.current = null;
+                            }
+                          }}
                         >
                           <button className="right-menu-group-btn">
                             <img src={TimePropertyIconSvg} alt="time" />
@@ -2268,6 +2338,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </Tippy>
                       </div>
                     )}
+                    </div> {/* 关闭 right-menu-wrapper */}
                     </div> {/* 关闭 time-display-wrapper */}
                   </div> {/* 关闭 event-time-col */}
                   
@@ -2686,22 +2757,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         hierarchicalTags={hierarchicalTags}
       />
       
-      {/* 时间编辑器 */}
-      {editingTimeId && (
-        <UnifiedDateTimePicker
-          initialStart={allEvents.find(e => e.id === editingTimeId)?.startTime}
-          initialEnd={allEvents.find(e => e.id === editingTimeId)?.endTime}
-          onSelect={(start, end) => {
-            if (start || end) {
-              handleTimeChange(editingTimeId, {
-                startTime: start || undefined,
-                endTime: end || undefined
-              });
-            }
-          }}
-          onClose={handleTimePickerClose}
-        />
-      )}
+      {/* 时间编辑器已集成到Right菜单Tippy中 */}
 
       {/* EventTabManager 已集成到 timelog-main-card 内部 */}
     </div>

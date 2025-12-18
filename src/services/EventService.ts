@@ -2747,7 +2747,16 @@ export class EventService {
       
       // HTML 字符串（包含标签）
       if (trimmed.startsWith('<') || trimmed.includes('<p>') || trimmed.includes('<div>')) {
-        console.log('[EventService] 检测到 HTML 格式，先提取文本检查时间戳');
+        console.log('[EventService] 检测到 HTML 格式，先检查Meta-Comment');
+        
+        // 🆕 Step 0: 优先尝试Meta-Comment解析
+        const metaNodes = this.parseMetaComments(eventlogInput);
+        if (metaNodes) {
+          console.log('[EventService] ✅ 成功从Meta-Comment解析节点:', metaNodes.length, '个');
+          return this.convertSlateJsonToEventLog(JSON.stringify(metaNodes));
+        }
+        
+        console.log('[EventService] ⚠️ 未发现Meta-Comment，使用传统解析流程');
         
         // � [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
         // 问题：如果先提取文本，签名会作为纯文本保留下来
@@ -3192,9 +3201,30 @@ export class EventService {
       console.log('[normalizeEvent] 🔒 保留原有签名（preserveSignature=true）');
     } else {
       // 正常流程：重新生成签名
-      // ✅ [v2.18.8] 使用 eventlog.html（包含 Block-Level Timestamps）而非 plainText
-      // 数据流：Slate JSON → eventlog.html (含 timestamps) → description → Outlook → 同步回来时还原
-      const coreContent = normalizedEventLog.html || normalizedEventLog.plainText || '';
+      // 🆕 [v2.20.0] 使用 Meta-Comment 包裹的 HTML，确保 Outlook 往返时保留元数据
+      // 数据流：Slate JSON → Meta-Comment HTML → description → Outlook → 解析Meta回Slate JSON
+      
+      // Step 1: 从 eventlog 获取 Slate节点
+      let slateNodes: any[] = [];
+      try {
+        if (normalizedEventLog.slateJson) {
+          slateNodes = JSON.parse(normalizedEventLog.slateJson);
+        }
+      } catch (e) {
+        console.warn('[normalizeEvent] 解析slateJson失败:', e);
+      }
+      
+      // Step 2: 生成带Meta-Comment的HTML
+      let coreContent = '';
+      if (slateNodes.length > 0) {
+        coreContent = this.slateNodesToHtmlWithMeta(slateNodes);
+        console.log('[normalizeEvent] ✅ 生成Meta-Comment HTML:', coreContent.substring(0, 200));
+      } else {
+        // 降级：使用纯HTML（向后兼容）
+        coreContent = normalizedEventLog.html || normalizedEventLog.plainText || '';
+        console.log('[normalizeEvent] ⚠️ slateJson为空，使用降级HTML');
+      }
+      
       const eventMeta = {
         ...event,
         createdAt: finalCreatedAt,  // ✅ 使用提取的创建时间
@@ -4048,6 +4078,101 @@ export class EventService {
       .replace(/\n?由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*(?:编辑于|最后(?:编辑|修改)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*$/gi, '');
     
     return core.trim();
+  }
+
+  /**
+   * 🆕 从HTML注释中解析Meta-Comment元数据
+   * 格式: <!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000}-->
+   * @param html - HTML内容（可能包含Meta-Comment）
+   * @returns 解析出的Slate节点数组，如果没有Meta-Comment则返回null
+   */
+  private static parseMetaComments(html: string): any[] | null {
+    if (!html || !html.includes('<!--SLATE:')) {
+      return null;
+    }
+
+    const metaPattern = /<!--SLATE:(.*?)-->([\s\S]*?)<!--\/SLATE-->/g;
+    const nodes: any[] = [];
+    let match;
+    
+    while ((match = metaPattern.exec(html)) !== null) {
+      try {
+        const meta = JSON.parse(match[1]);
+        const htmlContent = match[2].trim();
+        
+        // 从HTML提取纯文本
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = htmlContent;
+        const text = tempDiv.textContent || '';
+        
+        // 重建Slate节点
+        const node: any = {
+          type: meta.t || 'paragraph',
+          children: [{ text }]
+        };
+        
+        // 恢复元数据
+        if (meta.id) node.id = meta.id;
+        if (meta.ts) node.createdAt = meta.ts;
+        if (meta.ut) node.updatedAt = meta.ut;
+        if (meta.lvl !== undefined) node.bulletLevel = meta.lvl;
+        if (meta.bullet) node.bullet = true;
+        
+        nodes.push(node);
+      } catch (e) {
+        console.warn('[parseMetaComments] 解析Meta-Comment失败:', match[1], e);
+      }
+    }
+    
+    return nodes.length > 0 ? nodes : null;
+  }
+
+  /**
+   * 🆕 将Slate节点数组转换为带Meta-Comment的HTML
+   * @param nodes - Slate节点数组
+   * @returns 带Meta-Comment包裹的HTML字符串
+   */
+  private static slateNodesToHtmlWithMeta(nodes: any[]): string {
+    return nodes.map(node => {
+      // 提取文本内容
+      let text = '';
+      if (node.children && Array.isArray(node.children)) {
+        text = node.children.map((child: any) => child.text || '').join('');
+      }
+      
+      // 构建Meta数据
+      const meta: any = {
+        v: 1,  // 版本号
+        t: node.type || 'paragraph'
+      };
+      
+      if (node.id) meta.id = node.id;
+      if (node.createdAt) meta.ts = node.createdAt;
+      if (node.updatedAt) meta.ut = node.updatedAt;
+      if (node.bulletLevel !== undefined) meta.lvl = node.bulletLevel;
+      if (node.bullet) meta.bullet = true;
+      
+      // 生成HTML内容（根据节点类型）
+      let htmlContent = '';
+      if (node.type === 'paragraph' && node.bullet) {
+        const indent = '  '.repeat(node.bulletLevel || 0);
+        htmlContent = `<p>${indent}• ${text}</p>`;
+      } else if (node.type === 'paragraph') {
+        htmlContent = `<p>${text}</p>`;
+      } else if (node.type === 'heading-one') {
+        htmlContent = `<h1>${text}</h1>`;
+      } else if (node.type === 'heading-two') {
+        htmlContent = `<h2>${text}</h2>`;
+      } else if (node.type === 'heading-three') {
+        htmlContent = `<h3>${text}</h3>`;
+      } else {
+        htmlContent = `<div>${text}</div>`;
+      }
+      
+      // 包裹Meta-Comment
+      const metaStr = JSON.stringify(meta);
+      return `<!--SLATE:${metaStr}-->\n${htmlContent}\n<!--/SLATE-->`;
+    }).join('\n');
   }
 
   /**
