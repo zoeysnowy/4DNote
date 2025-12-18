@@ -2102,33 +2102,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </span>
                       )}
                       
-                      {/* Right按钮 - 空标题时显示在时间右侧 */}
-                      {(() => {
-                        const titleObj = typeof event.title === 'object' ? event.title : null;
-                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
-                        
-                        if (!hasTitle) {
-                          return (
-                            <img 
-                              src={RightIconSvg} 
-                              alt="right" 
-                              className="title-right-icon"
-                              onClick={() => toggleLogExpanded(event.id)}
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                opacity: 0.6,
-                                cursor: 'pointer',
-                                marginLeft: '8px',
-                                transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.2s'
-                              }}
-                            />
-                          );
-                        }
-                        return null;
-                      })()}
-                      
                       {/* 幽灵菜单 - 空标题时显示三行分组菜单 */}
                       {hoveredTimeId === event.id && (() => {
                         // 判断标题是否为空
@@ -2331,6 +2304,33 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         document.body
                       )}
                     </div>
+                    
+                    {/* Right按钮 - 空标题时显示在时间右侧 */}
+                    {(() => {
+                      const titleObj = typeof event.title === 'object' ? event.title : null;
+                      const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                      
+                      if (!hasTitle) {
+                        return (
+                          <img 
+                            src={RightIconSvg} 
+                            alt="right" 
+                            className="title-right-icon"
+                            onClick={() => toggleLogExpanded(event.id)}
+                            style={{
+                              width: '16px',
+                              height: '16px',
+                              opacity: 0.6,
+                              cursor: 'pointer',
+                              marginLeft: '8px',
+                              transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                              transition: 'transform 0.2s'
+                            }}
+                          />
+                        );
+                      }
+                      return null;
+                    })()}
                     
                     {/* 原有的 action buttons（隐藏，功能已移到幽灵菜单） */}
                     <div className="event-time-actions" style={{ display: 'none' }}>
