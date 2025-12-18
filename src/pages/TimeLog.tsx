@@ -2457,27 +2457,32 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       </div>
                       
                       {/* Title right icon - toggle log + ghost menu */}
-                      <div 
-                        className="title-right-menu-wrapper"
-                        onMouseEnter={() => setHoveredRightMenuId(event.id)}
-                        onMouseLeave={() => setHoveredRightMenuId(null)}
-                      >
-                        <img 
-                          src={RightIconSvg} 
-                          alt="right" 
-                          className="title-right-icon"
-                          onClick={() => toggleLogExpanded(event.id)}
-                          style={{
-                            width: '16px',
-                            height: '16px',
-                            opacity: 0.6,
-                            cursor: 'pointer',
-                            transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                            transition: 'transform 0.2s'
-                          }}
-                        />
-                        {/* Ghost menu appears on hover */}
-                        {hoveredRightMenuId === event.id && (
+                      {(() => {
+                        const titleObj = typeof event.title === 'object' ? event.title : null;
+                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                        
+                        return (
+                          <div 
+                            className="title-right-menu-wrapper"
+                            onMouseEnter={() => setHoveredRightMenuId(event.id)}
+                            onMouseLeave={() => setHoveredRightMenuId(null)}
+                          >
+                            <img 
+                              src={RightIconSvg} 
+                              alt="right" 
+                              className="title-right-icon"
+                              onClick={() => toggleLogExpanded(event.id)}
+                              style={{
+                                width: '16px',
+                                height: '16px',
+                                opacity: 0.6,
+                                cursor: 'pointer',
+                                transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                                transition: 'transform 0.2s'
+                              }}
+                            />
+                            {/* Ghost menu - 有标题时才在这里显示 */}
+                            {hasTitle && hoveredRightMenuId === event.id && (
                           <div className="ghost-menu title-ghost-menu">
                             <button 
                               className="ghost-menu-btn"
@@ -2530,7 +2535,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                             </button>
                           </div>
                         )}
-                      </div>
+                          </div>
+                        );
+                      })()}
                       
                       {/* 🆕 同步模式选择器弹窗 */}
                       {showSyncModePicker === event.id && createPortal(
