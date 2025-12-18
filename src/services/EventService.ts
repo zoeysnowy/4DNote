@@ -3708,17 +3708,8 @@ export class EventService {
         updatedAt: fallbackTimestamp,
         children: [{ text: text.trim() }]
       });
-    } else if (slateNodes.length === 0) {
-      // 空内容，创建空段落
-      const now = eventCreatedAt || Date.now();
-      slateNodes.push({
-        type: 'paragraph',
-        id: generateBlockId(),
-        createdAt: now,
-        updatedAt: now,
-        children: [{ text: '' }]
-      });
     }
+    // ✅ 空内容不再创建空段落（会在下面的过滤中移除）
     
     // 🆕 Step 3: Diff 比较（仅 Update 时）
     if (oldEventLog) {
@@ -3786,6 +3777,12 @@ export class EventService {
         }
       }
     }
+    
+    // 🧹 过滤空节点（删除内容为空或只有空白的节点）
+    slateNodes = slateNodes.filter(node => {
+      const text = node.children?.[0]?.text || '';
+      return text.trim().length > 0;
+    });
     
     console.log('[parseTextWithBlockTimestamps] ✅ 所有步骤完成:', {
       最终节点数: slateNodes.length,
