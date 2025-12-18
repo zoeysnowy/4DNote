@@ -2608,7 +2608,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </div>,
                         document.body
                       )}
-                    </div>
                     </div> {/* 关闭 event-title-row */}
                   )})()}
                   
