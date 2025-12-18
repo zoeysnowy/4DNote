@@ -561,7 +561,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: 'bidirectional-private'
       },
     });
-  }, [event?.id, event?.eventlog]); // 监听 event ID 和 eventlog 变化（eventlog 加载完成后会触发）
+  }, [
+    event?.id, 
+    // 🔧 使用序列化的 eventlog 作为依赖，避免对象引用导致的无限循环
+    typeof event?.eventlog === 'string' 
+      ? event.eventlog 
+      : event?.eventlog?.slateJson
+  ]); // 监听 event ID 和 eventlog 变化（eventlog 加载完成后会触发）
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
