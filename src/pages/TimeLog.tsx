@@ -2109,14 +2109,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         const titleObj = typeof event.title === 'object' ? event.title : null;
                         const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
                         
-                        console.log('🔍 [TimeLog] 幽灵菜单判断', {
-                          eventId: event.id.slice(-8),
-                          titleObj,
-                          hasTitle,
-                          simpleTitle: titleObj?.simpleTitle,
-                          colorTitle: titleObj?.colorTitle
-                        });
-                        
                         if (!hasTitle) {
                           // 空标题：显示三行分组菜单
                           return (
@@ -2617,8 +2609,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         document.body
                       )}
                     </div>
-                  </div> {/* 关闭 event-time-col */}
-                  </div> {/* 关闭 event-header-row */}
+                    </div> {/* 关闭 event-title-row */}
+                  )})()}
                   
                   {/* Meta Fields: Tags, Attendees, Location */}
                     {/* Row 1: Tags field (show when has content OR editing) */}
