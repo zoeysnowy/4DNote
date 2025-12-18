@@ -17,7 +17,7 @@
   
   <div id="results"></div>
 
-  <script type="module">
+  <script>
     // 简化的 extractCoreContent 实现
     function extractCoreContent(description) {
       if (!description) return '';
@@ -31,15 +31,15 @@
         previousCore = core;
         core = core
           // 移除 HTML 注释
-          .replace(/<!--[\s\S]*?-->/g, '')
+          .replace(/<!--[\s\S]*?-->/g, "")
           // 移除所有 "---" 分隔符（包括前后的换行）
-          .replace(/\s*---+\s*/g, '\n')
+          .replace(/\s*---+\s*/g, "\n")
           // 移除所有签名行（更严格的匹配，包括完整的时间戳）
-          .replace(/\n*\s*[。，]*\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s*[\d\-:\/\s]+/gi, '')
+          .replace(/\n*\s*[。，]*\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s*[\d\-:\/\s]+/gi, "")
           // 移除只包含逗号、句号的行
-          .replace(/\n\s*[。，]+\s*\n/g, '\n')
+          .replace(/\n\s*[。，]+\s*\n/g, "\n")
           // 移除多余空行
-          .replace(/\n\s*\n+/g, '\n')
+          .replace(/\n\s*\n+/g, "\n")
           .trim();
         iterations++;
       }

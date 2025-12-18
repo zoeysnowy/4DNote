@@ -69,9 +69,7 @@
   box-sizing: border-box;
 }
 
-.dashboard-gridstack .grid-stack-item-content:hover {
-  /* 移除额外hover效果，让子卡片自己的hover生效 */
-}
+/* 移除额外hover效果，让子卡片自己的hover生效 */
 
 /* 拖拽中 */
 .dashboard-gridstack .grid-stack-item.ui-draggable-dragging .grid-stack-item-content {
@@ -137,9 +135,7 @@
 
 /* 响应式：移动端优化 */
 @media (max-width: 768px) {
-  .dashboard-gridstack .grid-stack {
-    /* 移动端自动变为单列，由 disableOneColumnMode: false 控制 */
-  }
+  /* 移动端自动变为单列，由 disableOneColumnMode: false 控制 */
   
   .dashboard-gridstack .grid-stack-item-content {
     cursor: default; /* 移动端不显示 grab 光标 */
