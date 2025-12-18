@@ -561,7 +561,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         syncMode: 'bidirectional-private'
       },
     });
-  }, [event?.id]); // 只在 event ID 变化时重新初始化（Modal 打开时加载一次）
+  }, [event?.id, event?.eventlog]); // 监听 event ID 和 eventlog 变化（eventlog 加载完成后会触发）
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
