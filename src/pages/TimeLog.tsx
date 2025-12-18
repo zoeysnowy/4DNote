@@ -4,6 +4,7 @@ import 'tippy.js/dist/tippy.css';
 import GlassIconBar from '../components/GlassIconBar';
 import ContentSelectionPanel from '../components/ContentSelectionPanel';
 import { EventService } from '../services/EventService';
+import { EventHub } from '../services/EventHub';
 import { TagService } from '../services/TagService';
 import { ModalSlate } from '../components/ModalSlate/ModalSlate';
 import { LogSlate } from '../components/LogSlate/LogSlate';
@@ -56,6 +57,7 @@ import RightIconSvg from '../assets/icons/right.svg';
 import NotetreeIconSvg from '../assets/icons/Notetree.svg';
 import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
+import DeleteIconSvg from '../assets/icons/delete.svg';
 
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
@@ -1295,6 +1297,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   };
 
+  // 🆕 删除事件
+  const handleDelete = async (event: Event) => {
+    const confirm = window.confirm('确定要删除这条笔记吗？');
+    if (!confirm) return;
+
+    try {
+      await EventService.deleteEvent(event.id);
+      console.log('✅ [TimeLog] 删除事件成功:', event.id);
+    } catch (error) {
+      console.error('❌ [TimeLog] 删除事件失败:', event.id, error);
+      alert('删除失败，请重试');
+    }
+  };
+
   // 🆕 v2.19: 收集 EventTree 中所有子事件的 ID
   const collectChildEventIds = (tree: EventTreeNode): string[] => {
     const ids: string[] = [];
@@ -2086,33 +2102,174 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </span>
                       )}
                       
-                      {/* 幽灵菜单 */}
-                      {hoveredTimeId === event.id && (
-                        <div className="ghost-menu time-ghost-menu">
-                          <button 
-                            className="ghost-menu-btn"
-                            onClick={() => handleTimeEdit(event)}
-                            title="编辑时间"
-                          >
-                            <img src={EditIconSvg} alt="edit" />
-                          </button>
-                          <button className="ghost-menu-btn" title="收藏">
-                            <img src={FavoriteIconSvg} alt="favorite" />
-                          </button>
-                          <button className="ghost-menu-btn" title="添加截止日">
-                            <img src={DdlIconSvg} alt="ddl" />
-                          </button>
-                          <button className="ghost-menu-btn" title="循环">
-                            <img src={RotationIconSvg} alt="rotation" />
-                          </button>
-                          <button className="ghost-menu-btn" title="添加子任务">
-                            <img src={AddTaskIconSvg} alt="add task" />
-                          </button>
-                          <button className="ghost-menu-btn" title="开始计时">
-                            <img src={TimerStartIconSvg} alt="timer start" />
-                          </button>
-                        </div>
-                      )}
+                      {/* 幽灵菜单 - 空标题时显示三行分组菜单 */}
+                      {hoveredTimeId === event.id && (() => {
+                        // 判断标题是否为空
+                        const titleObj = typeof event.title === 'object' ? event.title : null;
+                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
+                        
+                        if (!hasTitle) {
+                          // 空标题：显示三行分组菜单
+                          return (
+                            <div className="ghost-menu ghost-menu-grouped">
+                              {/* 第一行：编辑相关 */}
+                              <div className="ghost-menu-row">
+                                <Tippy content="添加标题" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => setEditingTitleId(event.id)}
+                                  >
+                                    <img src={EditIconSvg} alt="title-edit" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="添加到快捷事件" placement="top">
+                                  <button className="ghost-menu-btn">
+                                    <img src={FavoriteIconSvg} alt="favorite" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="删除" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleDelete(event)}
+                                  >
+                                    <img src={DeleteIconSvg} alt="delete" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="展开详情" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleEditEvent(event)}
+                                  >
+                                    <img src={FullsizeIconSvg} alt="fullsize" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="在新标签页打开" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      handleOpenInTab(event);
+                                    }}
+                                  >
+                                    <img src={TabIconSvg} alt="tab" />
+                                  </button>
+                                </Tippy>
+                              </div>
+                              
+                              {/* 第二行：参数相关 */}
+                              <div className="ghost-menu-row">
+                                <Tippy content="添加标签" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleTagsClick(event)}
+                                  >
+                                    <img src={TagIconSvg} alt="tag" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="添加参与者" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleAttendeesEdit(event)}
+                                  >
+                                    <img src={AttendeeIconSvg} alt="attendees" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="添加地点" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleLocationEdit(event)}
+                                  >
+                                    <img src={LocationIconSvg} alt="location" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="查看事件树" placement="top">
+                                  <button className="ghost-menu-btn">
+                                    <img src={NotetreeIconSvg} alt="notetree" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content={event.isNote ? "取消标记为重要笔记" : "标记为重要笔记"} placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleToggleIsNote(event)}
+                                    style={{
+                                      backgroundColor: event.isNote ? 'rgba(59, 130, 246, 0.1)' : undefined
+                                    }}
+                                  >
+                                    <img src={NotesIconSvg} alt="notes" style={{ opacity: event.isNote ? 1 : 0.6 }} />
+                                  </button>
+                                </Tippy>
+                              </div>
+                              
+                              {/* 第三行：时间相关 */}
+                              <div className="ghost-menu-row">
+                                <Tippy content="编辑时间" placement="top">
+                                  <button 
+                                    className="ghost-menu-btn"
+                                    onClick={() => handleTimeEdit(event)}
+                                  >
+                                    <img src={EditIconSvg} alt="edit-time" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="添加截止日" placement="top">
+                                  <button className="ghost-menu-btn">
+                                    <img src={DdlIconSvg} alt="ddl" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="循环事件" placement="top">
+                                  <button className="ghost-menu-btn">
+                                    <img src={RotationIconSvg} alt="rotation" />
+                                  </button>
+                                </Tippy>
+                                <Tippy content="开始计时" placement="top">
+                                  <button className="ghost-menu-btn">
+                                    <img src={TimerStartIconSvg} alt="timer-start" />
+                                  </button>
+                                </Tippy>
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          // 有标题：显示简化的单行菜单
+                          return (
+                            <div className="ghost-menu time-ghost-menu">
+                              <Tippy content="编辑时间" placement="top">
+                                <button 
+                                  className="ghost-menu-btn"
+                                  onClick={() => handleTimeEdit(event)}
+                                >
+                                  <img src={EditIconSvg} alt="edit" />
+                                </button>
+                              </Tippy>
+                              <Tippy content="收藏" placement="top">
+                                <button className="ghost-menu-btn">
+                                  <img src={FavoriteIconSvg} alt="favorite" />
+                                </button>
+                              </Tippy>
+                              <Tippy content="添加截止日" placement="top">
+                                <button className="ghost-menu-btn">
+                                  <img src={DdlIconSvg} alt="ddl" />
+                                </button>
+                              </Tippy>
+                              <Tippy content="循环事件" placement="top">
+                                <button className="ghost-menu-btn">
+                                  <img src={RotationIconSvg} alt="rotation" />
+                                </button>
+                              </Tippy>
+                              <Tippy content="添加子任务" placement="top">
+                                <button className="ghost-menu-btn">
+                                  <img src={AddTaskIconSvg} alt="add-task" />
+                                </button>
+                              </Tippy>
+                              <Tippy content="开始计时" placement="top">
+                                <button className="ghost-menu-btn">
+                                  <img src={TimerStartIconSvg} alt="timer-start" />
+                                </button>
+                              </Tippy>
+                            </div>
+                          );
+                        }
+                      })()}
                       
                       {/* 🆕 日历选择器弹窗 */}
                       {showCalendarPicker === event.id && createPortal(

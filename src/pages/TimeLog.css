@@ -927,6 +927,23 @@
   transition: opacity 0.15s ease;
 }
 
+/* 🆕 三行分组布局 */
+.ghost-menu-grouped {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: #FAFAFA;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.ghost-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 /* Time ghost menu positioning */
 .time-ghost-menu {
   position: relative;
