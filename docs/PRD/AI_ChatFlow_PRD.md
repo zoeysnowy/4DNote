@@ -985,6 +985,305 @@ export const aiChatConfig = {
 
 ---
 
+## 📊 回答质量优化策略（基于行业最佳实践）
+
+> **参考**: Sider AI 等成熟 Chatbot 产品的优化方案分析
+
+### 核心认知
+要达到 Sider AI 级别的"回答质量"，关键不在算法，而在**工程化**和**交互**。对于 4DNote 这种聚焦于特定数据（日程/笔记）的场景，我们甚至可以做得比通用工具更好。
+
+---
+
+### 1. 查询重写 (Query Rewriting) ⭐⭐⭐⭐⭐
+
+#### 问题场景
+```
+用户多轮对话：
+1. "@ai 我明天的日程是什么？"
+2. "@ai 那上周呢？" ❌ 如果直接搜索"那上周呢"，向量库会找不到任何东西
+```
+
+#### 解决方案
+在向量检索前，先把用户问题 + 历史对话发给 LLM，改写成独立的搜索语句：
+
+```typescript
+// src/services/AIQueryRewriter.ts
+async function rewriteQuery(
+  userQuestion: string,
+  chatHistory: Message[]
+): Promise<string> {
+  const prompt = `
+你是一个搜索语句改写助手。用户的问题可能依赖对话上下文，请将其改写为独立的、完整的搜索语句。
+
+对话历史：
+${chatHistory.map(m => `${m.role}: ${m.content}`).join('\n')}
+
+当前问题：${userQuestion}
+
+改写要求：
+1. 如果问题包含时间词（"明天"、"上周"、"下个月"），转换为具体日期范围
+2. 如果问题包含指代词（"那个"、"它"），替换为具体实体
+3. 补充必要的上下文信息
+4. 保持原问题的核心意图
+
+改写后的搜索语句：`;
+
+  const response = await callLLM(prompt);
+  return response.trim();
+}
+
+// 使用示例
+const originalQuery = "那上周呢？";
+const rewrittenQuery = await rewriteQuery(originalQuery, [
+  { role: 'user', content: '我明天的日程是什么？' },
+  { role: 'assistant', content: '您明天有 3 个日程...' }
+]);
+// 返回：查找用户 2025-12-10 到 2025-12-16 的所有日程记录
+```
+
+**成本评估**：
+- 开发成本：✅ 低（几行代码 + Prompt）
+- 维护成本：✅ 极低（Prompt 一次性投入）
+- 效果提升：⭐⭐⭐⭐⭐（这是 RAG 标配，必须有）
+
+---
+
+### 2. 混合检索 (Hybrid Search) ⭐⭐⭐⭐
+
+#### 问题场景
+- 纯向量搜索：擅长语义理解，但对精确匹配（人名、ID）效果差
+- 纯关键词搜索：擅长精确匹配，但理解不了语义
+
+#### 解决方案
+同时使用两种检索，加权合并结果：
+
+```typescript
+// src/services/HybridSearch.ts
+async function hybridSearch(
+  query: string,
+  options: {
+    vectorWeight?: number;  // 向量搜索权重 (0-1)
+    keywordWeight?: number; // 关键词搜索权重 (0-1)
+    topK?: number;
+  }
+): Promise<SearchResult[]> {
+  const { vectorWeight = 0.7, keywordWeight = 0.3, topK = 10 } = options;
+
+  // 1. 向量搜索（语义理解）
+  const vectorResults = await vectorSearch(query, topK * 2);
+
+  // 2. 关键词搜索（精确匹配）
+  const keywordResults = await fullTextSearch(query, topK * 2);
+
+  // 3. 加权合并（RRF - Reciprocal Rank Fusion）
+  const merged = mergeResults(vectorResults, keywordResults, {
+    vectorWeight,
+    keywordWeight
+  });
+
+  return merged.slice(0, topK);
+}
+
+function mergeResults(
+  vectorResults: SearchResult[],
+  keywordResults: SearchResult[],
+  weights: { vectorWeight: number; keywordWeight: number }
+): SearchResult[] {
+  const scoreMap = new Map<string, number>();
+
+  // 向量搜索打分
+  vectorResults.forEach((result, index) => {
+    const score = (1 / (index + 1)) * weights.vectorWeight;
+    scoreMap.set(result.id, (scoreMap.get(result.id) || 0) + score);
+  });
+
+  // 关键词搜索打分
+  keywordResults.forEach((result, index) => {
+    const score = (1 / (index + 1)) * weights.keywordWeight;
+    scoreMap.set(result.id, (scoreMap.get(result.id) || 0) + score);
+  });
+
+  // 按分数排序
+  return Array.from(scoreMap.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([id, score]) => ({ id, score }));
+}
+```
+
+**成本评估**：
+- 开发成本：✅ 中（Supabase 等向量库原生支持）
+- 维护成本：✅ 低（权重可配置，微调即可）
+- 效果提升：⭐⭐⭐⭐（处理人名、ID 等精确查询时很有用）
+
+---
+
+### 3. 结果重排序 (Reranking) ⭐⭐⭐⭐⭐
+
+#### 问题场景
+向量搜索返回的 Top 10 结果中，可能有 3-5 条相关性较低。直接喂给 LLM 会：
+- 浪费 Token（多余内容占用上下文）
+- 降低质量（LLM 被噪声干扰）
+
+#### 解决方案
+使用专门的 Rerank 模型对初筛结果重新打分，挑选最相关的内容：
+
+```typescript
+// src/services/Reranker.ts
+async function rerank(
+  query: string,
+  candidates: SearchResult[],
+  topK: number = 3
+): Promise<SearchResult[]> {
+  // 方案 1：调用 Rerank API（推荐，性价比高）
+  const response = await fetch('https://api.jina.ai/v1/rerank', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${JINA_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'jina-reranker-v1-base-en',
+      query: query,
+      documents: candidates.map(c => c.content),
+      top_n: topK
+    })
+  });
+
+  const { results } = await response.json();
+  
+  return results.map((r: any) => candidates[r.index]);
+}
+
+// 方案 2：本地轻量模型（如 BGE-Reranker，需要部署）
+// 方案 3：使用 LLM 自己打分（成本高，不推荐）
+```
+
+**推荐 API 服务商**：
+- ✅ [Jina AI Rerank](https://jina.ai/reranker)（免费额度 1M tokens/月）
+- ✅ [Cohere Rerank](https://cohere.com/rerank)（精度高，但收费）
+
+**成本评估**：
+- 开发成本：✅ 极低（调 API，几行代码）
+- 维护成本：✅ 极低（API 稳定，无需维护）
+- 延迟影响：⚠️ 增加 100-200ms（可接受）
+- 效果提升：⭐⭐⭐⭐⭐（**性价比最高的优化手段**）
+
+---
+
+### 4. 系统提示词精细化 (System Prompt Engineering) ⭐⭐⭐
+
+#### 核心理念
+一个好的 System Prompt 应该规定：
+1. **身份定位**：你是谁？服务谁？
+2. **输出格式**：Markdown、列表、JSON？
+3. **语气风格**：专业、友好、简洁？
+4. **边界约束**：什么不能做？
+
+#### 4DNote 助手 Prompt 模板
+```typescript
+const SYSTEM_PROMPT = `
+你是 4DNote 的 AI 助手，专门帮助用户管理日程、笔记和任务。
+
+## 你的能力
+1. 查询用户的日程和笔记（基于检索到的上下文）
+2. 总结、解释、翻译笔记内容
+3. 辅助规划任务和时间安排
+
+## 输出规范
+- 使用 Markdown 格式
+- 列表用 - 或 1. 开头
+- 重要信息用 **加粗**
+- 代码用 \`code\` 或 \`\`\`块包裹
+- 保持简洁，避免冗长废话
+
+## 语气风格
+- 友好、专业、高效
+- 直接给出答案，不要"让我来帮您..."这种开场白
+- 如果不确定，明确告知用户
+
+## 边界约束
+- 只回答与用户日程、笔记、时间管理相关的问题
+- 不提供医疗、法律、金融建议
+- 不能访问用户的外部数据（仅限 4DNote 内）
+- 如果检索到的内容为空，明确告知"未找到相关信息"
+
+## 上下文数据
+以下是检索到的用户数据，请基于这些内容回答：
+{context}
+
+## 用户问题
+{question}
+`;
+```
+
+**成本评估**：
+- 开发成本：✅ 低（一次性投入，反复测试打磨）
+- 维护成本：✅ 极低（模型更新后可能微调，但频率很低）
+- 效果提升：⭐⭐⭐（决定交互体验的基础）
+
+---
+
+## 🧰 完整 RAG 流程（推荐实施方案）
+
+```
+用户问题 "@ai 上周我参加了哪些活动？"
+    ↓
+[步骤 1] 查询重写
+    → "查找用户 2025-12-10 到 2025-12-16 参加的活动日程"
+    ↓
+[步骤 2] 混合检索
+    → 向量搜索 Top 20 + 关键词搜索 Top 20
+    → 合并后 Top 10
+    ↓
+[步骤 3] 重排序（可选，但推荐）
+    → Rerank 模型筛选出最相关的 Top 3
+    ↓
+[步骤 4] 构建 Prompt
+    → System Prompt + 上下文数据 + 用户问题
+    ↓
+[步骤 5] LLM 生成回答
+    → 流式输出到 Toggle 节点
+```
+
+---
+
+## 📈 维护成本评估（独立开发者视角）
+
+基于行业经验，你的精力分配应该是：
+
+| 模块               | 维护精力 | 说明                                           |
+|--------------------|----------|------------------------------------------------|
+| **LLM 接入 (API)** | 5%       | 接口极其稳定，甚至可以用 LangChain/Vercel SDK 一键切换 |
+| **Prompt 调优**    | 15%      | 写好一套 Golden Prompts 后，通常只需要微调       |
+| **数据清洗 (ETL)** | 50%      | ⚠️ **这才是核心！** 你的笔记格式变了、加了新字段、Timestamp 逻辑改了，需要同步更新"入库脚本"。垃圾进，垃圾出。 |
+| **RAG 逻辑 (检索)** | 30%      | 主要是调试"搜得准不准"。这是决定体验上限的地方。 |
+
+### 关键洞察
+1. ✅ **模型更新不可怕**：API 向下兼容，模型越强越听话
+2. ⚠️ **数据质量是地基**：JSON 结构、Timestamp 逻辑必须搞定
+3. 🎯 **RAG 流程是上限**：查询重写 + 混合检索 + 重排序，这三板斧就是大厂的全部秘密
+
+---
+
+## 🚀 实施优先级建议
+
+### Phase 1: MVP（2周） - 基础可用
+- ✅ 基础对话 + Toggle 节点
+- ✅ System Prompt 打磨
+- ❌ 暂不做：查询重写、Rerank
+
+### Phase 2: 体验优化（2周） - 向 Sider 看齐
+- ✅ **查询重写**（必做，效果立竿见影）
+- ✅ **混合检索**（如果用户反馈搜索不准）
+- ⚠️ **Rerank**（可选，但性价比极高）
+
+### Phase 3: 打磨（1周） - 超越通用工具
+- ✅ 针对 4DNote 数据结构优化 Prompt
+- ✅ 时间相关查询特殊处理（"明天"、"上周"自动转日期）
+- ✅ UI/UX 细节优化
+
+---
+
 ## 总结
 
 **AI ChatFlow 是一个极具价值的功能**，建议优先级：⭐⭐⭐⭐⭐

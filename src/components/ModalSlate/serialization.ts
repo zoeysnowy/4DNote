@@ -140,13 +140,39 @@ export function slateNodesToHtml(nodes: Descendant[]): string {
         switch (node.type) {
           case 'paragraph':
             const text = extractTextFromNode(node);
-            // 🆕 保留 bullet 属性
             const paraNode = node as any;
+            
+            // 🆕 [v2.18.8] 保留 Block-Level Timestamp（格式：YYYY-MM-DD HH:mm:ss）
+            let timestampPrefix = '';
+            if (paraNode.createdAt) {
+              const timestamp = typeof paraNode.createdAt === 'number' 
+                ? paraNode.createdAt 
+                : new Date(paraNode.createdAt).getTime();
+              const date = new Date(timestamp);
+              const year = date.getFullYear();
+              const month = String(date.getMonth() + 1).padStart(2, '0');
+              const day = String(date.getDate()).padStart(2, '0');
+              const hours = String(date.getHours()).padStart(2, '0');
+              const minutes = String(date.getMinutes()).padStart(2, '0');
+              const seconds = String(date.getSeconds()).padStart(2, '0');
+              timestampPrefix = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}\n`;
+            }
+            
+            // 🆕 保留 bullet 属性
             if (paraNode.bullet && paraNode.bulletLevel !== undefined) {
               const attrs = `data-bullet="true" data-bullet-level="${paraNode.bulletLevel}"`;
-              return `<p ${attrs}>${text}</p>`;
+              return `<p ${attrs}>${timestampPrefix}${text}</p>`;
             }
-            return text ? `<p>${text}</p>` : '';
+            
+            // 普通段落：如果有 timestamp，单独成行；如果有文本，添加段落
+            if (timestampPrefix && text) {
+              return `${timestampPrefix}${text}`;
+            } else if (timestampPrefix) {
+              return timestampPrefix.trim(); // 只有时间戳，去掉末尾换行
+            } else if (text) {
+              return `<p>${text}</p>`;
+            }
+            return '';
           
           case 'timestamp-divider':
             const timestampElement = node as TimestampDividerElement;

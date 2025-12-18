@@ -24,7 +24,7 @@ import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
-import type { Event } from '../types';
+import type { Event, EventTreeNode } from '../types';
 import './TimeLog.css';
 
 // 导入图标
@@ -53,6 +53,7 @@ import AddTaskIconSvg from '../assets/icons/Add_task_gray.svg';
 import TimerStartIconSvg from '../assets/icons/timer_start.svg';
 import NotesIconSvg from '../assets/icons/Notes.svg';
 import RightIconSvg from '../assets/icons/right.svg';
+import NotetreeIconSvg from '../assets/icons/Notetree.svg';
 import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 
@@ -107,6 +108,91 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [showTabManager, setShowTabManager] = useState(false);
   const [tabManagerEvents, setTabManagerEvents] = useState<Event[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('timelog'); // 'timelog' 或事件ID
+
+  // 🆕 v2.19: 从 localStorage 恢复 LogTab 状态
+  useEffect(() => {
+    const restoreLogTabs = async () => {
+      try {
+        const savedTabIds = localStorage.getItem('4dnote-logtabs');
+        if (!savedTabIds) return;
+
+        const tabIds: string[] = JSON.parse(savedTabIds);
+        if (tabIds.length === 0) return;
+
+        // 批量加载事件
+        const events: Event[] = [];
+        for (const eventId of tabIds) {
+          const event = await EventService.getEventById(eventId);
+          if (event) {
+            events.push(event);
+          }
+        }
+
+        if (events.length > 0) {
+          setTabManagerEvents(events);
+          setShowTabManager(true);
+        }
+      } catch (error) {
+        console.error('❌ [TimeLog] 恢复 LogTab 状态失败:', error);
+        localStorage.removeItem('4dnote-logtabs');
+      }
+    };
+
+    restoreLogTabs();
+  }, []);
+
+  // 🆕 v2.19: 持久化 LogTab 状态到 localStorage
+  useEffect(() => {
+    if (tabManagerEvents.length === 0) {
+      localStorage.removeItem('4dnote-logtabs');
+    } else {
+      const tabIds = tabManagerEvents.map(e => e.id);
+      localStorage.setItem('4dnote-logtabs', JSON.stringify(tabIds));
+    }
+  }, [tabManagerEvents]);
+
+  // 🆕 v2.19: 从侧边栏重要笔记导航到事件
+  useEffect(() => {
+    const handleNavigation = async () => {
+      const targetEventId = sessionStorage.getItem('4dnote-navigate-to-event');
+      if (!targetEventId) return;
+
+      // 清除导航标记
+      sessionStorage.removeItem('4dnote-navigate-to-event');
+
+      try {
+        // 加载事件
+        const event = await EventService.getEventById(targetEventId);
+        if (!event) {
+          console.warn('⚠️ [TimeLog] 导航目标事件不存在:', targetEventId);
+          return;
+        }
+
+        // 打开 LogTab
+        setTabManagerEvents(prev => {
+          const exists = prev.find(e => e.id === targetEventId);
+          if (exists) return prev;
+          return [...prev, event];
+        });
+        setShowTabManager(true);
+        setActiveTabId(targetEventId);
+
+        // 滚动到事件位置
+        setTimeout(() => {
+          const eventElement = document.querySelector(`[data-event-id="${targetEventId}"]`);
+          if (eventElement) {
+            eventElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 300);
+
+        console.log('✅ [TimeLog] 导航到事件:', targetEventId);
+      } catch (error) {
+        console.error('❌ [TimeLog] 导航失败:', error);
+      }
+    };
+
+    handleNavigation();
+  }, []);
 
   // Handler: Open event in tab manager or separate window
   const handleOpenInTab = useCallback(async (event: Event) => {
@@ -1114,6 +1200,43 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     setEditingLocationId(eventId);
   };
 
+  // 🆕 v2.19: 处理 isNote 标记切换
+  const handleToggleIsNote = async (event: Event) => {
+    const newIsNoteValue = !event.isNote;
+    
+    // 如果是取消标记，弹出确认对话框
+    if (event.isNote) {
+      const confirm = window.confirm(
+        '确定要取消标记为重要笔记吗？\n' +
+        '这将同时取消该事件所在 EventTree 中所有子事件的标记。'
+      );
+      if (!confirm) return;
+    }
+
+    // 获取 EventTree：找到所有子事件
+    const eventTree = await EventService.buildEventTree(event.id);
+    const allEventIds = [event.id, ...collectChildEventIds(eventTree)];
+    
+    // 批量更新所有子事件的 isNote 字段
+    for (const id of allEventIds) {
+      await EventHub.updateFields(id, { isNote: newIsNoteValue }, {
+        source: 'TimeLog-toggleIsNote'
+      });
+    }
+  };
+
+  // 🆕 v2.19: 收集 EventTree 中所有子事件的 ID
+  const collectChildEventIds = (tree: EventTreeNode): string[] => {
+    const ids: string[] = [];
+    if (tree.children && tree.children.length > 0) {
+      for (const child of tree.children) {
+        ids.push(child.id);
+        ids.push(...collectChildEventIds(child));
+      }
+    }
+    return ids;
+  };
+
   // 处理时间编辑
   const handleTimeEdit = (event: Event) => {
     setEditingTimeId(event.id);
@@ -1214,8 +1337,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           colorTitle: '',
           fullTitle: ''
         }, // 允许空标题
-        startTime: null, // 无开始时间
-        endTime: null, // 无结束时间
+        startTime: '', // 🔧 设置为空字符串而不是 null
+        endTime: '', // 🔧 设置为空字符串而不是 null
         tags: [], // 允许空标签
         isAllDay: false,
         // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤）
@@ -1258,24 +1381,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         createdAt: savedNote.createdAt
       });
       
-      // 🔧 刷新事件列表（重新加载全部事件，确保新笔记在列表中）
-      // 注意：这里不使用日期范围过滤，因为新笔记的createdAt可能在当前加载范围外
-      const events = await EventService.getTimelineEvents();
-      console.log('📋 [TimeLog] Reloaded events:', events.length);
-      
-      // 检查新笔记是否在列表中
-      const noteExists = events.find(e => e.id === newEvent.id);
-      console.log('🔍 [TimeLog] Note in list:', noteExists ? 'YES' : 'NO', noteExists?.id);
-      
-      if (!noteExists) {
-        console.error('❌ [TimeLog] Note not found in reloaded events!');
-        console.log('📋 [TimeLog] All event IDs:', events.map(e => e.id));
-        alert('笔记创建成功但未在列表中显示，请刷新页面');
-        return;
-      }
-      
-      setAllEvents(events);
-      allEventsRef.current = events;
+      // 🔧 直接将新笔记添加到列表中，而不是重新加载全部事件
+      // 这样可以避免日期范围过滤导致的问题
+      setAllEvents(prev => {
+        // 检查是否已存在（避免重复）
+        if (prev.find(e => e.id === savedNote.id)) {
+          console.log('📋 [TimeLog] Note already in list, skipping');
+          return prev;
+        }
+        
+        // 按 createdAt 降序插入（最新的在前面）
+        const newList = [savedNote, ...prev];
+        console.log('📋 [TimeLog] Added note to list:', newList.length);
+        return newList;
+      });
+      allEventsRef.current = [savedNote, ...allEventsRef.current];
       
       // 自动展开新创建的笔记
       setExpandedLogs(prev => new Set([...prev, newEvent.id]));
@@ -2166,6 +2286,16 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               onClick={() => handleLocationEdit(event)}
                             >
                               <img src={LocationIconSvg} alt="location" style={{ width: '16px', height: '16px' }} />
+                            </button>
+                            <button 
+                              className="ghost-menu-btn"
+                              title={event.isNote ? "取消标记为重要笔记" : "标记为重要笔记"}
+                              onClick={() => handleToggleIsNote(event)}
+                              style={{
+                                backgroundColor: event.isNote ? 'rgba(59, 130, 246, 0.1)' : undefined
+                              }}
+                            >
+                              <img src={NotetreeIconSvg} alt="notetree" style={{ width: '16px', height: '16px', opacity: event.isNote ? 1 : 0.6 }} />
                             </button>
                           </div>
                         )}

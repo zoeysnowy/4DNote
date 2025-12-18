@@ -3171,15 +3171,15 @@ export class EventService {
       syncStartTime = formatTimeForStorage(createdDate);
       syncEndTime = null;  // ⚠️ endTime 保持为空，虚拟时间仅在同步时添加
       
-      // 标记是否需要虚拟时间（用于同步标识）
-      isVirtualTime = !!(event.calendarIds && event.calendarIds.length > 0);
+      // 🔧 修复：所有无时间的 Note 事件都标记为虚拟时间
+      isVirtualTime = true;
       
       console.log('[normalizeEvent] 📝 Note事件时间标准化:', {
         eventId: event.id?.slice(-8),
         startTime: syncStartTime,
         endTime: syncEndTime,
-        needsVirtualTimeForSync: isVirtualTime,
-        hasCalendarIds: event.calendarIds?.length
+        isVirtualTime: true,
+        reason: '无原始时间'
       });
     }
     
@@ -3192,7 +3192,9 @@ export class EventService {
       console.log('[normalizeEvent] 🔒 保留原有签名（preserveSignature=true）');
     } else {
       // 正常流程：重新生成签名
-      const coreContent = normalizedEventLog.plainText || '';
+      // ✅ [v2.18.8] 使用 eventlog.html（包含 Block-Level Timestamps）而非 plainText
+      // 数据流：Slate JSON → eventlog.html (含 timestamps) → description → Outlook → 同步回来时还原
+      const coreContent = normalizedEventLog.html || normalizedEventLog.plainText || '';
       const eventMeta = {
         ...event,
         createdAt: finalCreatedAt,  // ✅ 使用提取的创建时间
@@ -5684,6 +5686,34 @@ export class EventService {
     }
     
     return result;
+  }
+
+  /**
+   * 🆕 v2.19: 构建 EventTree（树形结构）
+   * 用于 isNote 标记时获取所有子事件
+   */
+  static async buildEventTree(rootId: string): Promise<EventTreeNode> {
+    const event = await this.getEventById(rootId);
+    if (!event) {
+      throw new Error(`Event not found: ${rootId}`);
+    }
+
+    const children: EventTreeNode[] = [];
+    if (event.childEventIds && event.childEventIds.length > 0) {
+      for (const childId of event.childEventIds) {
+        try {
+          const childTree = await this.buildEventTree(childId);
+          children.push(childTree);
+        } catch (error) {
+          eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
+        }
+      }
+    }
+
+    return {
+      ...event,
+      children
+    };
   }
 
   /**

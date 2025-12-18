@@ -8,6 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Block-Level Timestamp Outlook 同步修复** (2025-12-03):
+  - 🐛 修复添加 calendarIds 同步到 Outlook 后，Block-Level Timestamp 全部崩溃的问题
+  - **根因**: 
+    - `EventService.normalizeEvent()` 生成 description 时使用 `eventlog.plainText`（不含 timestamps）
+    - `slateNodesToHtml()` 未将 paragraph 的 `createdAt/updatedAt` 包含在 HTML 中
+    - 推送到 Outlook 时丢失 Block-Level Timestamps，同步回来时无法还原
+  - **解决方案**:
+    - **serialization.ts**: 修改 `slateNodesToHtml`，在每个 paragraph 前添加 `YYYY-MM-DD HH:mm:ss` 格式的 timestamp
+    - **EventService.ts**: `normalizeEvent` 改用 `eventlog.html`（含 timestamps）而非 `plainText`
+    - 数据流：Slate JSON → HTML (含 timestamps) → Outlook → 同步回来 → `parseTextWithBlockTimestamps` 还原
+  - Files:
+    - `src/components/ModalSlate/serialization.ts` (L136-175: 添加 timestampPrefix)
+    - `src/services/EventService.ts` (L3192: 使用 eventlog.html)
+  - **测试验证**: 本地创建含多个 timestamp 的事件 → 推送到 Outlook → 同步回来 → timestamps 完整保留
+
 - **FloatingToolbar textStyle 子菜单数字键修复** (2025-11-28):
   - 🐛 修复 textStyle 子菜单数字键超出范围错误（"菜单索引 5 超出范围 (最大 4)"）
   - **根因**: `useFloatingToolbar` 使用固定的 `menuItemCount: 5`，但 textStyle 子菜单有 7 个选项

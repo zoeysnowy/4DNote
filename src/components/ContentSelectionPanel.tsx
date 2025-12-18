@@ -10,6 +10,7 @@ import RightIconSvg from '../assets/icons/right.svg';
 import PiechartIconSvg from '../assets/icons/piechart.svg';
 import NoticeIconSvg from '../assets/icons/Notice.svg';
 import PinIconSvg from '../assets/icons/Pin.svg';
+import NotetreeIconSvg from '../assets/icons/Notetree.svg';
 
 // 图标组件
 const SearchIcon = ({ className }: { className?: string }) => <img src={SearchIconSvg} alt="" className={className} style={{ width: '23px', height: '23px', opacity: 0.6 }} />;
@@ -35,6 +36,7 @@ const PiechartIcon = ({ color, className }: { color?: string; className?: string
 );
 const NoticeIcon = ({ className }: { className?: string }) => <img src={NoticeIconSvg} alt="" className={className} style={{ width: '20px', height: '20px' }} />;
 const PinIcon = ({ className }: { className?: string }) => <img src={PinIconSvg} alt="" className={className} style={{ width: '16px', height: '16px' }} />;
+const NotetreeIcon = ({ className }: { className?: string }) => <img src={NotetreeIconSvg} alt="" className={className} style={{ width: '16px', height: '16px' }} />;
 
 interface TaskNode {
   id: string;
@@ -119,6 +121,45 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   
   // 标签节点展开/收起状态
   const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set());
+  
+  // 🆕 v2.19: 重要笔记状态
+  const [noteEvents, setNoteEvents] = useState<any[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState(false);
+
+  // 🆕 v2.19: 加载重要笔记
+  React.useEffect(() => {
+    const loadNoteEvents = async () => {
+      if (!isEventSectionExpanded) return;
+      
+      setLoadingNotes(true);
+      try {
+        const { EventService } = await import('../services/EventService');
+        const allEvents = await EventService.getAllEvents();
+        const notes = allEvents.filter(e => e.isNote === true);
+        setNoteEvents(notes);
+      } catch (error) {
+        console.error('❌ [ContentPanel] 加载重要笔记失败:', error);
+      } finally {
+        setLoadingNotes(false);
+      }
+    };
+
+    loadNoteEvents();
+  }, [isEventSectionExpanded]);
+
+  // 🆕 v2.19: 处理点击笔记
+  const handleNoteClick = (eventId: string) => {
+    sessionStorage.setItem('4dnote-navigate-to-event', eventId);
+    window.location.hash = '#/timelog';
+  };
+
+  // 🆕 v2.19: 获取事件标题
+  const getEventTitle = (event: any): string => {
+    if (typeof event.title === 'object' && event.title !== null) {
+      return event.title.simpleTitle || event.title.fullTitle || '未命名笔记';
+    }
+    return event.title || '未命名笔记';
+  };
 
   // 基于真实标签数据构建任务树
   const taskTree = useMemo(() => {
@@ -604,19 +645,65 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
         </div>
       </div>
 
-      {/* 事件选择 Section */}
+      {/* 事件选择 Section - 🆕 v2.19: 显示重要笔记 (isNote=true) */}
       <div className={`collapsible-section ${!isEventSectionExpanded ? 'collapsed' : ''}`}>
         <div 
           className="section-header-simple" 
           onClick={() => setIsEventSectionExpanded(!isEventSectionExpanded)}
         >
-          <h3 className="section-title">事件选择</h3>
+          <h3 className="section-title">
+            事件选择 {noteEvents.length > 0 && `(${noteEvents.length})`}
+          </h3>
           <button className={`panel-toggle-btn ${isEventSectionExpanded ? 'expanded' : ''}`}>
             <RightIcon />
           </button>
         </div>
         <div className="collapsible-content">
-          {/* TODO: 事件选择内容 */}
+          {loadingNotes ? (
+            <div style={{ padding: '12px', color: '#9ca3af', fontSize: '14px' }}>
+              加载中...
+            </div>
+          ) : noteEvents.length === 0 ? (
+            <div style={{ padding: '12px', color: '#9ca3af', fontSize: '14px' }}>
+              暂无重要笔记
+              <br />
+              <span style={{ fontSize: '13px', marginTop: '4px', display: 'block' }}>
+                在 TimeLog 中点击标题旁的 <NotetreeIcon /> 图标标记事件为重要笔记
+              </span>
+            </div>
+          ) : (
+            <div className="note-list">
+              {noteEvents.map(event => (
+                <div 
+                  key={event.id}
+                  className="note-item"
+                  onClick={() => handleNoteClick(event.id)}
+                  style={{
+                    padding: '8px 12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontSize: '14px',
+                    color: '#374151',
+                    borderRadius: '4px',
+                    transition: 'background-color 0.15s'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#f3f4f6';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = 'transparent';
+                  }}
+                >
+                  <NotetreeIcon />
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {getEventTitle(event)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
