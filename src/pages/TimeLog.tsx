@@ -58,6 +58,8 @@ import NotetreeIconSvg from '../assets/icons/Notetree.svg';
 import FullsizeIconSvg from '../assets/icons/fullsize.svg';
 import TabIconSvg from '../assets/icons/tab.svg';
 import DeleteIconSvg from '../assets/icons/delete.svg';
+import ProjectIconSvg from '../assets/icons/project.svg';
+import ProjectIconSvg from '../assets/icons/project.svg';
 
 // 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
 let hasScrolledToTodayGlobal = false;
@@ -85,6 +87,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [editingLocationId, setEditingLocationId] = useState<string | null>(null);
   const [hoveredTimeId, setHoveredTimeId] = useState<string | null>(null);
   const [hoveredTitleId, setHoveredTitleId] = useState<string | null>(null);
+  const [hoveredRightId, setHoveredRightId] = useState<string | null>(null); // Right按钮hover状态
   const [hoveredRightMenuId, setHoveredRightMenuId] = useState<string | null>(null);
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
   
@@ -2103,175 +2106,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </span>
                       )}
                       
-                      {/* 幽灵菜单 - 空标题时显示三行分组菜单 */}
-                      {hoveredTimeId === event.id && (() => {
-                        // 判断标题是否为空
-                        const titleObj = typeof event.title === 'object' ? event.title : null;
-                        const hasTitle = titleObj?.simpleTitle?.trim() || titleObj?.colorTitle?.trim();
-                        
-                        if (!hasTitle) {
-                          // 空标题：显示三行分组菜单
-                          return (
-                              <div className="ghost-menu ghost-menu-grouped">
-                              {/* 第一行：编辑相关 */}
-                              <div className="ghost-menu-row">
-                                <Tippy content="添加标题" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => setEditingTitleId(event.id)}
-                                  >
-                                    <img src={EditIconSvg} alt="title-edit" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="添加到快捷事件" placement="top">
-                                  <button className="ghost-menu-btn">
-                                    <img src={FavoriteIconSvg} alt="favorite" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="删除" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleDelete(event)}
-                                  >
-                                    <img src={DeleteIconSvg} alt="delete" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="展开详情" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleEditEvent(event)}
-                                  >
-                                    <img src={FullsizeIconSvg} alt="fullsize" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="在新标签页打开" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      handleOpenInTab(event);
-                                    }}
-                                  >
-                                    <img src={TabIconSvg} alt="tab" />
-                                  </button>
-                                </Tippy>
-                              </div>
-                              
-                              {/* 第二行：参数相关 */}
-                              <div className="ghost-menu-row">
-                                <Tippy content="添加标签" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleTagsClick(event)}
-                                  >
-                                    <img src={TagIconSvg} alt="tag" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="添加参与者" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleAttendeesEdit(event)}
-                                  >
-                                    <img src={AttendeeIconSvg} alt="attendees" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="添加地点" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleLocationEdit(event)}
-                                  >
-                                    <img src={LocationIconSvg} alt="location" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="查看事件树" placement="top">
-                                  <button className="ghost-menu-btn">
-                                    <img src={NotetreeIconSvg} alt="notetree" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content={event.isNote ? "取消标记为重要笔记" : "标记为重要笔记"} placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleToggleIsNote(event)}
-                                    style={{
-                                      backgroundColor: event.isNote ? 'rgba(59, 130, 246, 0.1)' : undefined
-                                    }}
-                                  >
-                                    <img src={NotesIconSvg} alt="notes" style={{ opacity: event.isNote ? 1 : 0.6 }} />
-                                  </button>
-                                </Tippy>
-                              </div>
-                              
-                              {/* 第三行：时间相关 */}
-                              <div className="ghost-menu-row">
-                                <Tippy content="编辑时间" placement="top">
-                                  <button 
-                                    className="ghost-menu-btn"
-                                    onClick={() => handleTimeEdit(event)}
-                                  >
-                                    <img src={EditIconSvg} alt="edit-time" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="添加截止日" placement="top">
-                                  <button className="ghost-menu-btn">
-                                    <img src={DdlIconSvg} alt="ddl" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="循环事件" placement="top">
-                                  <button className="ghost-menu-btn">
-                                    <img src={RotationIconSvg} alt="rotation" />
-                                  </button>
-                                </Tippy>
-                                <Tippy content="开始计时" placement="top">
-                                  <button className="ghost-menu-btn">
-                                    <img src={TimerStartIconSvg} alt="timer-start" />
-                                  </button>
-                                </Tippy>
-                              </div>
-                            </div>
-                          );
-                        } else {
-                          // 有标题：显示简化的单行菜单
-                          return (
-                            <div className="ghost-menu time-ghost-menu">
-                              <Tippy content="编辑时间" placement="top">
-                                <button 
-                                  className="ghost-menu-btn"
-                                  onClick={() => handleTimeEdit(event)}
-                                >
-                                  <img src={EditIconSvg} alt="edit" />
-                                </button>
-                              </Tippy>
-                              <Tippy content="收藏" placement="top">
-                                <button className="ghost-menu-btn">
-                                  <img src={FavoriteIconSvg} alt="favorite" />
-                                </button>
-                              </Tippy>
-                              <Tippy content="添加截止日" placement="top">
-                                <button className="ghost-menu-btn">
-                                  <img src={DdlIconSvg} alt="ddl" />
-                                </button>
-                              </Tippy>
-                              <Tippy content="循环事件" placement="top">
-                                <button className="ghost-menu-btn">
-                                  <img src={RotationIconSvg} alt="rotation" />
-                                </button>
-                              </Tippy>
-                              <Tippy content="添加子任务" placement="top">
-                                <button className="ghost-menu-btn">
-                                  <img src={AddTaskIconSvg} alt="add-task" />
-                                </button>
-                              </Tippy>
-                              <Tippy content="开始计时" placement="top">
-                                <button className="ghost-menu-btn">
-                                  <img src={TimerStartIconSvg} alt="timer-start" />
-                                </button>
-                              </Tippy>
-                            </div>
-                          );
-                        }
-                      })()}
-                      
                       {/* 🆕 日历选择器弹窗 */}
                       {showCalendarPicker === event.id && createPortal(
                         <div
@@ -2305,45 +2139,140 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         document.body
                       )}
                     
-                    {/* Right按钮 - 空标题时显示在时间右侧 */}
-                    {(() => {
-                      const titleObj = typeof event.title === 'object' ? event.title : null;
-                      
-                      // 检查实际内容是否为空
-                      let hasTitle = false;
-                      if (titleObj?.simpleTitle?.trim()) {
-                        hasTitle = true;
-                      } else if (titleObj?.colorTitle) {
-                        try {
-                          const parsed = JSON.parse(titleObj.colorTitle);
-                          const text = parsed[0]?.children?.[0]?.text || '';
-                          hasTitle = text.trim().length > 0;
-                        } catch (e) {
-                          hasTitle = false;
-                        }
+                    {/* Right按钮 - 统一显示，带三组分层菜单 */}
+                    <Tippy
+                      content={
+                        <div className="right-menu-groups">
+                          {/* 组1: EventManager */}
+                          <Tippy
+                            content={
+                              <div className="right-submenu">
+                                <div className="right-submenu-item" onClick={() => handleToggleIsNote(event)}>
+                                  <img src={NotetreeIconSvg} className="right-submenu-icon" alt="favorite" />
+                                  <span className="right-submenu-text">收藏事件</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={() => handleEditEvent(event)}>
+                                  <img src={FullsizeIconSvg} className="right-submenu-icon" alt="fullsize" />
+                                  <span className="right-submenu-text">展开详情</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpenInTab(event); }}>
+                                  <img src={TabIconSvg} className="right-submenu-icon" alt="tab" />
+                                  <span className="right-submenu-text">在新标签页打开</span>
+                                </div>
+                                <div className="right-submenu-item">
+                                  <img src={ProjectIconSvg} className="right-submenu-icon" alt="project" />
+                                  <span className="right-submenu-text">查看事件树</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={() => handleDelete(event)}>
+                                  <img src={DeleteIconSvg} className="right-submenu-icon" alt="delete" />
+                                  <span className="right-submenu-text">删除</span>
+                                </div>
+                              </div>
+                            }
+                            placement="bottom"
+                            interactive={true}
+                            arrow={false}
+                            offset={[0, 4]}
+                          >
+                            <button className="right-menu-group-btn ghost-menu-btn">
+                              <img src={NotetreeIconSvg} alt="event-manager" />
+                            </button>
+                          </Tippy>
+
+                          {/* 组2: Edit */}
+                          <Tippy
+                            content={
+                              <div className="right-submenu">
+                                <div className="right-submenu-item" onClick={() => setEditingTitleId(event.id)}>
+                                  <img src={EditIconSvg} className="right-submenu-icon" alt="title-edit" />
+                                  <span className="right-submenu-text">添加标题</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={() => handleTagsClick(event)}>
+                                  <img src={TagIconSvg} className="right-submenu-icon" alt="tag" />
+                                  <span className="right-submenu-text">添加标签</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={() => handleAttendeesEdit(event)}>
+                                  <img src={AttendeeIconSvg} className="right-submenu-icon" alt="attendees" />
+                                  <span className="right-submenu-text">添加参与者</span>
+                                </div>
+                                <div className="right-submenu-item" onClick={() => handleLocationEdit(event)}>
+                                  <img src={LocationIconSvg} className="right-submenu-icon" alt="location" />
+                                  <span className="right-submenu-text">添加地点</span>
+                                </div>
+                                <div className="right-submenu-item">
+                                  <img src={FullsizeIconSvg} className="right-submenu-icon" alt="allmenu" />
+                                  <span className="right-submenu-text">展开所有属性</span>
+                                </div>
+                              </div>
+                            }
+                            placement="bottom"
+                            interactive={true}
+                            arrow={false}
+                            offset={[0, 4]}
+                          >
+                            <button className="right-menu-group-btn ghost-menu-btn">
+                              <img src={EditIconSvg} alt="edit" />
+                            </button>
+                          </Tippy>
+
+                          {/* 组3: Time */}
+                          <Tippy
+                            content={
+                              <div className="right-submenu">
+                                <div className="right-submenu-item" onClick={() => handleTimeEdit(event)}>
+                                  <img src={EditIconSvg} className="right-submenu-icon" alt="edit-time" />
+                                  <span className="right-submenu-text">编辑时间</span>
+                                </div>
+                                <div className="right-submenu-item">
+                                  <img src={DdlIconSvg} className="right-submenu-icon" alt="ddl" />
+                                  <span className="right-submenu-text">添加截止日</span>
+                                </div>
+                                <div className="right-submenu-item">
+                                  <img src={RotationIconSvg} className="right-submenu-icon" alt="rotation" />
+                                  <span className="right-submenu-text">循环事件</span>
+                                </div>
+                                <div className="right-submenu-item">
+                                  <img src={TimerStartIconSvg} className="right-submenu-icon" alt="timer-start" />
+                                  <span className="right-submenu-text">开始计时</span>
+                                </div>
+                              </div>
+                            }
+                            placement="bottom"
+                            interactive={true}
+                            arrow={false}
+                            offset={[0, 4]}
+                          >
+                            <button className="right-menu-group-btn ghost-menu-btn">
+                              <img src={TimerStartIconSvg} alt="time" />
+                            </button>
+                          </Tippy>
+                        </div>
                       }
-                      
-                      if (!hasTitle) {
-                        return (
-                          <img 
-                            src={RightIconSvg} 
-                            alt="right" 
-                            className="title-right-icon"
-                            onClick={() => toggleLogExpanded(event.id)}
-                            style={{
-                              width: '16px',
-                              height: '16px',
-                              opacity: 0.6,
-                              cursor: 'pointer',
-                              marginLeft: '8px',
-                              transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                              transition: 'transform 0.2s'
-                            }}
-                          />
-                        );
-                      }
-                      return null;
-                    })()}
+                      visible={hoveredRightId === event.id}
+                      placement="bottom-start"
+                      interactive={true}
+                      arrow={false}
+                      offset={[0, 4]}
+                      onClickOutside={() => setHoveredRightId(null)}
+                    >
+                      <img 
+                        src={RightIconSvg} 
+                        alt="right" 
+                        className="title-right-icon"
+                        onClick={() => toggleLogExpanded(event.id)}
+                        onMouseEnter={() => setHoveredRightId(event.id)}
+                        onMouseLeave={() => setHoveredRightId(null)}
+                        style={{
+                          width: '16px',
+                          height: '16px',
+                          opacity: 0.6,
+                          cursor: 'pointer',
+                          marginLeft: '8px',
+                          transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
+                          transition: 'transform 0.2s'
+                        }}
+                      />
+                    </Tippy>
                     </div> {/* 关闭 time-display-wrapper */}
                   </div> {/* 关闭 event-time-col */}
                   
@@ -2425,7 +2354,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     onClick={(e) => handleEventClick(e, event.id)}
                     style={{ cursor: 'default' }}
                   >
-                    {/* Title & Source - 空标题时完全隐藏 */}
+                    {/* Title & Source */}
                     {(() => {
                       const titleObj = typeof event.title === 'object' ? event.title : null;
                       
@@ -2496,104 +2425,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           }}
                         />
                       </div>
-                      
-                      {/* Title right icon - toggle log + ghost menu - 仅有标题时显示 */}
-                      {(() => {
-                        const titleObj = typeof event.title === 'object' ? event.title : null;
-                        
-                        // 检查实际内容是否为空
-                        let hasTitle = false;
-                        if (titleObj?.simpleTitle?.trim()) {
-                          hasTitle = true;
-                        } else if (titleObj?.colorTitle) {
-                          try {
-                            const parsed = JSON.parse(titleObj.colorTitle);
-                            const text = parsed[0]?.children?.[0]?.text || '';
-                            hasTitle = text.trim().length > 0;
-                          } catch (e) {
-                            hasTitle = false;
-                          }
-                        }
-                        
-                        if (!hasTitle) return null; // 空标题时不在这里显示right按钮
-                        
-                        return (
-                          <div 
-                            className="title-right-menu-wrapper"
-                            onMouseEnter={() => setHoveredRightMenuId(event.id)}
-                            onMouseLeave={() => setHoveredRightMenuId(null)}
-                          >
-                            <img 
-                              src={RightIconSvg} 
-                              alt="right" 
-                              className="title-right-icon"
-                              onClick={() => toggleLogExpanded(event.id)}
-                              style={{
-                                width: '16px',
-                                height: '16px',
-                                opacity: 0.6,
-                                cursor: 'pointer',
-                                transform: expandedLogs.has(event.id) ? 'rotate(90deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.2s'
-                              }}
-                            />
-                            {/* Ghost menu */}
-                            {hoveredRightMenuId === event.id && (
-                          <div className="ghost-menu title-ghost-menu">
-                            <button 
-                              className="ghost-menu-btn"
-                              title="展开"
-                              onClick={() => handleEditEvent(event)}
-                            >
-                              <img src={FullsizeIconSvg} alt="fullsize" style={{ width: '16px', height: '16px' }} />
-                            </button>
-                            <button 
-                              className="ghost-menu-btn"
-                              title="在标签页中打开"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleOpenInTab(event);
-                              }}
-                            >
-                              <img src={TabIconSvg} alt="tab" style={{ width: '20px', height: '20px' }} />
-                            </button>
-                            <button 
-                              className="ghost-menu-btn"
-                              title="添加标签"
-                              onClick={() => handleTagsClick(event)}
-                            >
-                              <img src={TagIconSvg} alt="tag" style={{ width: '16px', height: '16px' }} />
-                            </button>
-                            <button 
-                              className="ghost-menu-btn"
-                              title="添加参与者"
-                              onClick={() => handleAttendeesEdit(event)}
-                            >
-                              <img src={AttendeeIconSvg} alt="attendees" style={{ width: '16px', height: '16px' }} />
-                            </button>
-                            <button 
-                              className="ghost-menu-btn"
-                              title="添加地点"
-                              onClick={() => handleLocationEdit(event)}
-                            >
-                              <img src={LocationIconSvg} alt="location" style={{ width: '16px', height: '16px' }} />
-                            </button>
-                            <button 
-                              className="ghost-menu-btn"
-                              title={event.isNote ? "取消标记为重要笔记" : "标记为重要笔记"}
-                              onClick={() => handleToggleIsNote(event)}
-                              style={{
-                                backgroundColor: event.isNote ? 'rgba(59, 130, 246, 0.1)' : undefined
-                              }}
-                            >
-                              <img src={NotetreeIconSvg} alt="notetree" style={{ width: '16px', height: '16px', opacity: event.isNote ? 1 : 0.6 }} />
-                            </button>
-                          </div>
-                        )}
-                          </div>
-                        );
-                      })()}
                       
                       {/* 🆕 同步模式选择器弹窗 */}
                       {showSyncModePicker === event.id && createPortal(

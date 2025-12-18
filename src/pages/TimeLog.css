@@ -1040,3 +1040,79 @@
   transition: opacity 0.15s ease;
 }
 
+/* ========================================
+   Right按钮三组分层菜单样式
+   ======================================== */
+
+/* 第一层：三组菜单容器 */
+.right-menu-groups {
+  display: flex;
+  gap: 2px;
+  background: #FAFAFA;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.right-menu-group-btn {
+  /* 复用ghost-menu-btn样式 */
+}
+
+/* 第二层：子菜单 */
+.right-submenu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 160px;
+}
+
+.right-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.right-submenu-item:hover {
+  background: #F3F4F6;
+}
+
+.right-submenu-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.6;
+  flex-shrink: 0;
+  /* 默认灰色滤镜（与ghost-menu-btn一致） */
+  filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
+}
+
+/* Timer图标保持原始渐变色 */
+.right-submenu-icon[alt="timer-start"] {
+  filter: none;
+}
+
+.right-submenu-item:hover .right-submenu-icon {
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(27%) sepia(8%) saturate(1041%) hue-rotate(182deg) brightness(95%) contrast(89%);
+}
+
+.right-submenu-item:hover .right-submenu-icon[alt="timer-start"] {
+  filter: none;
+  opacity: 0.9;
+}
+
+.right-submenu-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4B5563;
+  white-space: nowrap;
+}
+
+.right-submenu-item:hover .right-submenu-text {
+  color: #1F2937;
+}
+
