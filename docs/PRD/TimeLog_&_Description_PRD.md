@@ -1,14 +1,179 @@
 ﻿# TimeLog 页面 & Event.eventlog 字段 PRD
 
-> **版本**: v2.6
+> **版本**: v2.7
 > **创建时间**: 2024-01-XX  
-> **最后更新**: 2025-12-18
+> **最后更新**: 2025-12-19
 > **Figma 设计稿**: [TimeLog 页面设计](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=333-1178&m=dev)  
 > **依赖模块**: EventService, PlanSlateEditor, TimeHub, EventHub  
 > **关联文档**:
 > - [EventEditModal v2 PRD](./EVENTEDITMODAL_V2_PRD.md)
 > - [TIME_ARCHITECTURE.md](../TIME_ARCHITECTURE.md)
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
+
+---
+
+## 🔄 v2.7 更新日志 (2025-12-19)
+
+### 统一Right按钮幽灵菜单系统 🎯
+
+#### 1. Right按钮定位简化
+
+**核心变更**：移除复杂的标题判断逻辑，Right按钮固定在时间区域右侧显示
+
+**交互规则**：
+- **显示位置**：所有事件的时间行右侧，固定显示Right按钮
+- **点击行为**：展开/收缩eventlog内容（不影响标题行显示）
+- **Hover菜单**：悬停时显示三组分层菜单（使用Tippy控制）
+
+#### 2. 三组分层菜单架构
+
+**第一层：横向3组菜单图标**
+- 每组一个代表性图标
+- 横向排列，保持原幽灵菜单配色和样式
+- Hover时在下方呼出对应组的子菜单
+
+**第二层：子菜单（Dropdown）**
+- 布局：左侧icon + 右侧文字说明（参考TimeGap菜单布局）
+- 配色：与原幽灵菜单保持一致
+- 定位：使用Tippy控制，下方弹出
+
+#### 3. 菜单组详细设计
+
+**组1：EventManager（事件管理）**
+- 图标：`Notetree.svg`
+- 子菜单（5项）：
+  1. ⭐ 收藏事件 - `Notetree.svg` + "收藏事件"
+  2. 🔲 展开详情 - `Fullsize.svg` + "展开详情"
+  3. 📑 在新标签页打开 - `Tab.svg` + "在新标签页打开"
+  4. 🌲 查看事件树 - `Project.svg` + "查看事件树"
+  5. 🗑️ 删除 - `Delete.svg` + "删除"
+
+**组2：Edit（编辑属性）**
+- 图标：`Edit.svg`
+- 子菜单（5项）：
+  1. 📝 添加标题 - `Edit.svg` + "添加标题"
+  2. 🏷️ 添加标签 - `Tag.svg` + "添加标签"
+  3. 👥 添加参与者 - `Attendee.svg` + "添加参与者"
+  4. 📍 添加地点 - `Location.svg` + "添加地点"
+  5. 展开所有属性 - `Allmenu.svg` + "展开所有属性"
+
+**组3：Time（时间管理）**
+- 图标：`Timer-start.svg`
+- 子菜单（4项）：
+  1. ⏰ 编辑时间 - `Edit.svg` + "编辑时间"
+  2. 📅 添加截止日 - `DDL.svg` + "添加截止日"
+  3. 🔄 循环事件 - `Rotation.svg` + "循环事件"
+  4. ⏱️ 开始计时 - `Timer-start.svg` + "开始计时"
+
+#### 4. CSS样式规范
+
+**第一层菜单容器**：
+```css
+.right-menu-groups {
+  display: flex;
+  gap: 2px;
+  background: #FAFAFA;
+  border-radius: 6px;
+  padding: 4px;
+}
+
+.right-menu-group-btn {
+  /* 复用 .ghost-menu-btn 样式 */
+}
+```
+
+**第二层子菜单**：
+```css
+.right-submenu {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  padding: 4px;
+  min-width: 160px;
+}
+
+.right-submenu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.right-submenu-item:hover {
+  background: #F3F4F6;
+}
+
+.right-submenu-icon {
+  width: 16px;
+  height: 16px;
+  opacity: 0.6;
+  filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
+}
+
+.right-submenu-item:hover .right-submenu-icon {
+  opacity: 1;
+  filter: brightness(0) saturate(100%) invert(27%) sepia(8%) saturate(1041%) hue-rotate(182deg) brightness(95%) contrast(89%);
+}
+
+.right-submenu-text {
+  font-size: 14px;
+  font-weight: 500;
+  color: #4B5563;
+}
+
+.right-submenu-item:hover .right-submenu-text {
+  color: #1F2937;
+}
+```
+
+#### 5. 技术实现要点
+
+**Tippy嵌套配置**：
+```typescript
+// 第一层：Right按钮
+<Tippy
+  content={<RightMenuGroups />}
+  visible={hoveredRightId === event.id}
+  placement="bottom-start"
+  interactive={true}
+  arrow={false}
+>
+  <img src={RightIconSvg} onClick={() => toggleLogExpanded(event.id)} />
+</Tippy>
+
+// 第二层：每组菜单的子菜单
+<Tippy
+  content={<EventManagerSubmenu />}
+  placement="bottom"
+  interactive={true}
+  arrow={false}
+>
+  <button className="right-menu-group-btn">
+    <img src={NotetreeIconSvg} />
+  </button>
+</Tippy>
+```
+
+**状态管理**：
+```typescript
+const [hoveredRightId, setHoveredRightId] = useState<string | null>(null);
+const [hoveredGroupId, setHoveredGroupId] = useState<string | null>(null);
+```
+
+#### 6. 移除旧逻辑
+
+**删除内容**：
+- ❌ 标题行的Right按钮及幽灵菜单（L2493-2584）
+- ❌ 时间区域的三行分组菜单（L2113-2227）
+- ❌ hasTitle判断逻辑（简化为单一Right按钮）
+
+**保留内容**：
+- ✅ Right按钮在时间区域的基本结构
+- ✅ toggleLogExpanded点击事件
+- ✅ 图标旋转动画
 
 ---
 
