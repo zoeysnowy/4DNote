@@ -2665,7 +2665,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               
                               return (
                                 <span key={idx} className="tag-item">
-                                  {'#'}{emoji}{name}
+                                  #{emoji}{name}
                                 </span>
                               );
                             })
