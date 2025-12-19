@@ -2474,7 +2474,7 @@ private getUserSettings(): any {
         // 🔥 [CRITICAL FIX] 移除签名后再比较，避免误判变化
         const remoteCoreContent = this.extractCoreContent(cleanDescription);
         const localCoreContent = this.extractCoreContent(localEvent.description || '');
-        const descriptionChanged = remoteCoreContent !== localCoreContent;
+        let descriptionChanged = remoteCoreContent !== localCoreContent;  // 🔧 改为 let，因为后续可能重置
         
         // 🔧 无变化则跳过
         if (!titleChanged && !timeChanged && !descriptionChanged) {

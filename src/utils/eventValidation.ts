@@ -51,6 +51,22 @@ export function validateEventTime(event: Event): ValidationResult {
     return { valid: true, warnings };
   }
   
+  // 🆕 [v2.19] 笔记事件（有 startTime 无 endTime）：允许单时间点
+  // Note 事件在本地只存储 startTime，endTime 为 null
+  // 虚拟 endTime 仅在同步到 Outlook 时临时添加（在 ActionBasedSyncManager 中处理）
+  const isNoteWithStartTime = event.startTime && !event.endTime && event.eventlog;
+  if (isNoteWithStartTime) {
+    // 验证 startTime 格式
+    if (!isValidTimeFormat(event.startTime)) {
+      return {
+        valid: false,
+        error: 'Invalid time format - must be "YYYY-MM-DD HH:mm:ss"',
+      };
+    }
+    warnings.push('Note with startTime only - virtual endTime will be added when syncing to Outlook');
+    return { valid: true, warnings };
+  }
+  
   // Calendar 事件：时间必需
   if (!event.startTime || !event.endTime) {
     return {

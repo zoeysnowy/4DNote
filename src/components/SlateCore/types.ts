@@ -83,11 +83,11 @@ export interface EventMentionNode {
 }
 
 /**
- * TimestampDivider - 时间戳分隔线元素
+ * @deprecated 使用 Block-Level Timestamp (paragraph.createdAt) 替代
+ * TimestampDivider - 时间戳分隔线元素 (Legacy v2.17)
  * 
- * 用于 EventLog 记录编辑时间，自动插入：
- * - 当天首次编辑 → 完整时间戳（如 "2025-10-19 10:21:18"）
- * - 距上次编辑超过 5 分钟 → 相对时间戳（如 "16min later"）
+ * 保留此类型定义以向后兼容旧数据，但不再使用。
+ * 新代码应使用 paragraph.createdAt 存储时间戳。
  */
 export interface TimestampDividerElement {
   type: 'timestamp-divider';
@@ -102,6 +102,7 @@ export interface TimestampDividerElement {
 
 /**
  * 共享的元素类型（不包括 EventLineNode，EventLineNode 是 PlanSlate 特有）
+ * @deprecated TimestampDividerElement 仅保留以向后兼容
  */
 export type SharedElement = ParagraphNode | TagNode | DateMentionNode | TimestampDividerElement;
 

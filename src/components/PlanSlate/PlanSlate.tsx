@@ -30,8 +30,8 @@ import { EventLineElement } from './EventLineElement';
 // ✅ 从 SlateCore 导入共享元素组件
 import { TagElementComponent } from '../SlateCore/elements/TagElement';
 import DateMentionElement from '../SlateCore/elements/DateMentionElement';
-import { TimestampDividerElement } from '../SlateCore/elements/TimestampDividerElement';
 import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
+// TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // ✅ 从 SlateCore 导入共享服务
 import { EventLogTimestampService } from '../SlateCore/services/timestampService';
@@ -181,7 +181,7 @@ const withCustom = (editor: CustomEditor) => {
 
   editor.isVoid = element => {
     const e = element as any;
-    return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'event-mention' || e.type === 'timestamp-divider') ? true : isVoid(element);
+    return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'event-mention') ? true : isVoid(element);
   };
 
   // 🆕 拦截 insertBreak（Enter 键）以继承 bullet 属性
@@ -3744,8 +3744,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             }}
           />
         );
-      case 'timestamp-divider':
-        return <TimestampDividerElement {...props} />;
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }

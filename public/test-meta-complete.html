@@ -265,11 +265,25 @@
         <h3>🎯 测试目标</h3>
         <ul>
           <li>签名提取：extractTimestamps/Creator/Updater、extractCoreContent</li>
-          <li>Meta生成：Slate/Tags/Tree/Signature 统一序列化</li>
+          <li>Meta生成：Slate/Signature 统一序列化（<strong>不含Tags/Tree关系数据</strong>）</li>
           <li>Outlook模拟：HTML重写、Meta清除、签名混淆</li>
           <li>Meta解析：parseMetaComments优先、Block-Level降级</li>
-          <li>完整性验证：ID/时间戳/标签/层级/签名信息对比</li>
+          <li>完整性验证：ID/EventLog/时间戳/签名信息对比</li>
           <li>🔑 Signature清理：从Meta恢复后清除signature字段，避免下次同步冲突</li>
+        </ul>
+      </div>
+
+      <div class="info-card" style="background:#e7f3ff;border-left-color:#2196f3;">
+        <h3>📋 Meta架构原则：内容还原 vs 关系还原</h3>
+        <ul style="list-style:none;padding-left:10px;">
+          <li style="padding-left:0;">✅ <strong>保留在Meta中</strong>（Outlook会破坏的内容级元数据）：</li>
+          <li style="padding-left:20px;">• Event ID（必需，用于本地查询关系数据）</li>
+          <li style="padding-left:20px;">• Slate nodes（UnifiedMention、timestamp nodes、表格、分级标题）</li>
+          <li style="padding-left:20px;">• Signature（时间戳、来源信息）</li>
+          <li style="padding-left:0;margin-top:10px;">❌ <strong>从本地查询</strong>（关系数据，避免过期）：</li>
+          <li style="padding-left:20px;">• Tags → TagService.getEventTags(eventId)</li>
+          <li style="padding-left:20px;">• Tree (parent/children/bulletLevel/order) → EventTreeService.getEventNode(eventId)</li>
+          <li style="padding-left:20px;">• Attendees → ContactService.getEventAttendees(eventId)</li>
         </ul>
       </div>
 
@@ -728,20 +742,27 @@ ${JSON.stringify(timestamps, null, 2)}
       const input = document.getElementById('meta-event-input').value;
       
       console.log('=== Meta生成调试 ===');
-      console.log('输入JSON:', input);
+      console.log('输入JSON长度:', input.length);
+      console.log('输入JSON内容:', input);
+      
+      if (!input || input.trim() === '') {
+        alert('❌ 输入框为空！请先点击"加载示例Event"或粘贴Event JSON');
+        return;
+      }
       
       try {
         const event = JSON.parse(input);
+        console.log('✅ JSON解析成功');
         console.log('解析后的Event:', event);
         
         testState.originalEvent = event;
         
-        // 生成完整Meta
+        // 生成完整Meta（只包含内容级元数据）
         const meta = {
           v: 1,
+          id: event.id,  // 🔑 保存Event的internal ID（用于本地查询关系数据）
           slate: generateSlateMeta(event),
-          tags: generateTagsMeta(event),
-          tree: generateTreeMeta(event),
+          // ❌ 不包含tags/tree（关系数据，从本地Service查询）
           signature: generateSignatureMeta(event)
         };
         
@@ -754,39 +775,19 @@ ${JSON.stringify(timestamps, null, 2)}
         output.style.display = 'block';  // 🔑 关键：显示输出框
         output.textContent = metaComment;
         
-        alert('✅ Meta生成成功！');
+        console.log('✅ Meta生成成功');
       } catch (err) {
-        console.error('Meta生成错误:', err);
-        alert(`生成失败：${err.message}\n\n详细信息见Console`);
+        console.error('❌ Meta生成错误:', err);
+        console.error('错误堆栈:', err.stack);
+        alert(`生成失败：${err.message}\n\n请检查：\n1. JSON格式是否正确\n2. 是否有未闭合的引号或括号\n3. 打开Console查看详细错误`);
       }
     }
 
     function generateSlateMeta(event) {
       if (!event.eventlog?.slateJson) return null;
-      
-      const nodes = JSON.parse(event.eventlog.slateJson);
-      return {
-        nodes: nodes.map(node => ({
-          t: node.type,
-          ...(node.id && { id: node.id }),
-          ...(node.createdAt && { ts: node.createdAt }),
-          ...(node.level !== undefined && { lvl: node.level }),
-          ...(node.bulletLevel !== undefined && { bullet: node.bulletLevel })
-        }))
-      };
-    }
-
-    function generateTagsMeta(event) {
-      if (!event.tags || event.tags.length === 0) return null;
-      return event.tags.map(name => ({ name }));
-    }
-
-    function generateTreeMeta(event) {
-      const meta = {};
-      if (event.parentEventId) meta.parent = event.parentEventId;
-      if (event.childEventIds?.length > 0) meta.children = event.childEventIds;
-      if (event.bulletLevel !== undefined) meta.bulletLevel = event.bulletLevel;
-      return Object.keys(meta).length > 0 ? meta : null;
+      // 🎯 关键：直接保存完整的SlateJSON字符串
+      // 不需要解析、压缩、转换 - 保证100%准确
+      return event.eventlog.slateJson;
     }
 
     function generateSignatureMeta(event) {
@@ -805,15 +806,41 @@ ${JSON.stringify(timestamps, null, 2)}
       const hourAgo = new Date(now.getTime() - 3600000);
       
       document.getElementById('meta-event-input').value = JSON.stringify({
+        id: 'event_test_001',  // 🔑 Event的internal ID
         eventlog: {
           slateJson: JSON.stringify([
-            { type: 'paragraph', id: 'p-001', createdAt: formatTimeForStorage(hourAgo), children: [{ text: '第一段' }] },
-            { type: 'paragraph', id: 'p-002', createdAt: formatTimeForStorage(now), level: 1, children: [{ text: '第二段（子级）' }] }
+            { 
+              type: 'paragraph', 
+              id: 'p-001', 
+              createdAt: formatTimeForStorage(hourAgo), 
+              children: [{ text: '第一段（带时间戳节点）' }] 
+            },
+            { 
+              type: 'heading', 
+              id: 'h-001', 
+              level: 2, 
+              createdAt: formatTimeForStorage(now), 
+              children: [{ text: '二级标题' }] 
+            },
+            { 
+              type: 'paragraph', 
+              id: 'p-002', 
+              bulletLevel: 1, 
+              children: [{ text: '列表项（缩进1级）' }] 
+            },
+            { 
+              type: 'paragraph', 
+              id: 'p-003', 
+              mention: { 
+                type: 'tag', 
+                targetName: '工作/项目A', 
+                displayText: '#项目A' 
+              },
+              children: [{ text: '带标签Mention的段落' }] 
+            }
           ])
         },
-        tags: ['工作', '紧急'],
-        parentEventId: 'event_root',
-        bulletLevel: 1,
+        // ❌ 不包含tags、tree字段（关系数据，应从本地查询）
         createdAt: formatTimeForStorage(hourAgo),  // TimeSpec字符串
         fourDNoteSource: true,  // boolean，不是字符串
         source: 'local',
@@ -835,10 +862,15 @@ ${JSON.stringify(timestamps, null, 2)}
 ${JSON.stringify(testState.generatedMeta, null, 2)}
 
 字段统计：
+- Event ID: ${testState.generatedMeta.id || '未设置'}
 - Slate节点: ${testState.generatedMeta.slate?.nodes?.length || 0}
-- Tags数量: ${testState.generatedMeta.tags?.length || 0}
-- Tree关系: ${testState.generatedMeta.tree ? '是' : '否'}
-- Signature信息: ${testState.generatedMeta.signature ? '是' : '否'}`;
+- Signature信息: ${testState.generatedMeta.signature ? '是' : '否'}
+
+⚠️ 注意：Meta中不包含Tags/Tree/Attendees（关系数据）
+这些数据应该从本地Service查询：
+- Tags → TagService.getEventTags(eventId)
+- Tree → EventTreeService.getEventNode(eventId)
+- Attendees → ContactService.getEventAttendees(eventId)`;
     }
 
     // ========== Outlook模拟 ==========
@@ -921,38 +953,34 @@ ${JSON.stringify(testState.parsedEvent, null, 2)}`;
     function deserializeMeta(meta) {
       const event = {};
       
+      // 🔑 恢复Event的internal ID（用于本地查询关系数据）
+      if (meta.id) event.id = meta.id;
+      
+      // 恢复Slate内容（EventLog）
       if (meta.slate) {
+        // 🎯 关键：直接使用Meta中的SlateJSON字符串
+        // 不需要HTML解析 - 100%准确恢复
         event.eventlog = {
-          slateJson: JSON.stringify(meta.slate.nodes.map(n => ({
-            type: n.t,
-            ...(n.id && { id: n.id }),
-            ...(n.ts && { createdAt: n.ts }),
-            ...(n.lvl !== undefined && { level: n.lvl }),
-            ...(n.bullet !== undefined && { bulletLevel: n.bullet }),
-            children: [{ text: '' }]
-          })))
+          slateJson: meta.slate  // 直接使用，无需转换
+          // html和plainText由normalizeEventLog从slateJson生成
         };
       }
       
-      if (meta.tags) {
-        event.tags = meta.tags.map(t => t.name);
-      }
+      // ❌ 不从Meta恢复关系数据（tags/tree/attendees）
+      // 正确做法：从本地Service查询
+      // event.tags = await tagService.getEventTags(event.id);
+      // const treeNode = await eventTreeService.getEventNode(event.id);
+      // event.parentEventId = treeNode?.parent;
+      // event.childEventIds = treeNode?.children;
+      // event.bulletLevel = treeNode?.bulletLevel;
       
-      if (meta.tree) {
-        if (meta.tree.parent) event.parentEventId = meta.tree.parent;
-        if (meta.tree.children) event.childEventIds = meta.tree.children;
-        if (meta.tree.bulletLevel !== undefined) event.bulletLevel = meta.tree.bulletLevel;
-      }
-      
-      // 🔑 关键：从Meta.signature恢复后，在实际代码中应该清除Meta.signature字段
-      // 这样下次同步时会根据Event当前状态重新生成，避免冲突
+      // 🔑 恢复签名信息（Event自身属性）
       if (meta.signature) {
-        // 📝 真实字段映射（Event接口）
         if (meta.signature.createdAt) event.createdAt = meta.signature.createdAt;
         if (meta.signature.fourDNoteSource !== undefined) event.fourDNoteSource = meta.signature.fourDNoteSource; // boolean
-        if (meta.signature.source) event.source = meta.signature.source; // 'local' | 'outlook'
+        if (meta.signature.source) event.source = meta.signature.source;
         if (meta.signature.updatedAt) event.updatedAt = meta.signature.updatedAt;
-        if (meta.signature.lastModifiedSource) event.lastModifiedSource = meta.signature.lastModifiedSource; // '4dnote' | 'outlook'
+        if (meta.signature.lastModifiedSource) event.lastModifiedSource = meta.signature.lastModifiedSource;
         
         // ⚠️ 实际实现时应该删除signature字段（本测试工具演示用保留）
         // delete meta.signature;
@@ -1001,17 +1029,17 @@ ${JSON.stringify(testState.parsedEvent, null, 2)}`;
       
       output.textContent += '✅ 步骤1：创建Event\n';
       
-      // 步骤2：生成Meta
+      // 步骤2：生成Meta（只包含内容级元数据）
       const meta = {
         v: 1,
+        id: originalEvent.id,  // 🔑 Event ID
         slate: generateSlateMeta(originalEvent),
-        tags: generateTagsMeta(originalEvent),
-        tree: generateTreeMeta(originalEvent),
+        // ❌ 不包含tags/tree（关系数据）
         signature: generateSignatureMeta(originalEvent)
       };
       
       let description = `<!--4DNOTE-META:${JSON.stringify(meta)}-->\n<p>任务1</p>\n<p>子任务</p>`;
-      output.textContent += '✅ 步骤2：生成Meta-Comment\n';
+      output.textContent += '✅ 步骤2：生成Meta-Comment（只含id/slate/signature）\n';
       
       // 步骤3：Outlook模拟
       if (enableCorruption) {
@@ -1035,19 +1063,20 @@ ${JSON.stringify(testState.parsedEvent, null, 2)}`;
         output.textContent += '⚠️ 步骤4：降级到Block-Level解析\n';
       }
       
-      // 步骤5：Diff验证
+      // 步骤5：Diff验证（只验证Meta中保存的字段）
       output.textContent += '\n✅ 步骤5：运行Diff验证...\n';
       
       const tbody = document.getElementById('full-diff-tbody');
       tbody.innerHTML = '';
       
       const comparisons = [
+        { category: 'Event ID', field: 'id', orig: originalEvent.id, parsed: parsedEvent.id },
         { category: 'Slate', field: '节点数量', orig: JSON.parse(originalEvent.eventlog.slateJson).length, parsed: parsedEvent.eventlog ? JSON.parse(parsedEvent.eventlog.slateJson).length : 0 },
-        { category: 'Tags', field: 'tags数量', orig: originalEvent.tags.length, parsed: parsedEvent.tags?.length || 0 },
-        { category: 'Tree', field: 'parentEventId', orig: originalEvent.parentEventId, parsed: parsedEvent.parentEventId },
-        { category: 'Tree', field: 'bulletLevel', orig: originalEvent.bulletLevel, parsed: parsedEvent.bulletLevel },
         { category: 'Signature', field: 'createdAt', orig: originalEvent.createdAt, parsed: parsedEvent.createdAt },
-        { category: 'Signature', field: 'updatedAt', orig: originalEvent.updatedAt, parsed: parsedEvent.updatedAt }
+        { category: 'Signature', field: 'updatedAt', orig: originalEvent.updatedAt, parsed: parsedEvent.updatedAt },
+        { category: 'Signature', field: 'fourDNoteSource', orig: originalEvent.fourDNoteSource, parsed: parsedEvent.fourDNoteSource },
+        { category: 'Signature', field: 'source', orig: originalEvent.source, parsed: parsedEvent.source }
+        // ❌ 不验证tags/tree（Meta中不保存，需从本地Service查询）
       ];
       
       let matchCount = 0;

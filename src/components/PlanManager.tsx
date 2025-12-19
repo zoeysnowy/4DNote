@@ -305,7 +305,18 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   });
   
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-  const [editingItem, setEditingItem] = useState<Event | null>(null);
+  
+  // 🔍 DEBUG: 监听 selectedItemId 变化
+  useEffect(() => {
+    console.log('🔍 [PlanManager.selectedItemId] 状态变化:', {
+      selectedItemId,
+      selectedItemId_type: typeof selectedItemId,
+      selectedItemId_preview: selectedItemId?.slice(-8) || 'null',
+      will_render_modal: !!selectedItemId
+    });
+  }, [selectedItemId]);
+  
+  // 🔧 [已删除] editingItem - EventEditModalV2 现在直接从 EventHub 获取数据，不需要传入 item 对象
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   
   // 🆕 本地临时状态：管理尚未保存到EventService的空行（graytext点击创建的）
@@ -2942,41 +2953,50 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           }}
           onMoreClick={(eventId) => {
             // 🆕 More 图标点击 - 打开 EventEditModal
-            const item = editorItems.find(i => i.id === eventId);
-            if (item) {
-              setSelectedItemId(eventId);
-              setEditingItem(item);
-            }
+            // 🔧 FIX: 不再从 editorItems 获取数据，直接使用 eventId
+            // EventEditModalV2 会从 EventHub/EventService 获取完整数据
+            console.log('🔍 [PlanManager.onMoreClick] 被调用:', {
+              eventId,
+              eventId_type: typeof eventId,
+              eventId_length: eventId?.length,
+              eventId_preview: eventId?.slice(-8)
+            });
+            setSelectedItemId(eventId);
+            console.log('✅ [PlanManager.onMoreClick] selectedItemId 已设置为:', eventId);
           }}
         />
         </StatusLineContainer>
       </div>
 
       {/* 右侧编辑面板 - 使用 EventEditModalV2 */}
-      {selectedItemId && editingItem && (
-        <EventEditModalV2
-          eventId={editingItem.id}
-          isOpen={true}
+      {(() => {
+        console.log('🎨 [PlanManager] 渲染 EventEditModalV2 条件检查:', {
+          selectedItemId,
+          selectedItemId_type: typeof selectedItemId,
+          selectedItemId_truthy: !!selectedItemId,
+          will_render: !!selectedItemId
+        });
+        return selectedItemId && (
+          <EventEditModalV2
+            eventId={selectedItemId}
+            isOpen={true}
           onClose={() => {
             setSelectedItemId(null);
-            setEditingItem(null);
           }}
           onSave={async (updatedEvent) => {
             // 🔍 调试：检查 todoListIds 是否被正确传递
             console.log('🔍 [PlanManager] EventEditModalV2 onSave:', {
               updatedEvent_todoListIds: updatedEvent.todoListIds,
               updatedEvent_calendarIds: updatedEvent.calendarIds,
-              editingItem_todoListIds: editingItem.todoListIds,
-              editingItem_id: editingItem.id
+              updatedEvent_id: updatedEvent.id
             });
             
             // 🔄 从 EventService 读取最新数据（EventEditModal 已经保存过了）
-            // 避免使用旧的 editingItem 覆盖最新数据
-            const latestEvent = await EventService.getEventById(editingItem.id);
+            // 避免使用旧数据覆盖最新数据
+            const latestEvent = await EventService.getEventById(selectedItemId);
             if (!latestEvent) {
-              console.error('[PlanManager] 无法找到事件:', editingItem.id);
+              console.error('[PlanManager] 无法找到事件:', selectedItemId);
               setSelectedItemId(null);
-              setEditingItem(null);
               return;
             }
             
@@ -3012,35 +3032,19 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             console.log('🔄 [PlanManager] 手动更新 items 数组，避免去重拦截');
             
             setSelectedItemId(null);
-            setEditingItem(null);
           }}
           onDelete={(eventId) => {
-            deleteItems([editingItem.id], 'user-manual-delete');
+            deleteItems([eventId], 'user-manual-delete');
             setSelectedItemId(null);
-            setEditingItem(null);
           }}
           hierarchicalTags={existingTags}
           globalTimer={null} // PlanManager 不使用 Timer
         />
-      )}
+      );
+      })()}
 
-      {/* Emoji Picker */}
-      {showEmojiPicker && (
-        <div className="plan-picker-modal" onClick={() => setShowEmojiPicker(false)}>
-          <div onClick={(e) => e.stopPropagation()}>
-            <Picker
-              data={data}
-              onEmojiSelect={(emoji: any) => {
-                if (editingItem) {
-                  setEditingItem({ ...editingItem, emoji: emoji.native });
-                }
-                setShowEmojiPicker(false);
-              }}
-              locale="zh"
-            />
-          </div>
-        </div>
-      )}
+      {/* 🔧 [已删除] Emoji Picker - EventEditModalV2 已经内置 emoji 选择器，PlanManager 不需要独立的 emoji picker */}
+      {/* {showEmojiPicker && ...} */}
 
       {/* Headless FloatingToolbar V3 - 支持双模式 */}
       <HeadlessFloatingToolbar

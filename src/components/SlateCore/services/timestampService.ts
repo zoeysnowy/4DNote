@@ -97,7 +97,26 @@ export class EventLogTimestampService {
   }
   
   /**
-   * 创建 timestamp divider 节点
+   * 插入 Block-Level Timestamp (设置 paragraph 的 createdAt metadata)
+   * @param editor Slate Editor 实例
+   * @param path 目标 paragraph 的 Path
+   * @param eventId Event ID (用于时间追踪)
+   */
+  insertBlockLevelTimestamp(editor: Editor, path: any, eventId: string): void {
+    const now = Date.now();
+    
+    // 设置当前 paragraph 的 createdAt 属性
+    Transforms.setNodes(editor, { createdAt: now } as any, { at: path });
+    
+    // 更新时间追踪
+    this.updateLastEditTime(eventId, new Date(now));
+    
+    console.log(`[TimestampService] Block-Level timestamp 已插入: ${formatDateTime(new Date(now))}`);
+  }
+
+  /**
+   * @deprecated 使用 insertBlockLevelTimestamp() 替代
+   * 创建 timestamp divider 节点 (Legacy v2.17)
    * @param eventId Event ID (可选)
    * @returns TimestampDividerElement
    */
@@ -129,7 +148,8 @@ export class EventLogTimestampService {
   }
   
   /**
-   * 在 Slate 编辑器中插入 timestamp
+   * @deprecated 使用 insertBlockLevelTimestamp() 替代
+   * 在 Slate 编辑器中插入 timestamp divider (Legacy v2.17)
    * @param editor Slate Editor 实例
    * @param timestampElement 预创建的 timestamp 元素 (用于 ModalSlate)
    * @param eventId Event ID (可选，用于传统模式)

@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import './ContentSelectionPanel.css';
+import { CalendarService } from '../services/CalendarService';
+import type { Calendar, CalendarGroup } from '../types/calendar';
 
 // 导入本地 SVG 图标
 import SearchIconSvg from '../assets/icons/Search.svg';
@@ -128,6 +130,11 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   
   // 🆕 v2.20: 收藏事件树的展开状态
   const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
+  
+  // 🆕 v2.21: 日历账户的展开状态（用于多账户场景）
+  const [expandedCalendarGroups, setExpandedCalendarGroups] = useState<Set<string>>(new Set());
+  const [selectedCalendarIds, setSelectedCalendarIds] = useState<Set<string>>(new Set());
+  const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set());
 
   // 🆕 v2.19: 加载重要笔记
   React.useEffect(() => {
@@ -149,6 +156,110 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
 
     loadNoteEvents();
   }, [isEventSectionExpanded]);
+
+  // 🆕 v2.21: 计算日历分组结构
+  const calendarStructure = useMemo(() => {
+    const groups = CalendarService.getCalendarGroups();
+    const calendars = CalendarService.getCalendars();
+    
+    // 按提供商分组
+    const groupedByProvider = new Map<string, { group?: CalendarGroup; calendars: Calendar[] }>();
+    
+    // 处理有明确分组的日历
+    groups.forEach(group => {
+      const groupCalendars = CalendarService.getCalendarsByGroup(group.id);
+      const provider = group.provider || 'local';
+      
+      // 跳过空分组
+      if (groupCalendars.length === 0) return;
+      
+      if (!groupedByProvider.has(provider)) {
+        groupedByProvider.set(provider, { group, calendars: [] });
+      }
+      const providerData = groupedByProvider.get(provider)!;
+      providerData.calendars.push(...groupCalendars);
+    });
+    
+    // 处理没有分组的日历（按provider分组）
+    calendars.forEach(cal => {
+      const provider = cal.provider || 'local';
+      if (!groupedByProvider.has(provider)) {
+        groupedByProvider.set(provider, { calendars: [] });
+      }
+      const providerData = groupedByProvider.get(provider)!;
+      // 避免重复添加
+      if (!providerData.calendars.some(c => c.id === cal.id)) {
+        providerData.calendars.push(cal);
+      }
+    });
+    
+    // 过滤掉空的分组和unknown分组
+    const validGroups = Array.from(groupedByProvider.entries())
+      .filter(([provider, data]) => 
+        data.calendars.length > 0 && 
+        provider !== 'unknown'
+      )
+      .map(([provider, data]) => ({
+        provider,
+        group: data.group,
+        calendars: data.calendars
+      }));
+    
+    // 只有一个提供商且是local时，视为单账户
+    const isReallyMultipleAccounts = validGroups.length > 1 || 
+      (validGroups.length === 1 && validGroups[0].provider !== 'local');
+    
+    return {
+      providerGroups: validGroups,
+      hasMultipleAccounts: isReallyMultipleAccounts
+    };
+  }, []);
+
+  // 获取提供商显示名称
+  const getProviderDisplayName = (provider: string) => {
+    const names: Record<string, string> = {
+      'outlook': 'Outlook',
+      'google': 'Google',
+      'icloud': 'iCloud',
+      'local': '本地日历'
+    };
+    return names[provider] || provider;
+  };
+
+  // 切换日历账户分组展开/收起
+  const toggleCalendarGroup = (provider: string) => {
+    const newExpanded = new Set(expandedCalendarGroups);
+    if (newExpanded.has(provider)) {
+      newExpanded.delete(provider);
+    } else {
+      newExpanded.add(provider);
+    }
+    setExpandedCalendarGroups(newExpanded);
+  };
+
+  // 切换日历选中状态
+  const toggleCalendarSelection = (calendarId: string) => {
+    const newSelected = new Set(selectedCalendarIds);
+    if (newSelected.has(calendarId)) {
+      newSelected.delete(calendarId);
+    } else {
+      newSelected.add(calendarId);
+    }
+    setSelectedCalendarIds(newSelected);
+    // TODO: 触发父组件的onCalendarSelectionChange回调
+  };
+
+  // 切换日历显示/隐藏
+  const toggleCalendarVisibility = (calendarId: string, visible: boolean) => {
+    const newHidden = new Set(hiddenCalendarIds);
+    if (visible) {
+      newHidden.delete(calendarId);
+    } else {
+      newHidden.add(calendarId);
+    }
+    setHiddenCalendarIds(newHidden);
+    // TODO: 触发父组件的onCalendarVisibilityChange回调
+  };
 
   // 🆕 v2.19: 处理点击笔记
   const handleNoteClick = (eventId: string) => {
@@ -767,15 +878,152 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
         >
           <h3 className="section-title">日历选择</h3>
           <button className={`panel-toggle-btn ${isCalendarExpanded ? 'expanded' : ''}`}>
-            <RightIcon />
+            <DownIcon isExpanded={isCalendarExpanded} />
           </button>
         </div>
         <div className="collapsible-content">
-          {/* TODO: 根据日历账户数量显示：
-               - 单账户：直接显示日历列表
-               - 多账户：显示 Outlook/Google/iCloud 标签页 */}
-          <div className="calendar-accounts-container">
-            <p className="placeholder-text">日历账户列表</p>
+          {/* Calendar Tree - 整体卡片容器 */}
+          <div className="calendar-tree">
+            {calendarStructure.hasMultipleAccounts ? (
+              /* 多账户：使用Toggle分组显示 */
+              <>
+                {calendarStructure.providerGroups.map(({ provider, calendars }) => {
+                  const isGroupExpanded = expandedCalendarGroups.has(provider);
+                  const displayName = getProviderDisplayName(provider);
+                  
+                  return (
+                    <div key={provider} className="calendar-provider-group">
+                      {/* 提供商Toggle Header */}
+                      <div 
+                        className="calendar-provider-header"
+                        onClick={() => toggleCalendarGroup(provider)}
+                      >
+                        <div className="calendar-provider-toggle">
+                          <img 
+                            src={DownIconSvg} 
+                            alt="" 
+                            className="calendar-provider-toggle-icon"
+                            style={{ 
+                              transform: isGroupExpanded ? 'rotate(0deg)' : 'rotate(-90deg)'
+                            }} 
+                          />
+                          <span className="calendar-provider-name">{displayName}</span>
+                          <span className="calendar-provider-count">({calendars.length})</span>
+                        </div>
+                      </div>
+                      
+                      {/* 日历列表 */}
+                      {isGroupExpanded && (
+                        <div className="calendar-list">
+                          {calendars.map(calendar => {
+                            const isSelected = selectedCalendarIds.has(calendar.id);
+                            const isHidden = hiddenCalendarIds.has(calendar.id);
+                            
+                            return (
+                              <div 
+                                key={calendar.id}
+                                className={`calendar-item ${isSelected ? 'selected' : ''}`}
+                              >
+                                <div 
+                                  className="calendar-color-dot"
+                                  style={{ backgroundColor: calendar.color }}
+                                />
+                                <span 
+                                  className="calendar-name"
+                                  onClick={() => toggleCalendarSelection(calendar.id)}
+                                >
+                                  {calendar.name}
+                                </span>
+                                
+                                {/* 右侧：hide/unhide按钮 */}
+                                <div className="calendar-visibility-container">
+                                  {isHidden ? (
+                                    <button 
+                                      className="calendar-visibility-btn calendar-visibility-btn-visible"
+                                      onClick={() => toggleCalendarVisibility(calendar.id, true)}
+                                      title="显示此日历的事件"
+                                    >
+                                      <HideSmallIcon />
+                                    </button>
+                                  ) : (
+                                    <button 
+                                      className="calendar-visibility-btn calendar-visibility-btn-hidden"
+                                      onClick={() => toggleCalendarVisibility(calendar.id, false)}
+                                      title="隐藏此日历的事件"
+                                    >
+                                      <UnhideSmallIcon />
+                                    </button>
+                                  )}
+                                </div>
+                                
+                                {/* 统计信息：事件数量 */}
+                                <div className="calendar-stats">
+                                  <span className="calendar-event-count">0个事件</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              /* 单账户：直接平铺所有日历 */
+              <div className="calendar-list">
+                {calendarStructure.providerGroups[0]?.calendars.map(calendar => {
+                  const isSelected = selectedCalendarIds.has(calendar.id);
+                  const isHidden = hiddenCalendarIds.has(calendar.id);
+                  
+                  return (
+                    <div 
+                      key={calendar.id}
+                      className={`calendar-item ${isSelected ? 'selected' : ''}`}
+                    >
+                      <div 
+                        className="calendar-color-dot"
+                        style={{ backgroundColor: calendar.color }}
+                      />
+                      <span 
+                        className="calendar-name"
+                        onClick={() => toggleCalendarSelection(calendar.id)}
+                      >
+                        {calendar.name}
+                      </span>
+                      
+                      {/* 右侧：hide/unhide按钮 */}
+                      <div className="calendar-visibility-container">
+                        {isHidden ? (
+                          <button 
+                            className="calendar-visibility-btn calendar-visibility-btn-visible"
+                            onClick={() => toggleCalendarVisibility(calendar.id, true)}
+                            title="显示此日历的事件"
+                          >
+                            <HideSmallIcon />
+                          </button>
+                        ) : (
+                          <button 
+                            className="calendar-visibility-btn calendar-visibility-btn-hidden"
+                            onClick={() => toggleCalendarVisibility(calendar.id, false)}
+                            title="隐藏此日历的事件"
+                          >
+                            <UnhideSmallIcon />
+                          </button>
+                        )}
+                      </div>
+                      
+                      {/* 统计信息：事件数量 */}
+                      <div className="calendar-stats">
+                        <span className="calendar-event-count">0个事件</span>
+                      </div>
+                    </div>
+                  );
+                }) || (
+                  <div className="placeholder-text">暂无日历</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

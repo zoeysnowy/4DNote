@@ -524,7 +524,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // 旧数据：纯文本，转换为 Slate JSON
         titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
       } else {
-        // 🔧 只读取 colorTitle（Slate JSON 格式，可编辑）
+        // 🔧 只读取 colorTitle（Slate JSON 格式，TitleSlate 可直接使用）
+        // EventService.normalizeTitle 应该已经从 fullTitle/simpleTitle 生成了 colorTitle
         titleText = event.title.colorTitle || '';
       }
     }

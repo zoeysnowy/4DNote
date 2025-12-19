@@ -137,9 +137,10 @@ export interface DateMentionNode {
 /**
  * TimestampDivider - 时间戳分隔线元素
  * 
- * 用于 EventLog 记录编辑时间，自动插入：
- * - 当天首次编辑 → 完整时间戳（如 "2025-10-19 10:21:18"）
- * - 距上次编辑超过 5 分钟 → 相对时间戳（如 "16min later"）
+ * @deprecated 使用 Block-Level Timestamp (paragraph.createdAt) 替代
+ * TimestampDivider - 时间戳分隔线元素 (Legacy v2.17)
+ * 
+ * 保留此类型定义以向后兼容旧数据，但不再使用。
  */
 export interface TimestampDividerElement {
   type: 'timestamp-divider';
@@ -154,6 +155,9 @@ export interface TimestampDividerElement {
 
 // ==================== 类型导出 ====================
 
+/**
+ * @deprecated TimestampDividerElement 仅保留以向后兼容
+ */
 export type CustomElement = EventLineNode | ParagraphNode | TagNode | DateMentionNode | TimestampDividerElement;
 export type CustomText = TextNode;
 

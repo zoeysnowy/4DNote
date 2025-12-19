@@ -2318,11 +2318,18 @@ export class EventService {
     
     // 场景 1: 只有 fullTitle → 降级生成 colorTitle 和 simpleTitle
     if (fullTitle && !colorTitle && !simpleTitle) {
+      console.log('🔍 [normalizeTitle] 场景1：只有 fullTitle，生成 colorTitle 和 simpleTitle');
       result.fullTitle = fullTitle;
       const { colorTitle: ct, formatMap } = this.fullTitleToColorTitle(fullTitle);
       result.colorTitle = ct;
       result.simpleTitle = this.colorTitleToSimpleTitle(result.colorTitle);
       result.formatMap = formatMap; // ✅ 保存 formatMap
+      console.log('✅ [normalizeTitle] 生成结果:', {
+        fullTitle_length: fullTitle.length,
+        colorTitle_length: ct.length,
+        simpleTitle: result.simpleTitle,
+        hasFormatMap: !!formatMap && formatMap.length > 0
+      });
     }
     
     // 场景 2: 只有 colorTitle → 升级生成 fullTitle，降级生成 simpleTitle

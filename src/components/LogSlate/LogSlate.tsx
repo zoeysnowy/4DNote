@@ -16,12 +16,15 @@ import { withHistory } from 'slate-history';
 // 导入 SlateCore 共享组件
 import { TagElementComponent } from '../SlateCore/elements/TagElement';
 import DateMentionElement from '../SlateCore/elements/DateMentionElement';
-import { TimestampDividerElement } from '../SlateCore/elements/TimestampDividerElement';
 import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
+// TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // 导入 SlateCore 格式化操作
 import { applyTextFormat, toggleFormat } from '../SlateCore/operations/formatting';
 import { insertTag, insertEmoji } from '../SlateCore/operations/inlineHelpers';
+
+// 🆕 导入 TimestampService
+import { EventLogTimestampService } from '../SlateCore/services/timestampService';
 
 // 导入菜单组件
 import { MentionMenu } from './MentionMenu';
@@ -87,6 +90,12 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   const pendingValueRef = useRef<string | null>(null); // 缓存待保存的内容
   const isEditingRef = useRef(false); // 标记是否正在编辑
   
+  // 🆕 TimestampService 实例（用于 5 分钟间隔判断）
+  const timestampServiceRef = useRef<EventLogTimestampService | null>(null);
+  if (!timestampServiceRef.current) {
+    timestampServiceRef.current = new EventLogTimestampService();
+  }
+  
   // 创建编辑器实例（只创建一次）
   if (!editorRef.current) {
     const baseEditor = withHistory(createEditor());
@@ -95,16 +104,32 @@ export const LogSlate: React.FC<LogSlateProps> = ({
     const withTimestampAndTrailing = (editor: Editor) => {
       const { normalizeNode, apply } = editor;
       
-      // 拦截操作，在插入新paragraph时自动添加createdAt
-      editor.apply = (operation) => {
-        if (enableTimestamp && eventId && mode === 'eventlog' && operation.type === 'insert_node') {
-          const node = operation.node as any;
-          if (node.type === 'paragraph' && !node.createdAt) {
-            // 给新插入的paragraph添加createdAt
-            node.createdAt = Date.now();
-            console.log('[LogSlate] 🆕 自动添加 createdAt 到新 paragraph:', new Date(node.createdAt).toLocaleString());
+      // 🆕 获取最后一个 timestamp（用于判断是否需要新 timestamp）
+      const getLastTimestamp = (): number | null => {
+        for (let i = editor.children.length - 1; i >= 0; i--) {
+          const node = editor.children[i] as any;
+          if (node.type === 'paragraph' && node.createdAt) {
+            return node.createdAt;
           }
         }
+        return null;
+      };
+      
+      // 🆕 判断是否应该创建新 timestamp（距离上次 > 5 分钟）
+      const shouldCreateNewTimestamp = (): boolean => {
+        const lastTimestamp = getLastTimestamp();
+        if (!lastTimestamp) return true; // 没有历史 timestamp，创建新的
+        
+        const now = Date.now();
+        const timeDiff = now - lastTimestamp;
+        const fiveMinutes = 5 * 60 * 1000;
+        
+        return timeDiff >= fiveMinutes;
+      };
+      
+      // 拦截操作：NOT 自动添加 createdAt（由光标插入事件控制）
+      editor.apply = (operation) => {
+        // 🔥 移除自动添加逻辑，改为由 handleChange 监听光标插入
         apply(operation);
       };
       
@@ -278,6 +303,48 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       pendingValueRef.current = json;
     }
     
+    // 🆕 监听光标位置变化：插入光标到空段落时智能添加 timestamp
+    if (enableTimestamp && eventId && mode === 'eventlog' && editor.selection && timestampServiceRef.current) {
+      const { anchor } = editor.selection;
+      try {
+        const [currentNode, currentPath] = Editor.node(editor, anchor.path.slice(0, -1)) as [any, any];
+        
+        // 如果光标在一个没有 createdAt 的空段落中
+        if (currentNode.type === 'paragraph' && !currentNode.createdAt) {
+          const nodeText = Node.string(currentNode);
+          
+          // 只在段落为空时才考虑添加 timestamp
+          if (nodeText.trim() === '') {
+            // 🆕 使用 timestampService 检查是否需要新 timestamp（距离上次 > 5 分钟）
+            const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
+              contextId: eventId,
+              eventId: eventId
+            });
+            
+            if (shouldInsert) {
+              const now = Date.now();
+              Editor.withoutNormalizing(editor, () => {
+                Transforms.setNodes(
+                  editor,
+                  { createdAt: now } as any,
+                  { at: currentPath }
+                );
+              });
+              
+              // 🆕 更新最后编辑时间
+              timestampServiceRef.current!.updateLastEditTime(eventId, new Date(now));
+              
+              console.log('[LogSlate] 🎯 光标插入空段落，创建新 timestamp (> 5分钟)');
+            } else {
+              console.log('[LogSlate] ⏸️ 光标插入空段落，但距离上次 < 5分钟，不创建 timestamp');
+            }
+          }
+        }
+      } catch (err) {
+        // 忽略路径错误（可能在特殊操作时发生）
+      }
+    }
+    
     // 检测 @ 提及触发
     if (enableMention && editor.selection) {
       const { anchor } = editor.selection;
@@ -328,11 +395,13 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         
         // 🔧 检查段落内容是否为空
         const paragraphText = para.children?.map((child: any) => child.text || '').join('').trim();
-        const isEmptyOrSignature = !paragraphText;
+        const isEmptyParagraph = !paragraphText;
         
-        // 🔧 title 模式永不显示 timestamp（避免标题中出现时间戳）
-        // 🔧 空段落或签名段落不显示 timestamp
-        const shouldShowTimestamp = hasBlockTimestamp && mode !== 'title' && !isEmptyOrSignature;
+        // 🆕 [v2.20.0] 显示时间戳逻辑调整：
+        // - 非空段落：始终显示 timestamp（原有逻辑）
+        // - 空段落：如果有 createdAt（用户刚插入光标），也显示 timestamp（新增）
+        // - title 模式：永不显示 timestamp
+        const shouldShowTimestamp = hasBlockTimestamp && mode !== 'title';
         
         // TimeLog 模式（showPreline = false）：显示浅灰色时间戳
         if (!showPreline && shouldShowTimestamp) {
@@ -400,9 +469,8 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         })();
         
         // 🆕 显示时间戳（LogTab 模式）
-        // 🔧 title 模式永不显示 timestamp
-        // 🔧 空段落或签名段落不显示 timestamp
-        const shouldShowTimestampWithPreline = showPreline && hasBlockTimestamp && mode !== 'title' && !isEmptyOrSignature;
+        // 同样：有 createdAt 就显示（包括空段落）
+        const shouldShowTimestampWithPreline = showPreline && hasBlockTimestamp && mode !== 'title';
         
         return (
           <div
@@ -454,45 +522,6 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         return <TagElementComponent {...props} />;
       case 'date-mention':
         return <DateMentionElement {...props} />;
-      case 'timestamp-divider': {
-        // 🔧 兼容旧格式 timestamp-divider（逐步废弃）
-        // TimeLog 模式：timestamp 左对齐，无 paddingLeft
-        if (!showPreline) {
-          const node = element as any;
-          return (
-            <div
-              {...props.attributes}
-              contentEditable={false}
-              style={{
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                marginBottom: '0',
-                paddingTop: '8px',
-                paddingBottom: '4px',
-                opacity: 0.7,
-                userSelect: 'none'
-              }}
-            >
-              <span 
-                style={{
-                  fontSize: '12px',
-                  color: '#999',
-                  whiteSpace: 'nowrap',
-                  position: 'relative',
-                  zIndex: 1
-                }}
-              >
-                {node.displayText || new Date(node.timestamp).toLocaleString()}
-              </span>
-              {props.children}
-            </div>
-          );
-        }
-        
-        // LogTab/ModalSlate 模式：保持原样式（带 paddingLeft）
-        return <TimestampDividerElement {...props} />;
-      }
       case 'event-mention':
         return <EventMentionElement {...props} />;
       default:
