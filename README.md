@@ -5,7 +5,7 @@ location.reload()# 4DNote v1.3.0 🎯
 **四维时间管理系统 - 集成 Plan/Actual/TimeLog/Timer 的智能生产力工具**
 
 [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/zoeysnowy/4DNote/releases)
-[![License](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![License](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)
 [![React](https://img.shields.io/badge/React-19.2.0-61dafb.svg)](https://reactjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
 [![Slate.js](https://img.shields.io/badge/Slate.js-0.118-00a67e.svg)](https://www.slatejs.org/)
@@ -493,7 +493,13 @@ VITE_AMAP_KEY=your_actual_api_key_here
 
 ## 📄 许可证
 
-本项目采用 MIT 许可证 - 查看 [LICENSE](./LICENSE) 文件了解详情。
+**本项目为商业闭源软件，版权所有。**
+
+Copyright (C) 2024-2025 Zoey. All Rights Reserved.
+
+未经授权，严禁通过任何媒介复制、分发或修改本软件。本软件为专有和机密信息。
+
+查看 [LICENSE](./LICENSE) 文件了解详情。
 
 ---
 
