@@ -91,24 +91,53 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   if (!editorRef.current) {
     const baseEditor = withHistory(createEditor());
     
-    // 添加自定义插件：确保编辑器始终有内容
-    const withAlwaysContent = (editor: Editor) => {
-      const { normalizeNode } = editor;
+    // 🆕 添加自定义插件：自动添加timestamp和末尾虚拟节点
+    const withTimestampAndTrailing = (editor: Editor) => {
+      const { normalizeNode, apply } = editor;
+      
+      // 拦截操作，在插入新paragraph时自动添加createdAt
+      editor.apply = (operation) => {
+        if (enableTimestamp && eventId && mode === 'eventlog' && operation.type === 'insert_node') {
+          const node = operation.node as any;
+          if (node.type === 'paragraph' && !node.createdAt) {
+            // 给新插入的paragraph添加createdAt
+            node.createdAt = Date.now();
+            console.log('[LogSlate] 🆕 自动添加 createdAt 到新 paragraph:', new Date(node.createdAt).toLocaleString());
+          }
+        }
+        apply(operation);
+      };
       
       editor.normalizeNode = (entry) => {
         const [node, path] = entry;
         
         // 如果是根节点且为空，添加一个空段落
         if (path.length === 0 && editor.children.length === 0) {
-          Transforms.insertNodes(
-            editor,
-            {
-              type: 'paragraph',
-              children: [{ text: '' }],
-            } as any,
-            { at: [0] }
-          );
+          Transforms.insertNodes(editor, {
+            type: 'paragraph',
+            children: [{ text: '' }],
+          } as any, { at: [0] });
           return;
+        }
+        
+        // 🆕 确保末尾始终有虚拟空段落（在根节点 normalize 时检查）
+        if (path.length === 0 && enableTimestamp && mode === 'eventlog' && editor.children.length > 0) {
+          const lastChild = editor.children[editor.children.length - 1] as any;
+          
+          if (lastChild && lastChild.type === 'paragraph') {
+            const lastText = Node.string(lastChild);
+            
+            // 如果最后节点有内容，添加虚拟节点
+            if (lastText.trim() !== '') {
+              Transforms.insertNodes(editor, {
+                type: 'paragraph',
+                children: [{ text: '' }],
+                // 不添加createdAt，等待用户输入时再添加
+              } as any, { at: [editor.children.length] });
+              console.log('[LogSlate] ✅ normalizeNode 添加末尾虚拟节点');
+              return;
+            }
+          }
         }
         
         normalizeNode(entry);
@@ -117,7 +146,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       return editor;
     };
     
-    editorRef.current = withReact(withAlwaysContent(baseEditor));
+    editorRef.current = withReact(withTimestampAndTrailing(baseEditor));
   }
   
   const editor = editorRef.current;
@@ -138,7 +167,24 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       
       // 验证是否是有效的 Slate 节点数组
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed as Descendant[];
+        let nodes = parsed as Descendant[];
+        
+        // 🆕 如果是 eventlog 模式且启用 timestamp，自动添加末尾虚拟节点
+        if (enableTimestamp && mode === 'eventlog') {
+          const lastNode = nodes[nodes.length - 1] as any;
+          const lastText = lastNode?.children?.[0]?.text || '';
+          
+          // 如果最后节点有内容，添加虚拟节点
+          if (lastText.trim() !== '') {
+            nodes = [...nodes, {
+              type: 'paragraph',
+              children: [{ text: '' }],
+            } as Descendant];
+            console.log('[LogSlate] 📦 parseValue 添加末尾虚拟节点（静态处理）');
+          }
+        }
+        
+        return nodes;
       }
       
       // 如果不是数组或为空，返回默认值
@@ -158,7 +204,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         },
       ] as Descendant[];
     }
-  }, []);
+  }, [enableTimestamp, mode]);
   
   // 初始值（只在首次渲染时使用）
   const initialValue = useMemo(() => parseValue(value), []);
@@ -212,50 +258,25 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       // 标记正在编辑
       isEditingRef.current = true;
       
-      // 🆕 检测首次输入：如果启用timestamp且有实际文字输入
-      if (enableTimestamp && eventId && mode === 'eventlog') {
-        const hasText = newValue.some((node: any) => {
-          if (node.type === 'paragraph') {
-            const text = Node.string(node);
-            return text.trim().length > 0;
-          }
-          return false;
-        });
-        
-        // 检查是否已有timestamp（createdAt字段）
-        const hasTimestamp = newValue.some((node: any) => {
-          return node.type === 'paragraph' && node.createdAt;
-        });
-        
-        // 首次输入且无timestamp时，给第一个段落添加timestamp
-        if (hasText && !hasTimestamp) {
-          const now = Date.now();
-          // 查找第一个paragraph，添加createdAt
-          const firstParagraphPath = [];
-          for (let i = 0; i < newValue.length; i++) {
-            if ((newValue[i] as any).type === 'paragraph') {
-              firstParagraphPath.push(i);
-              break;
-            }
-          }
-          
-          if (firstParagraphPath.length > 0) {
-            Transforms.setNodes(
-              editor,
-              { createdAt: now } as any,
-              { at: firstParagraphPath }
-            );
-            console.log('[LogSlate] 🆕 添加 Block-Level Timestamp:', new Date(now).toLocaleString());
-          }
-        }
-      }
-      
       // 确保 editor 始终有内容，防止崩溃
       if (newValue.length === 0) {
         newValue = [{
           type: 'paragraph',
           children: [{ text: '' }],
         }] as Descendant[];
+      }
+      
+      // 🆕 确保末尾虚拟节点（在内容变化时主动检查）
+      if (enableTimestamp && eventId && mode === 'eventlog' && newValue.length > 0) {
+        const lastChild = newValue[newValue.length - 1] as any;
+        const lastText = Node.string(lastChild);
+        
+        // 如果最后节点有内容，需要添加虚拟节点
+        if (lastText.trim() !== '') {
+          console.log('[LogSlate] 📝 handleChange 检测到需要虚拟节点，触发 normalize');
+          // 手动触发 normalize，让 normalizeNode 添加虚拟节点
+          Editor.normalize(editor, { force: true });
+        }
       }
       
       const json = JSON.stringify(newValue);

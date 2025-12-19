@@ -2505,7 +2505,13 @@ const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 - **渲染方式**: ModalSlate/LogSlate 在 `renderElement()` 中检测 `createdAt` 字段
 - **显示格式**: YYYY-MM-DD HH:mm:ss（浅灰色，opacity: 0.7）
 
-**实现方案：** LogSlate 组件添加 `showPreline` 属性控制
+**🔥 v2.20.0 更新 (2025-12-19)：自动 Timestamp 生成**
+- **新增属性**: `enableTimestamp` - 自动为新 paragraph 添加 `createdAt`
+- **插入时机**: 按 Enter 创建新行时立即生成 timestamp（无需等待输入文字）
+- **末尾虚拟节点**: 自动维护末尾空 paragraph，允许光标插入新内容
+- **实现方式**: `withTimestampAndTrailing` 插件拦截 `insert_node` 操作
+
+**实现方案：** LogSlate 组件添加 `showPreline` 和 `enableTimestamp` 属性控制
 
 **三种渲染模式：**
 
@@ -2520,13 +2526,57 @@ const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
 ```typescript
 interface LogSlateProps {
   // ... 其他属性
-  showPreline?: boolean;  // 控制是否显示段落前导线，默认 true
+  showPreline?: boolean;     // 控制是否显示段落前导线，默认 true
+  enableTimestamp?: boolean; // 🆕 v2.20.0: 自动为新 paragraph 添加 createdAt
+  eventId?: string;          // 🆕 v2.20.0: 事件ID（enableTimestamp 需要）
 }
 
 function LogSlate({ 
-  showPreline = true,  // 默认开启 preline（LogTab/ModalSlate 模式）
+  showPreline = true,        // 默认开启 preline（LogTab/ModalSlate 模式）
+  enableTimestamp = false,   // 默认不自动添加 timestamp
+  eventId,
   // ... 其他参数
 }: LogSlateProps) {
+  // 🔥 v2.20.0: 自定义 Slate 插件 - 自动添加 timestamp + 末尾虚拟节点
+  const withTimestampAndTrailing = (editor: Editor) => {
+    const { apply, normalizeNode } = editor;
+    
+    // 拦截 insert_node 操作，自动添加 createdAt
+    editor.apply = (operation) => {
+      if (enableTimestamp && eventId && mode === 'eventlog' && 
+          operation.type === 'insert_node') {
+        const node = operation.node as any;
+        if (node.type === 'paragraph' && !node.createdAt) {
+          node.createdAt = Date.now(); // ✅ 新行立即获得 timestamp
+        }
+      }
+      apply(operation);
+    };
+    
+    // 确保末尾始终有虚拟空 paragraph（允许插入新内容）
+    editor.normalizeNode = (entry) => {
+      const [node, path] = entry;
+      
+      if (path.length === 0 && enableTimestamp && mode === 'eventlog') {
+        const lastChild = editor.children[editor.children.length - 1] as any;
+        const lastText = lastChild?.children?.[0]?.text || '';
+        
+        // 如果最后节点不是空段落，添加虚拟节点
+        if (lastText.trim() !== '') {
+          Transforms.insertNodes(editor, {
+            type: 'paragraph',
+            children: [{ text: '' }]
+          }, { at: [editor.children.length] });
+          return;
+        }
+      }
+      
+      normalizeNode(entry);
+    };
+    
+    return editor;
+  };
+  
   // ...
   
   const renderElement = useCallback(
@@ -2589,14 +2639,35 @@ function LogSlate({
 **TimeLog 页面使用示例：**
 
 ```typescript
-// TimeLog.tsx (Line 2365)
+// TimeLog.tsx (Line 2640)
 <LogSlate
-  value={localEventlog}
-  onChange={handleEventlogChange}
-  placeholder="记录工作日志..."
-  showPreline={false}  // ⚠️ TimeLog 模式：关闭 preline
+  mode="eventlog"
+  value={getEventLogContent(event)}
+  onChange={(slateJson) => handleLogChange(event.id, slateJson)}
+  placeholder="添加日志..."
+  showPreline={false}       // ⚠️ TimeLog 模式：关闭 preline
+  enableTimestamp={true}    // 🆕 v2.20.0: 启用自动 timestamp
+  eventId={event.id}        // 🆕 v2.20.0: 传递事件ID
 />
 ```
+
+**Block-Level Timestamp 工作流程：**
+
+1. **用户按 Enter 创建新行**
+   - Slate 触发 `insert_node` 操作
+   - `withTimestampAndTrailing` 插件拦截
+   - 自动给新 paragraph 添加 `createdAt: Date.now()`
+   - ✅ Timestamp 立即显示（无需等待输入）
+
+2. **末尾虚拟节点维护**
+   - `normalizeNode` 检测最后一个节点
+   - 如果不是空段落，自动插入虚拟 paragraph
+   - ✅ 用户可点击末尾插入新内容
+
+3. **Timestamp 显示**
+   - `renderElement` 检测 `paragraph.createdAt`
+   - TimeLog: 左对齐灰色文本
+   - LogTab/ModalSlate: 灰色文本 + preline
 
 **LogTab 页面使用示例：**
 
