@@ -84,9 +84,11 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
     } as any;
     
     // Title 行（始终创建，即使内容为空）
-    // ✅ v2.14: 使用 title.fullTitle（纯 Slate JSON 格式）
+    // ✅ v2.14: 使用 title.fullTitle（完整的 Slate Document 格式）
     const titleChildren: (TextNode | TagNode | DateMentionNode)[] = 
-      item.title?.fullTitle ? JSON.parse(item.title.fullTitle) : [{ text: '' }];
+      item.title?.fullTitle 
+        ? JSON.parse(item.title.fullTitle)[0]?.children || [{ text: '' }]
+        : [{ text: '' }];
     
     const titleNode: EventLineNode = {
       type: 'event-line',
@@ -518,7 +520,8 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
     
     if (node.mode === 'title') {
       // Title 模式：只取第一个 paragraph
-      const fragment = paragraphs[0]?.children;
+      const firstParagraph = paragraphs[0];
+      const fragment = firstParagraph?.children;
       
       // ✅ v2.14: 保存到 title 对象（三层架构）
       // fullTitle 保存 Slate JSON（JSON.stringify），EventService 会自动生成 colorTitle 和 simpleTitle
@@ -530,8 +533,10 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         console.log('[Serialization] 保存包含 tag 的 fragment:', JSON.stringify(fragment, null, 2));
       }
       
+      // 🔧 FIX: fullTitle 应该是完整的 Slate Document（包含 paragraph），而不是 fragment
+      // TitleSlate 需要标准的 Slate JSON 格式
       item.title = {
-        fullTitle: fragment ? JSON.stringify(fragment) : '' // 只传 fullTitle
+        fullTitle: firstParagraph ? JSON.stringify([firstParagraph]) : JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }])
       };
       item.tags = fragment ? extractTags(fragment) : '';
       
@@ -627,8 +632,9 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
   
   // ✅ v1.5: 过滤掉空节点（临时占位节点）
   const result = Array.from(items.values()).filter(item => {
-    // 🔥 过滤占位符节点（ID 以 placeholder- 开头）
-    if (item.id?.startsWith('placeholder-') || item.eventId?.startsWith('placeholder-')) {
+    // 🔥 过滤占位符节点（ID 以 placeholder- 开头或等于 __placeholder__）
+    if (item.id?.startsWith('placeholder-') || item.eventId?.startsWith('placeholder-') ||
+        item.id === '__placeholder__' || item.eventId === '__placeholder__') {
       return false;
     }
     
