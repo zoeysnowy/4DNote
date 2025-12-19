@@ -304,6 +304,7 @@
             <div>
               <button class="btn btn-primary" onclick="generateSignature()">生成签名</button>
               <button class="btn btn-info" onclick="loadSignatureSample()">加载示例</button>
+              <button class="btn btn-success" onclick="copySignatureToExtract()">👇 复制到下方提取框</button>
             </div>
             <div id="sig-gen-output" class="output-box" style="display:none;"></div>
           </div>
@@ -312,7 +313,7 @@
             <h2>签名提取</h2>
             <div class="input-group">
               <label>带签名的HTML：</label>
-              <textarea id="sig-html-input" placeholder="粘贴包含签名的HTML..."></textarea>
+              <textarea id="sig-html-input" placeholder="粘贴包含签名的HTML...或点击上方"复制到下方提取框"按钮"></textarea>
             </div>
             <div>
               <button class="btn btn-primary" onclick="extractSignature()">提取签名信息</button>
@@ -456,7 +457,8 @@
       originalEvent: null,
       generatedMeta: null,
       outlookHtml: null,
-      parsedEvent: null
+      parsedEvent: null,
+      lastGeneratedSignature: null  // 保存最后生成的签名
     };
 
     // ========== Tab切换 ==========
@@ -523,9 +525,24 @@
         const output = document.getElementById('sig-gen-output');
         output.style.display = 'block';
         output.textContent = `生成的签名：${signature}`;
+        
+        // 保存到全局状态，供复制功能使用
+        testState.lastGeneratedSignature = signature;
       } catch (err) {
         alert(`解析失败：${err.message}`);
       }
+    }
+
+    function copySignatureToExtract() {
+      if (!testState.lastGeneratedSignature) {
+        alert('请先点击"生成签名"按钮！');
+        return;
+      }
+      
+      // 构造完整的HTML（模拟实际场景）
+      const fullHtml = `<p>事件内容</p>${testState.lastGeneratedSignature}`;
+      document.getElementById('sig-html-input').value = fullHtml;
+      alert('✅ 已复制到提取框！现在可以点击"提取签名信息"测试提取逻辑。');
     }
 
     function loadSignatureSample() {
@@ -545,13 +562,19 @@
     function extractSignature() {
       const html = document.getElementById('sig-html-input').value;
       
+      // 🐛 调试：显示输入内容
+      console.log('=== 提取签名调试 ===');
+      console.log('输入HTML:', html);
+      console.log('HTML长度:', html.length);
+      
       let result = {
         extractSource: '',  // 提取来源（Meta/签名文本/缺失）
         createdAt: null,
         fourDNoteSource: null,  // boolean: Event.fourDNoteSource
         source: null,           // 'local' | 'outlook': Event.source
         updatedAt: null,
-        lastModifiedSource: null  // '4dnote' | 'outlook': Event.lastModifiedSource
+        lastModifiedSource: null,  // '4dnote' | 'outlook': Event.lastModifiedSource
+        debugInfo: []  // 调试信息
       };
       
       // 优先级1：从Meta-Comment中提取（最可靠）
@@ -578,11 +601,22 @@
         const createTimeMatch = html.match(/由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook)\s*创建于\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/i);
         const updateTimeMatch = html.match(/(?:最后修改于|最后编辑于|编辑于)\s+(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/i);
         
+        // 🐛 调试输出
+        result.debugInfo.push(`创建时间正则: ${!!createTimeMatch}, 匹配: ${createTimeMatch ? createTimeMatch[0] : 'null'}`);
+        result.debugInfo.push(`修改时间正则: ${!!updateTimeMatch}, 匹配: ${updateTimeMatch ? updateTimeMatch[0] : 'null'}`);
+        console.log('createTimeMatch:', createTimeMatch);
+        console.log('updateTimeMatch:', updateTimeMatch);
+        
         // extractCreatorFromSignature: 提取创建者
         const creatorMatch = html.match(/由\s+(?:🔮|📧|🟣)?\s*(4DNote|Outlook)\s*创建于/i);
         
         // extractCreatorFromSignature: 提取修改者
         const modifierMatch = html.match(/由\s+(?:🔮|📧|🟣)?\s*(4DNote|Outlook)\s*最后(?:修改|编辑)于/i);
+        
+        result.debugInfo.push(`创建者正则: ${!!creatorMatch}, 匹配: ${creatorMatch ? creatorMatch[0] : 'null'}`);
+        result.debugInfo.push(`修改者正则: ${!!modifierMatch}, 匹配: ${modifierMatch ? modifierMatch[0] : 'null'}`);
+        console.log('creatorMatch:', creatorMatch);
+        console.log('modifierMatch:', modifierMatch);
         
         if (createTimeMatch || updateTimeMatch) {
           result.extractSource = '签名文本提取（Fallback）';
@@ -608,6 +642,9 @@
       
       const output = document.getElementById('sig-extract-output');
       output.style.display = 'block';
+      
+      let debugText = result.debugInfo.length > 0 ? `\n\n🐛 调试信息：\n${result.debugInfo.join('\n')}` : '';
+      
       output.textContent = `提取来源：${result.extractSource}
 
 📅 时间字段：
@@ -617,12 +654,14 @@ updatedAt: ${result.updatedAt}
 👤 来源字段（Event接口）：
 fourDNoteSource: ${result.fourDNoteSource}  (boolean: true=4DNote创建, false=Outlook创建)
 source: ${result.source}  ('local' | 'outlook')
-lastModifiedSource: ${result.lastModifiedSource}  ('4dnote' | 'outlook')
+lastModifiedSource: ${result.lastModifiedSource}  ('4dnote' | 'outlook')${debugText}
 
 💡 提取优先级：
 1️⃣ Meta-Comment（结构化JSON，最可靠）
 2️⃣ 签名文本（正则提取，可能因格式变化失败）
-3️⃣ Block-Level（最后的防线，从段落时间戳推断）`;
+3️⃣ Block-Level（最后的防线，从段落时间戳推断）
+
+💻 提示：打开浏览器开发者工具Console查看详细调试日志`;
     }
 
     function extractCoreContent() {
@@ -751,19 +790,23 @@ ${JSON.stringify(timestamps, null, 2)}
     }
 
     function loadMetaSample() {
+      const now = new Date();
+      const hourAgo = new Date(now.getTime() - 3600000);
+      
       document.getElementById('meta-event-input').value = JSON.stringify({
         eventlog: {
           slateJson: JSON.stringify([
-            { type: 'paragraph', id: 'p-001', createdAt: Date.now(), children: [{ text: '第一段' }] },
-            { type: 'paragraph', id: 'p-002', createdAt: Date.now() + 1000, level: 1, children: [{ text: '第二段' }] }
+            { type: 'paragraph', id: 'p-001', createdAt: formatTimeForStorage(hourAgo), children: [{ text: '第一段' }] },
+            { type: 'paragraph', id: 'p-002', createdAt: formatTimeForStorage(now), level: 1, children: [{ text: '第二段（子级）' }] }
           ])
         },
         tags: ['工作', '紧急'],
         parentEventId: 'event_root',
         bulletLevel: 1,
-        createdAt: Date.now() - 3600000,
-        fourDNoteSource: '4dnote',
-        updatedAt: Date.now(),
+        createdAt: formatTimeForStorage(hourAgo),  // TimeSpec字符串
+        fourDNoteSource: true,  // boolean，不是字符串
+        source: 'local',
+        updatedAt: formatTimeForStorage(now),  // TimeSpec字符串
         lastModifiedSource: 'outlook'
       }, null, 2);
     }

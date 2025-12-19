@@ -93,26 +93,6 @@ export function getCalendarGroupColor(calendarId: string): string | null {
  * @returns 日历列表，每个日历包含 id, name, color（十六进制颜色值）
  */
 export function getAvailableCalendarsForSettings(): Array<{ id: string; name: string; color: string }> {
-  try {
-    const savedCalendars = localStorage.getItem('4dnote-calendars-cache');
-    const regularCalendars = savedCalendars
-      ? JSON.parse(savedCalendars).map((cal: any) => ({
-          id: cal.id,
-          name: cal.name,
-          // 🎨 使用getCalendarGroupColor获取正确的十六进制颜色
-          color: getCalendarGroupColor(cal.id) || '#3788d8'
-        }))
-      : [];
-    
-    // ✅ 添加特殊选项："创建自本地" 和 "未同步至日历"
-    return [
-      ...regularCalendars,
-      {
-        id: 'local-created',
-        name: '🔮 创建自本地',
-        color: '#9c27b0'
-      },
-      {
   // 使用新的 CalendarService 获取日历列表
   const calendars = CalendarService.getCalendars(true); // includeSpecial = true
   
@@ -120,7 +100,27 @@ export function getAvailableCalendarsForSettings(): Array<{ id: string; name: st
     id: cal.id,
     name: cal.name,
     color: cal.color
-  }))
+  }));
+}
+
+/**
+ * 获取标签显示名称（支持层级）
+ * @param tagId 标签ID
+ * @param tags 标签列表
+ * @returns 显示名称
+ */
+export function getTagDisplayName(tagId: string | undefined, tags: any[]): string {
+  if (!tagId) return '未分类';
+  
+  const findTagWithPath = (tagList: any[], parentPath: string = ''): string => {
+    for (const tag of tagList) {
+      const currentPath = parentPath ? `${parentPath} > ${tag.name}` : tag.name;
+      if (tag.id === tagId) return currentPath;
+      if (tag.children && tag.children.length > 0) {
+        const found = findTagWithPath(tag.children, currentPath);
+        if (found) return found;
+      }
+    }
     return '';
   };
   
