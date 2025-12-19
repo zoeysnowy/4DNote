@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MicrosoftCalendarService } from './services/MicrosoftCalendarService';
+import { CalendarService } from './services/CalendarService'; // 🆕 v2.0: 统一日历服务
 import { ActionBasedSyncManager } from './services/ActionBasedSyncManager';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
 import CalendarSync from './features/Calendar/components/CalendarSync';
@@ -136,6 +137,11 @@ function App() {
       console.log('🏷️  [App] Starting TagService initialization...');
       await TagService.initialize();
       console.log('✅ [App] TagService initialized');
+      
+      // 🆕 v2.0: 初始化 CalendarService
+      console.log('📅 [App] Initializing CalendarService...');
+      await CalendarService.initialize(microsoftCalendarService);
+      console.log('✅ [App] CalendarService initialized');
       
       // 🔧 初始化完成后加载标签供编辑使用
       loadAvailableTagsForEdit();

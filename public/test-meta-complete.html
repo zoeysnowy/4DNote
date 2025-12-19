@@ -493,7 +493,8 @@
         const isLocalCreated = event.fourDNoteSource === true || event.source === 'local' || !event.source;
         const createSource = isLocalCreated ? '🔮 4DNote' : '📧 Outlook';
         const createSourceKey = isLocalCreated ? '4dnote' : 'outlook';
-        const createTime = event.createdAt ? formatTimeForStorage(new Date(event.createdAt)) : formatTimeForStorage(new Date());
+        // ✅ createdAt已经是TimeSpec字符串，直接使用
+        const createTime = event.createdAt || formatTimeForStorage(new Date());
         
         // 确定修改来源
         const modifySourceKey = event.lastModifiedSource || createSourceKey;
@@ -501,7 +502,8 @@
         
         // 生成签名
         if (event.updatedAt && event.updatedAt !== event.createdAt) {
-          const modifyTime = formatTimeForStorage(new Date(event.updatedAt));
+          // ✅ updatedAt已经是TimeSpec字符串，直接使用
+          const modifyTime = event.updatedAt;
           
           if (createSourceKey === modifySourceKey) {
             // 同一来源：一行签名
@@ -527,11 +529,15 @@
     }
 
     function loadSignatureSample() {
+      // 📝 Event接口中时间字段是字符串（TimeSpec格式），不是timestamp
+      const now = new Date();
+      const yesterday = new Date(now.getTime() - 86400000);
+      
       document.getElementById('sig-event-input').value = JSON.stringify({
-        createdAt: Date.now() - 86400000,
+        createdAt: formatTimeForStorage(yesterday),  // string: 'YYYY-MM-DD HH:mm:ss'
         fourDNoteSource: true,  // boolean: true=4DNote创建, false=Outlook创建
         source: 'local',
-        updatedAt: Date.now(),
+        updatedAt: formatTimeForStorage(now),  // string: 'YYYY-MM-DD HH:mm:ss'
         lastModifiedSource: 'outlook'  // 'outlook' | '4dnote'
       }, null, 2);
     }

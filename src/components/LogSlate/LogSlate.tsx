@@ -169,19 +169,13 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       if (Array.isArray(parsed) && parsed.length > 0) {
         let nodes = parsed as Descendant[];
         
-        // 🆕 如果是 eventlog 模式且启用 timestamp，自动添加末尾虚拟节点
+        // 🆕 如果是 eventlog 模式且启用 timestamp，始终添加末尾虚拟节点作为 placeholder
         if (enableTimestamp && mode === 'eventlog') {
-          const lastNode = nodes[nodes.length - 1] as any;
-          const lastText = lastNode?.children?.[0]?.text || '';
-          
-          // 如果最后节点有内容，添加虚拟节点
-          if (lastText.trim() !== '') {
-            nodes = [...nodes, {
-              type: 'paragraph',
-              children: [{ text: '' }],
-            } as Descendant];
-            console.log('[LogSlate] 📦 parseValue 添加末尾虚拟节点（静态处理）');
-          }
+          nodes = [...nodes, {
+            type: 'paragraph',
+            children: [{ text: '' }],
+          } as Descendant];
+          console.log('[LogSlate] 📦 parseValue 添加末尾虚拟节点 placeholder（静态处理）');
         }
         
         return nodes;

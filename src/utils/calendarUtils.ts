@@ -5,13 +5,14 @@
  * 
  * @charset UTF-8
  * @author Zoey Gong
- * @version 1.0.0
+ * @version 2.0.0 - 重构使用统一的CalendarService
  */
 
 import type { EventObject } from '../lib/tui.calendar/apps/calendar';
 import { Event } from '../types';
 import { EventHub } from '../services/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
+import { CalendarService } from '../services/CalendarService_new';
 import dayjs from 'dayjs';
 
 /**
@@ -65,9 +66,9 @@ export function getEventColor(event: Event, tags: any[]): string {
     }
   }
 
-  // 优先级 2: 回退到事件关联的日历分组颜色
+  // 优先级 2: 回退到事件关联的日历分组颜色（使用新的CalendarService）
   if (event.calendarIds && event.calendarIds.length > 0) {
-    const calendarColor = getCalendarGroupColor(event.calendarIds[0]);
+    const calendarColor = CalendarService.getColor(event.calendarIds[0]);
     if (calendarColor) return calendarColor;
   }
 
@@ -76,33 +77,13 @@ export function getEventColor(event: Event, tags: any[]): string {
 }
 
 /**
- * 从 localStorage 获取日历分组颜色
+ * 从 CalendarService 获取日历颜色
+ * @deprecated 使用 CalendarService.getColor() 代替
  * @param calendarId 日历ID
  * @returns 颜色值或null
  */
 export function getCalendarGroupColor(calendarId: string): string | null {
-  try {
-    const calendarsCache = localStorage.getItem('4dnote-calendars-cache');
-    if (!calendarsCache) return null;
-    
-    const calendars = JSON.parse(calendarsCache);
-    const calendar = calendars.find((cal: any) => cal.id === calendarId);
-    
-    // Microsoft Calendar颜色名称映射
-    if (calendar?.color) {
-      return convertMicrosoftColorToHex(calendar.color);
-    }
-    
-    // 如果calendar对象有backgroundColor，直接使用
-    if (calendar?.backgroundColor) {
-      return calendar.backgroundColor;
-    }
-    
-    return null;
-  } catch (error) {
-    console.warn('Failed to get calendar color:', error);
-    return null;
-  }
+  return CalendarService.getColor(calendarId);
 }
 
 /**
@@ -132,70 +113,14 @@ export function getAvailableCalendarsForSettings(): Array<{ id: string; name: st
         color: '#9c27b0'
       },
       {
-        id: 'not-synced',
-        name: '🔄 未同步至日历',
-        color: '#ff9800'
-      }
-    ];
-  } catch (error) {
-    console.error('Failed to load calendars:', error);
-    // 即使出错，也返回特殊选项
-    return [
-      {
-        id: 'local-created',
-        name: '🔮 创建自本地',
-        color: '#9c27b0'
-      },
-      {
-        id: 'not-synced',
-        name: '🔄 未同步至日历',
-        color: '#ff9800'
-      }
-    ];
-  }
-}
-
-/**
- * 将Microsoft颜色名称转换为十六进制颜色
- * @param colorName Microsoft颜色名称
- * @returns 十六进制颜色值
- */
-function convertMicrosoftColorToHex(colorName: string): string {
-  const colorMap: { [key: string]: string } = {
-    'auto': '#3788d8',
-    'lightBlue': '#5194f0',
-    'lightGreen': '#42b883',
-    'lightOrange': '#ff8c42',
-    'lightGray': '#9ca3af',
-    'lightYellow': '#f1c40f',
-    'lightTeal': '#48c9b0',
-    'lightPink': '#f48fb1',
-    'lightBrown': '#a0826d',
-    'lightRed': '#e74c3c',
-    'maxColor': '#6366f1'
-  };
+  // 使用新的 CalendarService 获取日历列表
+  const calendars = CalendarService.getCalendars(true); // includeSpecial = true
   
-  return colorMap[colorName] || '#3788d8';
-}
-
-/**
- * 获取标签显示名称（支持层级）
- * @param tagId 标签ID
- * @param tags 标签列表
- * @returns 显示名称
- */
-export function getTagDisplayName(tagId: string | undefined, tags: any[]): string {
-  if (!tagId) return '未分类';
-  
-  const findTagWithPath = (tagList: any[], parentPath: string = ''): string => {
-    for (const tag of tagList) {
-      const currentPath = parentPath ? `${parentPath} > ${tag.name}` : tag.name;
-      if (tag.id === tagId) return currentPath;
-      if (tag.children && tag.children.length > 0) {
-        const found = findTagWithPath(tag.children, currentPath);
-        if (found) return found;
-      }
-    }
+  return calendars.map(cal => ({
+    id: cal.id,
+    name: cal.name,
+    color: cal.color
+  }))
     return '';
   };
   
