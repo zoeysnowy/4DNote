@@ -125,6 +125,9 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   // 🆕 v2.19: 重要笔记状态
   const [noteEvents, setNoteEvents] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
+  
+  // 🆕 v2.20: 收藏事件树的展开状态
+  const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
 
   // 🆕 v2.19: 加载重要笔记
   React.useEffect(() => {
@@ -645,14 +648,14 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
         </div>
       </div>
 
-      {/* 事件选择 Section - 🆕 v2.19: 显示重要笔记 (isNote=true) */}
+      {/* 收藏的事件 Section - 🆕 v2.19: 显示重要笔记 (isNote=true) */}
       <div className={`collapsible-section ${!isEventSectionExpanded ? 'collapsed' : ''}`}>
         <div 
           className="section-header-simple" 
           onClick={() => setIsEventSectionExpanded(!isEventSectionExpanded)}
         >
           <h3 className="section-title">
-            事件选择 {noteEvents.length > 0 && `(${noteEvents.length})`}
+            收藏的事件 {noteEvents.length > 0 && `(${noteEvents.length})`}
           </h3>
           <button className={`panel-toggle-btn ${isEventSectionExpanded ? 'expanded' : ''}`}>
             <RightIcon />
@@ -673,35 +676,84 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
             </div>
           ) : (
             <div className="note-list">
-              {noteEvents.map(event => (
-                <div 
-                  key={event.id}
-                  className="note-item"
-                  onClick={() => handleNoteClick(event.id)}
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    fontSize: '14px',
-                    color: '#374151',
-                    borderRadius: '4px',
-                    transition: 'background-color 0.15s'
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.backgroundColor = '#f3f4f6';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.backgroundColor = 'transparent';
-                  }}
-                >
-                  <NotetreeIcon />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {getEventTitle(event)}
-                  </span>
-                </div>
-              ))}
+              {noteEvents.map(event => {
+                const hasChildren = event.childEventIds && event.childEventIds.length > 0;
+                const isExpanded = expandedEventIds.has(event.id);
+                
+                return (
+                  <React.Fragment key={event.id}>
+                    <div 
+                      className="note-item"
+                      style={{
+                        padding: '4px 8px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        fontSize: '14px',
+                        color: '#374151',
+                        borderRadius: '4px',
+                        transition: 'background-color 0.15s'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = '#f3f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = 'transparent';
+                      }}
+                    >
+                      {/* Toggle按钮区域 - 参考task-expand-btn样式 */}
+                      {hasChildren ? (
+                        <button
+                          className="task-expand-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const newExpanded = new Set(expandedEventIds);
+                            if (isExpanded) {
+                              newExpanded.delete(event.id);
+                            } else {
+                              newExpanded.add(event.id);
+                            }
+                            setExpandedEventIds(newExpanded);
+                          }}
+                        >
+                          <img 
+                            src={DownIconSvg} 
+                            alt="" 
+                            style={{ 
+                              width: '12px', 
+                              height: '12px',
+                              transition: 'transform 0.2s',
+                              transform: isExpanded ? 'rotate(0deg)' : 'rotate(-90deg)'
+                            }} 
+                          />
+                        </button>
+                      ) : (
+                        <div className="task-expand-spacer" />
+                      )}
+                      
+                      {/* 标题区域 */}
+                      <span 
+                        onClick={() => handleNoteClick(event.id)}
+                        style={{ 
+                          flex: 1, 
+                          overflow: 'hidden', 
+                          textOverflow: 'ellipsis', 
+                          whiteSpace: 'nowrap'
+                        }}
+                      >
+                        {getEventTitle(event)}
+                      </span>
+                    </div>
+                    
+                    {/* 渲染子事件 */}
+                    {hasChildren && isExpanded && (
+                      <div style={{ paddingLeft: '16px' }}>
+                        {/* TODO: 递归渲染子事件 */}
+                      </div>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </div>
           )}
         </div>

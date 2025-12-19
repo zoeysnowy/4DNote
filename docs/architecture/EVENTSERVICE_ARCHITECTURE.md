@@ -273,7 +273,9 @@ const mergedEvent = { ...originalEvent, ...filteredUpdates };
 const validation = validateEventTime(mergedEvent);
 if (!validation.valid) throw new Error(validation.error);
 
-// 步骤3: 规范化（关键：处理 description 签名、提取 Block-Level Timestamp）
+// 步骤3: 规范化（关键：处理 description 签名、提取时间戳）
+// - Meta-Comment: 从HTML注释提取完整Slate节点元数据
+// - Block-Level: 从文本解析时间戳（降级方案）
 const normalizedEvent = normalizeEvent(mergedEvent, { preserveSignature: true });
 
 // 步骤4: 比对变更（现在比对的是完整数据，而非 filteredUpdates）
@@ -491,10 +493,10 @@ private static normalizeEvent(event: Partial<Event>): Event {
 ```
 
 **架构约定**:
-- ✅ Description: 存储包含 Block-Level Timestamps 的文本（HTML 已转换）
-- ✅ EventLog: 存储纯文本 Slate JSON（Block-Level Timestamps 元数据）
-- ✅ **同步到 Outlook**: 使用 `eventlog.html`（包含 YYYY-MM-DD HH:mm:ss 格式的 timestamps）
-- ✅ HTML→纯文本转换: 在 normalizeEvent 中统一处理
+- ✅ Description: 存储带Meta-Comment的HTML（Outlook往返保持元数据完整）
+- ✅ EventLog: 存储 Slate JSON（包含节点ID、类型、时间戳等完整元数据）
+- ✅ **同步到 Outlook**: 使用 `slateNodesToHtmlWithMeta()`（每个节点包裹Meta-Comment）
+- ✅ HTML→Slate 转换: 优先 `parseMetaComments()`，降级到 Block-Level 解析
 - ✅ 条件字段设置: undefined（不存在）→ 不设置，[]（空数组）→ 清空
 - ✅ **Note 事件时间标准化** (v2.19):
   - 本地存储: `startTime = createdAt, endTime = null`（永久）
@@ -502,41 +504,30 @@ private static normalizeEvent(event: Partial<Event>): Event {
   - 签名标记: `"📝 笔记由"` 识别需要虚拟时间的 note 事件
   - 往返保护: Outlook → 4DNote 检测标记，过滤虚拟 endTime
 
-**🔥 v2.18.8 重大更新：Block-Level Timestamp 推送到 Outlook**
-
-**问题背景**：
-- 之前：`normalizeEvent` 生成 `description` 时使用 `eventlog.plainText`（**不包含** Block-Level Timestamps）
-- 导致：推送到 Outlook 后，timestamps 丢失，同步回来时无法还原
-
-**修复方案**：
-1. **slateNodesToHtml** (serialization.ts)：
-   - 在每个 paragraph 前添加 `YYYY-MM-DD HH:mm:ss` 格式的 timestamp
-   - 输出格式：`2025-12-03 14:30:00\n第一段内容\n2025-12-03 14:31:00\n第二段内容`
-
-2. **normalizeEvent** (EventService.ts L3192)：
-   - 改用 `eventlog.html` 而非 `plainText` 生成 description
-   - 数据流：Slate JSON → eventlog.html (含 timestamps) → description → Outlook
-
-**数据流（修复后）**：
+**数据流（完整架构）**：
 ```
-Slate JSON (含 createdAt/updatedAt)
+Slate JSON (含 id/type/createdAt/bulletLevel)
   ↓
-slateNodesToHtml() → eventlog.html
-  "2025-12-03 14:30:00\n第一段\n2025-12-03 14:31:00\n第二段"
+slateNodesToHtmlWithMeta() → description（带Meta-Comment）
+  <!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000}-->
+  <p>第一段内容</p>
+  <!--/SLATE-->
+  <!--SLATE:{"v":1,"t":"heading-one","id":"h-001","ts":1734620100000,"lvl":1}-->
+  <h1>标题</h1>
+  <!--/SLATE-->
   ↓
-cleanHtmlContent() → 纯文本（保留 timestamps）
+推送到 Outlook (body.content) → Outlook可能重写HTML
   ↓
-SignatureUtils.addSignature() → description
+同步回来 → parseMetaComments() 解析Meta-Comment → 恢复完整Slate节点 ✅
   ↓
-推送到 Outlook (body.content)
-  ↓
-同步回来 → parseTextWithBlockTimestamps() 识别 timestamps ✅
+[降级] 如无Meta-Comment → parseTextWithBlockTimestamps() 解析时间戳
 ```
 
 **关键点**：
-- `processEventDescription` 调用 `cleanHtmlContent` 移除 HTML 标签，但**保留纯文本格式的 timestamps**
-- Outlook 同步回来时，正则 `/^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/gm` 可识别行首 timestamps
-- 确保 Block-Level Timestamps 在 Outlook 往返后完整保留
+- **Meta-Comment优先**: `parseMetaComments()` 提取元数据，保证ID/type/时间戳100%准确
+- **Block-Level降级**: 如果Outlook清除了Meta-Comment，仍可从文本解析时间戳（ID重新生成）
+- **签名提取在前**: `extractCoreContent()` 先提取签名信息，再清理HTML，确保元数据不丢失
+- Outlook 往返后，Meta-Comment确保节点元数据完整保留（ID稳定、类型准确、时间精确）
 
 ### 2. normalizeTitle() - 标题三层架构
 
@@ -695,6 +686,15 @@ if (typeof eventlogInput === 'string') {
   
   // 3b. HTML 字符串（Outlook 同步）
   if (trimmed.startsWith('<') || trimmed.includes('<p>')) {
+    // Step 0: 优先尝试 Meta-Comment 解析
+    // Meta-Comment 是嵌入HTML注释中的元数据，确保Slate节点信息在Outlook往返后完整保留
+    // 格式: <!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000}-->
+    const metaNodes = this.parseMetaComments(eventlogInput);
+    if (metaNodes) {
+      console.log('[normalizeEventLog] ✅ 从Meta-Comment成功解析节点');
+      return convertSlateJsonToEventLog(JSON.stringify(metaNodes));
+    }
+    
     // Step 1: 清理签名
     let cleanedHtml = SignatureUtils.extractCoreContent(eventlogInput);
     
@@ -705,7 +705,7 @@ if (typeof eventlogInput === 'string') {
       .replace(/<\/p>/gi, '\n');
     const textContent = tempDiv.textContent || '';
     
-    // Step 3: 检测时间戳
+    // Step 3: 检测时间戳（传统Block-Level解析）
     const matches = [...textContent.matchAll(/^(\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2})/gm)];
     
     if (matches.length > 0) {
@@ -744,10 +744,22 @@ if (typeof eventlogInput === 'string') {
 4. 纯文本字符串
 5. undefined/null（使用 fallbackDescription）
 
-**Block-Level Timestamp 解析 (v2.18.0)**:
+**时间戳解析（Meta-Comment优先，Block-Level降级）**:
+
+**优先方案：Meta-Comment 解析**
+```typescript
+// Step 0: 从HTML注释提取完整Slate节点元数据
+const metaNodes = this.parseMetaComments(eventlogInput);
+if (metaNodes) {
+  // ✅ 100%精确恢复节点ID、类型、时间戳、层级
+  return convertSlateJsonToEventLog(JSON.stringify(metaNodes));
+}
+```
+
+**降级方案：Block-Level Timestamp 解析**
 
 ```typescript
-function parseTextWithBlockTimestamps(text: string): any[] {
+function parseTextWithBlockTimestamps(text: string): {
   slateNodes: any[];
   earliestTimestamp: number | null;
   latestTimestamp: number | null;
@@ -779,7 +791,7 @@ function parseTextWithBlockTimestamps(text: string): any[] {
         latestTimestamp = timestamp.getTime();
       }
       
-      // 创建带 createdAt 元数据的 paragraph
+      // 创建带 createdAt 元数据的 paragraph（注意：ID重新生成，不如Meta-Comment精确）
       slateNodes.push({
         type: 'paragraph',
         createdAt: timestamp.getTime(),
@@ -797,6 +809,10 @@ function parseTextWithBlockTimestamps(text: string): any[] {
   return { slateNodes, earliestTimestamp, latestTimestamp };
 }
 ```
+
+**Meta-Comment vs Block-Level 对比**：
+- **Meta-Comment**: ID保持、类型准确、bulletLevel完整、时间戳精确（推荐）
+- **Block-Level**: ID重新生成、仅paragraph类型、无层级信息、时间戳依赖文本解析（降级）
 
 **Outlook HTML 清理 (v2.17.1)**:
 ```typescript
@@ -862,6 +878,365 @@ if (autoExtractTags) {
 }
 ```
 
+### 4. parseMetaComments() - Meta-Comment 解析
+
+**定位**: 从HTML注释中提取Slate节点完整元数据
+
+**签名**:
+```typescript
+private static parseMetaComments(html: string): any[] | null
+```
+
+**实现** (EventService.ts ~L4058):
+```typescript
+private static parseMetaComments(html: string): any[] | null {
+  if (!html || typeof html !== 'string') return null;
+  
+  // 正则匹配: <!--SLATE:{...}-->content<!--/SLATE-->
+  const metaPattern = /<!--SLATE:(.*?)-->([\s\S]*?)<!--\/SLATE-->/g;
+  const matches = [...html.matchAll(metaPattern)];
+  
+  if (matches.length === 0) return null;
+  
+  const nodes: any[] = [];
+  for (const match of matches) {
+    try {
+      const meta = JSON.parse(match[1]);  // 提取元数据
+      const htmlContent = match[2];       // 提取HTML内容
+      
+      // 还原 Slate 节点
+      const node: any = {
+        type: meta.t,                     // 节点类型
+        children: [{ text: htmlContent.replace(/<[^>]+>/g, '') }]
+      };
+      
+      // 可选字段
+      if (meta.id) node.id = meta.id;                   // 节点ID
+      if (meta.ts) node.createdAt = meta.ts;             // 创建时间
+      if (meta.ut) node.updatedAt = meta.ut;             // 更新时间
+      if (meta.lvl !== undefined) node.level = meta.lvl; // 缩进层级
+      if (meta.bullet !== undefined) node.bulletLevel = meta.bullet; // 事件层级
+      
+      nodes.push(node);
+    } catch (err) {
+      console.warn('[parseMetaComments] 解析失败:', err);
+      continue;
+    }
+  }
+  
+  return nodes.length > 0 ? nodes : null;
+}
+```
+
+**返回值**:
+- 成功: Slate节点数组（包含完整元数据）
+- 失败: `null`（触发降级到Block-Level解析）
+
+### 5. slateNodesToHtmlWithMeta() - Meta-Comment 生成
+
+**定位**: 生成包含Meta-Comment注释的HTML
+
+**签名**:
+```typescript
+private static slateNodesToHtmlWithMeta(nodes: any[]): string
+```
+
+**实现** (EventService.ts ~L4085):
+```typescript
+private static slateNodesToHtmlWithMeta(nodes: any[]): string {
+  if (!nodes || !Array.isArray(nodes)) return '';
+  
+  return nodes.map(node => {
+    // 构建元数据
+    const meta: any = {
+      v: 1,                          // 版本号
+      t: node.type || 'paragraph'    // 节点类型
+    };
+    
+    if (node.id) meta.id = node.id;
+    if (node.createdAt) meta.ts = node.createdAt;
+    if (node.updatedAt) meta.ut = node.updatedAt;
+    if (node.level !== undefined) meta.lvl = node.level;
+    if (node.bulletLevel !== undefined) meta.bullet = node.bulletLevel;
+    
+    // 生成HTML内容
+    const text = node.children?.map((c: any) => c.text || '').join('') || '';
+    const htmlTag = getHtmlTag(node.type);  // paragraph→p, heading-one→h1
+    const htmlContent = `<${htmlTag}>${text}</${htmlTag}>`;
+    
+    // 包裹 Meta-Comment
+    return `<!--SLATE:${JSON.stringify(meta)}-->${htmlContent}<!--/SLATE-->`;
+  }).join('\n');
+}
+```
+
+**输出示例**:
+```html
+<!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000}-->
+<p>第一段内容</p>
+<!--/SLATE-->
+<!--SLATE:{"v":1,"t":"heading-one","id":"h-001","ts":1734620100000,"lvl":1,"bullet":1}-->
+<h1>一级标题</h1>
+<!--/SLATE-->
+```
+
+### 6. 统一Meta架构 - 完整元数据保护 🔥
+
+**设计原则**：
+1. **单一注释**: 所有元数据放在一个`<!--4DNOTE-META:...-->`注释中
+2. **模块化扩展**: 支持动态注册新的meta类型
+3. **向后兼容**: 保留独立的`<!--SLATE:...-->`格式用于节点级元数据
+4. **最小化传输**: 仅序列化必要字段
+
+**完整Meta结构**:
+```typescript
+interface CompleteMeta {
+  v: number;                    // 版本号（必填）
+  
+  // EventLog Meta（节点级）
+  slate?: {
+    nodes: Array<{
+      t: string;                // type
+      id?: string;
+      ts?: number;              // createdAt
+      ut?: number;              // updatedAt
+      lvl?: number;             // level
+      bullet?: number;          // bulletLevel
+      // UnifiedMention元素
+      mention?: {
+        type: 'event' | 'tag' | 'date' | 'ai' | 'contact';
+        targetId?: string;      // 事件ID / 标签名 / 联系人ID
+        targetDate?: string;    // 日期字符串
+        displayText?: string;   // 显示文本
+      };
+    }>;
+  };
+  
+  // Tags Meta
+  tags?: Array<{
+    name: string;               // 标签名（支持层级）
+    color?: string;             // 颜色
+    category?: string;          // 分类
+  }>;
+  
+  // EventTree Meta
+  tree?: {
+    parent?: string;            // parentEventId
+    children?: string[];        // childEventIds
+    bulletLevel?: number;       // 事件层级
+    order?: number;             // 排序
+  };
+  
+  // Attendees Meta
+  attendees?: Array<{
+    email: string;
+    name?: string;
+    role?: 'organizer' | 'required' | 'optional';
+    status?: 'accepted' | 'tentative' | 'declined';
+  }>;
+  
+  // 签名 Meta
+  signature?: {
+    createdAt?: number;
+    createdBy?: 'fourDNoteSource' | 'outlook';
+    updatedAt?: number;
+    updatedBy?: 'fourDNoteSource' | 'outlook';
+    isVirtualTime?: boolean;    // Note事件虚拟时间标记
+  };
+  
+  // 自定义字段 Meta
+  custom?: {
+    [key: string]: any;
+  };
+}
+```
+
+**生成示例**:
+```html
+<!--4DNOTE-META:{
+  "v":1,
+  "slate":{"nodes":[
+    {"t":"paragraph","id":"p-001","ts":1734620000000},
+    {"t":"paragraph","id":"p-002","ts":1734620100000,"mention":{"type":"event","targetId":"event_abc","displayText":"任务A"}}
+  ]},
+  "tags":[{"name":"工作/项目A","color":"#ff5733"}],
+  "tree":{"parent":"event_root","bulletLevel":1},
+  "signature":{"createdAt":1734620000000,"createdBy":"fourDNoteSource"}
+}-->
+```
+
+**Meta处理器注册机制**:
+```typescript
+// src/services/MetaProcessor.ts
+interface MetaProcessor {
+  type: string;                                  // 'slate' | 'tags' | 'tree' | 'custom'
+  serialize: (data: any) => any;                 // 序列化为Meta
+  deserialize: (meta: any) => any;               // 从Meta还原
+  merge?: (existing: any, incoming: any) => any; // 冲突合并策略
+}
+
+class MetaRegistry {
+  private processors = new Map<string, MetaProcessor>();
+  
+  register(processor: MetaProcessor): void {
+    this.processors.set(processor.type, processor);
+  }
+  
+  serialize(event: Event): CompleteMeta {
+    const meta: CompleteMeta = { v: 1 };
+    
+    for (const [type, processor] of this.processors) {
+      const data = processor.serialize(event);
+      if (data) {
+        meta[type] = data;
+      }
+    }
+    
+    return meta;
+  }
+  
+  deserialize(meta: CompleteMeta): Partial<Event> {
+    const event: Partial<Event> = {};
+    
+    for (const [type, processor] of this.processors) {
+      if (meta[type]) {
+        Object.assign(event, processor.deserialize(meta[type]));
+      }
+    }
+    
+    return event;
+  }
+}
+```
+
+**Slate Processor示例**:
+```typescript
+const SlateMetaProcessor: MetaProcessor = {
+  type: 'slate',
+  
+  serialize: (event: Event) => {
+    if (!event.eventlog?.slateJson) return null;
+    
+    const nodes = JSON.parse(event.eventlog.slateJson);
+    return {
+      nodes: nodes.map(node => ({
+        t: node.type,
+        ...(node.id && { id: node.id }),
+        ...(node.createdAt && { ts: node.createdAt }),
+        ...(node.updatedAt && { ut: node.updatedAt }),
+        ...(node.level !== undefined && { lvl: node.level }),
+        ...(node.bulletLevel !== undefined && { bullet: node.bulletLevel }),
+        // UnifiedMention元素
+        ...(node.mention && { mention: node.mention }),
+      }))
+    };
+  },
+  
+  deserialize: (meta: any) => {
+    const nodes = meta.nodes.map(n => ({
+      type: n.t,
+      ...(n.id && { id: n.id }),
+      ...(n.ts && { createdAt: n.ts }),
+      ...(n.ut && { updatedAt: n.ut }),
+      ...(n.lvl !== undefined && { level: n.lvl }),
+      ...(n.bullet !== undefined && { bulletLevel: n.bullet }),
+      ...(n.mention && { mention: n.mention }),
+      children: [{ text: '' }]  // 文本由HTML提取
+    }));
+    
+    return {
+      eventlog: {
+        slateJson: JSON.stringify(nodes),
+        // html和plainText由normalizeEventLog生成
+      }
+    };
+  }
+};
+```
+
+**Tags Processor示例**:
+```typescript
+const TagsMetaProcessor: MetaProcessor = {
+  type: 'tags',
+  
+  serialize: (event: Event) => {
+    if (!event.tags || event.tags.length === 0) return null;
+    
+    return event.tags.map(tagName => ({
+      name: tagName,
+      // 可扩展：从TagService获取颜色、分类等
+    }));
+  },
+  
+  deserialize: (meta: any) => {
+    return {
+      tags: meta.map((t: any) => t.name)
+    };
+  },
+  
+  merge: (existing: string[], incoming: string[]) => {
+    // 优先使用incoming（Outlook最新修改）
+    // 但保留existing中unique的tags
+    const combined = new Set([...incoming, ...existing]);
+    return Array.from(combined);
+  }
+};
+```
+
+**EventTree Processor示例**:
+```typescript
+const EventTreeMetaProcessor: MetaProcessor = {
+  type: 'tree',
+  
+  serialize: (event: Event) => {
+    const meta: any = {};
+    
+    if (event.parentEventId) meta.parent = event.parentEventId;
+    if (event.childEventIds && event.childEventIds.length > 0) {
+      meta.children = event.childEventIds;
+    }
+    if (event.bulletLevel !== undefined) meta.bulletLevel = event.bulletLevel;
+    
+    return Object.keys(meta).length > 0 ? meta : null;
+  },
+  
+  deserialize: (meta: any) => {
+    return {
+      ...(meta.parent && { parentEventId: meta.parent }),
+      ...(meta.children && { childEventIds: meta.children }),
+      ...(meta.bulletLevel !== undefined && { bulletLevel: meta.bulletLevel }),
+    };
+  }
+};
+```
+
+**使用流程**:
+```typescript
+// 初始化（应用启动时）
+const metaRegistry = new MetaRegistry();
+metaRegistry.register(SlateMetaProcessor);
+metaRegistry.register(TagsMetaProcessor);
+metaRegistry.register(EventTreeMetaProcessor);
+metaRegistry.register(SignatureMetaProcessor);
+
+// 生成description（同步到Outlook前）
+const meta = metaRegistry.serialize(event);
+const metaComment = `<!--4DNOTE-META:${JSON.stringify(meta)}-->`;
+const slateHtml = slateNodesToHtml(event.eventlog.slateJson);
+const signature = SignatureUtils.addSignature(slateHtml, event);
+event.description = metaComment + slateHtml + signature;
+
+// 解析description（Outlook同步回来）
+const metaMatch = description.match(/<!--4DNOTE-META:(.*?)-->/);
+if (metaMatch) {
+  const meta = JSON.parse(metaMatch[1]);
+  const restoredEvent = metaRegistry.deserialize(meta);
+  
+  // 合并到event
+  Object.assign(event, restoredEvent);
+}
+```
+
 ---
 
 ## 数据流与生命周期
@@ -873,9 +1248,9 @@ if (autoExtractTags) {
   ↓
 normalizeEvent()
   ├─ normalizeTitle(支持 tags 同步)
-  ├─ normalizeEventLog(HTML→纯文本，Block-Level 解析)
+  ├─ normalizeEventLog(Meta-Comment 优先，Block-Level 降级)
   ├─ normalizeLocation(string→LocationObject)
-  └─ maintainDescriptionSignature(添加签名)
+  └─ maintainDescriptionSignature(添加签名 + Meta-Comment)
   ↓
 临时 ID 替换
   ├─ resolveTempIdReferences(tempId, realId)
@@ -886,7 +1261,8 @@ normalizeEvent()
   └─ 添加到 linkedEvent.backlinks
   ↓
 convertEventToStorageEvent()
-  ├─ 确保 eventlog.html/plainText 存在
+  ├─ 确保 eventlog.html 包含 Meta-Comment
+  ├─ description = metaComment + slateHtml + signature
   └─ 转换为 StorageEvent 格式
   ↓
 storageManager.createEvent()
@@ -912,7 +1288,7 @@ syncManager.recordLocalAction()
 
 **🔥 核心原则**：
 1. **description 是唯一输入**（Outlook 不提供 eventlog）
-2. **必须先解析成 Block-Level eventlog**（识别时间戳）
+2. **必须先解析成 eventlog**（Meta-Comment优先，Block-Level降级）
 3. **必须 diff 比较**（避免无脑更新和无意义的 eventHistory）
 
 ```
@@ -924,25 +1300,28 @@ ActionBasedSyncManager.applyAction()
   ↓
 [CREATE 路径]
 convertRemoteEventToLocal(remoteEvent)
-  ├─ description: htmlContent（原始 Outlook HTML）
+  ├─ description: htmlContent（包含 Meta-Comment 或 Block-Level 时间戳）
   ├─ createdAt/updatedAt: Outlook 时间戳
   └─ 没有 eventlog 字段 ❌
   ↓
 EventService.normalizeEvent(partialEvent)
   ├─ fallbackContent = extractCoreContent(description)  // 移除签名
   ├─ normalizeEventLog(undefined, fallbackContent)     // 进入"情况2"
-  │   ├─ 检测时间戳: /^\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2}/gm
-  │   ├─ 如果有时间戳 → parseTextWithBlockTimestamps(fallbackContent)
+  │   ├─ Step 0: parseMetaComments(fallbackContent)
+  │   │   └─ 如果有 Meta-Comment → 提取完整 Slate 节点（ID、type、时间戳）
+  │   ├─ Step 1: 检测 Block-Level 时间戳（降级方案）
+  │   │   └─ /^\d{4}[-\/]\d{2}[-\/]\d{2}\s+\d{2}:\d{2}:\d{2}/gm
+  │   ├─ Step 2: parseTextWithBlockTimestamps(fallbackContent)
   │   │   └─ 生成带 createdAt/updatedAt 的 paragraph 节点
-  │   └─ 如果无时间戳 → 包装成普通 paragraph
+  │   └─ Step 3: 如果无时间戳 → 包装成普通 paragraph
   │   ↓
   │   返回 EventLog { slateJson, html, plainText }
   ├─ extractTimestampsFromSignature(description)       // 提取签名时间
-  └─ 合并时间戳（Block-Level 优先）
+  └─ 合并时间戳（Meta-Comment/Block-Level 优先）
   ↓
 storageManager.createEvent(normalizedEvent)
   ↓
-[✅ 结果] eventlog 包含正确的 Block-Level Timestamp
+[✅ 结果] eventlog 包含正确的时间戳和节点元数据
 
 [UPDATE 路径]
 ActionBasedSyncManager.applyAction('update')
@@ -993,21 +1372,29 @@ TimeHub 增量更新缓存
 ```
 eventlog.slateJson
   ↓
-parseTextWithBlockTimestamps()
+[优先] parseMetaComments(description)
+  ├─ 从 HTML Comment 提取元数据
+  │   ├─ <!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000}-->
+  │   ├─ node.id: 保持节点ID一致（Outlook往返不变）
+  │   ├─ node.createdAt: Meta ts 字段（毫秒时间戳）
+  │   └─ node.type: paragraph, heading-one, heading-two 等
+  └─ 返回完整 Slate 节点数组（100% 精确）
+  ↓
+[降级] parseTextWithBlockTimestamps()
   ├─ 检测时间戳格式
   │   ├─ Block-Level: paragraph.createdAt
   │   ├─ timestamp-divider: node.timestamp
   │   └─ 纯文本: /\d{4}[-\/]\d{2}[-\/]\d{2} \d{2}:\d{2}:\d{2}/
   ├─ 提取最早/最晚时间
-  └─ 生成带时间戳的 paragraph 节点
+  └─ 生成带时间戳的 paragraph 节点（ID 重新生成）
   ↓
 extractTimestampsFromSignature(description)
   ├─ 提取签名中的创建时间
   └─ 提取签名中的修改时间
   ↓
 合并所有时间戳
-  ├─ earliestTimestamp = min(Block-Level, 签名创建时间)
-  └─ latestTimestamp = max(Block-Level, 签名修改时间)
+  ├─ earliestTimestamp = min(Meta-Comment/Block-Level, 签名创建时间)
+  └─ latestTimestamp = max(Meta-Comment/Block-Level, 签名修改时间)
   ↓
 返回 EventLog 对象
   ├─ slateJson: Slate JSON 字符串
@@ -1356,11 +1743,40 @@ if (filteredUpdates.parentEventId !== undefined) {
 }
 ```
 
-### v2.18.0 (2025-12-10)
+### v2.18.0+ EventLog 时间戳架构
 
-#### Block-Level Timestamp 架构
+#### Meta-Comment 元数据保护（当前架构）
 
-**变更**: EventLog 支持段落级时间戳
+**目标**: Outlook往返同步100%保持Slate节点元数据（ID、类型、时间戳、层级）
+
+**数据结构**:
+```html
+<!--SLATE:{"v":1,"t":"paragraph","id":"p-001","ts":1734620000000,"lvl":0}-->
+<p>第一段内容</p>
+<!--/SLATE-->
+<!--SLATE:{"v":1,"t":"heading-one","id":"h-001","ts":1734620100000,"lvl":1,"bullet":1}-->
+<h1>一级标题</h1>
+<!--/SLATE-->
+```
+
+**Meta字段说明**:
+- `v`: 版本号（固定1）
+- `t`: 节点类型（paragraph, heading-one, heading-two等）
+- `id`: 节点唯一ID（往返保持一致）
+- `ts`: 创建时间戳（毫秒）
+- `ut`: 更新时间戳（可选）
+- `lvl`: 缩进层级（0-5）
+- `bullet`: bulletLevel（事件层级）
+
+**解析优先级**:
+1. **Meta-Comment优先**: `parseMetaComments()` → 完整元数据恢复
+2. **Block-Level降级**: `parseTextWithBlockTimestamps()` → 时间戳解析（ID重新生成）
+3. **签名时间降级**: `extractTimestampsFromSignature()` → 从签名提取时间
+4. **纯文本降级**: 无时间戳，使用当前时间
+
+#### Block-Level Timestamp 架构（降级方案）
+
+**变更**: EventLog 支持段落级时间戳（当Meta-Comment不可用时）
 
 **数据结构**:
 ```typescript
@@ -1372,10 +1788,11 @@ if (filteredUpdates.parentEventId !== undefined) {
 ```
 
 **时间戳提取链**:
-1. Block-Level: `paragraph.createdAt`
-2. timestamp-divider: `node.timestamp`（兼容旧格式）
-3. 签名时间戳: `extractTimestampsFromSignature()`
-4. 纯文本匹配: 正则提取
+1. Meta-Comment: `<!--SLATE:{"ts":1734620000000}-->` (优先)
+2. Block-Level: `paragraph.createdAt`
+3. timestamp-divider: `node.timestamp`（兼容旧格式）
+4. 签名时间戳: `extractTimestampsFromSignature()`
+5. 纯文本匹配: 正则提取
 
 #### 签名时间戳提取
 
@@ -1409,7 +1826,7 @@ function extractTimestampsFromSignature(description: string): {
 
 **优化**:
 1. 移除重复的 HTML 清理逻辑
-2. 统一 Block-Level Timestamp 解析
+2. 统一时间戳解析（Meta-Comment → Block-Level → 签名）
 3. 明确 fallbackDescription 处理顺序
 
 ### v2.18.4 (2025-12-17)

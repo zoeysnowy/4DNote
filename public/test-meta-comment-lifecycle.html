@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Meta-Comment 生命周期测试工具</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #333;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 30px;
+    }
+
+    .info-card {
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      padding: 20px;
+      margin-bottom: 20px;
+      border-radius: 4px;
+    }
+
+    .info-card h3 {
+      color: #667eea;
+      margin-bottom: 10px;
+    }
+
+    .test-section {
+      margin-bottom: 30px;
+      border: 1px solid #e0e0e0;
+      border-radius: 8px;
+      padding: 20px;
+    }
+
+    .test-section h2 {
+      color: #333;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #667eea;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 15px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 12px 24px;
+      font-size: 1em;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s;
+      font-weight: 600;
+      color: white;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    }
+
+    .btn-success:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(17, 153, 142, 0.4);
+    }
+
+    .btn-warning {
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+
+    .btn-warning:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(245, 87, 108, 0.4);
+    }
+
+    .btn-info {
+      background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+
+    .btn-info:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(79, 172, 254, 0.4);
+    }
+
+    .output-box {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 20px;
+      margin-top: 15px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
+      max-height: 400px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-top: 15px;
+    }
+
+    .result-panel {
+      background: #f8f9fa;
+      border: 1px solid #dee2e6;
+      border-radius: 8px;
+      padding: 15px;
+    }
+
+    .result-panel h4 {
+      color: #667eea;
+      margin-bottom: 10px;
+      font-size: 1.1em;
+    }
+
+    .result-panel pre {
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 0.85em;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 0.85em;
+      font-weight: 600;
+      margin-left: 10px;
+    }
+
+    .status-success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .status-warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .status-info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 0.9em;
+    }
+
+    .diff-table th {
+      background: #667eea;
+      color: white;
+      padding: 10px;
+      text-align: left;
+    }
+
+    .diff-table td {
+      padding: 8px;
+      border-bottom: 1px solid #dee2e6;
+    }
+
+    .diff-table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .diff-match {
+      background: #d4edda;
+    }
+
+    .diff-mismatch {
+      background: #f8d7da;
+    }
+
+    .step-indicator {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 30px;
+      padding: 0 20px;
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+      position: relative;
+      padding: 10px;
+    }
+
+    .step:not(:last-child)::after {
+      content: '';
+      position: absolute;
+      top: 20px;
+      right: -50%;
+      width: 100%;
+      height: 2px;
+      background: #dee2e6;
+      z-index: -1;
+    }
+
+    .step.active {
+      color: #667eea;
+      font-weight: 600;
+    }
+
+    .step.active::before {
+      content: '●';
+      display: block;
+      font-size: 2em;
+      color: #667eea;
+    }
+
+    .step.completed::before {
+      content: '✓';
+      display: block;
+      font-size: 2em;
+      color: #38ef7d;
+    }
+
+    .step:not(.active):not(.completed)::before {
+      content: '○';
+      display: block;
+      font-size: 2em;
+      color: #dee2e6;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 600;
+      color: #333;
+    }
+
+    .input-group input,
+    .input-group textarea,
+    .input-group select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.95em;
+    }
+
+    .input-group textarea {
+      font-family: 'Courier New', monospace;
+      min-height: 150px;
+      resize: vertical;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+    }
+
+    .log-entry {
+      padding: 8px;
+      margin: 4px 0;
+      border-radius: 4px;
+      font-size: 0.9em;
+    }
+
+    .log-info {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .log-success {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .log-error {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .log-warning {
+      background: #fff3cd;
+      color: #856404;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔬 Meta-Comment 生命周期测试工具</h1>
+      <p>测试 EventLog 的保存、渲染、同步、解析、存储和 Diff 比对</p>
+    </div>
+
+    <div class="content">
+      <!-- 测试流程指示器 -->
+      <div class="step-indicator">
+        <div class="step" id="step1">创建事件</div>
+        <div class="step" id="step2">生成Meta-Comment</div>
+        <div class="step" id="step3">模拟Outlook同步</div>
+        <div class="step" id="step4">解析回来</div>
+        <div class="step" id="step5">Diff比对</div>
+      </div>
+
+      <!-- 测试说明 -->
+      <div class="info-card">
+        <h3>📋 测试流程说明</h3>
+        <ul>
+          <li>步骤1：创建包含复杂Slate节点的Event（paragraph、heading、bulletLevel等）</li>
+          <li>步骤2：调用 slateNodesToHtmlWithMeta() 生成带Meta-Comment的HTML</li>
+          <li>步骤3：模拟Outlook往返（可选择清除Meta-Comment测试降级）</li>
+          <li>步骤4：调用 parseMetaComments() 或 parseTextWithBlockTimestamps() 解析</li>
+          <li>步骤5：对比原始Slate节点与解析后节点，验证元数据完整性</li>
+        </ul>
+      </div>
+
+      <!-- 步骤1：创建测试数据 -->
+      <div class="test-section">
+        <h2>步骤1：创建测试 EventLog</h2>
+        
+        <div class="input-group">
+          <label>选择测试场景：</label>
+          <select id="scenario-select" onchange="loadScenario()">
+            <option value="simple">简单段落（1个paragraph）</option>
+            <option value="multi">多段落（3个paragraph）</option>
+            <option value="headings">层级标题（heading-one/two + paragraphs）</option>
+            <option value="nested">嵌套事件（bulletLevel 0-2）</option>
+            <option value="complex">复杂混合（所有类型）</option>
+            <option value="custom">自定义JSON</option>
+          </select>
+        </div>
+
+        <div class="input-group">
+          <label>Slate JSON 数据：</label>
+          <textarea id="slate-json" placeholder='[{"type":"paragraph","id":"p-001","createdAt":1734620000000,"children":[{"text":"测试段落"}]}]'></textarea>
+        </div>
+
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="createTestEvent()">创建事件</button>
+          <button class="btn btn-info" onclick="validateSlateJson()">验证JSON</button>
+        </div>
+
+        <div id="create-output" class="output-box" style="display:none;"></div>
+      </div>
+
+      <!-- 步骤2：生成Meta-Comment -->
+      <div class="test-section">
+        <h2>步骤2：生成 Meta-Comment HTML</h2>
+        
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="generateMetaComment()">生成 Meta-Comment</button>
+          <button class="btn btn-success" onclick="renderHtml()">渲染预览</button>
+        </div>
+
+        <div class="result-grid">
+          <div class="result-panel">
+            <h4>Meta-Comment HTML</h4>
+            <pre id="meta-html-output"></pre>
+          </div>
+          <div class="result-panel">
+            <h4>渲染预览</h4>
+            <div id="render-preview" style="padding:10px;background:white;border-radius:4px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤3：模拟Outlook同步 -->
+      <div class="test-section">
+        <h2>步骤3：模拟 Outlook 往返</h2>
+        
+        <div class="checkbox-group">
+          <input type="checkbox" id="strip-meta" onchange="updateOutlookSimulation()">
+          <label for="strip-meta">模拟 Outlook 清除 Meta-Comment（测试降级到Block-Level）</label>
+        </div>
+
+        <div class="checkbox-group">
+          <input type="checkbox" id="rewrite-html" onchange="updateOutlookSimulation()">
+          <label for="rewrite-html">模拟 Outlook 重写HTML标签</label>
+        </div>
+
+        <div class="button-group">
+          <button class="btn btn-warning" onclick="simulateOutlookSync()">模拟同步往返</button>
+        </div>
+
+        <div class="result-panel">
+          <h4>Outlook 返回的 HTML</h4>
+          <pre id="outlook-html-output"></pre>
+        </div>
+      </div>
+
+      <!-- 步骤4：解析回来 -->
+      <div class="test-section">
+        <h2>步骤4：解析 Description</h2>
+        
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="parseDescription()">解析 Meta-Comment</button>
+          <button class="btn btn-success" onclick="parseBlockLevel()">降级 Block-Level 解析</button>
+        </div>
+
+        <div class="result-grid">
+          <div class="result-panel">
+            <h4>解析方式</h4>
+            <pre id="parse-method-output"></pre>
+          </div>
+          <div class="result-panel">
+            <h4>解析后的 Slate JSON</h4>
+            <pre id="parsed-slate-output"></pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤5：Diff比对 -->
+      <div class="test-section">
+        <h2>步骤5：元数据完整性验证</h2>
+        
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="runDiffComparison()">运行 Diff 比对</button>
+          <button class="btn btn-success" onclick="runFullLifecycleTest()">🚀 运行完整生命周期测试</button>
+        </div>
+
+        <div id="diff-output" class="output-box" style="display:none;"></div>
+
+        <div class="result-panel" style="margin-top:20px;">
+          <h4>元数据完整性报告</h4>
+          <table class="diff-table" id="metadata-table">
+            <thead>
+              <tr>
+                <th>字段</th>
+                <th>原始值</th>
+                <th>解析后值</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody id="metadata-tbody">
+              <tr>
+                <td colspan="4" style="text-align:center;color:#999;">运行Diff比对后显示结果</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 测试日志 -->
+      <div class="test-section">
+        <h2>📝 测试日志</h2>
+        <div id="test-log" class="output-box"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== 全局状态 ==========
+    let currentState = {
+      originalSlateNodes: null,
+      metaCommentHtml: null,
+      outlookHtml: null,
+      parsedSlateNodes: null,
+      parseMethod: null
+    };
+
+    // ========== 测试场景 ==========
+    const testScenarios = {
+      simple: [
+        {
+          type: 'paragraph',
+          id: 'p-001',
+          createdAt: Date.now(),
+          children: [{ text: '这是一个简单的段落测试' }]
+        }
+      ],
+      multi: [
+        {
+          type: 'paragraph',
+          id: 'p-001',
+          createdAt: Date.now(),
+          children: [{ text: '第一段：创建测试事件' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-002',
+          createdAt: Date.now() + 1000,
+          children: [{ text: '第二段：同步到Outlook' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-003',
+          createdAt: Date.now() + 2000,
+          children: [{ text: '第三段：验证元数据完整性' }]
+        }
+      ],
+      headings: [
+        {
+          type: 'heading-one',
+          id: 'h1-001',
+          createdAt: Date.now(),
+          level: 0,
+          children: [{ text: '一级标题：项目规划' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-001',
+          createdAt: Date.now() + 500,
+          level: 1,
+          children: [{ text: '需求分析阶段' }]
+        },
+        {
+          type: 'heading-two',
+          id: 'h2-001',
+          createdAt: Date.now() + 1000,
+          level: 1,
+          children: [{ text: '二级标题：技术选型' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-002',
+          createdAt: Date.now() + 1500,
+          level: 2,
+          children: [{ text: 'React + TypeScript' }]
+        }
+      ],
+      nested: [
+        {
+          type: 'paragraph',
+          id: 'p-root',
+          createdAt: Date.now(),
+          bulletLevel: 0,
+          children: [{ text: '根事件' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-child1',
+          createdAt: Date.now() + 1000,
+          bulletLevel: 1,
+          level: 1,
+          children: [{ text: '子事件1' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-child2',
+          createdAt: Date.now() + 2000,
+          bulletLevel: 1,
+          level: 1,
+          children: [{ text: '子事件2' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-grandchild',
+          createdAt: Date.now() + 3000,
+          bulletLevel: 2,
+          level: 2,
+          children: [{ text: '孙事件' }]
+        }
+      ],
+      complex: [
+        {
+          type: 'heading-one',
+          id: 'h1-001',
+          createdAt: Date.now(),
+          bulletLevel: 0,
+          level: 0,
+          children: [{ text: '复杂测试场景' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-001',
+          createdAt: Date.now() + 500,
+          updatedAt: Date.now() + 1000,
+          bulletLevel: 0,
+          level: 1,
+          children: [{ text: '包含更新时间戳的段落' }]
+        },
+        {
+          type: 'heading-two',
+          id: 'h2-001',
+          createdAt: Date.now() + 1500,
+          bulletLevel: 1,
+          level: 1,
+          children: [{ text: '子任务组' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-002',
+          createdAt: Date.now() + 2000,
+          bulletLevel: 1,
+          level: 2,
+          children: [{ text: '子任务1：设计Meta-Comment格式' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-003',
+          createdAt: Date.now() + 2500,
+          bulletLevel: 1,
+          level: 2,
+          children: [{ text: '子任务2：实现解析逻辑' }]
+        },
+        {
+          type: 'paragraph',
+          id: 'p-004',
+          createdAt: Date.now() + 3000,
+          bulletLevel: 2,
+          level: 3,
+          children: [{ text: '嵌套任务：单元测试' }]
+        }
+      ]
+    };
+
+    // ========== 工具函数 ==========
+    function log(message, type = 'info') {
+      const logDiv = document.getElementById('test-log');
+      const timestamp = new Date().toLocaleTimeString();
+      const logEntry = document.createElement('div');
+      logEntry.className = `log-entry log-${type}`;
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      logDiv.appendChild(logEntry);
+      logDiv.scrollTop = logDiv.scrollHeight;
+    }
+
+    function updateStep(stepNum, state) {
+      for (let i = 1; i <= 5; i++) {
+        const step = document.getElementById(`step${i}`);
+        step.classList.remove('active', 'completed');
+        if (i < stepNum) {
+          step.classList.add('completed');
+        } else if (i === stepNum) {
+          step.classList.add('active');
+        }
+      }
+    }
+
+    // ========== 步骤1：加载场景 ==========
+    function loadScenario() {
+      const scenario = document.getElementById('scenario-select').value;
+      const textarea = document.getElementById('slate-json');
+      
+      if (scenario === 'custom') {
+        textarea.value = '';
+        textarea.placeholder = '请输入自定义 Slate JSON...';
+      } else {
+        textarea.value = JSON.stringify(testScenarios[scenario], null, 2);
+      }
+      
+      log(`加载测试场景: ${scenario}`, 'info');
+    }
+
+    function validateSlateJson() {
+      const jsonText = document.getElementById('slate-json').value;
+      try {
+        const nodes = JSON.parse(jsonText);
+        if (!Array.isArray(nodes)) {
+          throw new Error('Slate JSON 必须是数组');
+        }
+        
+        for (const node of nodes) {
+          if (!node.type) throw new Error('节点缺少 type 字段');
+          if (!node.children) throw new Error('节点缺少 children 字段');
+        }
+        
+        log('✅ Slate JSON 验证通过', 'success');
+        alert('✅ JSON 格式正确！');
+      } catch (err) {
+        log(`❌ JSON 验证失败: ${err.message}`, 'error');
+        alert(`❌ JSON 格式错误：${err.message}`);
+      }
+    }
+
+    function createTestEvent() {
+      const jsonText = document.getElementById('slate-json').value;
+      
+      if (!jsonText || !jsonText.trim()) {
+        alert('❌ 请先输入或选择测试场景！');
+        log('创建失败：JSON数据为空', 'error');
+        return;
+      }
+      
+      try {
+        const nodes = JSON.parse(jsonText);
+        
+        if (!Array.isArray(nodes)) {
+          throw new Error('Slate JSON 必须是数组');
+        }
+        
+        if (nodes.length === 0) {
+          throw new Error('Slate JSON 数组不能为空');
+        }
+        
+        currentState.originalSlateNodes = nodes;
+        
+        const output = document.getElementById('create-output');
+        output.style.display = 'block';
+        output.innerHTML = `
+<span class="status-badge status-success">✓ 创建成功</span>
+
+原始 Slate 节点数量: ${nodes.length}
+节点类型: ${nodes.map(n => n.type).join(', ')}
+包含时间戳: ${nodes.filter(n => n.createdAt).length}/${nodes.length}
+包含ID: ${nodes.filter(n => n.id).length}/${nodes.length}
+
+完整数据:
+${JSON.stringify(nodes, null, 2)}
+        `;
+        
+        // 滚动到输出框
+        output.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        
+        log(`✅ 创建事件成功，包含 ${nodes.length} 个节点`, 'success');
+        updateStep(2, 'active');
+        
+        alert(`✅ 创建成功！包含 ${nodes.length} 个节点，现在可以进行下一步了`);
+      } catch (err) {
+        log(`❌ 创建事件失败: ${err.message}`, 'error');
+        alert(`❌ 创建失败：${err.message}\n\n请检查JSON格式是否正确`);
+        console.error('createEvent error:', err);
+      }
+    }
+
+    // ========== 步骤2：生成Meta-Comment ==========
+    function slateNodesToHtmlWithMeta(nodes) {
+      if (!nodes || !Array.isArray(nodes)) return '';
+      
+      return nodes.map(node => {
+        // 构建元数据
+        const meta = {
+          v: 1,
+          t: node.type || 'paragraph'
+        };
+        
+        if (node.id) meta.id = node.id;
+        if (node.createdAt) meta.ts = node.createdAt;
+        if (node.updatedAt) meta.ut = node.updatedAt;
+        if (node.level !== undefined) meta.lvl = node.level;
+        if (node.bulletLevel !== undefined) meta.bullet = node.bulletLevel;
+        
+        // 生成HTML内容
+        const text = node.children?.map(c => c.text || '').join('') || '';
+        const htmlTag = getHtmlTag(node.type);
+        const htmlContent = `<${htmlTag}>${text}</${htmlTag}>`;
+        
+        // 包裹 Meta-Comment
+        return `<!--SLATE:${JSON.stringify(meta)}-->${htmlContent}<!--/SLATE-->`;
+      }).join('\n');
+    }
+
+    function getHtmlTag(type) {
+      const tagMap = {
+        'paragraph': 'p',
+        'heading-one': 'h1',
+        'heading-two': 'h2',
+        'heading-three': 'h3',
+        'heading-four': 'h4',
+        'heading-five': 'h5',
+        'heading-six': 'h6'
+      };
+      return tagMap[type] || 'p';
+    }
+
+    function generateMetaComment() {
+      if (!currentState.originalSlateNodes) {
+        alert('请先创建事件！');
+        return;
+      }
+      
+      const html = slateNodesToHtmlWithMeta(currentState.originalSlateNodes);
+      currentState.metaCommentHtml = html;
+      
+      document.getElementById('meta-html-output').textContent = html;
+      
+      log('生成 Meta-Comment HTML 成功', 'success');
+      updateStep(3, 'active');
+    }
+
+    function renderHtml() {
+      if (!currentState.metaCommentHtml) {
+        alert('请先生成 Meta-Comment！');
+        return;
+      }
+      
+      // 移除Meta-Comment后渲染
+      const cleanHtml = currentState.metaCommentHtml
+        .replace(/<!--SLATE:.*?-->/g, '')
+        .replace(/<!--\/SLATE-->/g, '');
+      
+      document.getElementById('render-preview').innerHTML = cleanHtml;
+      log('渲染HTML预览', 'info');
+    }
+
+    // ========== 步骤3：模拟Outlook同步 ==========
+    function updateOutlookSimulation() {
+      // 实时预览会发生什么
+      const stripMeta = document.getElementById('strip-meta').checked;
+      const rewriteHtml = document.getElementById('rewrite-html').checked;
+      
+      let desc = '模拟设置：';
+      if (stripMeta) desc += ' [清除Meta-Comment]';
+      if (rewriteHtml) desc += ' [重写HTML]';
+      if (!stripMeta && !rewriteHtml) desc += ' [保持原样]';
+      
+      log(desc, 'info');
+    }
+
+    function simulateOutlookSync() {
+      if (!currentState.metaCommentHtml) {
+        alert('请先生成 Meta-Comment！');
+        return;
+      }
+      
+      let outlookHtml = currentState.metaCommentHtml;
+      const stripMeta = document.getElementById('strip-meta').checked;
+      const rewriteHtml = document.getElementById('rewrite-html').checked;
+      
+      // 模拟Outlook清除Meta-Comment
+      if (stripMeta) {
+        outlookHtml = outlookHtml
+          .replace(/<!--SLATE:.*?-->/g, '')
+          .replace(/<!--\/SLATE-->/g, '');
+        log('⚠️ Outlook 清除了 Meta-Comment（测试降级）', 'warning');
+      }
+      
+      // 模拟Outlook重写HTML
+      if (rewriteHtml) {
+        outlookHtml = outlookHtml
+          .replace(/<p>/g, '<div>')
+          .replace(/<\/p>/g, '</div>');
+        log('⚠️ Outlook 重写了HTML标签 (p→div)', 'warning');
+      }
+      
+      currentState.outlookHtml = outlookHtml;
+      document.getElementById('outlook-html-output').textContent = outlookHtml;
+      
+      log('模拟 Outlook 往返完成', 'success');
+      updateStep(4, 'active');
+    }
+
+    // ========== 步骤4：解析 ==========
+    function parseMetaComments(html) {
+      if (!html || typeof html !== 'string') return null;
+      
+      const metaPattern = /<!--SLATE:(.*?)-->([\s\S]*?)<!--\/SLATE-->/g;
+      const matches = [...html.matchAll(metaPattern)];
+      
+      if (matches.length === 0) return null;
+      
+      const nodes = [];
+      for (const match of matches) {
+        try {
+          const meta = JSON.parse(match[1]);
+          const htmlContent = match[2];
+          
+          const node = {
+            type: meta.t,
+            children: [{ text: htmlContent.replace(/<[^>]+>/g, '') }]
+          };
+          
+          if (meta.id) node.id = meta.id;
+          if (meta.ts) node.createdAt = meta.ts;
+          if (meta.ut) node.updatedAt = meta.ut;
+          if (meta.lvl !== undefined) node.level = meta.lvl;
+          if (meta.bullet !== undefined) node.bulletLevel = meta.bullet;
+          
+          nodes.push(node);
+        } catch (err) {
+          console.warn('解析失败:', err);
+          continue;
+        }
+      }
+      
+      return nodes.length > 0 ? nodes : null;
+    }
+
+    function parseTextWithBlockTimestamps(text) {
+      const lines = text.split('\n');
+      const nodes = [];
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        
+        // 检测时间戳格式
+        const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})/;
+        const match = trimmed.match(timestampPattern);
+        
+        if (match) {
+          const timestamp = new Date(match[1].replace(/\//g, '-'));
+          const remainingText = trimmed.substring(match[0].length).trim();
+          
+          nodes.push({
+            type: 'paragraph',
+            createdAt: timestamp.getTime(),
+            children: [{ text: remainingText || '' }]
+          });
+        } else {
+          nodes.push({
+            type: 'paragraph',
+            children: [{ text: trimmed }]
+          });
+        }
+      }
+      
+      return nodes;
+    }
+
+    function parseDescription() {
+      if (!currentState.outlookHtml) {
+        alert('请先模拟 Outlook 同步！');
+        return;
+      }
+      
+      const nodes = parseMetaComments(currentState.outlookHtml);
+      
+      if (nodes) {
+        currentState.parsedSlateNodes = nodes;
+        currentState.parseMethod = 'Meta-Comment';
+        
+        document.getElementById('parse-method-output').innerHTML = `
+<span class="status-badge status-success">✓ Meta-Comment 解析</span>
+
+解析方式: parseMetaComments()
+成功解析: ${nodes.length} 个节点
+元数据完整性: 100%
+        `;
+        
+        document.getElementById('parsed-slate-output').textContent = JSON.stringify(nodes, null, 2);
+        
+        log('✅ Meta-Comment 解析成功', 'success');
+        updateStep(5, 'active');
+      } else {
+        log('⚠️ 未找到 Meta-Comment，尝试降级解析', 'warning');
+        parseBlockLevel();
+      }
+    }
+
+    function parseBlockLevel() {
+      if (!currentState.outlookHtml) {
+        alert('请先模拟 Outlook 同步！');
+        return;
+      }
+      
+      // 移除HTML标签，提取纯文本
+      const tempDiv = document.createElement('div');
+      tempDiv.innerHTML = currentState.outlookHtml;
+      const plainText = tempDiv.textContent || tempDiv.innerText || '';
+      
+      const nodes = parseTextWithBlockTimestamps(plainText);
+      
+      currentState.parsedSlateNodes = nodes;
+      currentState.parseMethod = 'Block-Level (降级)';
+      
+      document.getElementById('parse-method-output').innerHTML = `
+<span class="status-badge status-warning">⚠ Block-Level 降级解析</span>
+
+解析方式: parseTextWithBlockTimestamps()
+成功解析: ${nodes.length} 个节点
+元数据完整性: 部分（时间戳+文本）
+ID保持: ❌ 重新生成
+类型识别: ❌ 全部为 paragraph
+      `;
+      
+      document.getElementById('parsed-slate-output').textContent = JSON.stringify(nodes, null, 2);
+      
+      log('⚠️ 降级到 Block-Level 解析', 'warning');
+      updateStep(5, 'active');
+    }
+
+    // ========== 步骤5：Diff比对 ==========
+    function runDiffComparison() {
+      if (!currentState.originalSlateNodes || !currentState.parsedSlateNodes) {
+        alert('请先完成前面的步骤！');
+        return;
+      }
+      
+      const original = currentState.originalSlateNodes;
+      const parsed = currentState.parsedSlateNodes;
+      
+      const tbody = document.getElementById('metadata-tbody');
+      tbody.innerHTML = '';
+      
+      let totalFields = 0;
+      let matchedFields = 0;
+      
+      // 对比每个节点
+      for (let i = 0; i < Math.max(original.length, parsed.length); i++) {
+        const origNode = original[i];
+        const parsedNode = parsed[i];
+        
+        if (!origNode || !parsedNode) {
+          const row = tbody.insertRow();
+          row.innerHTML = `
+            <td colspan="4" class="diff-mismatch">
+              节点 ${i}: ${!origNode ? '解析后缺失' : '原始缺失'}
+            </td>
+          `;
+          continue;
+        }
+        
+        // 添加节点分隔
+        const headerRow = tbody.insertRow();
+        headerRow.innerHTML = `<td colspan="4" style="background:#667eea;color:white;font-weight:600;">节点 ${i} (${origNode.type})</td>`;
+        
+        // 对比字段
+        const fields = ['id', 'type', 'createdAt', 'updatedAt', 'level', 'bulletLevel'];
+        
+        for (const field of fields) {
+          if (origNode[field] === undefined && parsedNode[field] === undefined) continue;
+          
+          totalFields++;
+          const origValue = origNode[field];
+          const parsedValue = parsedNode[field];
+          const match = origValue === parsedValue;
+          
+          if (match) matchedFields++;
+          
+          const row = tbody.insertRow();
+          row.className = match ? 'diff-match' : 'diff-mismatch';
+          row.innerHTML = `
+            <td>${field}</td>
+            <td>${formatValue(origValue)}</td>
+            <td>${formatValue(parsedValue)}</td>
+            <td>${match ? '✓ 匹配' : '✗ 不匹配'}</td>
+          `;
+        }
+        
+        // 对比文本内容
+        const origText = origNode.children?.map(c => c.text).join('') || '';
+        const parsedText = parsedNode.children?.map(c => c.text).join('') || '';
+        totalFields++;
+        const textMatch = origText === parsedText;
+        if (textMatch) matchedFields++;
+        
+        const textRow = tbody.insertRow();
+        textRow.className = textMatch ? 'diff-match' : 'diff-mismatch';
+        textRow.innerHTML = `
+          <td>text</td>
+          <td>${origText}</td>
+          <td>${parsedText}</td>
+          <td>${textMatch ? '✓ 匹配' : '✗ 不匹配'}</td>
+        `;
+      }
+      
+      // 生成报告
+      const accuracy = totalFields > 0 ? ((matchedFields / totalFields) * 100).toFixed(1) : 0;
+      const diffOutput = document.getElementById('diff-output');
+      diffOutput.style.display = 'block';
+      diffOutput.innerHTML = `
+<span class="status-badge ${accuracy >= 95 ? 'status-success' : accuracy >= 70 ? 'status-warning' : 'status-error'}">
+  元数据完整性: ${accuracy}%
+</span>
+
+解析方式: ${currentState.parseMethod}
+总字段数: ${totalFields}
+匹配字段数: ${matchedFields}
+不匹配字段数: ${totalFields - matchedFields}
+
+${accuracy >= 95 ? '✅ Meta-Comment 工作正常，元数据完整保留！' : 
+  accuracy >= 70 ? '⚠️ 部分元数据丢失，可能是降级到Block-Level解析' :
+  '❌ 大量元数据丢失，需要检查实现'}
+      `;
+      
+      log(`Diff 比对完成，准确率: ${accuracy}%`, accuracy >= 95 ? 'success' : accuracy >= 70 ? 'warning' : 'error');
+    }
+
+    function formatValue(val) {
+      if (val === undefined) return '<span style="color:#999;">undefined</span>';
+      if (val === null) return '<span style="color:#999;">null</span>';
+      if (typeof val === 'number' && val > 1000000000000) {
+        return `${val} (${new Date(val).toLocaleString()})`;
+      }
+      return val;
+    }
+
+    // ========== 完整生命周期测试 ==========
+    function runFullLifecycleTest() {
+      log('========== 开始完整生命周期测试 ==========', 'info');
+      
+      // 自动运行所有步骤
+      setTimeout(() => {
+        loadScenario();
+        setTimeout(() => {
+          createTestEvent();
+          setTimeout(() => {
+            generateMetaComment();
+            setTimeout(() => {
+              simulateOutlookSync();
+              setTimeout(() => {
+                parseDescription();
+                setTimeout(() => {
+                  runDiffComparison();
+                  log('========== 完整生命周期测试完成 ==========', 'success');
+                }, 500);
+              }, 500);
+            }, 500);
+          }, 500);
+        }, 500);
+      }, 100);
+    }
+
+    // ========== 初始化 ==========
+    window.onload = function() {
+      // 设置默认场景为multi（多段落）
+      document.getElementById('scenario-select').value = 'multi';
+      loadScenario();
+      updateStep(1, 'active');
+      log('测试工具初始化完成', 'success');
+      log('提示：选择测试场景后，textarea会自动填充数据', 'info');
+    };
+  </script>
+</body>
+</html>

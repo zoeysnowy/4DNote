@@ -56,6 +56,8 @@ interface LogSlateProps {
   enableMention?: boolean; // 是否启用 @ 提及（默认启用）
   enableHashtag?: boolean; // 是否启用 # 标签（默认启用）
   showPreline?: boolean; // 是否显示 preline（默认 true，TimeLog 中为 false）
+  enableTimestamp?: boolean; // 🆕 是否启用自动 timestamp（首次输入时自动添加）
+  eventId?: string; // 🆕 事件ID（用于timestamp）
 }
 
 export const LogSlate: React.FC<LogSlateProps> = ({
@@ -73,6 +75,8 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   enableMention = true,
   enableHashtag = true,
   showPreline = true, // 默认显示 preline（TimeLog 中传 false）
+  enableTimestamp = false, // 🆕 默认不启用自动 timestamp
+  eventId, // 🆕 事件ID
 }) => {
   const editorRef = useRef<Editor | null>(null);
   const [showFloatingToolbar, setShowFloatingToolbar] = useState(false);
@@ -208,6 +212,44 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       // 标记正在编辑
       isEditingRef.current = true;
       
+      // 🆕 检测首次输入：如果启用timestamp且有实际文字输入
+      if (enableTimestamp && eventId && mode === 'eventlog') {
+        const hasText = newValue.some((node: any) => {
+          if (node.type === 'paragraph') {
+            const text = Node.string(node);
+            return text.trim().length > 0;
+          }
+          return false;
+        });
+        
+        // 检查是否已有timestamp（createdAt字段）
+        const hasTimestamp = newValue.some((node: any) => {
+          return node.type === 'paragraph' && node.createdAt;
+        });
+        
+        // 首次输入且无timestamp时，给第一个段落添加timestamp
+        if (hasText && !hasTimestamp) {
+          const now = Date.now();
+          // 查找第一个paragraph，添加createdAt
+          const firstParagraphPath = [];
+          for (let i = 0; i < newValue.length; i++) {
+            if ((newValue[i] as any).type === 'paragraph') {
+              firstParagraphPath.push(i);
+              break;
+            }
+          }
+          
+          if (firstParagraphPath.length > 0) {
+            Transforms.setNodes(
+              editor,
+              { createdAt: now } as any,
+              { at: firstParagraphPath }
+            );
+            console.log('[LogSlate] 🆕 添加 Block-Level Timestamp:', new Date(now).toLocaleString());
+          }
+        }
+      }
+      
       // 确保 editor 始终有内容，防止崩溃
       if (newValue.length === 0) {
         newValue = [{
@@ -257,7 +299,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
     } else {
       setShowFloatingToolbar(false);
     }
-  }, [editor, onChange, enableMention, enableHashtag, showToolbar]);
+  }, [editor, onChange, enableMention, enableHashtag, showToolbar, enableTimestamp, eventId, mode]);
   
   // 渲染元素
   const renderElement = useCallback((props: RenderElementProps) => {

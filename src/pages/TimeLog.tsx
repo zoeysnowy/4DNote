@@ -2647,6 +2647,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           enableMention={true}
                           enableHashtag={true}
                           showPreline={false}
+                          enableTimestamp={true}
+                          eventId={event.id}
                         />
                       </div>
                     )}
