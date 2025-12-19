@@ -726,8 +726,14 @@ ${JSON.stringify(timestamps, null, 2)}
     // ========== Meta生成 ==========
     function generateCompleteMeta() {
       const input = document.getElementById('meta-event-input').value;
+      
+      console.log('=== Meta生成调试 ===');
+      console.log('输入JSON:', input);
+      
       try {
         const event = JSON.parse(input);
+        console.log('解析后的Event:', event);
+        
         testState.originalEvent = event;
         
         // 生成完整Meta
@@ -739,14 +745,19 @@ ${JSON.stringify(timestamps, null, 2)}
           signature: generateSignatureMeta(event)
         };
         
+        console.log('生成的Meta:', meta);
         testState.generatedMeta = meta;
         
         const metaComment = `<!--4DNOTE-META:${JSON.stringify(meta)}-->`;
         
         const output = document.getElementById('meta-gen-output');
+        output.style.display = 'block';  // 🔑 关键：显示输出框
         output.textContent = metaComment;
+        
+        alert('✅ Meta生成成功！');
       } catch (err) {
-        alert(`生成失败：${err.message}`);
+        console.error('Meta生成错误:', err);
+        alert(`生成失败：${err.message}\n\n详细信息见Console`);
       }
     }
 

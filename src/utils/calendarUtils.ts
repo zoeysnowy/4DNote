@@ -12,7 +12,7 @@ import type { EventObject } from '../lib/tui.calendar/apps/calendar';
 import { Event } from '../types';
 import { EventHub } from '../services/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
-import { CalendarService } from '../services/CalendarService_new';
+import { CalendarService } from '../services/CalendarService';
 import dayjs from 'dayjs';
 
 /**
