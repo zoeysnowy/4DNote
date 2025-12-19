@@ -1,6 +1,4 @@
-// 关闭所有数据库连接
-indexedDB.deleteDatabase('4dnote-storage')
-location.reload()# 4DNote v1.3.0 🎯
+# 4DNote v1.3.0 🎯
 
 **四维时间管理系统 - 集成 Plan/Actual/TimeLog/Timer 的智能生产力工具**
 
