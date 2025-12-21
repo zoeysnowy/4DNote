@@ -1617,38 +1617,48 @@ function stringSimilarity(a: string, b: string): number {
 
 ### V2序列化流程（4DNote → Outlook）
 
+**职责归属**：EventService（不是serialization.ts）
+
 ```typescript
-// 序列化Event到HTML + Meta V2（Base64编码）
-async function serializeEventToHtml(event: Event): Promise<string> {
-  // 1. 生成V2 Meta（增强hint三元组）
-  const meta: CompleteMeta = {
-    v: 2,  // 版本号升级到2
-  const meta: CompleteMeta = {
-    v: 2,  // 版本号升级到2
-    id: event.id,
-    
-    slate: {
-      nodes: JSON.parse(event.eventlog.slateJson).map(node => {
-        const textContent = extractText(node);  // 提取纯文本
-        
-        // V2增强hint：开头+结尾+长度
-        const len = textContent.length;
-        const start = textContent.substring(0, Math.min(5, len));
-        const end = len > 5 ? textContent.substring(len - 5) : textContent;
-        
-        return {
-          ...(node.id && { id: node.id }),
-          ...(start && { s: start }),  // start: 前5字符
-          ...(end && { e: end }),      // end: 后5字符
-          ...(len && { l: len }),      // length: 总长度
-          ...(node.createdAt && { ts: node.createdAt }),
-          ...(node.updatedAt && { ut: node.updatedAt }),
-          ...(node.level !== undefined && { lvl: node.level }),
-          ...(node.bulletLevel !== undefined && { bullet: node.bulletLevel }),
-          ...(node.mention && { mention: node.mention })
-        };
-      })
-    },
+// EventService.ts
+class EventService {
+  /**
+   * 生成带 CompleteMeta V2 的 description HTML
+   * 职责：
+   * - 从 event.eventlog.slateJson 提取节点信息
+   * - 生成 V2 增强 hint（s, e, l）
+   * - Base64 编码 Meta
+   * - 调用 serialization.slateToHtml() 生成可见 HTML
+   * - 拼接完整的 description（HTML + Meta）
+   */
+  static serializeEventDescription(event: Event): string {
+    // 1. 生成V2 Meta（增强hint三元组）
+    const meta: CompleteMeta = {
+      v: 2,  // 版本号升级到2
+      id: event.id,
+      
+      slate: {
+        nodes: JSON.parse(event.eventlog.slateJson).map(node => {
+          const textContent = extractText(node);  // 提取纯文本
+          
+          // V2增强hint：开头+结尾+长度
+          const len = textContent.length;
+          const start = textContent.substring(0, Math.min(5, len));
+          const end = len > 5 ? textContent.substring(len - 5) : textContent;
+          
+          return {
+            ...(node.id && { id: node.id }),
+            ...(start && { s: start }),  // start: 前5字符
+            ...(end && { e: end }),      // end: 后5字符
+            ...(len && { l: len }),      // length: 总长度
+            ...(node.createdAt && { ts: node.createdAt }),
+            ...(node.updatedAt && { ut: node.updatedAt }),
+            ...(node.level !== undefined && { lvl: node.level }),
+            ...(node.bulletLevel !== undefined && { bullet: node.bulletLevel }),
+            ...(node.mention && { mention: node.mention })
+          };
+        })
+      },
     
     signature: {
       createdAt: event.createdAt,
@@ -1663,139 +1673,96 @@ async function serializeEventToHtml(event: Event): Promise<string> {
   const metaJson = JSON.stringify(meta);
   const metaBase64 = btoa(unescape(encodeURIComponent(metaJson)));  // UTF-8 → Base64
   
-  // 3. 生成HTML（带边界保护）
-  const visibleHtml = slateNodesToHtml(event.eventlog.slateJson);
+  // 3. 调用 serialization.slateToHtml() 生成可见HTML
+  // 注意：serialization.ts 只负责 Slate → HTML 转换，不处理 Meta
+  const visibleHtml = slateToHtml(event.eventlog.slateJson);
   
+  // 4. 拼接完整 description
   return `
-<div class="4dnote-content-wrapper" data-4dnote-version="1" style="border-left: 2px solid #e0e0e0; padding-left: 10px;">
+<div class="4dnote-content-wrapper" data-4dnote-version="2">
   ${visibleHtml}
   
-  <!-- Meta Data Zone -->
+  <!-- Meta Data Zone (V2) -->
   <div id="4dnote-meta" style="display:none; font-size:0; line-height:0; opacity:0; mso-hide:all;">
     ${metaBase64}
   </div>
 </div>
   `.trim();
-}
+  }
+} // EventService 类结束
 ```
 
-#### Outlook → 4DNote（Diff对齐反序列化）
+### V2反序列化流程（Outlook → 4DNote）
+
+**职责归属**：EventService（不是serialization.ts）
 
 ```typescript
-// 从HTML和Meta恢复Event（Diff算法对齐）
-async function deserializeMetaToEvent(html: string): Promise<Event> {
-  // Step 1: 提取边界内容（避免邮件签名/回复历史干扰）
-  const wrapper = html.match(/<div class="4dnote-content-wrapper"[^>]*>([\s\S]*?)<\/div>/)?.[1];
-  if (!wrapper) {
-    throw new Error('4DNote content wrapper not found');
-  }
-  
-  // Step 2: 解析Meta（Base64 → JSON）
-  const metaMatch = wrapper.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
-  let meta: CompleteMeta = null;
-  
-  if (metaMatch) {
-    try {
-      const metaBase64 = metaMatch[1].trim();
-      const metaJson = decodeURIComponent(escape(atob(metaBase64)));  // Base64 → UTF-8
-      meta = JSON.parse(metaJson);
-    } catch (err) {
-      console.error('Meta解析失败，降级到纯HTML解析', err);
-    }
-  }
-  
-  // Step 3: 从HTML生成初步节点列表
-  const visibleHtml = wrapper.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '');  // 移除Meta div
-  let htmlNodes = parseHtmlToNodes(visibleHtml);
-  
-  // Step 4: Diff算法对齐（核心！）
-  if (meta?.slate?.nodes) {
-    const metaHints = meta.slate.nodes.map(n => n.h || '');
-    const htmlTexts = htmlNodes.map(n => extractText(n).substring(0, 10));
+// EventService.ts
+class EventService {
+  /**
+   * 从 Outlook description HTML 恢复 Event
+   * 职责：
+   * - 提取并解码 CompleteMeta
+   * - 调用 serialization.htmlToSlate() 提取 HTML 段落
+   * - 执行三层容错匹配算法
+   * - 合并 HTML 文本 + Meta 元数据
+   * - 从本地 Service 查询关系数据（tags/tree/attendees）
+   */
+  static deserializeEventDescription(html: string, eventId: string): Partial<Event> {
+    // Step 1: 提取 Meta
+    const metaMatch = html.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
+    let meta: CompleteMeta | null = null;
     
-    console.log('Diff对齐开始', { metaHints, htmlTexts });
-    
-    // 运行Diff算法（Myers Algorithm）
-    const alignment = diffAlign(metaHints, htmlTexts);
-    
-    htmlNodes = alignment.map(match => {
-      if (match.type === 'match') {
-        // ✅ 匹配成功：合并HTML文本 + Meta元数据
-        const htmlNode = htmlNodes[match.htmlIndex];
-        const metaNode = meta.slate.nodes[match.metaIndex];
-        
-        console.log('匹配成功', { 
-          htmlText: extractText(htmlNode).substring(0, 20), 
-          metaHint: metaNode.h 
-        });
-        
-        return {
-          ...htmlNode,                              // 文本来自HTML（用户编辑）
-          id: metaNode.id,                          // 元数据来自Meta
-          createdAt: metaNode.ts,
-          updatedAt: metaNode.ut,
-          level: metaNode.lvl,
-          bulletLevel: metaNode.bullet,
-          mention: metaNode.mention
-        };
-      } else if (match.type === 'insert') {
-        // ✅ HTML新增：用户在Outlook中添加的段落
-        const htmlNode = htmlNodes[match.htmlIndex];
-        
-        console.log('检测到新增段落', extractText(htmlNode).substring(0, 20));
-        
-        return {
-          ...htmlNode,
-          id: generateNodeId(),  // 生成新ID
-          createdAt: Date.now()
-        };
-      } else if (match.type === 'delete') {
-        // ❌ Meta有但HTML没有：用户在Outlook中删除的段落
-        const metaNode = meta.slate.nodes[match.metaIndex];
-        
-        console.log('检测到删除段落', metaNode.h);
-        
-        return null;  // 不保留
+    if (metaMatch) {
+      try {
+        const metaBase64 = metaMatch[1].trim();
+        const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+        meta = JSON.parse(metaJson);
+      } catch (err) {
+        console.warn('Meta解析失败，降级到纯HTML解析', err);
       }
-    }).filter(Boolean);
-  }
-  
-  const event: Partial<Event> = {
-    id: meta.id,
-    eventlog: {
-      slateJson: JSON.stringify(htmlNodes),
-      // html和plainText由normalizeEventLog生成
     }
-  };
-  
-  // 恢复签名信息
-  if (meta.signature) {
-    event.createdAt = meta.signature.createdAt;
-    event.updatedAt = meta.signature.updatedAt;
-    event.fourDNoteSource = meta.signature.fourDNoteSource;
-    event.source = meta.signature.source;
-    event.lastModifiedSource = meta.signature.lastModifiedSource;
+    
+    // Step 2: 调用 serialization.htmlToSlate() 提取 HTML 段落
+    // 注意：serialization.ts 只负责 HTML → Slate 转换，不处理 Diff 匹配
+    const visibleHtml = html.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '');
+    const htmlNodes = htmlToSlate(visibleHtml);  // 返回 { text, id?, ... }[]
+    
+    // Step 3: 如果有 Meta，执行三层容错匹配
+    let finalNodes = htmlNodes;
+    if (meta && meta.nodes) {
+      finalNodes = this.threeLayerMatch(htmlNodes, meta.nodes);
+    }
+    
+    // Step 4: 合并其他字段
+    return {
+      eventlog: {
+        slateJson: finalNodes,
+        html: visibleHtml
+      },
+      // 从 Meta.signature 恢复其他字段
+      ...(meta?.signature || {})
+    };
   }
   
-  // 从本地Service查询关系数据
-  const eventId = meta.id;
-  event.tags = await tagService.getEventTags(eventId);
-  
-  const treeNode = await eventTreeService.getEventNode(eventId);
-  if (treeNode) {
-    event.parentEventId = treeNode.parent;
-    event.childEventIds = treeNode.children || [];
-    event.bulletLevel = treeNode.bulletLevel;
-    event.order = treeNode.order;
+  /**
+   * 三层容错匹配算法（私有方法）
+   * 职责：将 HTML 文本段落匹配到 Meta 节点 ID
+   */
+  private static threeLayerMatch(htmlNodes: any[], metaNodes: any[]): any[] {
+    // Layer 1: Exact anchor matching
+    // Layer 2: Sandwich inference  
+    // Layer 3: Fuzzy scoring with global optimal
+    // ... (实现细节见下文"三层容错匹配算法"章节)
+    return matchedNodes;
   }
-  
-  event.attendees = await contactService.getEventAttendees(eventId);
-  
-  return event as Event;
-}
-```
+} // EventService 类结束
 
-#### Diff对齐算法实现
+---
+
+## 三层容错匹配算法（详细实现）
+
+### 算法概述
 
 ```typescript
 // Diff对齐算法（简化版Myers Algorithm）
