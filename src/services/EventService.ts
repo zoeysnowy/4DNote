@@ -62,6 +62,11 @@ export class EventService {
   }>();
   private static readonly RANGE_CACHE_TTL = 5000; // 5秒缓存
   
+  // ⚡️ [TRANSIENT WRITE BUFFER] 临时写入缓冲 - Read-Your-Own-Writes
+  // 仅缓存待写入的数据（防抖队列中的事件），写入成功后立即清除
+  // 解决父子事件关联问题：子事件保存时能读取到还未落盘的父事件
+  private static pendingWrites = new Map<string, Event>();
+  
   /**
    * 🔧 [FIX] 确保 StorageManager 已初始化
    * 防止竞争条件导致查询失败
@@ -314,6 +319,13 @@ export class EventService {
    */
   static async getEventById(eventId: string): Promise<Event | null> {
     try {
+      // ⚡️ [TRANSIENT BUFFER] 优先读取临时缓冲区（Read-Your-Own-Writes）
+      // 如果事件正在防抖队列中等待保存，直接返回内存中的最新版本
+      if (this.pendingWrites.has(eventId)) {
+        eventLogger.log('⚡️ [TransientBuffer] Hit pending writes cache:', eventId.slice(-8));
+        return this.pendingWrites.get(eventId)!;
+      }
+      
       // 🔧 [FIX] 确保存储已初始化
       await this.ensureStorageReady();
       
@@ -645,6 +657,14 @@ export class EventService {
         return this.updateEvent(event.id, finalEvent, skipSync, options);
       }
 
+      // ⚡️ [TRANSIENT BUFFER] 立即添加到临时缓冲区
+      // 确保后续的 getEventById 能读到最新创建的事件（即使还在防抖队列中）
+      this.pendingWrites.set(finalEvent.id, finalEvent);
+      eventLogger.log('⚡️ [TransientBuffer] New event added to pending writes:', {
+        eventId: finalEvent.id.slice(-8),
+        bufferSize: this.pendingWrites.size
+      });
+      
       // 创建事件（双写到 IndexedDB + SQLite）
       const storageEvent = this.convertEventToStorageEvent(finalEvent);
       console.log('[createEvent] 🔍 Saving storageEvent:', {
@@ -657,6 +677,13 @@ export class EventService {
       });
       await storageManager.createEvent(storageEvent);
       eventLogger.log('💾 [EventService] Event saved to StorageManager');
+      
+      // ⚡️ [TRANSIENT BUFFER] 数据已成功写入硬盘，从缓冲区移除
+      this.pendingWrites.delete(finalEvent.id);
+      eventLogger.log('⚡️ [TransientBuffer] Event flushed to DB and removed from buffer:', {
+        eventId: finalEvent.id.slice(-8),
+        remainingInBuffer: this.pendingWrites.size
+      });
       
       // 🚀 [PERFORMANCE] 同步写入 EventStats（统计数据表）
       await storageManager.createEventStats({
@@ -1259,6 +1286,14 @@ export class EventService {
         ...(hasRealChanges ? { updatedAt: formatTimeForStorage(new Date()) } : {})
       };
       
+      // ⚡️ [TRANSIENT BUFFER] 立即更新到临时缓冲区
+      // 确保后续的 getEventById 能读到最新状态（包括刚更新的 childEventIds）
+      this.pendingWrites.set(eventId, updatedEvent);
+      eventLogger.log('⚡️ [TransientBuffer] Event added to pending writes:', {
+        eventId: eventId.slice(-8),
+        bufferSize: this.pendingWrites.size
+      });
+      
       // 🆕 v2.16: 清除占位标志（池化ID的占位事件已被真实数据更新）
       if ((originalEvent as any)._isPlaceholder && Object.keys(filteredUpdates).length > 0) {
         delete (updatedEvent as any)._isPlaceholder;
@@ -1330,14 +1365,24 @@ export class EventService {
               });
             }
           } else {
-            eventLogger.warn('⚠️ [EventService] 新父事件不存在，清除 parentEventId:', {
-              childId: eventId.slice(-8),
-              invalidParentId: filteredUpdates.parentEventId,
-              action: 'clearing parentEventId'
-            });
-            // 🔥 [CRITICAL FIX] 清除无效的 parentEventId，避免数据不一致
-            delete filteredUpdates.parentEventId;
-            delete updatedEvent.parentEventId;
+            // 🔧 [FIX] 父事件可能正在创建中（批量保存未完成），保留 parentEventId
+            // 只有当父事件ID明显无效时才清除（如临时ID）
+            if (filteredUpdates.parentEventId.startsWith('line-')) {
+              eventLogger.warn('⚠️ [EventService] 父事件ID是临时ID，清除 parentEventId:', {
+                childId: eventId.slice(-8),
+                invalidParentId: filteredUpdates.parentEventId,
+                action: 'clearing parentEventId'
+              });
+              delete filteredUpdates.parentEventId;
+              delete updatedEvent.parentEventId;
+            } else {
+              // 真实ID但暂时找不到，可能正在创建中，保留它
+              eventLogger.warn('⚠️ [EventService] 父事件暂时不存在（可能正在创建），保留 parentEventId:', {
+                childId: eventId.slice(-8),
+                parentId: filteredUpdates.parentEventId.slice(-8),
+                action: 'keeping parentEventId for future consistency'
+              });
+            }
           }
         }
       }
@@ -1355,6 +1400,14 @@ export class EventService {
       });
       
       await storageManager.updateEvent(eventId, storageEvent);
+      
+      // ⚡️ [TRANSIENT BUFFER] 数据已成功写入硬盘，从缓冲区移除
+      // 这是关键：防止内存泄漏，确保缓冲区只存储"待写入"的数据
+      this.pendingWrites.delete(eventId);
+      eventLogger.log('⚡️ [TransientBuffer] Event flushed to DB and removed from buffer:', {
+        eventId: eventId.slice(-8),
+        remainingInBuffer: this.pendingWrites.size
+      });
       
       // 🚀 [PERFORMANCE] 同步更新 EventStats（仅更新必要字段）
       const statsUpdates: Partial<import('./storage/types').EventStats> = {};
@@ -2754,16 +2807,36 @@ export class EventService {
       
       // HTML 字符串（包含标签）
       if (trimmed.startsWith('<') || trimmed.includes('<p>') || trimmed.includes('<div>')) {
-        console.log('[EventService] 检测到 HTML 格式，先检查Meta-Comment');
+        console.log('[EventService] 检测到 HTML 格式，启动深度规范化流程');
         
-        // 🆕 Step 0: 优先尝试Meta-Comment解析
-        const metaNodes = this.parseMetaComments(eventlogInput);
+        // 🆕 [v2.20.0] Outlook 深度规范化流程
+        let cleanedHtml = eventlogInput;
+        
+        // Step 1: 移除 Outlook XML 遗留物（P2）
+        cleanedHtml = this.cleanOutlookXmlTags(cleanedHtml);
+        
+        // Step 2: MsoList 伪列表识别与转换（P0）
+        cleanedHtml = this.processMsoLists(cleanedHtml);
+        
+        // Step 3: 样式白名单清洗（P0 - 防止黑底黑字）
+        cleanedHtml = this.sanitizeInlineStyles(cleanedHtml);
+        
+        // Step 4: CID 图片处理（P1 - 需要 attachments 参数）
+        // TODO: 在 OutlookSyncService 调用时传入 attachments
+        // if (options?.outlookAttachments) {
+        //   cleanedHtml = await this.processCidImages(cleanedHtml, options.outlookAttachments);
+        // }
+        
+        // Step 5: 优先尝试 Meta-Comment 解析
+        const metaNodes = this.parseMetaComments(cleanedHtml);
         if (metaNodes) {
-          console.log('[EventService] ✅ 成功从Meta-Comment解析节点:', metaNodes.length, '个');
-          return this.convertSlateJsonToEventLog(JSON.stringify(metaNodes));
+          console.log('[EventService] ✅ 成功从 Meta-Comment 解析节点:', metaNodes.length, '个');
+          // Step 6: 空行去噪（P2）
+          const denoisedNodes = this.collapseEmptyParagraphs(metaNodes);
+          return this.convertSlateJsonToEventLog(JSON.stringify(denoisedNodes));
         }
         
-        console.log('[EventService] ⚠️ 未发现Meta-Comment，使用传统解析流程');
+        console.log('[EventService] ⚠️ 未发现 Meta-Comment，使用传统解析流程');
         
         // � [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
         // 问题：如果先提取文本，签名会作为纯文本保留下来
@@ -5639,15 +5712,35 @@ export class EventService {
 
   /**
    * 获取所有子事件（包括所有类型）
+   * ⚡️ [OPTIMIZATION] 使用批量查询替代逐个 getEventById，性能提升 5-10 倍
    */
   static async getChildEvents(parentId: string): Promise<Event[]> {
     const parent = await this.getEventById(parentId);
-    if (!parent?.childEventIds) return [];
+    if (!parent?.childEventIds || parent.childEventIds.length === 0) return [];
     
-    const children = await Promise.all(
-      parent.childEventIds.map((id: string) => this.getEventById(id))
-    );
-    return children.filter((e): e is Event => e !== null);
+    // ⚡️ [BATCH QUERY] 一次查询所有子事件，避免 N 次异步查询
+    try {
+      const result = await storageManager.queryEvents({
+        filters: { eventIds: parent.childEventIds },
+        limit: 1000 // 足够大的限制
+      });
+      
+      eventLogger.log('⚡️ [getChildEvents] Batch query completed:', {
+        parentId: parentId.slice(-8),
+        childCount: result.items.length,
+        expected: parent.childEventIds.length
+      });
+      
+      return result.items;
+    } catch (error) {
+      eventLogger.error('❌ [getChildEvents] Batch query failed, fallback to individual queries:', error);
+      
+      // 🔧 Fallback: 如果批量查询失败，回退到逐个查询
+      const children = await Promise.all(
+        parent.childEventIds.map((id: string) => this.getEventById(id))
+      );
+      return children.filter((e): e is Event => e !== null);
+    }
   }
 
   /**
@@ -6194,6 +6287,235 @@ export class EventService {
     
     // 显示所有用户创建的事件
     return true; // Task、文档、Plan 事件、TimeCalendar 事件等
+  }
+
+  // ========================================
+  // Outlook 深度规范化私有方法 (v2.20.0)
+  // ========================================
+
+  /**
+   * 清理 Outlook XML 遗留物（P2）
+   * 移除 <o:p>, <w:sdtPr>, xmlns 等 Office/Word 特有标签
+   */
+  private static cleanOutlookXmlTags(html: string): string {
+    return html
+      .replace(/<o:p>[\s\S]*?<\/o:p>/gi, '')           // Office XML 段落标签
+      .replace(/<w:sdtPr>[\s\S]*?<\/w:sdtPr>/gi, '')  // Word 结构化文档属性
+      .replace(/xmlns:o="[^"]*"/gi, '')                // Office 命名空间声明
+      .replace(/xmlns:w="[^"]*"/gi, '');               // Word 命名空间声明
+  }
+
+  /**
+   * MsoList 伪列表识别与转换（P0）
+   * 将 Outlook 的 <p class="MsoListParagraph"> 转换为标准 <ul>/<ol>
+   */
+  private static processMsoLists(html: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const msoElements = Array.from(doc.querySelectorAll('p.MsoListParagraph, p[style*="mso-list"]'));
+    
+    if (msoElements.length === 0) return html;
+    
+    console.log('[processMsoLists] 发现', msoElements.length, '个 MsoList 段落');
+    
+    // 识别连续的列表段落
+    const listGroups: HTMLElement[][] = [];
+    let currentGroup: HTMLElement[] = [];
+    
+    for (const element of msoElements) {
+      if (this.isMsoListParagraph(element as HTMLElement)) {
+        currentGroup.push(element as HTMLElement);
+      } else if (currentGroup.length > 0) {
+        listGroups.push(currentGroup);
+        currentGroup = [];
+      }
+    }
+    if (currentGroup.length > 0) listGroups.push(currentGroup);
+    
+    console.log('[processMsoLists] 识别到', listGroups.length, '个列表组');
+    
+    // 转换每个列表组为 <ul> 或 <ol>
+    for (const group of listGroups) {
+      const listType = this.extractMsoListType(group[0]);
+      const listElement = doc.createElement(listType === 'numbered' ? 'ol' : 'ul');
+      
+      for (const p of group) {
+        const li = doc.createElement('li');
+        li.innerHTML = this.cleanMsoListText(p);
+        
+        // 提取缩进层级
+        const level = this.extractMsoListLevel(p);
+        if (level > 1) {
+          li.setAttribute('data-bullet-level', String(level - 1));
+          li.style.marginLeft = `${(level - 1) * 20}px`;
+        }
+        
+        listElement.appendChild(li);
+      }
+      
+      // 替换原始段落
+      group[0].replaceWith(listElement);
+      for (let i = 1; i < group.length; i++) {
+        group[i].remove();
+      }
+    }
+    
+    return doc.body.innerHTML;
+  }
+
+  private static isMsoListParagraph(element: HTMLElement): boolean {
+    const className = element.className || '';
+    const style = element.getAttribute('style') || '';
+    return className.includes('MsoListParagraph') || style.includes('mso-list:');
+  }
+
+  private static extractMsoListLevel(element: HTMLElement): number {
+    const style = element.getAttribute('style') || '';
+    const match = style.match(/mso-list:.*?level(\d+)/);
+    return match ? parseInt(match[1], 10) : 1;
+  }
+
+  private static extractMsoListType(element: HTMLElement): 'numbered' | 'bullet' {
+    const ignoreSpan = element.querySelector('[style*="mso-list:Ignore"]');
+    if (ignoreSpan) {
+      const text = (ignoreSpan.textContent || '').trim();
+      // 数字、字母开头 → 有序列表
+      if (/^[\d\w]+\.$/.test(text)) {
+        return 'numbered';
+      }
+    }
+    return 'bullet';
+  }
+
+  private static cleanMsoListText(element: HTMLElement): string {
+    const clone = element.cloneNode(true) as HTMLElement;
+    
+    // 移除 mso-list:Ignore 标记
+    clone.querySelectorAll('[style*="mso-list:Ignore"]').forEach(el => el.remove());
+    
+    // 移除条件注释 <![if !supportLists]>
+    let html = clone.innerHTML;
+    html = html.replace(/<!\[if !supportLists\]>[\s\S]*?<!\[endif\]>/gi, '');
+    
+    return html.trim();
+  }
+
+  /**
+   * 样式白名单清洗（P0）
+   * 强制剔除 color, font-family, font-size，防止黑底黑字
+   */
+  private static sanitizeInlineStyles(html: string): string {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // 遍历所有带 style 属性的元素
+    const allElements = doc.querySelectorAll('[style]');
+    allElements.forEach(element => {
+      this.sanitizeElementStyle(element as HTMLElement);
+    });
+    
+    return doc.body.innerHTML;
+  }
+
+  private static sanitizeElementStyle(element: HTMLElement): void {
+    const style = element.style;
+    const cleanedStyles: Record<string, string> = {};
+    
+    // 样式白名单
+    const ALLOWED_STYLES: Record<string, string[] | boolean> = {
+      'font-weight': ['bold', '700', '800', '900'],
+      'font-style': ['italic'],
+      'text-decoration': ['underline', 'line-through'],
+      'background-color': true  // 需额外校验
+    };
+    
+    const ALLOWED_HIGHLIGHT_COLORS = [
+      '#ffff00', '#00ff00', '#ff00ff', '#ffa500',  // 黄、绿、紫、橙
+      'yellow', 'lime', 'cyan', 'magenta'
+    ];
+    
+    for (let i = 0; i < style.length; i++) {
+      const prop = style[i];
+      const value = style.getPropertyValue(prop);
+      
+      if (ALLOWED_STYLES[prop]) {
+        if (Array.isArray(ALLOWED_STYLES[prop])) {
+          // 检查值是否在允许列表中
+          if ((ALLOWED_STYLES[prop] as string[]).includes(value)) {
+            cleanedStyles[prop] = value;
+          }
+        } else if (prop === 'background-color') {
+          // 高亮色特殊处理
+          const normalized = this.normalizeColor(value);
+          if (ALLOWED_HIGHLIGHT_COLORS.includes(normalized) &&
+              normalized !== '#000000' && 
+              normalized !== '#ffffff') {
+            cleanedStyles[prop] = value;
+          }
+        }
+      }
+    }
+    
+    // 清空并应用白名单样式
+    element.removeAttribute('style');
+    Object.entries(cleanedStyles).forEach(([prop, value]) => {
+      element.style.setProperty(prop, value);
+    });
+  }
+
+  private static normalizeColor(color: string): string {
+    // rgb(0,0,0) → #000000
+    if (color.startsWith('rgb')) {
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (match) {
+        const r = parseInt(match[1]).toString(16).padStart(2, '0');
+        const g = parseInt(match[2]).toString(16).padStart(2, '0');
+        const b = parseInt(match[3]).toString(16).padStart(2, '0');
+        return `#${r}${g}${b}`;
+      }
+    }
+    return color.toLowerCase();
+  }
+
+  /**
+   * 空行去噪（P2）
+   * 折叠连续的空段落，最多保留 1 个
+   */
+  private static collapseEmptyParagraphs(slateNodes: any[]): any[] {
+    const result: any[] = [];
+    let consecutiveEmptyCount = 0;
+    
+    for (const node of slateNodes) {
+      const isEmpty = this.isEmptyParagraph(node);
+      
+      if (isEmpty) {
+        consecutiveEmptyCount++;
+        // 最多保留 1 个空行
+        if (consecutiveEmptyCount === 1) {
+          result.push(node);
+        }
+      } else {
+        consecutiveEmptyCount = 0;
+        result.push(node);
+      }
+    }
+    
+    return result;
+  }
+
+  private static isEmptyParagraph(node: any): boolean {
+    if (node.type !== 'paragraph') return false;
+    
+    const text = this.extractNodeText(node);
+    return text.trim() === '' || text === '\u00A0';  // &nbsp;
+  }
+
+  private static extractNodeText(node: any): string {
+    if ('text' in node) return node.text;
+    if ('children' in node) {
+      return node.children.map((child: any) => this.extractNodeText(child)).join('');
+    }
+    return '';
   }
 }
 

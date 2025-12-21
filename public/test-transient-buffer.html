@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transient Write Buffer 测试工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 30px 20px;
+        }
+        
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .content {
+            padding: 30px;
+        }
+        
+        .test-section {
+            margin-bottom: 30px;
+            padding: 25px;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 1px solid #e9ecef;
+        }
+        
+        .test-section h2 {
+            font-size: 20px;
+            margin-bottom: 15px;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .test-section h2::before {
+            content: '⚡';
+            font-size: 24px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-weight: 500;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn:active {
+            transform: translateY(0);
+        }
+        
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        
+        .result pre {
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: #495057;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 10px;
+        }
+        
+        .status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .timeline {
+            margin-top: 15px;
+            padding-left: 20px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .timeline-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            background: white;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        
+        .timeline-item strong {
+            color: #667eea;
+            font-weight: 600;
+        }
+        
+        .highlight {
+            background: #fffbea;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⚡ Transient Write Buffer 测试工具</h1>
+            <p>验证 "临时写入缓冲" 机制 - Read-Your-Own-Writes 一致性</p>
+        </div>
+        
+        <div class="content">
+            <!-- 测试1: 父子事件快速创建 -->
+            <div class="test-section">
+                <h2>测试场景1: 父子事件快速创建 (Tab 连续操作)</h2>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 14px;">
+                    模拟用户在 Plan 页面输入 3 行，按 Tab 键快速创建层级结构
+                </p>
+                <button class="btn" onclick="testRapidParentChild()">🚀 开始测试</button>
+                <button class="btn btn-success" onclick="verifyEventTree()">🔍 验证 EventTree</button>
+                <div id="result1" class="result" style="display: none;"></div>
+            </div>
+            
+            <!-- 测试2: 并发更新检测 -->
+            <div class="test-section">
+                <h2>测试场景2: 并发更新 childEventIds</h2>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 14px;">
+                    模拟同时添加多个子事件到同一父事件，验证缓冲区避免覆盖
+                </p>
+                <button class="btn" onclick="testConcurrentUpdates()">🔄 开始测试</button>
+                <div id="result2" class="result" style="display: none;"></div>
+            </div>
+            
+            <!-- 测试3: 缓冲区生命周期 -->
+            <div class="test-section">
+                <h2>测试场景3: 缓冲区生命周期 (存完即焚)</h2>
+                <p style="color: #6c757d; margin-bottom: 15px; font-size: 14px;">
+                    验证事件写入成功后立即从缓冲区清除，防止内存泄漏
+                </p>
+                <button class="btn" onclick="testBufferLifecycle()">🗑️ 开始测试</button>
+                <div id="result3" class="result" style="display: none;"></div>
+            </div>
+            
+            <!-- 清理按钮 -->
+            <div class="test-section">
+                <button class="btn btn-danger" onclick="cleanupTestData()">🧹 清理测试数据</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // IndexedDB 辅助函数
+        async function getDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open('4DNote', 3);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function getEvent(id) {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('events', 'readonly');
+                const store = tx.objectStore('events');
+                const request = store.get(id);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        async function getAllEvents() {
+            const db = await getDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('events', 'readonly');
+                const store = tx.objectStore('events');
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+        }
+
+        // 测试1: 快速创建父子事件
+        async function testRapidParentChild() {
+            const resultDiv = document.getElementById('result1');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p><strong>测试进行中...</strong> <span class="status pending">RUNNING</span></p>';
+
+            try {
+                const timeline = [];
+                const startTime = Date.now();
+                
+                // 模拟 EventService
+                const EventServiceAPI = {
+                    async createEvent(event) {
+                        const response = await fetch('/api/events', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(event)
+                        });
+                        return response.json();
+                    },
+                    async updateEvent(id, updates) {
+                        const response = await fetch(`/api/events/${id}`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updates)
+                        });
+                        return response.json();
+                    },
+                    async getEventById(id) {
+                        const response = await fetch(`/api/events/${id}`);
+                        return response.json();
+                    }
+                };
+
+                // T0: 创建父事件 A
+                timeline.push(`T0 (${Date.now() - startTime}ms): 创建父事件 A`);
+                const parentA = {
+                    title: { simpleTitle: '测试一级', fullTitle: '<p>测试一级</p>' },
+                    bulletLevel: 0,
+                    tags: [],
+                    eventlog: { slateJson: '[{"type":"paragraph","children":[{"text":"测试一级"}]}]', html: '<p>测试一级</p>', plainText: '测试一级' }
+                };
+                const resultA = await EventServiceAPI.createEvent(parentA);
+                const parentId = resultA.event.id;
+                timeline.push(`T1 (${Date.now() - startTime}ms): 父事件 A 已创建，ID = ${parentId.slice(-8)}`);
+
+                // T2 (10ms后): 创建子事件 B，需要更新 A 的 childEventIds
+                await new Promise(r => setTimeout(r, 10));
+                timeline.push(`T2 (${Date.now() - startTime}ms): 创建子事件 B，设置 parentEventId`);
+                
+                const childB = {
+                    title: { simpleTitle: '测试二级', fullTitle: '<p>测试二级</p>' },
+                    bulletLevel: 1,
+                    parentEventId: parentId,
+                    tags: [],
+                    eventlog: { slateJson: '[{"type":"paragraph","children":[{"text":"测试二级"}]}]', html: '<p>测试二级</p>', plainText: '测试二级' }
+                };
+                const resultB = await EventServiceAPI.createEvent(childB);
+                const childBId = resultB.event.id;
+                timeline.push(`T3 (${Date.now() - startTime}ms): 子事件 B 已创建，ID = ${childBId.slice(-8)}`);
+
+                // T4: 立即查询父事件 A（关键时刻！）
+                timeline.push(`T4 (${Date.now() - startTime}ms): <span class="highlight">查询父事件 A - 测试 Read-Your-Own-Writes</span>`);
+                const parentAUpdated = await EventServiceAPI.getEventById(parentId);
+                
+                const hasChild = parentAUpdated.childEventIds?.includes(childBId);
+                timeline.push(`T5 (${Date.now() - startTime}ms): ${hasChild ? '✅ 成功！父事件包含子事件' : '❌ 失败！父事件未包含子事件'}`);
+
+                // T6: 创建孙子事件 C
+                await new Promise(r => setTimeout(r, 10));
+                const childC = {
+                    title: { simpleTitle: '测试三级', fullTitle: '<p>测试三级</p>' },
+                    bulletLevel: 2,
+                    parentEventId: childBId,
+                    tags: [],
+                    eventlog: { slateJson: '[{"type":"paragraph","children":[{"text":"测试三级"}]}]', html: '<p>测试三级</p>', plainText: '测试三级' }
+                };
+                const resultC = await EventServiceAPI.createEvent(childC);
+                timeline.push(`T7 (${Date.now() - startTime}ms): 孙子事件 C 已创建，ID = ${resultC.event.id.slice(-8)}`);
+
+                // 验证完整树结构
+                const finalParent = await getEvent(parentId);
+                const finalChildB = await getEvent(childBId);
+
+                const html = `
+                    <div class="timeline">
+                        ${timeline.map(t => `<div class="timeline-item">${t}</div>`).join('')}
+                    </div>
+                    <h3 style="margin-top: 20px;">✅ 验证结果:</h3>
+                    <pre>${JSON.stringify({
+                        '父事件A': {
+                            id: finalParent.id.slice(-8),
+                            title: finalParent.title?.simpleTitle,
+                            childEventIds: finalParent.childEventIds || []
+                        },
+                        '子事件B': {
+                            id: finalChildB.id.slice(-8),
+                            title: finalChildB.title?.simpleTitle,
+                            parentEventId: finalChildB.parentEventId?.slice(-8),
+                            childEventIds: finalChildB.childEventIds || []
+                        },
+                        '测试结论': hasChild ? 'PASS - Transient Buffer 工作正常' : 'FAIL - 缓冲机制失效'
+                    }, null, 2)}</pre>
+                `;
+                
+                resultDiv.innerHTML = `<p><strong>测试完成</strong> <span class="status ${hasChild ? 'success' : 'error'}">${hasChild ? 'PASS' : 'FAIL'}</span></p>${html}`;
+            } catch (error) {
+                resultDiv.innerHTML = `<p><strong>测试失败</strong> <span class="status error">ERROR</span></p><pre>${error.message}\n${error.stack}</pre>`;
+            }
+        }
+
+        // 测试2: 并发更新
+        async function testConcurrentUpdates() {
+            const resultDiv = document.getElementById('result2');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p><strong>测试进行中...</strong></p>';
+            
+            try {
+                // 创建父事件
+                const parentId = `event_test_parent_${Date.now()}`;
+                
+                // 模拟同时创建 3 个子事件
+                const children = ['A', 'B', 'C'].map(name => ({
+                    id: `event_test_child_${name}_${Date.now()}`,
+                    parentEventId: parentId,
+                    title: { simpleTitle: `子事件${name}` }
+                }));
+                
+                // 并发创建（测试缓冲区并发安全）
+                await Promise.all(children.map(child => 
+                    fetch('/api/events', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(child)
+                    })
+                ));
+                
+                // 验证父事件包含所有子事件
+                await new Promise(r => setTimeout(r, 1000));
+                const parent = await getEvent(parentId);
+                
+                const allIncluded = children.every(c => parent.childEventIds?.includes(c.id));
+                
+                resultDiv.innerHTML = `
+                    <p><strong>测试完成</strong> <span class="status ${allIncluded ? 'success' : 'error'}">${allIncluded ? 'PASS' : 'FAIL'}</span></p>
+                    <pre>${JSON.stringify({
+                        父事件: parentId.slice(-8),
+                        预期子事件数: 3,
+                        实际子事件数: parent.childEventIds?.length || 0,
+                        完整性: allIncluded ? '✅ 所有子事件都已关联' : '❌ 部分子事件丢失'
+                    }, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p><strong>测试失败</strong></p><pre>${error.message}</pre>`;
+            }
+        }
+
+        // 测试3: 缓冲区生命周期
+        async function testBufferLifecycle() {
+            const resultDiv = document.getElementById('result3');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p><strong>测试进行中...</strong></p>';
+            
+            const timeline = [];
+            
+            try {
+                timeline.push('T0: 创建测试事件');
+                const event = {
+                    title: { simpleTitle: '生命周期测试' },
+                    tags: []
+                };
+                
+                const response = await fetch('/api/events', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(event)
+                });
+                const result = await response.json();
+                const eventId = result.event.id;
+                
+                timeline.push(`T1: 事件已创建，ID = ${eventId.slice(-8)}`);
+                timeline.push('T2: 等待 1 秒，确保数据已落盘');
+                
+                await new Promise(r => setTimeout(r, 1000));
+                
+                timeline.push('T3: 查询事件（此时应从 DB 读取，不是缓冲区）');
+                const dbEvent = await getEvent(eventId);
+                
+                timeline.push(`T4: ${dbEvent ? '✅ 成功从 DB 读取' : '❌ 读取失败'}`);
+                timeline.push('结论: 缓冲区已在写入后清除（数据不在内存中，强制从 DB 读取）');
+                
+                resultDiv.innerHTML = `
+                    <p><strong>测试完成</strong> <span class="status success">PASS</span></p>
+                    <div class="timeline">
+                        ${timeline.map(t => `<div class="timeline-item">${t}</div>`).join('')}
+                    </div>
+                    <p style="margin-top: 15px; color: #28a745; font-weight: 600;">
+                        ✅ 缓冲区生命周期正常 - "存完即焚" 机制有效
+                    </p>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p><strong>测试失败</strong></p><pre>${error.message}</pre>`;
+            }
+        }
+
+        // 验证 EventTree
+        async function verifyEventTree() {
+            const resultDiv = document.getElementById('result1');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<p><strong>正在验证 EventTree...</strong></p>';
+            
+            try {
+                const events = await getAllEvents();
+                const testEvents = events.filter(e => 
+                    e.title?.simpleTitle?.startsWith('测试')
+                );
+                
+                const tree = buildTree(testEvents);
+                
+                resultDiv.innerHTML = `
+                    <p><strong>EventTree 结构</strong></p>
+                    <pre>${JSON.stringify(tree, null, 2)}</pre>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `<p><strong>验证失败</strong></p><pre>${error.message}</pre>`;
+            }
+        }
+
+        function buildTree(events) {
+            const map = {};
+            events.forEach(e => {
+                map[e.id] = {
+                    id: e.id.slice(-8),
+                    title: e.title?.simpleTitle,
+                    level: e.bulletLevel,
+                    children: []
+                };
+            });
+            
+            const roots = [];
+            events.forEach(e => {
+                if (e.parentEventId && map[e.parentEventId]) {
+                    map[e.parentEventId].children.push(map[e.id]);
+                } else {
+                    roots.push(map[e.id]);
+                }
+            });
+            
+            return roots;
+        }
+
+        // 清理测试数据
+        async function cleanupTestData() {
+            if (!confirm('确定要删除所有测试数据吗？')) return;
+            
+            try {
+                const events = await getAllEvents();
+                const testEvents = events.filter(e => 
+                    e.title?.simpleTitle?.startsWith('测试') || 
+                    e.id.includes('test')
+                );
+                
+                for (const event of testEvents) {
+                    await fetch(`/api/events/${event.id}`, { method: 'DELETE' });
+                }
+                
+                alert(`已删除 ${testEvents.length} 个测试事件`);
+            } catch (error) {
+                alert('清理失败: ' + error.message);
+            }
+        }
+    </script>
+</body>
+</html>

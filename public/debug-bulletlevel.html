@@ -103,20 +103,44 @@
             clearOutput();
             log('🔍 正在检查数据库中的 EventTree 数据...', 'info');
             
+            let events = [];
             const storageManager = window.storageManagerInstance;
+            
             if (!storageManager) {
-                log('❌ StorageManager 未初始化', 'warning');
-                return;
+                log('⚠️ StorageManager 未找到，尝试直接访问 IndexedDB...', 'info');
+                
+                try {
+                    const db = await new Promise((resolve, reject) => {
+                        const request = indexedDB.open('4DNoteDB');  // 不指定版本，使用最新版本
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    const tx = db.transaction(['events'], 'readonly');
+                    const store = tx.objectStore('events');
+                    const allEvents = await new Promise((resolve, reject) => {
+                        const request = store.getAll();
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = () => reject(request.error);
+                    });
+                    
+                    events = allEvents.filter(e => e.isPlan && !e.deletedAt);
+                    log(`✅ 直接从 IndexedDB 找到 ${events.length} 个 Plan 事件`, 'success');
+                } catch (error) {
+                    log('❌ 无法访问 IndexedDB: ' + error.message, 'warning');
+                    log('💡 请在主应用页面的控制台中运行此工具', 'info');
+                    return;
+                }
+            } else {
+                // 查询所有 Plan 事件
+                const result = await storageManager.queryEvents({ 
+                    filters: { isPlan: true }, 
+                    limit: 1000 
+                });
+                
+                events = result.items;
+                log(`✅ 找到 ${events.length} 个 Plan 事件`, 'success');
             }
-            
-            // 查询所有 Plan 事件
-            const result = await storageManager.queryEvents({ 
-                filters: { isPlan: true }, 
-                limit: 1000 
-            });
-            
-            const events = result.items;
-            log(`✅ 找到 ${events.length} 个 Plan 事件`, 'success');
             
             // 统计 EventTree 字段
             const withParent = events.filter(e => e.parentEventId);
@@ -407,7 +431,7 @@
             
             try {
                 const db = await new Promise((resolve, reject) => {
-                    const request = indexedDB.open('4DNoteDB', 1);
+                    const request = indexedDB.open('4DNoteDB');  // 使用最新版本
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });
@@ -512,7 +536,7 @@
             
             try {
                 const db = await new Promise((resolve, reject) => {
-                    const request = indexedDB.open('4DNoteDB', 1);
+                    const request = indexedDB.open('4DNoteDB');  // 使用最新版本
                     request.onsuccess = () => resolve(request.result);
                     request.onerror = () => reject(request.error);
                 });

@@ -1,0 +1,1015 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CompleteMeta 同步架构测试</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #1976d2;
+      border-bottom: 3px solid #1976d2;
+      padding-bottom: 10px;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .test-section h2 {
+      color: #424242;
+      margin-top: 0;
+    }
+    .two-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #616161;
+    }
+    textarea {
+      width: 100%;
+      min-height: 300px;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    .html-preview {
+      border: 1px solid #e0e0e0;
+      padding: 15px;
+      background: #fafafa;
+      min-height: 300px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    .meta-display {
+      background: #fff3e0;
+      border: 1px solid #ff9800;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .diff-result {
+      background: #e8f5e9;
+      border: 1px solid #4caf50;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+    }
+    .diff-item {
+      padding: 5px;
+      margin: 3px 0;
+      border-radius: 3px;
+    }
+    .diff-match {
+      background: #c8e6c9;
+    }
+    .diff-insert {
+      background: #fff9c4;
+    }
+    .diff-delete {
+      background: #ffcdd2;
+    }
+    button {
+      padding: 10px 20px;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #1565c0;
+    }
+    button:active {
+      background: #0d47a1;
+    }
+    .scenario-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .scenario-buttons button {
+      background: #673ab7;
+    }
+    .scenario-buttons button:hover {
+      background: #5e35b1;
+    }
+    .info-box {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    .info-box h3 {
+      margin-top: 0;
+      color: #1976d2;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .stat-item {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      text-align: center;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #757575;
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #1976d2;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔬 CompleteMeta 同步架构测试</h1>
+  
+  <div class="info-box">
+    <h3>测试说明</h3>
+    <p><strong>CompleteMeta架构</strong>使用Base64编码的隐藏div来存储元数据，并通过Diff算法实现HTML与Meta的智能对齐。</p>
+    <ul>
+      <li><strong>序列化</strong>：Event → HTML + Base64 Meta（模拟4DNote→Outlook同步）</li>
+      <li><strong>反序列化</strong>：HTML + Meta → Event（模拟Outlook→4DNote同步，支持检测用户的添加/删除/修改）</li>
+      <li><strong>Diff对齐</strong>：使用hint（文本前缀）进行智能匹配，处理段落的新增/删除/编辑</li>
+    </ul>
+  </div>
+
+  <div class="info-box" style="background: #fff3e0; border-left-color: #ff9800;">
+    <h3>📊 为什么使用Base64编码？</h3>
+    <ul>
+      <li><strong>防止转义灾难</strong>：Meta JSON中包含大量引号、尖括号等特殊字符，直接嵌入HTML会导致转义地狱</li>
+      <li><strong>邮件系统安全</strong>：Outlook等邮件客户端会清理HTML，Base64编码后的纯字符串更安全</li>
+      <li><strong>体积开销可控</strong>：Base64编码约增加33%体积，但Meta本身只保存元数据（不含文本），实际增加有限</li>
+      <li><strong>实际体积</strong>：5个段落的EventLog，Meta约400B，Base64后约530B，总HTML约1.5KB</li>
+      <li><strong>Outlook限制</strong>：单个Event的description限制32KB，即使20段复杂EventLog也远低于此限制</li>
+    </ul>
+    <p style="color: #e65100; font-weight: bold; margin-top: 10px;">⚠️ 注意：Base64不是加密！任何人都可以用atob()解码，它只是编码格式。</p>
+  </div>
+
+  <div class="info-box" style="background: #f3e5f5; border-left-color: #9c27b0;">
+    <h3>🤔 为什么不能只用eventID解决问题？</h3>
+    <p><strong>核心问题</strong>：eventID只能查到"旧版本"Event，无法知道用户在Outlook中的具体编辑。</p>
+    
+    <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+      <thead>
+        <tr style="background: #ede7f6;">
+          <th style="padding: 8px; border: 1px solid #9c27b0; text-align: left;">场景</th>
+          <th style="padding: 8px; border: 1px solid #9c27b0; text-align: left;">只有eventID</th>
+          <th style="padding: 8px; border: 1px solid #9c27b0; text-align: left;">有CompleteMeta</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>用户删除段落</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 不知道删了哪段，只能全部覆盖</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ Diff算法检测到具体删除的段落</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>用户新增段落</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 不知道新增位置，可能丢失</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 检测到新增，生成新节点ID</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>节点ID保留</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 重新解析HTML生成新ID，所有引用断裂</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 节点ID在Meta中保存，往返不变</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>mention元数据</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ Outlook清除data-*后无法恢复</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ Meta中保存完整mention信息</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>bulletLevel/level</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ Outlook可能改变HTML结构，丢失层级</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 从Meta恢复原始层级信息</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>时间戳节点</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ createdAt/updatedAt在HTML中会丢失</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ Meta保存每个节点的时间戳</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <p style="margin-top: 15px;"><strong>总结</strong>：eventID的作用是<em>身份标识</em>，用于查询本地数据库。CompleteMeta的作用是<em>变更检测和元数据恢复</em>，两者配合才能实现可靠的双向同步。</p>
+  </div>
+
+  <div class="info-box" style="background: #ffebee; border-left-color: #f44336;">
+    <h3>⚖️ Trade-off：hint长度 vs 对齐准确率</h3>
+    
+    <table style="width: 100%; border-collapse: collapse; margin: 10px 0;">
+      <thead>
+        <tr style="background: #ffcdd2;">
+          <th style="padding: 8px; border: 1px solid #f44336;">hint长度</th>
+          <th style="padding: 8px; border: 1px solid #f44336;">Meta体积</th>
+          <th style="padding: 8px; border: 1px solid #f44336;">对齐准确率</th>
+          <th style="padding: 8px; border: 1px solid #f44336;">抗修改能力</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">5字符</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">最小（~200B）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 低（易误判）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 修改1-2字就失效</td>
+        </tr>
+        <tr style="background: #e8f5e9;">
+          <td style="padding: 8px; border: 1px solid #e0e0e0;"><strong>10字符（当前）</strong></td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">适中（~400B）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 中等（60%阈值）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">⚠️ 修改5-6字会失效</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">15-20字符</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">较大（~600B）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 高（更稳定）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 可容忍更多修改</td>
+        </tr>
+        <tr>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">完整文本</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">❌ 爆炸（2-3KB）</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 完美</td>
+          <td style="padding: 8px; border: 1px solid #e0e0e0;">✅ 完美（但违背设计）</td>
+        </tr>
+      </tbody>
+    </table>
+    
+    <p style="margin-top: 10px;"><strong>实际表现</strong>：</p>
+    <ul style="margin: 5px 0;">
+      <li><strong>小幅编辑（末尾添加）</strong>："会议开始时讨论项目进度" → "会议开始时讨论项目进度和细节" ✅ 可正确对齐</li>
+      <li><strong>中等编辑（中间修改）</strong>："会议开始时讨论项目进度" → "会议开始后讨论新项目进度" ✅ 相似度70%，可对齐</li>
+      <li><strong>大幅修改（前10字符变化>40%）</strong>："会议开始时讨论项目进度" → "会议开始后领导致辞" ❌ 相似度40%，判定为删除+新增</li>
+    </ul>
+    
+    <p style="margin-top: 10px; color: #d32f2f;"><strong>建议</strong>：如果用户经常大幅修改段落开头，可将hint长度调整为15-20字符，Meta体积增加约50%（400B→600B），但仍远低于32KB限制。</p>
+  </div>
+
+  <!-- 步骤1：序列化Event到HTML -->
+  <div class="test-section">
+    <h2>步骤1️⃣：序列化Event到HTML（4DNote → Outlook）</h2>
+    
+    <div class="scenario-buttons">
+      <button onclick="loadScenario('simple')">简单事件</button>
+      <button onclick="loadScenario('complex')">复杂事件（含mention）</button>
+      <button onclick="loadScenario('multiLevel')">多层级标题</button>
+      <button onclick="loadScenario('bullets')">列表缩进</button>
+    </div>
+
+    <div class="two-columns">
+      <div class="column">
+        <label>输入Event JSON：</label>
+        <textarea id="eventInput" placeholder='{"id":"evt_001","eventlog":{"slateJson":"..."}}'></textarea>
+        <button onclick="serializeEvent()" style="margin-top: 10px;">🔄 序列化为HTML + Meta</button>
+      </div>
+      
+      <div class="column">
+        <label>生成的HTML（带Base64 Meta）：</label>
+        <div class="html-preview" id="htmlOutput"></div>
+        <button onclick="copyHtml()" style="margin-top: 10px;">📋 复制HTML</button>
+      </div>
+    </div>
+
+    <div>
+      <label>解码的Meta JSON：</label>
+      <div class="meta-display" id="metaDisplay"></div>
+      <div style="background: #e8f5e9; border: 1px solid #4caf50; padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 12px;">
+        <strong>💡 提示：</strong>hint字段（h）只保存文本前10个字符作为Diff对齐的"指纹"。<br>
+        完整文本从HTML中提取，不在Meta中重复存储。这是为了减小体积和避免文本重复。
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-label">节点数</div>
+        <div class="stat-value" id="nodeCount">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">总HTML大小</div>
+        <div class="stat-value" id="htmlSize">0B</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">可见内容大小</div>
+        <div class="stat-value" id="visibleSize">0B</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Meta原始JSON</div>
+        <div class="stat-value" id="metaSize">0B</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Meta Base64后</div>
+        <div class="stat-value" id="metaBase64Size">0B</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Base64膨胀率</div>
+        <div class="stat-value" id="base64Overhead">0%</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">Meta占总HTML</div>
+        <div class="stat-value" id="metaPercentage">0%</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">已用空间</div>
+        <div class="stat-value" id="usedSpace">0B</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">剩余空间</div>
+        <div class="stat-value" id="remainingSpace" style="color: #4caf50;">32KB</div>
+      </div>
+    </div>
+    <div style="margin-top: 10px;">
+      <div style="font-size: 12px; color: #757575; margin-bottom: 5px;">
+        空间使用率（Outlook 32KB限制）：<span id="usagePercent" style="font-weight: bold;">0%</span>
+      </div>
+      <div style="width: 100%; height: 20px; background: #e0e0e0; border-radius: 10px; overflow: hidden;">
+        <div id="usageBar" style="height: 100%; background: linear-gradient(90deg, #4caf50, #8bc34a); width: 0%; transition: width 0.3s;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤2：模拟Outlook编辑 -->
+  <div class="test-section">
+    <h2>步骤2️⃣：模拟Outlook编辑</h2>
+    
+    <div class="scenario-buttons">
+      <button onclick="simulateEdit('addParagraph')">➕ 添加段落</button>
+      <button onclick="simulateEdit('deleteParagraph')">➖ 删除段落</button>
+      <button onclick="simulateEdit('modifyText')">✏️ 修改文本（小改）</button>
+      <button onclick="simulateEdit('majorModify')">⚠️ 大幅修改hint</button>
+      <button onclick="simulateEdit('reorder')">🔀 重排顺序</button>
+      <button onclick="simulateEdit('stripMeta')">🧹 清除data-*属性</button>
+    </div>
+    
+    <div style="background: #fff3e0; border: 1px solid #ff9800; padding: 10px; margin: 10px 0; border-radius: 4px; font-size: 12px;">
+      <strong>⚠️ 关于"大幅修改hint"测试：</strong><br>
+      如果用户在Outlook中大幅修改段落的前10个字符（相似度<60%），Diff算法会判断为"删除旧段落+新增段落"，导致节点ID变化。<br>
+      这是trade-off：hint越长越准确（建议15-20字符），但Meta体积会增加。
+    </div>
+
+    <div class="two-columns">
+      <div class="column">
+        <label>原始HTML（从步骤1复制）：</label>
+        <textarea id="originalHtml" placeholder="粘贴步骤1生成的HTML"></textarea>
+      </div>
+      
+      <div class="column">
+        <label>编辑后的HTML（模拟Outlook修改）：</label>
+        <textarea id="editedHtml" placeholder="手动编辑或使用左侧按钮模拟"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- 步骤3：反序列化并Diff对齐 -->
+  <div class="test-section">
+    <h2>步骤3️⃣：反序列化 + Diff对齐（Outlook → 4DNote）</h2>
+    
+    <button onclick="deserializeHtml()">🔍 运行Diff对齐算法</button>
+    <button onclick="compareResults()">📊 对比原始Event</button>
+
+    <div class="two-columns">
+      <div class="column">
+        <label>Diff对齐结果：</label>
+        <div class="diff-result" id="diffResult"></div>
+      </div>
+      
+      <div class="column">
+        <label>恢复的Event JSON：</label>
+        <textarea id="restoredEvent" readonly></textarea>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat-item">
+        <div class="stat-label">匹配段落</div>
+        <div class="stat-value" id="matchCount">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">新增段落</div>
+        <div class="stat-value" id="insertCount" style="color: #ff9800;">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">删除段落</div>
+        <div class="stat-value" id="deleteCount" style="color: #f44336;">0</div>
+      </div>
+      <div class="stat-item">
+        <div class="stat-label">准确率</div>
+        <div class="stat-value" id="accuracy">0%</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 数据结构 ====================
+    
+    const scenarios = {
+      simple: {
+        id: 'evt_simple_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'p-001', type: 'paragraph', children: [{ text: '会议开始时讨论项目进度' }] },
+            { id: 'p-002', type: 'paragraph', children: [{ text: '确认下周的交付时间' }] },
+            { id: 'p-003', type: 'paragraph', children: [{ text: '分配具体任务给团队成员' }] }
+          ])
+        },
+        createdAt: '2025-12-19 10:00:00',
+        updatedAt: '2025-12-19 10:30:00'
+      },
+      
+      complex: {
+        id: 'evt_complex_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'p-001', type: 'paragraph', children: [{ text: '准备季度报告，包含以下部分：' }] },
+            { id: 'h-001', type: 'heading', level: 2, children: [{ text: '第一部分：市场分析' }] },
+            { id: 'p-002', type: 'paragraph', children: [
+              { text: '参考' },
+              { type: 'mention', mention: { type: 'event', targetId: 'evt_ref_001', displayText: '@上季度报告' }, children: [{ text: '@上季度报告' }] },
+              { text: '的数据' }
+            ]},
+            { id: 'h-002', type: 'heading', level: 2, children: [{ text: '第二部分：财务概况' }] },
+            { id: 'p-003', type: 'paragraph', children: [
+              { text: '标记为' },
+              { type: 'mention', mention: { type: 'tag', targetName: '工作/财务', displayText: '#财务' }, children: [{ text: '#财务' }] }
+            ]}
+          ])
+        },
+        createdAt: '2025-12-19 09:00:00',
+        updatedAt: '2025-12-19 09:45:00'
+      },
+      
+      multiLevel: {
+        id: 'evt_multilevel_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'h1-001', type: 'heading', level: 1, children: [{ text: '项目计划' }] },
+            { id: 'h2-001', type: 'heading', level: 2, children: [{ text: '阶段一：需求分析' }] },
+            { id: 'p-001', type: 'paragraph', children: [{ text: '收集用户需求' }] },
+            { id: 'h2-002', type: 'heading', level: 2, children: [{ text: '阶段二：设计开发' }] },
+            { id: 'p-002', type: 'paragraph', children: [{ text: '完成UI设计' }] },
+            { id: 'p-003', type: 'paragraph', children: [{ text: '编写代码实现' }] }
+          ])
+        },
+        createdAt: '2025-12-19 08:00:00',
+        updatedAt: '2025-12-19 08:20:00'
+      },
+      
+      bullets: {
+        id: 'evt_bullets_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'p-001', type: 'paragraph', children: [{ text: '待办事项：' }] },
+            { id: 'p-002', type: 'paragraph', bulletLevel: 1, children: [{ text: '完成代码审查' }] },
+            { id: 'p-003', type: 'paragraph', bulletLevel: 2, children: [{ text: '检查错误处理' }] },
+            { id: 'p-004', type: 'paragraph', bulletLevel: 2, children: [{ text: '验证边界条件' }] },
+            { id: 'p-005', type: 'paragraph', bulletLevel: 1, children: [{ text: '更新文档' }] }
+          ])
+        },
+        createdAt: '2025-12-19 07:00:00',
+        updatedAt: '2025-12-19 07:15:00'
+      }
+    };
+
+    // ==================== 工具函数 ====================
+    
+    function extractText(node) {
+      if (!node.children) return '';
+      return node.children.map(child => {
+        if (child.text) return child.text;
+        if (child.children) return extractText(child);
+        return '';
+      }).join('');
+    }
+
+    function generateNodeId() {
+      return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ==================== 序列化：Event → HTML + Meta ====================
+    
+    function serializeEvent() {
+      const input = document.getElementById('eventInput').value;
+      if (!input.trim()) {
+        alert('请输入Event JSON');
+        return;
+      }
+
+      try {
+        const event = JSON.parse(input);
+        const nodes = JSON.parse(event.eventlog.slateJson);
+
+        // 1. 生成Meta（包含hint）
+        const meta = {
+          v: 1,
+          id: event.id,
+          slate: {
+            nodes: nodes.map(node => {
+              const textContent = extractText(node);
+              const hint = textContent.substring(0, 10);
+              
+              const metaNode = {};
+              if (node.id) metaNode.id = node.id;
+              if (hint) metaNode.h = hint;
+              if (node.createdAt) metaNode.ts = node.createdAt;
+              if (node.updatedAt) metaNode.ut = node.updatedAt;
+              if (node.level !== undefined) metaNode.lvl = node.level;
+              if (node.bulletLevel !== undefined) metaNode.bullet = node.bulletLevel;
+              if (node.mention) metaNode.mention = node.mention;
+              
+              return metaNode;
+            })
+          },
+          signature: {
+            createdAt: event.createdAt,
+            updatedAt: event.updatedAt,
+            fourDNoteSource: event.fourDNoteSource ?? true,
+            source: event.source || 'local',
+            lastModifiedSource: event.lastModifiedSource || '4dnote'
+          }
+        };
+
+        // 2. Base64编码Meta
+        const metaJson = JSON.stringify(meta, null, 2);
+        const metaBase64 = btoa(unescape(encodeURIComponent(metaJson)));
+
+        // 3. 生成HTML
+        const visibleHtml = slateNodesToHtml(nodes);
+        
+        const fullHtml = `<div class="4dnote-content-wrapper" data-4dnote-version="1" style="border-left: 2px solid #e0e0e0; padding-left: 10px;">
+  ${visibleHtml}
+  
+  <!-- Meta Data Zone -->
+  <div id="4dnote-meta" style="display:none; font-size:0; line-height:0; opacity:0; mso-hide:all;">
+    ${metaBase64}
+  </div>
+</div>`;
+
+        // 显示结果
+        document.getElementById('htmlOutput').textContent = fullHtml;
+        document.getElementById('metaDisplay').textContent = metaJson;
+
+        // 统计信息
+        const visibleHtmlSize = visibleHtml.length;
+        const metaJsonSize = metaJson.length;
+        const metaBase64Size = metaBase64.length;
+        const fullHtmlSize = fullHtml.length;
+        const base64Overhead = ((metaBase64Size - metaJsonSize) / metaJsonSize * 100).toFixed(1);
+        const metaPercentage = ((metaBase64Size / fullHtmlSize) * 100).toFixed(1);
+        const remainingBytes = 32 * 1024 - fullHtmlSize;
+        
+        document.getElementById('nodeCount').textContent = nodes.length;
+        document.getElementById('htmlSize').textContent = formatBytes(fullHtmlSize);
+        document.getElementById('visibleSize').textContent = formatBytes(visibleHtmlSize);
+        document.getElementById('metaSize').textContent = formatBytes(metaJsonSize);
+        document.getElementById('metaBase64Size').textContent = formatBytes(metaBase64Size);
+        document.getElementById('base64Overhead').textContent = base64Overhead + '%';
+        document.getElementById('metaPercentage').textContent = metaPercentage + '%';
+        document.getElementById('usedSpace').textContent = formatBytes(fullHtmlSize);
+        document.getElementById('remainingSpace').textContent = formatBytes(remainingBytes);
+        
+        const usagePercent = ((fullHtmlSize / (32 * 1024)) * 100).toFixed(2);
+        document.getElementById('usagePercent').textContent = usagePercent + '%';
+        document.getElementById('usageBar').style.width = usagePercent + '%';
+        
+        // 根据使用率改变进度条颜色
+        const usageBar = document.getElementById('usageBar');
+        if (usagePercent > 80) {
+          usageBar.style.background = 'linear-gradient(90deg, #f44336, #e91e63)';
+        } else if (usagePercent > 50) {
+          usageBar.style.background = 'linear-gradient(90deg, #ff9800, #ffc107)';
+        } else {
+          usageBar.style.background = 'linear-gradient(90deg, #4caf50, #8bc34a)';
+        }
+
+        // 自动填充到步骤2
+        document.getElementById('originalHtml').value = fullHtml;
+
+      } catch (err) {
+        alert('JSON解析错误：' + err.message);
+        console.error(err);
+      }
+    }
+
+    function slateNodesToHtml(nodes) {
+      return nodes.map(node => {
+        const text = extractText(node);
+        let indent = '';
+        
+        if (node.bulletLevel) {
+          indent = '  '.repeat(node.bulletLevel - 1);
+          return `${indent}• ${text}`;
+        } else if (node.level) {
+          const prefix = '#'.repeat(node.level);
+          return `<strong>${prefix} ${text}</strong>`;
+        } else {
+          return `<p>${text}</p>`;
+        }
+      }).join('\n  ');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function formatBytes(bytes) {
+      if (bytes < 1024) return bytes + 'B';
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + 'KB';
+      return (bytes / 1024 / 1024).toFixed(1) + 'MB';
+    }
+
+    function copyHtml() {
+      const html = document.getElementById('htmlOutput').textContent;
+      navigator.clipboard.writeText(html).then(() => {
+        alert('HTML已复制到剪贴板');
+      });
+    }
+
+    // ==================== 加载测试场景 ====================
+    
+    function loadScenario(name) {
+      const event = scenarios[name];
+      document.getElementById('eventInput').value = JSON.stringify(event, null, 2);
+    }
+
+    // ==================== 模拟Outlook编辑 ====================
+    
+    function simulateEdit(action) {
+      const html = document.getElementById('originalHtml').value;
+      if (!html.trim()) {
+        alert('请先在步骤1生成HTML');
+        return;
+      }
+
+      let edited = html;
+
+      switch (action) {
+        case 'addParagraph':
+          // 在第二个<p>后插入新段落
+          edited = html.replace(/<p>(.*?)<\/p>\s*<p>/, '<p>$1</p>\n  <p>【Outlook新增】这是用户在Outlook中添加的段落</p>\n  <p>');
+          break;
+
+        case 'deleteParagraph':
+          // 删除第一个<p>
+          edited = html.replace(/<p>.*?<\/p>\n\s*/, '');
+          break;
+
+        case 'modifyText':
+          // 小幅修改第一个段落（不影响hint前10字符）
+          edited = html.replace(/<p>(会议开始时讨论项目进度)<\/p>/, '<p>会议开始时讨论项目进度和细节</p>');
+          break;
+
+        case 'majorModify':
+          // 大幅修改hint - 前10个字符变化超过60%
+          edited = html.replace(/<p>会议开始时讨论项目进度<\/p>/, '<p>会议开始后领导致辞并宣布启动</p>');
+          alert('⚠️ 注意：这个修改会导致相似度只有40%（4/10字符匹配），低于60%阈值\n' +
+                'Diff算法会判断为：删除旧段落(p-001) + 新增段落(node_xxx)\n' +
+                '节点ID会丢失！这是trade-off的结果。');
+          break;
+
+        case 'reorder':
+          // 交换前两个段落
+          const matches = html.match(/<p>(.*?)<\/p>/g);
+          if (matches && matches.length >= 2) {
+            edited = html.replace(matches[0], '___TEMP___')
+                         .replace(matches[1], matches[0])
+                         .replace('___TEMP___', matches[1]);
+          }
+          break;
+
+        case 'stripMeta':
+          // 移除data-*属性（模拟Outlook清理）
+          edited = html.replace(/data-[a-z-]+="[^"]*"/g, '');
+          break;
+      }
+
+      document.getElementById('editedHtml').value = edited;
+    }
+
+    // ==================== 反序列化 + Diff对齐 ====================
+    
+    function deserializeHtml() {
+      const html = document.getElementById('editedHtml').value || document.getElementById('originalHtml').value;
+      if (!html.trim()) {
+        alert('请输入HTML');
+        return;
+      }
+
+      try {
+        // Step 1: 提取边界内容
+        const wrapperMatch = html.match(/<div class="4dnote-content-wrapper"[^>]*>([\s\S]*?)<\/div>/);
+        if (!wrapperMatch) {
+          alert('未找到4DNote content wrapper');
+          return;
+        }
+        const wrapper = wrapperMatch[1];
+
+        // Step 2: 解析Meta
+        const metaMatch = wrapper.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
+        let meta = null;
+        
+        if (metaMatch) {
+          const metaBase64 = metaMatch[1].trim();
+          const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+          meta = JSON.parse(metaJson);
+        } else {
+          alert('未找到Meta数据');
+          return;
+        }
+
+        // Step 3: 从HTML生成节点列表
+        const visibleHtml = wrapper.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '');
+        let htmlNodes = parseHtmlToNodes(visibleHtml);
+
+        // Step 4: Diff对齐
+        const diffResults = [];
+        let alignedNodes = [];
+
+        if (meta.slate && meta.slate.nodes) {
+          const metaHints = meta.slate.nodes.map(n => n.h || '');
+          const htmlTexts = htmlNodes.map(n => extractText(n).substring(0, 10));
+
+          console.log('Meta hints:', metaHints);
+          console.log('HTML texts:', htmlTexts);
+
+          const alignment = diffAlign(metaHints, htmlTexts);
+          
+          alignedNodes = alignment.map(match => {
+            if (match.type === 'match') {
+              const htmlNode = htmlNodes[match.htmlIndex];
+              const metaNode = meta.slate.nodes[match.metaIndex];
+              
+              diffResults.push({
+                type: 'match',
+                text: extractText(htmlNode),
+                metaId: metaNode.id,
+                hint: metaNode.h
+              });
+
+              return {
+                ...htmlNode,
+                id: metaNode.id,
+                createdAt: metaNode.ts,
+                updatedAt: metaNode.ut,
+                level: metaNode.lvl,
+                bulletLevel: metaNode.bullet,
+                mention: metaNode.mention
+              };
+            } else if (match.type === 'insert') {
+              const htmlNode = htmlNodes[match.htmlIndex];
+              
+              diffResults.push({
+                type: 'insert',
+                text: extractText(htmlNode)
+              });
+
+              return {
+                ...htmlNode,
+                id: generateNodeId(),
+                createdAt: Date.now()
+              };
+            } else if (match.type === 'delete') {
+              const metaNode = meta.slate.nodes[match.metaIndex];
+              
+              diffResults.push({
+                type: 'delete',
+                hint: metaNode.h,
+                metaId: metaNode.id
+              });
+
+              return null;
+            }
+          }).filter(Boolean);
+        }
+
+        // 显示Diff结果
+        displayDiffResults(diffResults);
+
+        // 构造恢复的Event
+        const restoredEvent = {
+          id: meta.id,
+          eventlog: {
+            slateJson: JSON.stringify(alignedNodes, null, 2)
+          },
+          createdAt: meta.signature?.createdAt,
+          updatedAt: meta.signature?.updatedAt,
+          fourDNoteSource: meta.signature?.fourDNoteSource,
+          source: meta.signature?.source,
+          lastModifiedSource: meta.signature?.lastModifiedSource
+        };
+
+        document.getElementById('restoredEvent').value = JSON.stringify(restoredEvent, null, 2);
+
+        // 统计
+        const matchCount = diffResults.filter(r => r.type === 'match').length;
+        const insertCount = diffResults.filter(r => r.type === 'insert').length;
+        const deleteCount = diffResults.filter(r => r.type === 'delete').length;
+        const total = matchCount + insertCount + deleteCount;
+
+        document.getElementById('matchCount').textContent = matchCount;
+        document.getElementById('insertCount').textContent = insertCount;
+        document.getElementById('deleteCount').textContent = deleteCount;
+        document.getElementById('accuracy').textContent = total > 0 ? ((matchCount / total) * 100).toFixed(1) + '%' : '0%';
+
+      } catch (err) {
+        alert('反序列化错误：' + err.message);
+        console.error(err);
+      }
+    }
+
+    function parseHtmlToNodes(html) {
+      const lines = html.split('\n').map(line => line.trim()).filter(line => line);
+      
+      return lines.map(line => {
+        // 检测列表项
+        const bulletMatch = line.match(/^(•|\*|-)\s+(.*)/);
+        if (bulletMatch) {
+          return {
+            type: 'paragraph',
+            bulletLevel: 1,
+            children: [{ text: bulletMatch[2] }]
+          };
+        }
+
+        // 检测标题
+        const headingMatch = line.match(/<strong>(#+)\s+(.*?)<\/strong>/);
+        if (headingMatch) {
+          return {
+            type: 'heading',
+            level: headingMatch[1].length,
+            children: [{ text: headingMatch[2] }]
+          };
+        }
+
+        // 普通段落
+        const textMatch = line.match(/<p>(.*?)<\/p>/);
+        if (textMatch) {
+          return {
+            type: 'paragraph',
+            children: [{ text: textMatch[1] }]
+          };
+        }
+
+        // 纯文本
+        return {
+          type: 'paragraph',
+          children: [{ text: line }]
+        };
+      });
+    }
+
+    function diffAlign(metaHints, htmlTexts) {
+      const results = [];
+      let metaIndex = 0;
+      let htmlIndex = 0;
+
+      while (metaIndex < metaHints.length || htmlIndex < htmlTexts.length) {
+        if (metaIndex >= metaHints.length) {
+          results.push({ type: 'insert', htmlIndex: htmlIndex++ });
+        } else if (htmlIndex >= htmlTexts.length) {
+          results.push({ type: 'delete', metaIndex: metaIndex++ });
+        } else if (isSimilar(metaHints[metaIndex], htmlTexts[htmlIndex])) {
+          results.push({ type: 'match', metaIndex: metaIndex++, htmlIndex: htmlIndex++ });
+        } else {
+          // 向前查找匹配
+          const lookAhead = 3;
+          let foundMatch = false;
+
+          // 尝试：跳过Meta中的节点（可能被删除）
+          for (let i = 1; i <= lookAhead && metaIndex + i < metaHints.length; i++) {
+            if (isSimilar(metaHints[metaIndex + i], htmlTexts[htmlIndex])) {
+              // Meta中有删除
+              for (let j = 0; j < i; j++) {
+                results.push({ type: 'delete', metaIndex: metaIndex++ });
+              }
+              foundMatch = true;
+              break;
+            }
+          }
+
+          if (!foundMatch) {
+            // 尝试：跳过HTML中的节点（可能是新增）
+            for (let i = 1; i <= lookAhead && htmlIndex + i < htmlTexts.length; i++) {
+              if (isSimilar(metaHints[metaIndex], htmlTexts[htmlIndex + i])) {
+                // HTML中有新增
+                for (let j = 0; j < i; j++) {
+                  results.push({ type: 'insert', htmlIndex: htmlIndex++ });
+                }
+                foundMatch = true;
+                break;
+              }
+            }
+          }
+
+          if (!foundMatch) {
+            // 无法匹配，假设是替换（删除+插入）
+            results.push({ type: 'delete', metaIndex: metaIndex++ });
+            results.push({ type: 'insert', htmlIndex: htmlIndex++ });
+          }
+        }
+      }
+
+      return results;
+    }
+
+    function isSimilar(hint, text, threshold = 0.6) {
+      if (!hint || !text) return false;
+      
+      const minLen = Math.min(hint.length, text.length);
+      let matchCount = 0;
+      
+      for (let i = 0; i < minLen; i++) {
+        if (hint[i] === text[i]) matchCount++;
+      }
+      
+      return (matchCount / minLen) >= threshold;
+    }
+
+    function displayDiffResults(results) {
+      const container = document.getElementById('diffResult');
+      container.innerHTML = results.map(r => {
+        if (r.type === 'match') {
+          return `<div class="diff-item diff-match">✅ 匹配：${r.text} (ID: ${r.metaId})</div>`;
+        } else if (r.type === 'insert') {
+          return `<div class="diff-item diff-insert">➕ 新增：${r.text}</div>`;
+        } else {
+          return `<div class="diff-item diff-delete">➖ 删除：${r.hint} (ID: ${r.metaId})</div>`;
+        }
+      }).join('');
+    }
+
+    function compareResults() {
+      const original = document.getElementById('eventInput').value;
+      const restored = document.getElementById('restoredEvent').value;
+      
+      if (!original || !restored) {
+        alert('请先完成序列化和反序列化');
+        return;
+      }
+
+      try {
+        const originalEvent = JSON.parse(original);
+        const restoredEvent = JSON.parse(restored);
+        
+        const originalNodes = JSON.parse(originalEvent.eventlog.slateJson);
+        const restoredNodes = JSON.parse(restoredEvent.eventlog.slateJson);
+        
+        console.log('原始节点数:', originalNodes.length);
+        console.log('恢复节点数:', restoredNodes.length);
+        console.log('原始Event:', originalEvent);
+        console.log('恢复Event:', restoredEvent);
+        
+        alert(`对比结果：\n原始节点数: ${originalNodes.length}\n恢复节点数: ${restoredNodes.length}\n\n详情请查看控制台`);
+      } catch (err) {
+        alert('对比错误：' + err.message);
+      }
+    }
+
+    // 页面加载时自动加载simple场景
+    window.addEventListener('DOMContentLoaded', () => {
+      loadScenario('simple');
+    });
+  </script>
+</body>
+</html>

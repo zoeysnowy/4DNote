@@ -1933,11 +1933,25 @@ const immediateStateSync = useCallback((updatedItems: any[]) => {
 }, [itemsMap]);
 
 // 🆕 防抖处理函数（用于批量保存）
+// ⚡ v2.20.0 智能防抖优化：检测父子关系变更时跳过防抖
 const debouncedOnChange = useCallback((updatedItems: any[]) => {
   // ✅ 立即同步状态（不等待防抖）
   immediateStateSync(updatedItems);
   
-  // ⏱️ 300ms 后执行保存操作（不影响 UI 显示）
+  // ⚡ [SMART DEBOUNCE] 检测是否有父子关系变更
+  const hasParentChildChange = updatedItems.some(item => 
+    item.parentEventId !== undefined || 
+    item.childEventIds !== undefined
+  );
+  
+  if (hasParentChildChange) {
+    // 🚀 关键操作：跳过 300ms 防抖，立即保存
+    console.log('[PlanManager] ⚡️ 检测到父子关系变更，立即保存（跳过防抖）');
+    executeBatchUpdate(updatedItems);
+    return; // 提前返回，不设置定时器
+  }
+  
+  // ⏱️ 普通编辑：300ms 后执行保存操作（不影响 UI 显示）
   setTimeout(() => {
     executeBatchUpdate(itemsToProcess);
   }, 300);
@@ -2026,6 +2040,7 @@ style={{ left: '52px', ... }} // 勾选框(~16px) + gap(8px) + 边距(28px) = 52
 | **编辑内容** | 3 次渲染 | 1-2 次渲染 | ✅ 50-66% |
 | **删除任务** | 3 次渲染 | 1 次渲染 | ✅ 66% |
 | **新行勾选框显示** ⭐ | 2-3 秒延迟 | <50ms 立即显示 | ✅ 98% |
+| **父子关系设置** ⚡ v2.20.0 | 300ms 延迟 | 0ms 立即保存 | ✅ 100% |
 
 ### 架构改进 ⭐ 新增
 

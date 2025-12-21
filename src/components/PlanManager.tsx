@@ -1718,11 +1718,41 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     });
   }, [itemsMap]);
 
-  // 🆕 v1.5: 防抖处理函数（用于批量保存）
+  // 🆕 v1.5: 智能防抖处理函数（用于批量保存）
+  // ⚡️ [OPTIMIZATION] 检测父子关系变更时跳过防抖，立即保存
   const debouncedOnChange = useCallback((updatedItems: any[]) => {
     // ✅ 立即同步状态（不等待防抖）
     immediateStateSync(updatedItems);
     
+    // ⚡️ [SMART DEBOUNCE] 检测是否有父子关系变更
+    const hasParentChildChange = updatedItems.some(item => 
+      item.parentEventId !== undefined || 
+      item.childEventIds !== undefined
+    );
+    
+    if (hasParentChildChange) {
+      // 🚀 关键操作：立即保存，跳过防抖
+      console.log('[PlanManager] ⚡️ 检测到父子关系变更，立即保存（跳过防抖）', {
+        itemsCount: updatedItems.length,
+        timestamp: new Date().toISOString()
+      });
+      
+      // 清除之前的定时器
+      if (onChangeTimerRef.current) {
+        clearTimeout(onChangeTimerRef.current);
+      }
+      
+      // 立即执行批处理逻辑
+      executeBatchUpdate(updatedItems);
+      
+      // 清空缓存
+      pendingUpdatedItemsRef.current = null;
+      onChangeTimerRef.current = null;
+      
+      return; // 提前返回，不设置定时器
+    }
+    
+    // 普通编辑：走防抖逻辑
     // 清除之前的定时器
     if (onChangeTimerRef.current) {
       clearTimeout(onChangeTimerRef.current);

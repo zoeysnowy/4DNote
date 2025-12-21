@@ -1400,15 +1400,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
     }
     
-    // 🔥 缓存待保存的变化，但不立即调用 onChange
+    // ⚡️ [LOCAL-FIRST FIX] 立即保存到内存层（Transient Buffer）
+    // 架构原则：UI -> Service (0ms) -> DB (Service 内部防抖)
     pendingChangesRef.current = newValue;
     
-    // 🔥 清除之前的自动保存定时器
-    if (autoSaveTimerRef.current) {
-      clearTimeout(autoSaveTimerRef.current);
-    }
-    
-    // 🆕 v2.10.1: 当用户正在输入 @ 提及时，不触发自动保存
+    // 🆕 v2.10.1: 当用户正在输入 @ 提及时，暂停保存
     // 等用户确认 DateMention 后，会调用 flushPendingChanges() 手动保存
     if (showMentionPicker) {
       if (isDebugEnabled()) {
@@ -1418,44 +1414,52 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       return;
     }
     
-    // 🔥 设置新的自动保存定时器（2秒后保存）
-    autoSaveTimerRef.current = setTimeout(() => {
+    // ⚡️ [CRITICAL FIX] 移除 2000ms 延迟，立即保存到 EventService
+    // EventService 的 Transient Buffer 会立即接管数据（内存安全）
+    // StorageManager 内部会处理 IO 防抖（200-500ms 合并写入）
+    if (isDebugEnabled()) {
+      console.log(`%c[💾 ${timestamp}] 立即保存到内存层`, 
+        'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
+    }
+    
+    // 立即执行保存逻辑（不等待 setTimeout）
+    (() => {
       if (pendingChangesRef.current) {
-        if (isDebugEnabled()) {
-          console.log(`%c[💾 ${new Date().toISOString().split('T')[1].slice(0, 12)}] 自动保存触发`, 
-            'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
-        }
         
         const filteredNodes = (pendingChangesRef.current as unknown as EventLineNode[]).filter(node => {
           return !(node.metadata as any)?.isPlaceholder && node.eventId !== '__placeholder__';
         });
         
-        // 🚨 DIAGNOSIS: 检测序列化返回空数组
         if (filteredNodes.length === 0) {
-          console.error('🔴 [诊断] 自动保存 - filteredNodes 为空！', {
-            pendingChanges数量: (pendingChangesRef.current as any[])?.length,
-            调用栈: new Error().stack?.split('\n').slice(0, 10)
-          });
+          if (isDebugEnabled()) {
+            console.warn('[PlanSlate] filteredNodes 为空，跳过保存');
+          }
+          return; // ⚡️ 早返回，避免无效保存
         }
         
         const planItems = slateNodesToPlanItems(filteredNodes);
         
-        // 🚨 DIAGNOSIS: 检测序列化返回空数组
-        if (planItems.length === 0 && filteredNodes.length > 0) {
-          console.error('🔴 [诊断] slateNodesToPlanItems 返回空数组！', {
-            filteredNodes数量: filteredNodes.length,
-            planItems数量: planItems.length,
-            filteredNodes示例: filteredNodes.slice(0, 3).map(n => ({
-              eventId: n.eventId,
-              lineId: n.lineId,
-              mode: n.mode,
-              children数量: n.children.length
-            }))
-          });
+        if (planItems.length === 0) {
+          if (isDebugEnabled()) {
+            console.warn('[PlanSlate] planItems 为空，跳过保存', {
+              filteredNodes数量: filteredNodes.length
+            });
+          }
+          return; // ⚡️ 早返回
         }
         
-        // 🚨 DIAGNOSIS: 检测序列化返回空数组
-        if (planItems.length === 0 && filteredNodes.length > 0) {
+        // ⚡️ 立即调用 onChange，数据进入 EventService Transient Buffer
+        onChange(planItems);
+        
+        if (isDebugEnabled()) {
+          console.log(`%c[✅ ${timestamp}] 已保存 ${planItems.length} 项到内存层`, 
+            'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
+        }
+        
+        // 🔴 LEGACY CODE REMOVED: 下面的代码已删除
+        // 原来的逻辑：序列化后继续检查、调用 onChange
+        // 新逻辑：立即调用 onChange，不需要额外检查
+        if (false) { // 保留代码结构用于编译，实际永不执行
           console.error('🔴 [诊断] slateNodesToPlanItems 返回空数组！', {
             filteredNodes数量: filteredNodes.length,
             planItems数量: planItems.length,
@@ -1481,12 +1485,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           }
         });
         
-        onChange(planItems);
-        pendingChangesRef.current = null;
+        // ⚠️ LEGACY: onChange 已在上面调用，这里的代码不会执行
       }
-    }, 2000); // 2秒后自动保存
+    })(); // ⚡️ 立即执行函数（IIFE）
     
-    // 🔥 但是要立即通知焦点变化（用于 FloatingBar 和 TagPicker）
+    // 🔥 立即通知焦点变化（用于 FloatingBar 和 TagPicker）
     if (onFocus && editor.selection) {
       try {
         const match = Editor.above(editor, {
@@ -3095,24 +3098,17 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             metadataParentIdLength: verifyNode.metadata?.parentEventId?.length
           });
           
-          // 📡 Tab 缩进后触发完整序列化保存（包含 title）
-          // 不再直接调用 EventService.updateEvent，而是触发 onChange
-          if (!currentEventId.startsWith('line-')) {
-            console.log('[Tab] 📤 Triggering full serialization to save all fields including title:', {
-              eventId: currentEventId.slice(-8),
-              parentEventId: previousEventId.slice(-8)
-            });
-            
-            // 触发 onChange，会完整序列化所有字段（包括 title）
-            // debounced 自动保存会在 800ms 后执行
-            setTimeout(() => {
-              if (editor.selection) {
-                editor.onChange();
-              }
-            }, 10);
-          } else {
-            console.log('[Tab] ⏭️ Skipping save (temp ID, will be saved during creation)');
-          }
+          // � Tab 缩进后立即刷新 debounce，确保父子关系立即持久化
+          // 关键：虽然 UUID 已经生成，但事件可能还在 debounce 队列中未保存
+          // 必须立即 flush，确保父事件先入库，子事件再设置 parentEventId
+          console.log('[Tab] 📤 立即刷新 debounce，持久化父子关系:', {
+            eventId: currentEventId.slice(-8),
+            parentEventId: previousEventId.slice(-8),
+            action: 'flush pending changes immediately'
+          });
+          
+          // 立即触发保存（清空 debounce 队列）
+          flushPendingChanges();
         };
         
         // 🆕 v2.16: 池化ID系统 - 所有事件都使用真实ID

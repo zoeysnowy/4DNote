@@ -227,6 +227,33 @@ function App() {
     initializeApp();
   }, []);
 
+  // ⚡️ [LOCAL-FIRST PROTECTION] 防止用户关闭页面时数据丢失
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // 检查 EventService 是否有待写入的数据（Transient Buffer）
+      const hasPendingWrites = (EventService as any).pendingWrites?.size > 0;
+      
+      if (hasPendingWrites) {
+        console.warn('⚠️ [App] Detected pending writes before unload:', {
+          pendingCount: (EventService as any).pendingWrites.size
+        });
+        
+        // 标准浏览器行为：提示用户
+        e.preventDefault();
+        e.returnValue = '数据正在保存中，确定要关闭吗？';
+        
+        // 注意：现代浏览器会忽略自定义消息，只显示默认提示
+        // 但 e.preventDefault() 和 e.returnValue 仍然必需
+      }
+    };
+    
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
   // 监听TagService的变化
   useEffect(() => {
     const handleTagsUpdate = () => {

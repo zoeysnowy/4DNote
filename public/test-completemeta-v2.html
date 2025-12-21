@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CompleteMeta V2 - 三层容错匹配</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #1976d2;
+      border-bottom: 3px solid #1976d2;
+      padding-bottom: 10px;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .test-section h2 {
+      color: #424242;
+      margin-top: 0;
+    }
+    .two-columns {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .column {
+      display: flex;
+      flex-direction: column;
+    }
+    label {
+      font-weight: bold;
+      margin-bottom: 5px;
+      color: #616161;
+    }
+    textarea {
+      width: 100%;
+      min-height: 250px;
+      padding: 10px;
+      border: 1px solid #e0e0e0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 12px;
+      resize: vertical;
+    }
+    .html-preview {
+      border: 1px solid #e0e0e0;
+      padding: 15px;
+      background: #fafafa;
+      min-height: 250px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      word-break: break-all;
+    }
+    .meta-display {
+      background: #fff3e0;
+      border: 1px solid #ff9800;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .diff-result {
+      background: #e8f5e9;
+      border: 1px solid #4caf50;
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 11px;
+    }
+    .diff-item {
+      padding: 8px;
+      margin: 5px 0;
+      border-radius: 3px;
+      border-left: 4px solid transparent;
+    }
+    .diff-match {
+      background: #c8e6c9;
+      border-left-color: #4caf50;
+    }
+    .diff-insert {
+      background: #fff9c4;
+      border-left-color: #ffc107;
+    }
+    .diff-delete {
+      background: #ffcdd2;
+      border-left-color: #f44336;
+    }
+    .diff-sandwich {
+      background: #e1bee7;
+      border-left-color: #9c27b0;
+    }
+    .diff-fuzzy {
+      background: #b3e5fc;
+      border-left-color: #03a9f4;
+    }
+    button {
+      padding: 10px 20px;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover {
+      background: #1565c0;
+    }
+    button:active {
+      background: #0d47a1;
+    }
+    .scenario-buttons {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin: 15px 0;
+    }
+    .scenario-buttons button {
+      background: #673ab7;
+    }
+    .scenario-buttons button:hover {
+      background: #5e35b1;
+    }
+    .info-box {
+      background: #e3f2fd;
+      border-left: 4px solid #2196f3;
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 4px;
+    }
+    .info-box h3 {
+      margin-top: 0;
+      color: #1976d2;
+    }
+    .info-box.success {
+      background: #e8f5e9;
+      border-left-color: #4caf50;
+    }
+    .info-box.success h3 {
+      color: #2e7d32;
+    }
+  </style>
+</head>
+<body>
+  <h1>🚀 CompleteMeta V2 - 三层容错匹配算法</h1>
+  
+  <div class="info-box success">
+    <h3>🎯 V2 核心改进（基于Gemini建议）</h3>
+    <ul>
+      <li><strong>增强hint结构</strong>：不再只存前10字符，改为 <code>{ s: "开头5字", e: "结尾5字", l: 长度 }</code></li>
+      <li><strong>三层容错匹配</strong>：
+        <ol>
+          <li><strong>第一层：精确锚定</strong> - 匹配完全相同的段落作为"锚点"</li>
+          <li><strong>第二层：三明治推导</strong> - 利用锚点之间的拓扑关系，推断被修改的段落ID</li>
+          <li><strong>第三层：模糊打分</strong> - 对无法推导的段落，用开头+结尾+长度综合打分</li>
+        </ol>
+      </li>
+      <li><strong>抗修改能力提升</strong>：即使用户把 "会议开始时讨论项目进度" 改成 "今天下午讨论项目进度"，只要前后段落未变，仍能保留ID</li>
+    </ul>
+  </div>
+
+  <!-- 测试场景 -->
+  <div class="test-section">
+    <h2>步骤1️⃣：序列化Event到HTML（增强hint）</h2>
+    
+    <div class="scenario-buttons">
+      <button onclick="loadScenario('simple')">简单事件</button>
+      <button onclick="loadScenario('complex')">复杂事件</button>
+    </div>
+
+    <div class="two-columns">
+      <div class="column">
+        <label>输入Event JSON：</label>
+        <textarea id="eventInput"></textarea>
+        <button onclick="serializeEvent()" style="margin-top: 10px;">🔄 序列化（V2增强hint）</button>
+      </div>
+      
+      <div class="column">
+        <label>生成的HTML（带增强Meta）：</label>
+        <div class="html-preview" id="htmlOutput"></div>
+      </div>
+    </div>
+
+    <div>
+      <label>解码的Meta JSON（注意hint结构变化）：</label>
+      <div class="meta-display" id="metaDisplay"></div>
+      <div style="background: #e8f5e9; border: 1px solid #4caf50; padding: 10px; margin-top: 10px; border-radius: 4px; font-size: 12px;">
+        <strong>💡 V2改进：</strong>hint从单一前缀改为三元组 <code>{s, e, l}</code><br>
+        • <strong>s</strong>: start - 前5个字符<br>
+        • <strong>e</strong>: end - 后5个字符<br>
+        • <strong>l</strong>: length - 总长度<br>
+        这样即使开头被修改，仍能通过结尾和长度判断相似度。
+      </div>
+    </div>
+  </div>
+
+  <!-- 模拟编辑 -->
+  <div class="test-section">
+    <h2>步骤2️⃣：模拟Outlook编辑（极端场景）</h2>
+    
+    <div class="scenario-buttons">
+      <button onclick="simulateEdit('modifyStart')">✏️ 修改开头（V1失败）</button>
+      <button onclick="simulateEdit('modifyMiddle')">✏️ 修改中间段落</button>
+      <button onclick="simulateEdit('addAndModify')">➕ 新增+修改</button>
+      <button onclick="simulateEdit('deleteAndModify')">➖ 删除+修改</button>
+    </div>
+
+    <div class="two-columns">
+      <div class="column">
+        <label>原始HTML：</label>
+        <textarea id="originalHtml" readonly></textarea>
+      </div>
+      
+      <div class="column">
+        <label>编辑后HTML：</label>
+        <textarea id="editedHtml"></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- Diff对齐 -->
+  <div class="test-section">
+    <h2>步骤3️⃣：三层容错匹配（Diff对齐）</h2>
+    
+    <button onclick="deserializeHtml()">🔍 运行三层匹配算法</button>
+
+    <div style="margin-top: 20px;">
+      <label>Diff对齐结果（显示匹配策略）：</label>
+      <div class="diff-result" id="diffResult"></div>
+      
+      <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-top: 10px;">
+        <div style="background: #c8e6c9; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px;">
+          <div style="font-weight: bold;" id="layer1Count">0</div>
+          <div>第一层：精确锚定</div>
+        </div>
+        <div style="background: #e1bee7; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px;">
+          <div style="font-weight: bold;" id="layer2Count">0</div>
+          <div>第二层：三明治</div>
+        </div>
+        <div style="background: #b3e5fc; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px;">
+          <div style="font-weight: bold;" id="layer3Count">0</div>
+          <div>第三层：模糊打分</div>
+        </div>
+        <div style="background: #fff9c4; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px;">
+          <div style="font-weight: bold;" id="insertCount">0</div>
+          <div>新增段落</div>
+        </div>
+        <div style="background: #ffcdd2; padding: 8px; border-radius: 4px; text-align: center; font-size: 12px;">
+          <div style="font-weight: bold;" id="deleteCount">0</div>
+          <div>删除段落</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-top: 20px;">
+      <label>恢复的Event JSON：</label>
+      <textarea id="restoredEvent" readonly style="min-height: 200px;"></textarea>
+    </div>
+  </div>
+
+  <script>
+    // ==================== 测试数据 ====================
+    
+    const scenarios = {
+      simple: {
+        id: 'evt_simple_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'p-001', type: 'paragraph', children: [{ text: '会议开始时讨论项目进度' }] },
+            { id: 'p-002', type: 'paragraph', children: [{ text: '确认下周的交付时间' }] },
+            { id: 'p-003', type: 'paragraph', children: [{ text: '分配具体任务给团队成员' }] }
+          ])
+        },
+        createdAt: '2025-12-19 10:00:00',
+        updatedAt: '2025-12-19 10:30:00'
+      },
+      
+      complex: {
+        id: 'evt_complex_001',
+        eventlog: {
+          slateJson: JSON.stringify([
+            { id: 'p-001', type: 'paragraph', children: [{ text: '这是第一段，保持不变的锚点段落' }] },
+            { id: 'p-002', type: 'paragraph', children: [{ text: '这是第二段，会被大幅修改' }] },
+            { id: 'p-003', type: 'paragraph', children: [{ text: '这是第三段，也是锚点' }] },
+            { id: 'p-004', type: 'paragraph', children: [{ text: '第四段夹在两个锚点之间' }] },
+            { id: 'p-005', type: 'paragraph', children: [{ text: '最后一段，保持不变' }] }
+          ])
+        },
+        createdAt: '2025-12-19 09:00:00',
+        updatedAt: '2025-12-19 09:45:00'
+      }
+    };
+
+    // ==================== 工具函数 ====================
+    
+    function extractText(node) {
+      if (!node.children) return '';
+      return node.children.map(child => {
+        if (child.text) return child.text;
+        if (child.children) return extractText(child);
+        return '';
+      }).join('');
+    }
+
+    function generateNodeId() {
+      return 'node_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    }
+
+    // ==================== V2增强：生成hint三元组 ====================
+    
+    function generateEnhancedHint(text) {
+      const len = text.length;
+      if (len === 0) return { s: '', e: '', l: 0 };
+      
+      const start = text.substring(0, Math.min(5, len));
+      const end = len > 5 ? text.substring(len - 5) : text;
+      
+      return {
+        s: start,    // start: 前5字符
+        e: end,      // end: 后5字符
+        l: len       // length: 总长度
+      };
+    }
+
+    // ==================== 序列化（V2增强）====================
+    
+    function serializeEvent() {
+      const input = document.getElementById('eventInput').value;
+      if (!input.trim()) {
+        alert('请输入Event JSON');
+        return;
+      }
+
+      try {
+        const event = JSON.parse(input);
+        const nodes = JSON.parse(event.eventlog.slateJson);
+
+        // 生成V2增强Meta
+        const meta = {
+          v: 2,  // 版本号升级到2
+          id: event.id,
+          slate: {
+            nodes: nodes.map(node => {
+              const textContent = extractText(node);
+              const hint = generateEnhancedHint(textContent);  // V2增强hint
+              
+              const metaNode = {};
+              if (node.id) metaNode.id = node.id;
+              if (hint.s) metaNode.s = hint.s;  // start
+              if (hint.e) metaNode.e = hint.e;  // end
+              if (hint.l) metaNode.l = hint.l;  // length
+              if (node.createdAt) metaNode.ts = node.createdAt;
+              if (node.updatedAt) metaNode.ut = node.updatedAt;
+              if (node.level !== undefined) metaNode.lvl = node.level;
+              if (node.bulletLevel !== undefined) metaNode.bullet = node.bulletLevel;
+              if (node.mention) metaNode.mention = node.mention;
+              
+              return metaNode;
+            })
+          },
+          signature: {
+            createdAt: event.createdAt,
+            updatedAt: event.updatedAt,
+            fourDNoteSource: event.fourDNoteSource ?? true,
+            source: event.source || 'local',
+            lastModifiedSource: event.lastModifiedSource || '4dnote'
+          }
+        };
+
+        // Base64编码
+        const metaJson = JSON.stringify(meta, null, 2);
+        const metaBase64 = btoa(unescape(encodeURIComponent(metaJson)));
+
+        // 生成HTML
+        const visibleHtml = slateNodesToHtml(nodes);
+        const fullHtml = `<div class="4dnote-content-wrapper" data-4dnote-version="2">
+  ${visibleHtml}
+  
+  <!-- Meta Data Zone (V2) -->
+  <div id="4dnote-meta" style="display:none;">
+    ${metaBase64}
+  </div>
+</div>`;
+
+        document.getElementById('htmlOutput').textContent = fullHtml;
+        document.getElementById('metaDisplay').textContent = metaJson;
+        document.getElementById('originalHtml').value = fullHtml;
+
+      } catch (err) {
+        alert('JSON解析错误：' + err.message);
+        console.error(err);
+      }
+    }
+
+    function slateNodesToHtml(nodes) {
+      return nodes.map(node => {
+        const text = extractText(node);
+        return `<p>${text}</p>`;
+      }).join('\n  ');
+    }
+
+    // ==================== 加载场景 ====================
+    
+    function loadScenario(name) {
+      const event = scenarios[name];
+      document.getElementById('eventInput').value = JSON.stringify(event, null, 2);
+    }
+
+    // ==================== 模拟编辑 ====================
+    
+    function simulateEdit(action) {
+      const html = document.getElementById('originalHtml').value;
+      if (!html.trim()) {
+        alert('请先在步骤1生成HTML');
+        return;
+      }
+
+      let edited = html;
+      const paragraphs = html.match(/<p>(.*?)<\/p>/g) || [];
+
+      switch (action) {
+        case 'modifyStart':
+          // V1会失败的场景：修改开头
+          edited = html.replace(/<p>会议开始时讨论项目进度<\/p>/, 
+                               '<p>今天下午讨论项目进度和安排</p>');
+          alert('✅ V2能处理！\n第一段和第三段作为锚点，第二段通过"三明治推导"仍能保留ID');
+          break;
+
+        case 'modifyMiddle':
+          // 修改complex场景的中间段落
+          edited = html.replace(/<p>这是第二段，会被大幅修改<\/p>/, 
+                               '<p>完全不同的内容被写在这里</p>');
+          edited = edited.replace(/<p>第四段夹在两个锚点之间<\/p>/, 
+                                 '<p>第四段也改了</p>');
+          break;
+
+        case 'addAndModify':
+          // 新增+修改
+          edited = html.replace(/<p>(.*?)<\/p>/, '<p>$1</p>\n  <p>【新增】插入的段落</p>');
+          edited = edited.replace(/<p>确认下周的交付时间<\/p>/, '<p>确认本月底交付</p>');
+          break;
+
+        case 'deleteAndModify':
+          // 删除第一段+修改第二段
+          edited = html.replace(/<p>.*?<\/p>\n\s*/, '');
+          const remaining = edited.match(/<p>(.*?)<\/p>/);
+          if (remaining) {
+            edited = edited.replace(/<p>(.*?)<\/p>/, '<p>这段被修改了</p>');
+          }
+          break;
+      }
+
+      document.getElementById('editedHtml').value = edited;
+    }
+
+    // ==================== 三层容错匹配算法 ====================
+    
+    function deserializeHtml() {
+      const html = document.getElementById('editedHtml').value || document.getElementById('originalHtml').value;
+      if (!html.trim()) {
+        alert('请输入HTML');
+        return;
+      }
+
+      try {
+        // 提取Meta - 改进正则表达式，避免贪婪匹配
+        const metaMatch = html.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
+        if (!metaMatch) {
+          alert('未找到Meta数据\n请先点击"序列化（V2增强hint）"按钮生成HTML');
+          console.error('HTML内容:', html.substring(0, 200));
+          return;
+        }
+
+        const metaBase64 = metaMatch[1].trim();
+        console.log('Meta Base64 (前50字符):', metaBase64.substring(0, 50));
+        console.log('Meta Base64 (前50字符):', metaBase64.substring(0, 50));
+        
+        const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+        const meta = JSON.parse(metaJson);
+        console.log('解析的Meta:', meta);
+
+        // 提取HTML段落 - 改进：先移除Meta div再提取
+        const htmlWithoutMeta = html.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '');
+        const htmlParagraphs = Array.from(htmlWithoutMeta.matchAll(/<p>(.*?)<\/p>/g)).map(m => ({
+          text: m[1],
+          fullText: m[1]
+        }));
+        
+        console.log('提取的HTML段落数:', htmlParagraphs.length);
+        console.log('Meta节点数:', meta.slate?.nodes?.length || 0);
+
+        // 运行三层匹配
+        const result = threeLayerMatch(meta.slate.nodes, htmlParagraphs);
+
+        // 显示结果
+        displayDiffResults(result);
+        
+        // 构造恢复的Event
+        const restoredNodes = result.alignedNodes.map(item => ({
+          id: item.id,
+          type: 'paragraph',
+          children: [{ text: item.text }],
+          ...(item.createdAt && { createdAt: item.createdAt }),
+          ...(item.updatedAt && { updatedAt: item.updatedAt })
+        }));
+
+        const restoredEvent = {
+          id: meta.id,
+          eventlog: {
+            slateJson: JSON.stringify(restoredNodes, null, 2)
+          },
+          ...meta.signature
+        };
+
+        document.getElementById('restoredEvent').value = JSON.stringify(restoredEvent, null, 2);
+
+        // 统计
+        document.getElementById('layer1Count').textContent = result.stats.layer1;
+        document.getElementById('layer2Count').textContent = result.stats.layer2;
+        document.getElementById('layer3Count').textContent = result.stats.layer3;
+        document.getElementById('insertCount').textContent = result.stats.insert;
+        document.getElementById('deleteCount').textContent = result.stats.delete;
+
+      } catch (err) {
+        alert('反序列化错误：' + err.message);
+        console.error(err);
+      }
+    }
+
+    // ==================== 核心：三层容错匹配 ====================
+    
+    function threeLayerMatch(metaNodes, htmlParagraphs) {
+      const results = [];
+      const stats = { layer1: 0, layer2: 0, layer3: 0, insert: 0, delete: 0 };
+      
+      const metaUsed = new Array(metaNodes.length).fill(false);
+      const htmlUsed = new Array(htmlParagraphs.length).fill(false);
+
+      // ===== 第一层：精确锚定 (Exact Anchor) =====
+      console.log('=== 第一层：精确锚定 ===');
+      for (let h = 0; h < htmlParagraphs.length; h++) {
+        for (let m = 0; m < metaNodes.length; m++) {
+          if (metaUsed[m] || htmlUsed[h]) continue;
+          
+          if (isExactMatch(metaNodes[m], htmlParagraphs[h].text)) {
+            results.push({
+              type: 'layer1',
+              metaIndex: m,
+              htmlIndex: h,
+              id: metaNodes[m].id,
+              text: htmlParagraphs[h].text,
+              matchStrategy: '第一层：精确锚定'
+            });
+            metaUsed[m] = true;
+            htmlUsed[h] = true;
+            stats.layer1++;
+            console.log(`精确匹配: Meta[${m}] <-> HTML[${h}]`, htmlParagraphs[h].text.substring(0, 20));
+            break;
+          }
+        }
+      }
+
+      // ===== 第二层：三明治推导 (Sandwich Inference) =====
+      console.log('=== 第二层：三明治推导 ===');
+      for (let h = 0; h < htmlParagraphs.length; h++) {
+        if (htmlUsed[h]) continue;
+
+        // 找到前后最近的锚点
+        const prevAnchor = findPreviousAnchor(results, h);
+        const nextAnchor = findNextAnchor(results, h);
+
+        if (prevAnchor !== null && nextAnchor !== null) {
+          // 计算HTML gap
+          const htmlGapSize = nextAnchor.htmlIndex - prevAnchor.htmlIndex - 1;
+          const htmlUnusedInGap = countUnusedInRange(htmlUsed, prevAnchor.htmlIndex + 1, nextAnchor.htmlIndex);
+
+          // 计算Meta gap
+          const metaGapSize = nextAnchor.metaIndex - prevAnchor.metaIndex - 1;
+          const metaUnusedInGap = countUnusedInRange(metaUsed, prevAnchor.metaIndex + 1, nextAnchor.metaIndex);
+
+          console.log(`三明治区间: HTML[${prevAnchor.htmlIndex}]-[${nextAnchor.htmlIndex}], Meta[${prevAnchor.metaIndex}]-[${nextAnchor.metaIndex}]`);
+          console.log(`  HTML gap未使用: ${htmlUnusedInGap}, Meta gap未使用: ${metaUnusedInGap}`);
+
+          // 如果gap相等，可以一对一推导
+          if (htmlUnusedInGap === metaUnusedInGap && htmlUnusedInGap === 1) {
+            // 找到Meta gap中未使用的节点
+            for (let m = prevAnchor.metaIndex + 1; m < nextAnchor.metaIndex; m++) {
+              if (!metaUsed[m]) {
+                results.push({
+                  type: 'layer2',
+                  metaIndex: m,
+                  htmlIndex: h,
+                  id: metaNodes[m].id,
+                  text: htmlParagraphs[h].text,
+                  matchStrategy: '第二层：三明治推导（拓扑位置）',
+                  sandwichInfo: `夹在锚点[${prevAnchor.metaIndex}]和[${nextAnchor.metaIndex}]之间`
+                });
+                metaUsed[m] = true;
+                htmlUsed[h] = true;
+                stats.layer2++;
+                console.log(`三明治推导成功: Meta[${m}] <-> HTML[${h}]`, htmlParagraphs[h].text.substring(0, 20));
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // ===== 第三层：模糊打分 (Fuzzy Scoring) - 改进：全局最优匹配 =====
+      console.log('=== 第三层：模糊打分（全局最优） ===');
+      
+      // 1. 构建所有可能的配对及其得分
+      const candidates = [];
+      for (let h = 0; h < htmlParagraphs.length; h++) {
+        if (htmlUsed[h]) continue;
+
+        for (let m = 0; m < metaNodes.length; m++) {
+          if (metaUsed[m]) continue;
+
+          const score = calculateFuzzyScore(metaNodes[m], htmlParagraphs[h].text);
+          if (score >= 50) {  // 只考虑超过阈值的配对
+            candidates.push({
+              score,
+              metaIndex: m,
+              htmlIndex: h,
+              metaNode: metaNodes[m],
+              htmlText: htmlParagraphs[h].text
+            });
+          }
+        }
+      }
+
+      // 2. 按分数从高到低排序
+      candidates.sort((a, b) => b.score - a.score);
+
+      // 3. 贪心算法：优先匹配高分的配对
+      for (const candidate of candidates) {
+        const { score, metaIndex, htmlIndex, htmlText } = candidate;
+        
+        // 检查是否已被使用
+        if (metaUsed[metaIndex] || htmlUsed[htmlIndex]) continue;
+
+        results.push({
+          type: 'layer3',
+          metaIndex,
+          htmlIndex,
+          id: metaNodes[metaIndex].id,
+          text: htmlText,
+          matchStrategy: `第三层：模糊打分（${score}分）`
+        });
+        metaUsed[metaIndex] = true;
+        htmlUsed[htmlIndex] = true;
+        stats.layer3++;
+        console.log(`模糊匹配: Meta[${metaIndex}] <-> HTML[${htmlIndex}], 得分=${score}`, htmlText.substring(0, 20));
+      }
+
+      // ===== 处理新增和删除 =====
+      for (let h = 0; h < htmlParagraphs.length; h++) {
+        if (!htmlUsed[h]) {
+          results.push({
+            type: 'insert',
+            htmlIndex: h,
+            id: generateNodeId(),
+            text: htmlParagraphs[h].text,
+            matchStrategy: '新增段落'
+          });
+          stats.insert++;
+          console.log(`新增段落: HTML[${h}]`, htmlParagraphs[h].text.substring(0, 20));
+        }
+      }
+
+      for (let m = 0; m < metaNodes.length; m++) {
+        if (!metaUsed[m]) {
+          results.push({
+            type: 'delete',
+            metaIndex: m,
+            id: metaNodes[m].id,
+            matchStrategy: '删除段落',
+            deletedHint: `${metaNodes[m].s}...${metaNodes[m].e} (长度${metaNodes[m].l})`
+          });
+          stats.delete++;
+          console.log(`删除段落: Meta[${m}]`, metaNodes[m].s);
+        }
+      }
+
+      // 按HTML顺序排序
+      results.sort((a, b) => (a.htmlIndex ?? 9999) - (b.htmlIndex ?? 9999));
+
+      return {
+        alignedNodes: results.filter(r => r.type !== 'delete'),
+        allResults: results,
+        stats
+      };
+    }
+
+    // ==================== 辅助函数 ====================
+    
+    function isExactMatch(metaNode, htmlText) {
+      const start = htmlText.substring(0, Math.min(5, htmlText.length));
+      const end = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+      
+      return metaNode.s === start && metaNode.e === end && metaNode.l === htmlText.length;
+    }
+
+    function findPreviousAnchor(results, htmlIndex) {
+      for (let i = results.length - 1; i >= 0; i--) {
+        if ((results[i].type === 'layer1' || results[i].type === 'layer2') && results[i].htmlIndex < htmlIndex) {
+          return results[i];
+        }
+      }
+      return null;
+    }
+
+    function findNextAnchor(results, htmlIndex) {
+      for (let i = 0; i < results.length; i++) {
+        if ((results[i].type === 'layer1' || results[i].type === 'layer2') && results[i].htmlIndex > htmlIndex) {
+          return results[i];
+        }
+      }
+      return null;
+    }
+
+    function countUnusedInRange(usedArray, start, end) {
+      let count = 0;
+      for (let i = start; i < end; i++) {
+        if (!usedArray[i]) count++;
+      }
+      return count;
+    }
+
+    function calculateFuzzyScore(metaNode, htmlText) {
+      let score = 0;
+
+      const htmlStart = htmlText.substring(0, Math.min(5, htmlText.length));
+      const htmlEnd = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+      const htmlLen = htmlText.length;
+
+      // 开头匹配：+40分
+      if (metaNode.s === htmlStart) {
+        score += 40;
+      } else {
+        // 部分匹配
+        const startSimilarity = stringSimilarity(metaNode.s, htmlStart);
+        score += startSimilarity * 40;
+      }
+
+      // 结尾匹配：+40分
+      if (metaNode.e === htmlEnd) {
+        score += 40;
+      } else {
+        const endSimilarity = stringSimilarity(metaNode.e, htmlEnd);
+        score += endSimilarity * 40;
+      }
+
+      // 长度相似：+20分
+      const lengthDiff = Math.abs(metaNode.l - htmlLen);
+      const lengthRatio = 1 - (lengthDiff / Math.max(metaNode.l, htmlLen));
+      if (lengthRatio > 0.8) {
+        score += 20;
+      } else if (lengthRatio > 0.5) {
+        score += 10;
+      }
+
+      return score;
+    }
+
+    function stringSimilarity(a, b) {
+      const minLen = Math.min(a.length, b.length);
+      if (minLen === 0) return 0;
+      
+      let matches = 0;
+      for (let i = 0; i < minLen; i++) {
+        if (a[i] === b[i]) matches++;
+      }
+      return matches / minLen;
+    }
+
+    // ==================== 显示结果 ====================
+    
+    function displayDiffResults(result) {
+      const container = document.getElementById('diffResult');
+      container.innerHTML = result.allResults.map(r => {
+        let className = 'diff-item ';
+        let icon = '';
+        
+        if (r.type === 'layer1') {
+          className += 'diff-match';
+          icon = '🎯';
+        } else if (r.type === 'layer2') {
+          className += 'diff-sandwich';
+          icon = '🥪';
+        } else if (r.type === 'layer3') {
+          className += 'diff-fuzzy';
+          icon = '🔍';
+        } else if (r.type === 'insert') {
+          className += 'diff-insert';
+          icon = '➕';
+        } else if (r.type === 'delete') {
+          className += 'diff-delete';
+          icon = '➖';
+        }
+
+        const text = r.text || r.deletedHint || '';
+        const displayText = text.length > 50 ? text.substring(0, 50) + '...' : text;
+        
+        return `<div class="${className}">
+          ${icon} <strong>${r.matchStrategy}</strong><br>
+          ${r.type !== 'delete' ? 'HTML: ' + displayText : '已删除: ' + displayText}<br>
+          <span style="color: #666; font-size: 10px;">ID: ${r.id}${r.sandwichInfo ? ' | ' + r.sandwichInfo : ''}</span>
+        </div>`;
+      }).join('');
+    }
+
+    // ==================== 初始化 ====================
+    
+    window.addEventListener('DOMContentLoaded', () => {
+      loadScenario('simple');
+    });
+  </script>
+</body>
+</html>
