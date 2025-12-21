@@ -1385,26 +1385,40 @@ HTML: [段落A文本, 段落B文本, 段落C文本]
 // 准确率提升：100%（能正确检测删除/乱序/插入）
 ```
 
-### CompleteMeta 接口定义
+### CompleteMeta V2 接口定义
 
 ```typescript
 /**
- * CompleteMeta 统一元注释架构
+ * CompleteMeta V2 统一元注释架构（三层容错匹配）
+ * 
+ * 版本升级：V1 → V2
+ * - V1：单一前缀hint (h)，相似度阈值60%
+ * - V2：增强hint三元组 (s, e, l) + 三层容错匹配算法
  * 
  * 设计原则：Meta作为"增强器"，不替代HTML解析
- * - ✅ 保存元数据：节点ID、hint、mention信息、时间戳、层级、缩进
+ * - ✅ 保存元数据：节点ID、增强hint、mention信息、时间戳、层级、缩进
  * - ❌ 不保存文本：文本内容从HTML提取（保留用户在Outlook的编辑）
  * - ❌ 不保存关系：Tags/Tree/Attendees从本地Service查询
+ * 
+ * V2核心改进：
+ * - 增强hint结构：{ s: "前5字", e: "后5字", l: 长度 } 替代单一前缀
+ * - 三层容错匹配：精确锚定 → 三明治推导 → 模糊打分（全局最优）
+ * - 抗修改能力：即使开头被大幅修改，仍能通过结尾+长度+拓扑位置保留ID
  */
 interface CompleteMeta {
-  v: number;                    // 版本号（必填，当前为1）
+  v: number;                    // 版本号（必填，V2为2）
   id: string;                   // Event的internal ID（必填，用于本地查询关系数据）
   
-  // EventLog Meta - 只保存元数据，不保存文本内容
+  // EventLog Meta - V2增强hint结构
   slate?: {
     nodes: Array<{
       id?: string;              // 节点ID（用于匹配HTML中的节点）
-      h?: string;               // hint: 文本前缀（5-10字符），用于Diff对齐检测删除/乱序
+      
+      // V2增强hint三元组（替代V1的单一h字段）
+      s?: string;               // start: 文本前5个字符
+      e?: string;               // end: 文本后5个字符
+      l?: number;               // length: 文本总长度
+      
       ts?: number;              // createdAt（时间戳节点，HTML中会丢失）
       ut?: number;              // updatedAt
       lvl?: number;             // level（分级标题层级，可能被Outlook改为bold）
@@ -1437,26 +1451,196 @@ interface CompleteMeta {
 }
 ```
 
-### 完整的同步恢复流程
+### V2三层容错匹配算法
 
-#### 4DNote → Outlook（序列化）
+#### 核心思想
+
+不依赖单一的"文本前缀相等"判断，而是结合**锚点拓扑结构**和**多维度特征打分**：
+
+1. **第一层：精确锚定** - 完全相同的段落作为"锚点"，划分文档区间
+2. **第二层：三明治推导** - 利用锚点间的拓扑关系，推断被修改段落的ID
+3. **第三层：模糊打分** - 开头+结尾+长度综合打分，全局最优匹配
+
+#### 算法流程
 
 ```typescript
-// 序列化Event到HTML + Meta（Base64编码）
+function threeLayerMatch(metaNodes: MetaNode[], htmlParagraphs: string[]): AlignResult {
+  const metaUsed = new Array(metaNodes.length).fill(false);
+  const htmlUsed = new Array(htmlParagraphs.length).fill(false);
+  const results = [];
+
+  // ===== 第一层：精确锚定 (Exact Anchor) =====
+  // 作用：找到完全相同的段落作为"锚点"，划分文档区间
+  for (let h = 0; h < htmlParagraphs.length; h++) {
+    for (let m = 0; m < metaNodes.length; m++) {
+      if (metaUsed[m] || htmlUsed[h]) continue;
+      
+      // 精确匹配：s、e、l完全相同
+      if (isExactMatch(metaNodes[m], htmlParagraphs[h])) {
+        results.push({ type: 'layer1-exact', metaIndex: m, htmlIndex: h });
+        metaUsed[m] = true;
+        htmlUsed[h] = true;
+        break;
+      }
+    }
+  }
+
+  // ===== 第二层：三明治推导 (Sandwich Inference) =====
+  // 核心：利用已确定的锚点，推断中间未匹配节点的身份
+  // 原理：如果锚点A和C之间只有一个Meta节点B，HTML中A'和C'之间也只有一个节点B'
+  //      则无论B'的文本变成什么，它一定就是B！
+  for (let h = 0; h < htmlParagraphs.length; h++) {
+    if (htmlUsed[h]) continue;
+
+    // 找到前后最近的锚点
+    const prevAnchor = findPreviousAnchor(results, h);
+    const nextAnchor = findNextAnchor(results, h);
+
+    if (prevAnchor && nextAnchor) {
+      // 计算gap大小
+      const htmlGap = nextAnchor.htmlIndex - prevAnchor.htmlIndex - 1;
+      const metaGap = nextAnchor.metaIndex - prevAnchor.metaIndex - 1;
+      
+      const htmlUnusedInGap = countUnusedInRange(htmlUsed, prevAnchor.htmlIndex + 1, nextAnchor.htmlIndex);
+      const metaUnusedInGap = countUnusedInRange(metaUsed, prevAnchor.metaIndex + 1, nextAnchor.metaIndex);
+
+      // 如果gap中未使用节点数量相等且为1，直接推导
+      if (htmlUnusedInGap === 1 && metaUnusedInGap === 1) {
+        const metaIndex = findUnusedInRange(metaUsed, prevAnchor.metaIndex + 1, nextAnchor.metaIndex);
+        results.push({ type: 'layer2-sandwich', metaIndex, htmlIndex: h });
+        metaUsed[metaIndex] = true;
+        htmlUsed[h] = true;
+      }
+    }
+  }
+
+  // ===== 第三层：模糊打分 (Fuzzy Scoring) - 全局最优 =====
+  // 改进：不是为每个HTML找第一个超过阈值的Meta，而是全局最优匹配
+  
+  // 1. 构建所有可能的配对及其得分
+  const candidates = [];
+  for (let h = 0; h < htmlParagraphs.length; h++) {
+    if (htmlUsed[h]) continue;
+    for (let m = 0; m < metaNodes.length; m++) {
+      if (metaUsed[m]) continue;
+      
+      const score = calculateFuzzyScore(metaNodes[m], htmlParagraphs[h]);
+      if (score >= 50) {  // 阈值：50分
+        candidates.push({ score, metaIndex: m, htmlIndex: h });
+      }
+    }
+  }
+
+  // 2. 按分数从高到低排序
+  candidates.sort((a, b) => b.score - a.score);
+
+  // 3. 贪心算法：优先匹配高分的配对
+  for (const { score, metaIndex, htmlIndex } of candidates) {
+    if (metaUsed[metaIndex] || htmlUsed[htmlIndex]) continue;
+    
+    results.push({ type: 'layer3-fuzzy', metaIndex, htmlIndex, score });
+    metaUsed[metaIndex] = true;
+    htmlUsed[htmlIndex] = true;
+  }
+
+  // ===== 处理新增和删除 =====
+  for (let h = 0; h < htmlParagraphs.length; h++) {
+    if (!htmlUsed[h]) {
+      results.push({ type: 'insert', htmlIndex: h, id: generateNodeId() });
+    }
+  }
+
+  for (let m = 0; m < metaNodes.length; m++) {
+    if (!metaUsed[m]) {
+      results.push({ type: 'delete', metaIndex: m });
+    }
+  }
+
+  return results;
+}
+
+// 精确匹配判断
+function isExactMatch(metaNode: MetaNode, htmlText: string): boolean {
+  const htmlStart = htmlText.substring(0, Math.min(5, htmlText.length));
+  const htmlEnd = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+  
+  return metaNode.s === htmlStart && 
+         metaNode.e === htmlEnd && 
+         metaNode.l === htmlText.length;
+}
+
+// V2模糊打分算法（三维特征）
+function calculateFuzzyScore(metaNode: MetaNode, htmlText: string): number {
+  let score = 0;
+
+  const htmlStart = htmlText.substring(0, Math.min(5, htmlText.length));
+  const htmlEnd = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+
+  // 开头匹配：+40分（完全相同）或部分分数
+  if (metaNode.s === htmlStart) {
+    score += 40;
+  } else {
+    score += stringSimilarity(metaNode.s, htmlStart) * 40;
+  }
+
+  // 结尾匹配：+40分（完全相同）或部分分数
+  if (metaNode.e === htmlEnd) {
+    score += 40;
+  } else {
+    score += stringSimilarity(metaNode.e, htmlEnd) * 40;
+  }
+
+  // 长度相似：+20分
+  const lengthDiff = Math.abs(metaNode.l - htmlText.length);
+  const lengthRatio = 1 - (lengthDiff / Math.max(metaNode.l, htmlText.length));
+  if (lengthRatio > 0.8) {
+    score += 20;
+  } else if (lengthRatio > 0.5) {
+    score += 10;
+  }
+
+  return score;
+}
+
+// 字符串相似度
+function stringSimilarity(a: string, b: string): number {
+  const minLen = Math.min(a.length, b.length);
+  if (minLen === 0) return 0;
+  
+  let matches = 0;
+  for (let i = 0; i < minLen; i++) {
+    if (a[i] === b[i]) matches++;
+  }
+  return matches / minLen;
+}
+```
+
+### V2序列化流程（4DNote → Outlook）
+
+```typescript
+// 序列化Event到HTML + Meta V2（Base64编码）
 async function serializeEventToHtml(event: Event): Promise<string> {
-  // 1. 生成Meta（包含hint）
+  // 1. 生成V2 Meta（增强hint三元组）
   const meta: CompleteMeta = {
-    v: 1,
+    v: 2,  // 版本号升级到2
+  const meta: CompleteMeta = {
+    v: 2,  // 版本号升级到2
     id: event.id,
     
     slate: {
       nodes: JSON.parse(event.eventlog.slateJson).map(node => {
         const textContent = extractText(node);  // 提取纯文本
-        const hint = textContent.substring(0, 10);  // 前10字符作为hint
+        
+        // V2增强hint：开头+结尾+长度
+        const len = textContent.length;
+        const start = textContent.substring(0, Math.min(5, len));
+        const end = len > 5 ? textContent.substring(len - 5) : textContent;
         
         return {
           ...(node.id && { id: node.id }),
-          ...(hint && { h: hint }),  // 🔑 锚点特征
+          ...(start && { s: start }),  // start: 前5字符
+          ...(end && { e: end }),      // end: 后5字符
+          ...(len && { l: len }),      // length: 总长度
           ...(node.createdAt && { ts: node.createdAt }),
           ...(node.updatedAt && { ut: node.updatedAt }),
           ...(node.level !== undefined && { lvl: node.level }),
