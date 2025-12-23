@@ -417,6 +417,49 @@ export class StorageManager {
   }
 
   /**
+   * 🔒 批量更新事件（事务性）- Phase 3优化
+   * 
+   * 使用IndexedDB的批量写入事务，提供原子性保证
+   * 
+   * @param events - 完整的事件对象数组
+   */
+  async batchUpdateEvents(events: StorageEvent[]): Promise<void> {
+    await this.ensureInitialized();
+
+    console.log('🔒 [StorageManager] 批量更新事件（事务性）:', {
+      count: events.length,
+      eventIds: events.map(e => e.id.slice(-8)).join(', ')
+    });
+
+    try {
+      // IndexedDB批量更新（使用事务）
+      if (this.indexedDBService) {
+        await this.indexedDBService.batchUpdateEvents(events);
+      }
+      
+      // SQLite批量更新（如果启用）
+      if (this.sqliteService) {
+        for (const event of events) {
+          await this.sqliteService.updateEvent(event.id, event);
+        }
+      }
+
+      // 更新缓存
+      for (const event of events) {
+        this.eventCache.set(event.id, event);
+      }
+
+      console.log('✅ [StorageManager] 批量更新成功:', {
+        count: events.length,
+        cacheSize: this.eventCache.size
+      });
+    } catch (error) {
+      console.error('[StorageManager] ❌ 批量更新失败:', error);
+      throw error;
+    }
+  }
+
+  /**
    * 删除事件（软删除：设置 deletedAt 时间戳）
    * 
    * 🎯 Issue #002: 软删除策略

@@ -265,8 +265,8 @@ const TagManager: React.FC<TagManagerProps> = ({
     const duration = performance.now() - startTime;
     TagManagerLogger.log(`? [TagManager] Initialized in ${duration.toFixed(2)}ms`);
     
-    // 🛡️ 标记初始化完成，允许后续的onTagsChange触发
-    setTimeout(() => setIsInitialized(true), 0);
+    // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+    queueMicrotask(() => setIsInitialized(true));
   }, []);
 
   // 自动保存标签数据到localStorage
@@ -1378,16 +1378,17 @@ const TagManager: React.FC<TagManagerProps> = ({
         return;
       }
       
-      // 如果没找到元素且重试次数少于5次，继续重试
+      // ✅ v2.21.1: 使用 requestAnimationFrame 替代 setTimeout
       if (retryCount < 5) {
         TagManagerLogger.log(`?? Retrying focus for tag ${newId}, attempt ${retryCount + 1}`);
-        setTimeout(() => focusNewTag(retryCount + 1), 50);
+        requestAnimationFrame(() => focusNewTag(retryCount + 1));
       } else {
         TagManagerLogger.error('? Failed to focus new tag after 5 attempts:', newId);
       }
     };
     
-    setTimeout(() => focusNewTag(), 100);
+    // ✅ v2.21.1: 等待 DOM 更新
+    requestAnimationFrame(() => focusNewTag());
 
     return newId;
   };

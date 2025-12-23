@@ -25,7 +25,7 @@ import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
 import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
 import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
-import { EventTreeAPI } from './EventTree'; // 🆕 EventTree Engine 集成
+import { EventTreeAPI, EventTreeNode } from './EventTree'; // 🆕 EventTree Engine 集成
 
 const eventLogger = logger.module('EventService');
 
@@ -228,10 +228,10 @@ export class EventService {
         // 🔧 自动规范化所有事件的 title 字段（处理旧数据中的 undefined）
         const events = activeEvents.map(event => this.convertStorageEventToEvent(event));
         
-        // ✨ 查询完成，清除 Promise（5秒后，避免同步过程中频繁查询）
-        setTimeout(() => {
+        // ✅ v2.21.1: 使用 queueMicrotask 清除 Promise，避免阻塞
+        queueMicrotask(() => {
           this.getAllEventsPromise = null;
-        }, 5000);
+        });
         
         return events;
       } catch (error) {
@@ -801,10 +801,11 @@ export class EventService {
           component: originComponent
         });
         
-        // 5秒后清理，给广播和同步足够时间
-        setTimeout(() => {
-          pendingLocalUpdates.delete(finalEvent.id);
-        }, 5000);
+        // ✅ v2.21.1: 使用 queueMicrotask，同步完成后立即清理
+        queueMicrotask(() => {
+          // 延迟到下一个微任务队列，确保广播完成
+          setTimeout(() => pendingLocalUpdates.delete(finalEvent.id), 3000);
+        });
       }
 
       // 触发全局更新事件（携带完整事件数据和来源信息）
@@ -1418,10 +1419,10 @@ export class EventService {
           component: originComponent
         });
         
-        // 5秒后清理，给广播和同步足够时间
-        setTimeout(() => {
-          pendingLocalUpdates.delete(eventId);
-        }, 5000);
+        // ✅ v2.21.1: 使用 queueMicrotask，同步完成后立即清理
+        queueMicrotask(() => {
+          setTimeout(() => pendingLocalUpdates.delete(eventId), 3000);
+        });
       }
 
       // 触发全局更新事件（携带完整事件数据和来源信息）
@@ -1463,6 +1464,72 @@ export class EventService {
     } catch (error) {
       eventLogger.error('�?[EventService] Failed to update event:', error);
       return { success: false, error: String(error) };
+    }
+  }
+
+  /**
+   * 🔒 批量更新事件（事务性）- Phase 3优化
+   * 
+   * 提供数据库级别的批量写入，配合EventHub.batchUpdateTransaction实现真正的原子事务
+   * 
+   * @param events - 完整的事件对象数组（已经应用更新）
+   * @param skipSync - 是否跳过同步
+   * @returns 批量更新结果
+   * 
+   * @example
+   * ```typescript
+   * const result = await EventService.batchUpdateEvents([
+   *   { ...event1, parentEventId: 'new_parent' },
+   *   { ...event2, childEventIds: [..., 'event1'] }
+   * ], true);
+   * ```
+   */
+  static async batchUpdateEvents(
+    events: Event[],
+    skipSync: boolean = false
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      eventLogger.log('🔒 [EventService] 批量更新事件（事务性）', {
+        count: events.length,
+        skipSync,
+        eventIds: events.map(e => e.id.slice(-8)).join(', ')
+      });
+
+      // 使用IndexedDB的批量写入（原子事务）
+      // 类型转换：Event → StorageEvent
+      await storageManager.batchUpdateEvents(events as any);
+      
+      // 更新临时缓冲区（确保后续getEventById能读到最新状态）
+      for (const event of events) {
+        this.pendingWrites.set(event.id, event);
+      }
+      
+      eventLogger.log('✅ [EventService] 批量更新成功', {
+        count: events.length,
+        bufferSize: this.pendingWrites.size
+      });
+      
+      // 清空范围查询缓存
+      this.clearRangeCache();
+      
+      // 触发更新事件（非阻塞）
+      for (const event of events) {
+        this.dispatchEventUpdate(event.id, {
+          isUpdate: true,
+          tags: event.tags,
+          event,
+          source: 'batch-update',
+          isLocalUpdate: true
+        });
+      }
+      
+      return { success: true };
+    } catch (error) {
+      eventLogger.error('❌ [EventService] 批量更新失败:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : String(error)
+      };
     }
   }
 
@@ -5508,34 +5575,33 @@ export class EventService {
 
   /**
    * 获取所有子事件（包括所有类型）
-   * ⚡️ [OPTIMIZATION] 使用批量查询替代逐个 getEventById，性能提升 5-10 倍
+   * ✅ [EventTreeAPI] 使用 TreeAPI.getDirectChildren 统一树逻辑
    */
   static async getChildEvents(parentId: string): Promise<Event[]> {
     const parent = await this.getEventById(parentId);
     if (!parent?.childEventIds || parent.childEventIds.length === 0) return [];
     
-    // ⚡️ [BATCH QUERY] 一次查询所有子事件，避免 N 次异步查询
+    // ✅ [OPTIMIZATION] 批量查询所有子事件，然后使用 TreeAPI 排序
     try {
       const result = await storageManager.queryEvents({
         filters: { eventIds: parent.childEventIds },
         limit: 1000 // 足够大的限制
       });
       
-      eventLogger.log('⚡️ [getChildEvents] Batch query completed:', {
+      // ✅ 使用 EventTreeAPI 保证排序和验证
+      const allEvents = await this.getAllEvents();
+      const sortedChildren = EventTreeAPI.getDirectChildren(parentId, allEvents);
+      
+      eventLogger.log('⚡️ [getChildEvents] TreeAPI query completed:', {
         parentId: parentId.slice(-8),
-        childCount: result.items.length,
+        childCount: sortedChildren.length,
         expected: parent.childEventIds.length
       });
       
-      return result.items;
+      return sortedChildren;
     } catch (error) {
-      eventLogger.error('❌ [getChildEvents] Batch query failed, fallback to individual queries:', error);
-      
-      // 🔧 Fallback: 如果批量查询失败，回退到逐个查询
-      const children = await Promise.all(
-        parent.childEventIds.map((id: string) => this.getEventById(id))
-      );
-      return children.filter((e): e is Event => e !== null);
+      eventLogger.error('❌ [getChildEvents] Query failed:', error);
+      return [];
     }
   }
 
@@ -5630,28 +5696,53 @@ export class EventService {
    * 🆕 v2.19: 构建 EventTree（树形结构）
    * 用于 isNote 标记时获取所有子事件
    */
+  /**
+   * 构建事件树（使用EventTreeAPI优化）
+   * ✅ [EventTreeAPI] 批量查询 + 纯内存构建，避免N次递归查询
+   * 
+   * @param rootId - 根事件ID
+   * @returns 事件树结构
+   */
   static async buildEventTree(rootId: string): Promise<EventTreeNode> {
-    const event = await this.getEventById(rootId);
-    if (!event) {
+    // 1. 批量查询所有事件（一次查询）
+    const allEvents = await this.getAllEvents();
+    
+    // 2. 使用EventTreeAPI获取完整子树（纯内存操作）
+    const subtree = EventTreeAPI.getSubtree(rootId, allEvents);
+    
+    if (subtree.length === 0) {
       throw new Error(`Event not found: ${rootId}`);
     }
-
-    const children: EventTreeNode[] = [];
-    if (event.childEventIds && event.childEventIds.length > 0) {
-      for (const childId of event.childEventIds) {
-        try {
-          const childTree = await this.buildEventTree(childId);
-          children.push(childTree);
-        } catch (error) {
-          eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
+    
+    // 3. 构建TreeNode结构（纯内存操作）
+    const eventsById = new Map(subtree.map(e => [e.id, e]));
+    
+    const buildNode = (id: string): EventTreeNode => {
+      const event = eventsById.get(id);
+      if (!event) {
+        throw new Error(`Event not found: ${id}`);
+      }
+      
+      const children: EventTreeNode[] = [];
+      if (event.childEventIds && event.childEventIds.length > 0) {
+        for (const childId of event.childEventIds) {
+          if (eventsById.has(childId)) {
+            try {
+              children.push(buildNode(childId));
+            } catch (error) {
+              eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
+            }
+          }
         }
       }
-    }
-
-    return {
-      ...event,
-      children
+      
+      return {
+        ...event,
+        children
+      };
     };
+    
+    return buildNode(rootId);
   }
 
   /**

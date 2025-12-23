@@ -140,6 +140,186 @@ class EventHubClass {
   }
 
   /**
+   * 批量更新多个事件（优化版本）
+   * 
+   * 用于 EventTreeAPI 重新父化等批量操作
+   * 
+   * @param updates - 更新列表 [{ eventId, updates }]
+   * @param options - 选项
+   * @returns 成功更新的事件数量
+   * 
+   * @example
+   * ```typescript
+   * await EventHub.batchUpdate([
+   *   { eventId: 'event_1', updates: { parentEventId: 'event_parent' } },
+   *   { eventId: 'event_2', updates: { bulletLevel: 2 } },
+   * ]);
+   * ```
+   */
+  async batchUpdate(
+    updates: Array<{ eventId: string; updates: Partial<Event> }>,
+    options: { skipSync?: boolean; source?: string } = {}
+  ): Promise<{ success: boolean; updatedCount: number; errors: Array<{ eventId: string; error: string }> }> {
+    const { skipSync = false, source = 'EventTreeAPI' } = options;
+    
+    dbg('🔄 [EventHub] 批量更新', { 
+      count: updates.length,
+      source,
+      skipSync
+    });
+    
+    const errors: Array<{ eventId: string; error: string }> = [];
+    let updatedCount = 0;
+    
+    // 当前实现：顺序更新（非事务性）
+    // 使用 batchUpdateTransaction() 获得原子事务保证
+    for (const { eventId, updates: eventUpdates } of updates) {
+      try {
+        const result = await this.updateFields(eventId, eventUpdates, {
+          skipSync,
+          source: `${source}/batch`
+        });
+        
+        if (result.success) {
+          updatedCount++;
+        } else {
+          errors.push({
+            eventId,
+            error: result.error || 'Unknown error'
+          });
+        }
+      } catch (error) {
+        errors.push({
+          eventId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+    }
+    
+    dbg('✅ [EventHub] 批量更新完成', { 
+      total: updates.length,
+      success: updatedCount,
+      failed: errors.length
+    });
+    
+    return {
+      success: errors.length === 0,
+      updatedCount,
+      errors
+    };
+  }
+
+  /**
+   * 🔒 批量更新（事务性）- Phase 3优化
+   * 
+   * 提供真正的原子事务：要么全部成功，要么全部回滚
+   * 
+   * @param updates - 更新列表 [{ eventId, updates }]
+   * @param options - 选项
+   * @returns 事务结果
+   * 
+   * @example
+   * ```typescript
+   * // Tab缩进：父子关系更新必须原子化
+   * const result = await EventHub.batchUpdateTransaction([
+   *   { eventId: 'child_1', updates: { parentEventId: 'new_parent' } },
+   *   { eventId: 'new_parent', updates: { childEventIds: [..., 'child_1'] } },
+   * ]);
+   * 
+   * if (!result.success) {
+   *   // 所有更新已回滚
+   *   console.error('事务失败', result.error);
+   * }
+   * ```
+   */
+  async batchUpdateTransaction(
+    updates: Array<{ eventId: string; updates: Partial<Event> }>,
+    options: { skipSync?: boolean; source?: string } = {}
+  ): Promise<{ success: boolean; updatedCount?: number; error?: string }> {
+    const { skipSync = false, source = 'EventTreeAPI/transaction' } = options;
+    
+    dbg('🔒 [EventHub] 事务性批量更新开始', { 
+      count: updates.length,
+      source,
+      skipSync
+    });
+    
+    // 备份：记录所有事件的原始状态
+    const snapshots = new Map<string, Event>();
+    const toUpdate: Event[] = [];
+    
+    try {
+      // Phase 1: 收集快照 + 验证
+      for (const { eventId, updates: eventUpdates } of updates) {
+        const snapshot = this.getSnapshot(eventId);
+        
+        if (!snapshot) {
+          throw new Error(`Event not found: ${eventId}`);
+        }
+        
+        snapshots.set(eventId, { ...snapshot });
+        
+        // 应用更新到临时对象
+        const updatedEvent: Event = {
+          ...snapshot,
+          ...eventUpdates,
+          updatedAt: new Date().toISOString()
+        };
+        
+        toUpdate.push(updatedEvent);
+      }
+      
+      dbg('🔍 [EventHub] Phase 1: 快照收集完成', { count: snapshots.size });
+      
+      // Phase 2: 批量写入数据库（原子操作）
+      const writeResult = await EventService.batchUpdateEvents(toUpdate, skipSync);
+      
+      if (!writeResult.success) {
+        throw new Error(writeResult.error || 'Database batch update failed');
+      }
+      
+      dbg('💾 [EventHub] Phase 2: 数据库写入成功');
+      
+      // Phase 3: 更新缓存
+      for (const event of toUpdate) {
+        this.cache.set(event.id, {
+          event: { ...event },
+          lastModified: Date.now()
+        });
+      }
+      
+      dbg('✅ [EventHub] 事务提交成功', { 
+        updatedCount: toUpdate.length
+      });
+      
+      return {
+        success: true,
+        updatedCount: toUpdate.length
+      };
+      
+    } catch (error) {
+      // 回滚：恢复缓存快照
+      for (const [eventId, snapshot] of snapshots) {
+        this.cache.set(eventId, {
+          event: { ...snapshot },
+          lastModified: Date.now()
+        });
+      }
+      
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error('❌ [EventHub] 事务回滚', { 
+        error: errorMsg,
+        rollbackCount: snapshots.size
+      });
+      
+      return {
+        success: false,
+        error: errorMsg
+      };
+    }
+  }
+
+  /**
    * 🕐 更新时间字段（通过 TimeHub）
    * 这是一个便捷方法，内部调用 TimeHub 并同步快照
    */

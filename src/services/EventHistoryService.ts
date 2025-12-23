@@ -44,15 +44,39 @@ let storageManager: StorageManager | null = null;
 // 🆕 [v2.18.8] 去重缓存：防止1秒内重复记录同一事件
 const recentCallsCache = new Map<string, number>();
 
-// 🆕 [v2.18.8] 定期清理过期的去重缓存（每10秒清理一次）
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, timestamp] of recentCallsCache.entries()) {
-    if (now - timestamp > 5000) { // 5秒后清理
-      recentCallsCache.delete(key);
-    }
+// ✅ v2.21.1: 存储定时器ID，支持清理
+let cacheCleanupIntervalId: NodeJS.Timeout | null = null;
+
+// 🆕 [v2.18.8] 启动去重缓存清理定时器
+function startCacheCleanup(): void {
+  if (cacheCleanupIntervalId) {
+    historyLogger.warn('⚠️ 去重缓存清理定时器已在运行');
+    return;
   }
-}, 10000);
+  
+  cacheCleanupIntervalId = setInterval(() => {
+    const now = Date.now();
+    let cleanedCount = 0;
+    for (const [key, timestamp] of recentCallsCache.entries()) {
+      if (now - timestamp > 5000) { // 5秒后清理
+        recentCallsCache.delete(key);
+        cleanedCount++;
+      }
+    }
+    if (cleanedCount > 0) {
+      historyLogger.debug(`🧹 去重缓存清理: ${cleanedCount} 条`);
+    }
+  }, 10000); // 每10秒清理一次
+}
+
+// ✅ v2.21.1: 停止去重缓存清理
+function stopCacheCleanup(): void {
+  if (cacheCleanupIntervalId) {
+    clearInterval(cacheCleanupIntervalId);
+    cacheCleanupIntervalId = null;
+    historyLogger.log('✅ 已停止去重缓存清理定时器');
+  }
+}
 
 /**
  * 🔧 自动获取 StorageManager 实例
@@ -114,8 +138,11 @@ export class EventHistoryService {
     // 🆕 [v2.18.2] 启动定期清理任务
     this.startPeriodicCleanup();
     
-    // 🆕 [v2.18.3] 延迟执行清理，避免阻塞应用启动
-    setTimeout(async () => {
+    // ✅ v2.21.1: 启动去重缓存清理
+    startCacheCleanup();
+    
+    // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout，更可靠且不阻塞
+    queueMicrotask(async () => {
       try {
         const deleted = await this.autoCleanup();
         if (deleted > 0) {
@@ -124,7 +151,7 @@ export class EventHistoryService {
       } catch (error) {
         historyLogger.error('❌ 初始清理失败:', error);
       }
-    }, 2000); // 延迟2秒执行
+    });
   }
 
   /**
@@ -424,7 +451,7 @@ export class EventHistoryService {
     
     // 🔧 步骤1：从当前存在的事件开始
     const EventService = (window as any).EventService;
-    const allCurrentEvents = EventService?.getAllEvents() || [];
+    const allCurrentEvents = EventService ? await EventService.getAllEvents() : [];
     const existingEvents = new Set<string>(allCurrentEvents.map((e: any) => e.id));
     
     console.log('[EventHistoryService] 📊 getExistingEventsAtTime 步骤1:', {
@@ -943,13 +970,22 @@ export class EventHistoryService {
     }
   }
 
+  // ✅ v2.21.1: 存储定期清理定时器ID
+  private static periodicCleanupIntervalId: NodeJS.Timeout | null = null;
+  
   /**
    * 🆕 启动定期清理任务（每小时）
    */
   static startPeriodicCleanup(): void {
+    // ✅ v2.21.1: 防止重复启动
+    if (this.periodicCleanupIntervalId) {
+      historyLogger.warn('⚠️ 定期清理任务已在运行');
+      return;
+    }
+    
     const interval = 60 * 60 * 1000; // 每小时
 
-    setInterval(async () => {
+    this.periodicCleanupIntervalId = setInterval(async () => {
       const deleted = await this.autoCleanup();
       if (deleted > 0) {
         historyLogger.log(`🧹 定期清理: 删除 ${deleted} 条记录`);
@@ -957,6 +993,26 @@ export class EventHistoryService {
     }, interval);
 
     historyLogger.log('✅ 已启动定期清理任务（每小时）');
+  }
+  
+  /**
+   * ✅ v2.21.1: 停止定期清理任务
+   */
+  static stopPeriodicCleanup(): void {
+    if (this.periodicCleanupIntervalId) {
+      clearInterval(this.periodicCleanupIntervalId);
+      this.periodicCleanupIntervalId = null;
+      historyLogger.log('✅ 已停止定期清理任务');
+    }
+  }
+  
+  /**
+   * ✅ v2.21.1: 清理所有定时器资源
+   */
+  static cleanup(): void {
+    this.stopPeriodicCleanup();
+    stopCacheCleanup();
+    historyLogger.log('✅ EventHistoryService 资源已清理');
   }
 
   /**

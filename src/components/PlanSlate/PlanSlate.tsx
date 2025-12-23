@@ -649,6 +649,23 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     };
   }, [editor]);
   
+  // 🆕 v2.20.1: bulletLevel 完全派生（单一真相源）
+  // bulletLevel 不再存储，完全由 EventTreeAPI 从树结构计算
+  // 优势：永远一致，无需手动同步，Tab/Shift+Tab 更简单
+  const bulletLevels = useMemo(() => {
+    console.log('[PlanSlate] 🔄 Recalculating bullet levels for', items.length, 'events');
+    const startTime = performance.now();
+    const levels = EventTreeAPI.calculateAllBulletLevels(items);
+    const endTime = performance.now();
+    console.log(`[PlanSlate] ✅ Bullet levels calculated in ${(endTime - startTime).toFixed(2)}ms`);
+    return levels;
+  }, [items]); // 只依赖真相源：items（树结构变化时自动重算）
+  
+  // Helper: 获取事件的 bulletLevel
+  const getBulletLevel = useCallback((eventId: string): number => {
+    return bulletLevels.get(eventId) ?? 0;
+  }, [bulletLevels]);
+  
   // 🆕 增强的 value：始终在末尾添加一个 placeholder 提示行
   // 🛡️ PERFORMANCE FIX: 添加深度比较避免不必要的重计算
   const prevItemsHashRef = useRef<string>('');
@@ -1245,8 +1262,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     const hasRemoveNode = editor.operations.some(op => op.type === 'remove_node');
     
     if (hasRemoveNode) {
+      const removeOps = editor.operations.filter(op => op.type === 'remove_node');
       console.log('%c[🔍 检测到删除操作]', 'background: #FF5722; color: white;', {
-        operations: editor.operations.filter(op => op.type === 'remove_node'),
+        operations: removeOps,
+        删除数量: removeOps.length,
+        删除后剩余节点: newValue.length,
       });
       
       // 🆕 v2.20.0: 标记有删除操作，强制保存空内容
@@ -1482,8 +1502,16 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
     }
     
-    // 🔥 FIX: 统一调用 flushPendingChanges，消除重复代码
-    flushPendingChanges();
+    // 🔥 FIX v2.21.1: 删除操作时必须传入 newValue，确保正确反映删除后状态
+    // 否则 flushPendingChanges 会读取 pendingChangesRef，可能包含已删除的节点
+    if (hasRemoveNode) {
+      console.log('%c[💾 删除操作] 强制传入最新状态', 'background: #E91E63; color: white;', {
+        newValue数量: newValue.length,
+      });
+      flushPendingChanges(newValue as Descendant[]);
+    } else {
+      flushPendingChanges();
+    }
     
     // 🔥 立即通知焦点变化（用于 FloatingBar 和 TagPicker）
     if (onFocus && editor.selection) {
@@ -3096,7 +3124,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           return;
         }
         
-        // 🔧 先定义 executeTabIndent 函数（必须在调用前定义）
+        // 🔧 使用 EventTreeAPI.reparent 实现Tab缩进
         const executeTabIndent = async (
           currentEventId: string,
           previousEventId: string,
@@ -3104,119 +3132,107 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           currentPath: Path,
           oldLevel: number
         ) => {
-          // ⚡ 乐观更新 - 立即修改 Slate Editor 状态
-          // 🔥 同时更新 metadata，让 serialization 能读取到 parentEventId
-          Editor.withoutNormalizing(editor, () => {
-            console.log('[Tab] 🔥 Updating Slate metadata:', {
-              currentEventId: currentEventId.slice(-8),
-              previousEventId: previousEventId.slice(-8),
-              oldBulletLevel: (Node.get(editor, currentPath) as EventLineNode).metadata?.bulletLevel,
-              newBulletLevel: newBulletLevel
-            });
-            
-            // 🔥 v2.20.0: 使用统一函数更新层级（同时更新 level 和 bulletLevel）
-            setEventLineLevel(editor, currentPath, newBulletLevel);
-            
-            // 🔥 更新 parentEventId（setEventLineLevel 只负责层级）
-            const currentNode = Node.get(editor, currentPath) as EventLineNode;
-            Transforms.setNodes(
-              editor,
-              { 
-                metadata: {
-                  ...currentNode.metadata,
-                  parentEventId: previousEventId,  // 🔥 父子关系单独更新
-                }
-              } as unknown as Partial<Node>,
-              { at: currentPath }
-            );
-            
-            // 🔥 FIX: 同时更新父节点的 childEventIds（双向链接）
-            try {
-              const allNodes = Array.from(Node.children(editor, []));
-              const parentNodeEntry = allNodes.find(([node]) => {
-                const eventNode = node as EventLineNode;
-                return eventNode.eventId === previousEventId && eventNode.type === 'event-line';
+          try {
+            // ⚡ Step 1: 乐观更新 Slate Editor 状态
+            Editor.withoutNormalizing(editor, () => {
+              console.log('[Tab] 🔥 Updating Slate metadata (optimistic):', {
+                currentEventId: currentEventId.slice(-8),
+                previousEventId: previousEventId.slice(-8),
+                oldLevel,
+                newLevel: newBulletLevel
               });
               
-              if (parentNodeEntry) {
-                const [parentNode, parentPath] = parentNodeEntry;
-                const parentEventLine = parentNode as EventLineNode;
-                const existingChildIds = parentEventLine.metadata?.childEventIds || [];
-                
-                // 避免重复添加
-                if (!existingChildIds.includes(currentEventId)) {
-                  const updatedParentMetadata = {
-                    ...(parentEventLine.metadata || {}),
-                    childEventIds: [...existingChildIds, currentEventId]
-                  };
-                  
-                  Transforms.setNodes(
-                    editor,
-                    { metadata: updatedParentMetadata } as unknown as Partial<Node>,
-                    { at: parentPath }
-                  );
-                  
-                  console.log('[Tab] 🔗 Updated parent childEventIds:', {
-                    parentId: previousEventId.slice(-8),
-                    childId: currentEventId.slice(-8),
-                    oldChildIds: existingChildIds.map(id => id.slice(-8)),
-                    newChildIds: updatedParentMetadata.childEventIds.map(id => id.slice(-8))
-                  });
-                }
-              } else {
-                console.warn('[Tab] ⚠️ Parent node not found:', {
-                  parentId: previousEventId.slice(-8),
-                  searchedNodes: allNodes.length
+              // 更新层级
+              setEventLineLevel(editor, currentPath, newBulletLevel);
+              
+              // 更新parentEventId
+              const currentNode = Node.get(editor, currentPath) as EventLineNode;
+              Transforms.setNodes(
+                editor,
+                { 
+                  metadata: {
+                    ...currentNode.metadata,
+                    parentEventId: previousEventId,
+                  }
+                } as unknown as Partial<Node>,
+                { at: currentPath }
+              );
+              
+              // 更新子段落的bulletLevel
+              try {
+                const paragraphs = Array.from(Node.children(editor, currentPath));
+                paragraphs.forEach(([para, paraPath], index) => {
+                  if (SlateElement.isElement(para) && (para as any).bullet) {
+                    const oldBulletLevel = (para as any).bulletLevel || 0;
+                    Transforms.setNodes(
+                      editor,
+                      { bulletLevel: oldBulletLevel } as any,
+                      { at: [...currentPath, index] }
+                    );
+                  }
                 });
+              } catch (e) {
+                console.warn('[Tab] 更新段落bulletLevel失败:', e);
               }
-            } catch (e) {
-              console.error('[Tab] ❌ Failed to update parent childEventIds:', e);
-            }
+            });
             
-            //  更新所有子段落的 bulletLevel（如果是bullet paragraph）
-            try {
-              const paragraphs = Array.from(Node.children(editor, currentPath));
-              paragraphs.forEach(([para, paraPath], index) => {
-                if (SlateElement.isElement(para) && (para as any).bullet) {
-                  const oldBulletLevel = (para as any).bulletLevel || 0;
-                  const newParagraphBulletLevel = oldBulletLevel; // 保持段落内部的相对层级不变
-                  
-                  Transforms.setNodes(
-                    editor,
-                    { bulletLevel: newParagraphBulletLevel } as any,
-                    { at: [...currentPath, index] }
-                  );
-                }
-              });
-            } catch (e) {
-              console.warn('[Tab] 更新段落bulletLevel失败:', e);
-            }
-          });
-          
-          console.log('[Tab] ⚡ Optimistic update complete (Slate metadata updated)');
-          
-          // 🔍 验证metadata是否真的被更新
-          const verifyNode = Node.get(editor, currentPath) as EventLineNode;
-          console.log('[Tab] 🔬 Verify metadata after update:', {
-            eventId: verifyNode.eventId?.slice(-8),
-            metadataParentId: verifyNode.metadata?.parentEventId,
-            metadataParentIdFull: verifyNode.metadata?.parentEventId,
-            metadataParentIdLength: verifyNode.metadata?.parentEventId?.length
-          });
-          
-          // � Tab 缩进后立即刷新 debounce，确保父子关系立即持久化
-          // 关键：虽然 UUID 已经生成，但事件可能还在 debounce 队列中未保存
-          // 必须立即 flush，确保父事件先入库，子事件再设置 parentEventId
-          console.log('[Tab] 📤 立即刷新 debounce，持久化父子关系:', {
-            eventId: currentEventId.slice(-8),
-            parentEventId: previousEventId.slice(-8),
-            action: 'flush pending changes with latest editor.children'
-          });
-          
-          // 🔥 严谨修复：直接传递 editor.children（Transforms 执行后已是最新状态）
-          // editor.children 在 withoutNormalizing 结束后已包含更新后的 metadata
-          // 无需等待 onChange，完全同步，消除时序竞态
-          flushPendingChanges(editor.children);
+            console.log('[Tab] ⚡ Optimistic update complete');
+            
+            // ✅ Step 2: 使用 EventTreeAPI.reparent 计算影响范围
+            const allEvents = await EventService.getAllEvents();
+            const currentEvent = allEvents.find(e => e.id === currentEventId);
+            const oldParentId = currentEvent?.parentEventId;
+            
+            const reparentResult = EventTreeAPI.reparent({
+              nodeId: currentEventId,
+              oldParentId: oldParentId,
+              newParentId: previousEventId,
+              newPosition: 0,
+            }, allEvents);
+            
+            console.log('[Tab] 📊 Reparent result:', {
+              nodesToUpdate: reparentResult.nodesToUpdate.length,
+              affectedParents: reparentResult.affectedParents,
+              affectedSubtree: reparentResult.affectedSubtree.length
+            });
+            
+            // ✅ Step 3: 批量更新数据库（父子关系）
+            await EventHub.batchUpdate(reparentResult.nodesToUpdate, {
+              source: 'PlanSlate/Tab',
+              skipSync: false
+            });
+            
+            // ✅ v2.20.1: bulletLevel 自动派生，无需手动更新
+            // bulletLevel 会在下次 items 变化时通过 useMemo 自动重算
+            // 性能提升：从 2 次批量更新减少到 1 次
+            
+            console.log('[Tab] ✅ Persisted parent-child relationship (bulletLevel will auto-derive)');
+            
+            // ✅ Step 6: 立即刷新debounce
+            flushPendingChanges(editor.children);
+            
+          } catch (error) {
+            console.error('[Tab] ❌ Failed to persist:', error);
+            
+            // 🔄 回滚Slate状态
+            Editor.withoutNormalizing(editor, () => {
+              setEventLineLevel(editor, currentPath, oldLevel);
+              const currentNode = Node.get(editor, currentPath) as EventLineNode;
+              const oldParentId = currentNode.metadata?.parentEventId;
+              Transforms.setNodes(
+                editor,
+                { 
+                  metadata: {
+                    ...currentNode.metadata,
+                    parentEventId: oldParentId,
+                  }
+                } as unknown as Partial<Node>,
+                { at: currentPath }
+              );
+            });
+            
+            console.warn('[Tab] 🔄 Rollback optimistic update');
+          }
         };
         
         // 🆕 v2.16: 池化ID系统 - 所有事件都使用真实ID
@@ -3236,7 +3252,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       return;
     }
     
-    // 🔧 定义 Shift+Tab 减少缩进逻辑函数（必须在调用前定义）
+    // 🔧 使用 EventTreeAPI.reparent 实现Shift+Tab解缩进
     const executeShiftTabOutdent = async (
       currentEventId: string,
       newParentEventId: string | undefined,
@@ -3244,124 +3260,126 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       currentPath: Path,
       oldLevel: number
     ) => {
-      // ⚡ 乐观更新 - 立即修改视觉层级
-      Editor.withoutNormalizing(editor, () => {
-        const currentNode = Node.get(editor, currentPath) as EventLineNode;
-        const updatedMetadata = {
-          ...(currentNode.metadata || {}),
-          parentEventId: newParentEventId, // 🔥 更新父事件ID
-          bulletLevel: newLevel, // 🔥 v2.20.0: 同步更新 bulletLevel，避免序列化时冲突
-        };
-        
-        console.log('[Shift+Tab] 🔥 Updating Slate metadata:', {
-          currentEventId: currentEventId.slice(-8),
-          newParentEventId: newParentEventId?.slice(-8) || 'ROOT',
-          oldBulletLevel: currentNode.metadata?.bulletLevel,
-          newBulletLevel: newLevel
-        });
-        
-        // 🔥 v2.20.0: 使用统一函数更新层级
-        setEventLineLevel(editor, currentPath, newLevel);
-        
-        // 🔥 更新 parentEventId（setEventLineLevel 只负责层级）
-        const finalNode = Node.get(editor, currentPath) as EventLineNode;
-        Transforms.setNodes(
-          editor,
-          { 
-            metadata: {
-              ...finalNode.metadata,
-              parentEventId: newParentEventId,  // 🔥 父子关系单独更新
-            }
-          } as unknown as Partial<Node>,
-          { at: currentPath }
-        );
-        
-        // 🔧 更新所有子段落的 bulletLevel（如果是bullet paragraph）
-        try {
-          const paragraphs = Array.from(Node.children(editor, currentPath));
-          paragraphs.forEach(([para, paraPath], index) => {
-            if (SlateElement.isElement(para) && (para as any).bullet) {
-              const oldBulletLevel = (para as any).bulletLevel || 0;
-              const newParagraphBulletLevel = oldBulletLevel; // 保持段落内部的相对层级不变
-              
-              Transforms.setNodes(
-                editor,
-                { bulletLevel: newParagraphBulletLevel } as any,
-                { at: [...currentPath, index] }
-              );
-            }
-          });
-        } catch (e) {
-          console.warn('[Shift+Tab] 更新段落bulletLevel失败:', e);
-        }
-      });
-      
-      console.log('[Shift+Tab] ⚡ Optimistic update complete');
-      
-      // 🆕 v2.16: 计算新的 position（在新同级中的位置）
-      const allTitleNodes = Array.from(Editor.nodes(editor, {
-        at: [],
-        match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
-      }));
-      
-      const currentIndex = currentPath[0];
-      const newSiblings = allTitleNodes.filter(([node, path]) => {
-        const n = node as any;
-        const idx = (path as number[])[0];
-        return idx !== currentIndex &&
-          (n.level || 0) === newLevel &&
-          (n.metadata?.parentEventId || undefined) === newParentEventId;
-      });
-      
-      const siblingBefore = newSiblings.filter(([node, path]) => (path as number[])[0] < currentIndex).pop();
-      const siblingAfter = newSiblings.find(([node, path]) => (path as number[])[0] > currentIndex);
-      const beforePos = siblingBefore ? (siblingBefore[0] as any).metadata?.position : undefined;
-      const afterPos = siblingAfter ? (siblingAfter[0] as any).metadata?.position : undefined;
-      const newPosition = calculatePositionBetween(beforePos, afterPos);
-      
-      // 📡 异步持久化 - 解除父子关系或设置新父事件 + 更新position
-      console.log('[Shift+Tab] 🔍 New parent and position:', {
-        newParentEventId: newParentEventId?.slice(-8) || 'ROOT',
-        newLevel,
-        newPosition,
-        beforePos,
-        afterPos
-      });
-      
-      EventService.updateEvent(
-        currentEventId,
-        {
-          parentEventId: newParentEventId, // 可能变为根事件（undefined）
-          position: newPosition,  // 🆕 v2.16: 更新position
-          isPlan: true
-        },
-        false,
-        {
-          originComponent: 'PlanManager',
-          source: 'user-edit'
-        }
-      ).then(() => {
-        console.log('[Shift+Tab] 📡 Persisted:', {
-          child: currentEventId.slice(-8),
-          newParent: newParentEventId?.slice(-8) || 'ROOT',
-          position: newPosition
-        });
-      }).catch((error) => {
-        console.error('[Shift+Tab] ❌ Failed to persist:', error);
-        
-        // 🔄 回滚
+      try {
+        // ⚡ Step 1: 乐观更新 Slate Editor 状态
         Editor.withoutNormalizing(editor, () => {
+          console.log('[Shift+Tab] 🔥 Updating Slate metadata (optimistic):', {
+            currentEventId: currentEventId.slice(-8),
+            newParentEventId: newParentEventId?.slice(-8) || 'ROOT',
+            oldLevel,
+            newLevel
+          });
+          
+          // 更新层级
+          setEventLineLevel(editor, currentPath, newLevel);
+          
+          // 更新parentEventId
+          const finalNode = Node.get(editor, currentPath) as EventLineNode;
           Transforms.setNodes(
             editor,
             { 
-              level: oldLevel // 恢复原层级
+              metadata: {
+                ...finalNode.metadata,
+                parentEventId: newParentEventId,
+              }
+            } as unknown as Partial<Node>,
+            { at: currentPath }
+          );
+          
+          // 更新子段落的bulletLevel
+          try {
+            const paragraphs = Array.from(Node.children(editor, currentPath));
+            paragraphs.forEach(([para, paraPath], index) => {
+              if (SlateElement.isElement(para) && (para as any).bullet) {
+                const oldBulletLevel = (para as any).bulletLevel || 0;
+                Transforms.setNodes(
+                  editor,
+                  { bulletLevel: oldBulletLevel } as any,
+                  { at: [...currentPath, index] }
+                );
+              }
+            });
+          } catch (e) {
+            console.warn('[Shift+Tab] 更新段落bulletLevel失败:', e);
+          }
+        });
+        
+        console.log('[Shift+Tab] ⚡ Optimistic update complete');
+        
+        // ✅ Step 2: 使用 EventTreeAPI.reparent 计算影响范围
+        const allEvents = await EventService.getAllEvents();
+        const currentEvent = allEvents.find(e => e.id === currentEventId);
+        const oldParentId = currentEvent?.parentEventId;
+        
+        // 计算新的position
+        const allTitleNodes = Array.from(Editor.nodes(editor, {
+          at: [],
+          match: n => !Editor.isEditor(n) && (n as any).type === 'event-line' && (n as any).mode === 'title'
+        }));
+        
+        const currentIndex = currentPath[0];
+        const newSiblings = allTitleNodes.filter(([node, path]) => {
+          const n = node as any;
+          const idx = (path as number[])[0];
+          return idx !== currentIndex &&
+            (n.level || 0) === newLevel &&
+            (n.metadata?.parentEventId || undefined) === newParentEventId;
+        });
+        
+        const siblingBefore = newSiblings.filter(([node, path]) => (path as number[])[0] < currentIndex).pop();
+        const siblingAfter = newSiblings.find(([node, path]) => (path as number[])[0] > currentIndex);
+        const beforePos = siblingBefore ? (siblingBefore[0] as any).metadata?.position : undefined;
+        const afterPos = siblingAfter ? (siblingAfter[0] as any).metadata?.position : undefined;
+        const newPosition = calculatePositionBetween(beforePos, afterPos);
+        
+        const reparentResult = EventTreeAPI.reparent({
+          nodeId: currentEventId,
+          oldParentId: oldParentId,
+          newParentId: newParentEventId,
+          newPosition: newPosition,
+        }, allEvents);
+        
+        console.log('[Shift+Tab] 📊 Reparent result:', {
+          nodesToUpdate: reparentResult.nodesToUpdate.length,
+          affectedParents: reparentResult.affectedParents,
+          affectedSubtree: reparentResult.affectedSubtree.length,
+          newPosition
+        });
+        
+        // ✅ Step 3: 批量更新数据库（父子关系）
+        await EventHub.batchUpdate(reparentResult.nodesToUpdate, {
+          source: 'PlanSlate/Shift+Tab',
+          skipSync: false
+        });
+        
+        // ✅ v2.20.1: bulletLevel 自动派生，无需手动更新
+        // bulletLevel 会在下次 items 变化时通过 useMemo 自动重算
+        // 性能提升：从 2 次批量更新减少到 1 次
+        
+        console.log('[Shift+Tab] ✅ Persisted parent-child relationship (bulletLevel will auto-derive)');
+        
+      } catch (error) {
+        console.error('[Shift+Tab] ❌ Failed to persist:', error);
+        
+        // 🔄 回滚Slate状态
+        Editor.withoutNormalizing(editor, () => {
+          setEventLineLevel(editor, currentPath, oldLevel);
+          const currentNode = Node.get(editor, currentPath) as EventLineNode;
+          const oldParentId = currentNode.metadata?.parentEventId;
+          Transforms.setNodes(
+            editor,
+            { 
+              metadata: {
+                ...currentNode.metadata,
+                parentEventId: oldParentId,
+              }
             } as unknown as Partial<Node>,
             { at: currentPath }
           );
         });
         
         console.warn('[Shift+Tab] 🔄 Rollback optimistic update');
-      });
+      }
     };
 
     // Shift+Tab - 解除父子关系（乐观更新 + 异步持久化）

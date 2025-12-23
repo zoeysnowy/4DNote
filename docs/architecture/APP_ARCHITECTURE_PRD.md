@@ -1,7 +1,7 @@
 # App 组件架构文档 (PRD)
 
-**版本**: v1.8  
-**最后更新**: 2025-12-15  
+**版本**: v1.9  
+**最后更新**: 2025-12-23  
 **文档类型**: 架构设计文档（逆向工程）
 
 ---
@@ -9,6 +9,68 @@
 ## 文档概述
 
 本文档通过逆向工程分析 `src/App.tsx` 组件，记录其架构设计、状态管理、渲染机制、性能优化策略及已知问题。
+
+---
+
+## 0. 状态管理架构设计 (v2.22)
+
+### 0.1 设计原则
+
+当前模块的核心痛点不是"`useState` 太多"，而是**状态语义混乱 + 多源真相 + 编辑器/树/持久化耦合**。解决优先级：
+
+1. **统一真相源（single source of truth）**  
+2. 抽离**可测试的纯逻辑层**（EventTreeEngine）  
+3. 将状态按类别收敛到 **`useReducer`（会话态）+ 自建 store/service（领域数据与管线态）**  
+4. 最后再考虑是否需要 Redux（通常不需要）
+
+### 0.2 为什么不使用 Redux
+
+#### Redux 解决的是"状态分发/共享"，不是"正确性/一致性"
+- 当前问题主要来自：  
+  - 事件树推导（`parentEventId/childEventIds/bulletLevel/position`）在多处重复计算  
+  - Tab/Shift+Tab 既改 Slate 又试图直接 flush/save，造成时序竞态  
+  - `items/editorItems/pendingEmptyItems` 等形成**多源真相**
+- Redux 把 `useState` 搬到 store 并不会消除这些竞态与重复推导；反而可能让"错误的耦合"在全局变得更难追踪。
+
+#### Redux 对"编辑器会话态"并不友好
+编辑器中大量状态是**短生命周期、与 selection/focus/IME 相关、需要命令式 ref** 的会话态（例如 cursor restore、composition、anchor DOMRect）。这些：
+- 放 Redux 会导致高频 dispatch、无意义重渲染、调试噪音
+- 仍然离不开 `ref`/imperative API（Slate/DOM），Redux 无法替代
+
+### 0.3 useState 分类标准
+
+将所有状态按 5 类贴标签，每类有清晰"放哪儿"的决策：
+
+| 类别 | 定义 | 生命周期/特征 | 推荐容器 | 处理依据 |
+|---|---|---|---|---|
+| **(A) UI 临时态** | 纯界面开关/hover/弹窗 | 丢了不影响数据正确性 | 继续 `useState` | 不需要事务一致性，不跨模块共享 |
+| **(B) 编辑器会话态** | selection/focus/IME/键盘命令 | 高频、需要原子更新，常常"成组变化" | `useReducer` + 少量 `useRef` | 典型状态机：一次键盘动作会更新 2+ state |
+| **(C) 领域数据（真相）** | events/items/树结构 | 必须一致，可批处理/可回放 | 自建 store 或 service（EventService） | single source of truth，避免多源 |
+| **(D) 派生/缓存** | map/filter/view arrays | 可从 (C) 推导 | `useMemo`/selector（必要时缓存） | 不应作为独立 state |
+| **(E) 持久化/同步管线态** | pending patches、debounce、inflight、local-update guard | 与 DB/同步时序强相关 | 自建 pipeline（store/service），多用 `useRef` | 避免闭包陈旧与环回 |
+
+**决策口诀**：
+- **一次用户动作要同时改 2+ 个状态** → 放 reducer（B）
+- **可以由别的状态推导** → 不要 state（D）
+- **影响保存/同步/一致性** → 放服务层/自建 store（C/E）
+- **丢了不影响正确性** → 留 `useState`（A）
+
+### 0.4 目标架构（分层）
+
+- **Slate 编辑器层（PlanSlate/LogSlate/ModalSlate）**  
+  只负责：键盘/输入 → 更新 Slate value/metadata → 抛出 onChange  
+  不直接负责：持久化、事件树全量重算、广播同步
+
+- **页面编排层（PlanManager/TimeLog）**  
+  只负责：收集编辑快照、驱动 UI、决定何时保存（debounce policy）  
+  不再负责：到处 DFS/重算 bulletLevel、散落的 flush 定时器
+
+- **领域服务层（EventService）**  
+  负责：normalize、存储、广播同步、对外提供查询/写入 API  
+  内部调用 **EventTreeEngine（纯函数）** 统一树逻辑
+
+- **纯逻辑层（EventTreeEngine - 可单元测试）**  
+  负责：build tree、排序、bulletLevel、orphan/cycle 检测、reparent 影响范围计算
 
 ---
 

@@ -1637,7 +1637,8 @@ function App() {
       if (isAuthenticated && !syncManager) {
         // 强制更新 lastAuthState，触发上面的 useEffect
         setLastAuthState(prev => !prev); // 切换状态强制触发
-        setTimeout(() => setLastAuthState(isAuthenticated), 0);
+        // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+        queueMicrotask(() => setLastAuthState(isAuthenticated));
       }
     };
     

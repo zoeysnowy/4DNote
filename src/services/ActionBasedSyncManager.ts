@@ -1492,14 +1492,16 @@ export class ActionBasedSyncManager {
       });
     } else {
       // 非浏览器环境，执行常规同步
-      setTimeout(() => {
+      // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+      queueMicrotask(() => {
         if (this.isRunning && !this.syncInProgress) {
           this.performSync();
         }
-      }, 0);
+      });
     }
     
-    // 设置定期增量同步（20秒一次，只同步 3 个月窗口）
+    // ✅ v2.21.1: 设置定期增量同步（20秒一次，只同步 3 个月窗口）
+    // 已在 stop() 方法中清理
     this.syncInterval = setInterval(() => {
       // 🔧 [NEW] 主动检查 token 是否过期
       if (this.microsoftService && !this.microsoftService.checkTokenExpiration()) {

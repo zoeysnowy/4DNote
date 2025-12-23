@@ -256,8 +256,8 @@ const DesktopCalendarWidget: React.FC = () => {
     document.body.style.margin = '0';
     document.body.style.padding = '0';
     
-    // 检查拖动条元素
-    setTimeout(() => {
+    // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+    queueMicrotask(() => {
       const dragBar = document.querySelector('.drag-bar') as HTMLElement;
       if (dragBar) {
         const computedStyle = window.getComputedStyle(dragBar);

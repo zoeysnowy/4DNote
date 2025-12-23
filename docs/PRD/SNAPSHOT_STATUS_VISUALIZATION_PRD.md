@@ -127,25 +127,134 @@ const indent = BASE_LEFT + (maxColumns × (LINE_WIDTH + LINE_SPACING)) + 12;
 src/components/
 ├── StatusLineContainer.tsx      (419 lines) - 竖线渲染容器
 ├── StatusLineContainer.css      (125 lines) - 样式定义
-└── PlanManager.tsx              
-    ├── getEventStatuses()       (L1745-1851) - 状态计算核心逻辑
-    └── useMemo segments[]       (L1853-1942) - 转换为竖线数据结构
+├── PlanManager.tsx              
+│   ├── getEventStatuses()       (L1745-1851) - 状态计算核心逻辑
+│   └── useMemo segments[]       (L1853-1942) - 转换为竖线数据结构
+└── hooks/
+    └── usePlanManagerSession.ts (277 lines) - 🆕 v2.21.0 会话态管理
 ```
 
-### 3.2 数据流
+### 3.2 状态管理架构 ⭐ v2.21.0 (Reducer模式)
+
+**设计理念**: Snapshot功能依赖Filter状态的dateRange字段，采用useReducer统一管理避免状态耦合
+
+```typescript
+// ===== State Structure =====
+export interface FilterState {
+  dateRange: { start: Date; end: Date } | null;  // 🎯 Snapshot核心依赖
+  activeFilter: 'tags' | 'tasks' | 'favorites' | 'new';
+  hiddenTags: Set<string>;
+  searchQuery: string;
+}
+
+export interface PlanManagerSessionState {
+  filter: FilterState;         // 过滤器状态
+  focus: FocusState;           // 焦点状态（编辑器相关）
+  snapshotVersion: number;     // 🔥 强制刷新快照的计数器
+}
+
+// ===== Action Types =====
+export type PlanManagerSessionAction =
+  | { type: 'SET_DATE_RANGE'; payload: { start: Date; end: Date } | null }
+  | { type: 'INCREMENT_SNAPSHOT_VERSION' }
+  | { type: 'RESET_FILTERS' }
+  // ... 其他 filter/focus actions
+
+// ===== Reducer Logic =====
+function planManagerSessionReducer(state, action) {
+  switch (action.type) {
+    case 'SET_DATE_RANGE':
+      return {
+        ...state,
+        filter: { ...state.filter, dateRange: action.payload },
+        snapshotVersion: state.snapshotVersion + 1,  // 🔥 自动递增版本
+      };
+    
+    case 'INCREMENT_SNAPSHOT_VERSION':
+      return {
+        ...state,
+        snapshotVersion: state.snapshotVersion + 1,
+      };
+    
+    case 'RESET_FILTERS':
+      return {
+        ...state,
+        filter: {
+          dateRange: null,
+          activeFilter: 'tags',
+          hiddenTags: new Set(),
+          searchQuery: '',
+        },
+        snapshotVersion: state.snapshotVersion + 1,  // 🔥 重置也触发刷新
+      };
+  }
+}
+```
+
+**状态依赖链**:
+
+```
+session.filter.dateRange 变化
+    ↓
+自动触发 snapshotVersion + 1
+    ↓
+computeEditorItems (依赖 dateRange)
+    ↓
+EventHistoryService.getExistingEventsAtTime(startTime)  // 查询起点事件
+    ↓
+EventHistoryService.queryHistory({ startTime, endTime }) // 查询操作历史
+    ↓
+过滤事件 (existingAtStart.has(id) || createdInRange.has(id))
+    ↓
+getEventStatuses (依赖 dateRange)
+    ↓
+StatusLineSegment[]
+    ↓
+StatusLineContainer 渲染
+```
+
+**关键机制**:
+
+1. **原子更新**: `SET_DATE_RANGE` action同时更新`dateRange`和`snapshotVersion`，避免中间态
+2. **版本信号**: `snapshotVersion`递增强制重新计算快照数据（破坏useMemo缓存）
+3. **过滤器重置**: `RESET_FILTERS`清空所有过滤条件并触发快照刷新
+
+### 3.3 数据流
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ 用户选择日期范围 (dateRange)                                │
+│ 用户操作: 选择日期范围                                       │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ PlanManager.getEventStatuses(eventId, dateRange)            │
-│ - 查询 EventHistoryService.queryHistory()                   │
-│ - 按时间排序，取最新操作                                     │
-│ - 根据操作类型 + 事件状态 → 计算最终状态                     │
-│ - 返回: string[] (可能包含多个状态)                          │
+│ dispatch({ type: 'SET_DATE_RANGE', payload: { start, end }})│
+│ 🔥 自动触发: snapshotVersion + 1                             │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ computeEditorItems (useMemo 依赖 dateRange)                 │
+│ - 检测 session.filter.dateRange !== null → Snapshot模式     │
+│ - 查询起点事件: getExistingEventsAtTime(startTime)          │
+│ - 查询操作历史: queryHistory({ startTime, endTime })        │
+│ - 识别创建操作: createdInRange = Set(create operations)     │
+│ - 过滤事件: items.filter(existingAtStart ∪ createdInRange)  │
+│ - 添加Ghost事件: deletedInRange - existingEvents            │
+└────────────────────┬────────────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│ getEventStatuses(eventId, dateRange)                        │
+│ - 查询时间段内操作: EventHistoryService.queryHistory()      │
+│ - 按时间排序，识别最新操作                                   │
+│ - 映射状态:                                                  │
+│   • create → 'new'                                           │
+│   • update → 'updated'                                       │
+│   • delete → 'deleted'                                       │
+│   • checkin (check-in) → 'done'                              │
+│   • checkin (uncheck) + 过期 → 'missed'                      │
+│ - 返回: string[] (一个事件可能有多个状态)                     │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
@@ -972,7 +1081,295 @@ segments.forEach(segment => {
 
 ---
 
-## 12. 未来优化方向
+## 12. Snapshot 过滤机制架构 ⭐ v2.21.0
+
+### 12.1 核心需求
+
+**问题**: Snapshot模式需要显示特定时间段内的事件及其变化，而非常规过滤器（已完成/已过期）逻辑
+
+**设计目标**:
+1. **时间范围过滤**: 只显示在`[startTime, endTime]`区间内存在或创建的事件
+2. **Ghost事件支持**: 已删除的事件也应显示（显示生命周期）
+3. **状态独立**: 不受"隐藏已完成任务"等常规过滤器影响
+4. **性能要求**: 切换日期范围时，快速重新计算（< 100ms）
+
+### 12.2 状态架构设计
+
+#### State结构
+
+```typescript
+export interface FilterState {
+  dateRange: { start: Date; end: Date } | null;  // 🎯 Snapshot核心字段
+  activeFilter: 'tags' | 'tasks' | 'favorites' | 'new';
+  hiddenTags: Set<string>;
+  searchQuery: string;
+}
+
+export interface PlanManagerSessionState {
+  filter: FilterState;
+  focus: FocusState;           // 编辑器焦点状态（不影响Snapshot）
+  snapshotVersion: number;     // 🔥 强制刷新快照的信号量
+}
+```
+
+#### Action设计
+
+```typescript
+// 设置日期范围（进入Snapshot模式）
+{ 
+  type: 'SET_DATE_RANGE', 
+  payload: { start: Date, end: Date } | null 
+}
+// 自动效果: snapshotVersion + 1
+
+// 退出Snapshot模式
+{ type: 'RESET_FILTERS' }
+// 自动效果: dateRange = null, snapshotVersion + 1
+
+// 手动触发快照刷新（例如用户编辑事件后）
+{ type: 'INCREMENT_SNAPSHOT_VERSION' }
+```
+
+### 12.3 过滤算法
+
+#### 常规模式 vs Snapshot模式
+
+| 维度 | 常规模式 | Snapshot模式 |
+|------|---------|-------------|
+| **数据源** | `items`（所有事件） | `items`（所有事件） |
+| **第一层过滤** | 隐藏已完成任务 | ❌ 不过滤 |
+| **第二层过滤** | 隐藏已过期任务 | ❌ 不过滤 |
+| **第三层过滤** | Tag过滤、搜索 | ❌ 不过滤 |
+| **Snapshot专属过滤** | - | ✅ 时间范围过滤 |
+| **Ghost事件** | 隐藏 | ✅ 显示 |
+
+#### 时间范围过滤逻辑
+
+```typescript
+// computeEditorItems (PlanManager.tsx L1520-1640)
+const computeEditorItems = useMemo(() => {
+  // 步骤1: 常规过滤（Tag、搜索）
+  let filteredItems = items.filter(item => {
+    // Tag过滤
+    if (session.filter.hiddenTags.size > 0) {
+      const itemTags = item.tags || [];
+      if (itemTags.some(tag => session.filter.hiddenTags.has(tag))) {
+        return false;
+      }
+    }
+    
+    // 搜索过滤
+    if (session.filter.searchQuery) {
+      const query = session.filter.searchQuery.toLowerCase();
+      const titleMatch = item.title?.simpleTitle?.toLowerCase().includes(query);
+      const contentMatch = item.content?.toLowerCase().includes(query);
+      if (!titleMatch && !contentMatch) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+  
+  // 步骤2: Snapshot模式特殊处理 ⭐
+  if (session.filter.dateRange) {
+    const startTime = formatTimeForStorage(session.filter.dateRange.start);
+    const endTime = formatTimeForStorage(session.filter.dateRange.end);
+    
+    // 2.1 查询起点时刻存在的事件ID
+    const existingAtStart = await EventHistoryService.getExistingEventsAtTime(startTime);
+    console.log('[Snapshot] 起点存在:', existingAtStart.size, '个');
+    
+    // 2.2 查询时间段内的操作历史
+    const operations = await EventHistoryService.queryHistory({
+      startTime,
+      endTime
+    });
+    console.log('[Snapshot] 时间段内操作:', operations.length, '条');
+    
+    // 2.3 识别在时间段内创建的事件
+    const createdInRange = new Set(
+      operations
+        .filter(op => op.operation === 'create' && op.eventId)
+        .map(op => op.eventId)
+    );
+    console.log('[Snapshot] 时间段内创建:', createdInRange.size, '个');
+    
+    // 2.4 过滤事件：在起点存在 OR 在时间段内创建
+    // 🔥 FIX: 使用 items（所有事件），不是 filteredItems（已被常规过滤）
+    filteredItems = items.filter(item => {
+      const inRange = existingAtStart.has(item.id) || createdInRange.has(item.id);
+      if (!inRange) return false;
+      
+      // 🆕 额外检查：过滤空白事件（标题和eventlog都为空）
+      const hasTitle = item.content || item.title?.simpleTitle || item.title?.fullTitle;
+      const hasEventlog = item.eventlog && (
+        (typeof item.eventlog === 'string' && item.eventlog.trim()) ||
+        (item.eventlog.slateJson && hasTextContent(item.eventlog.slateJson))
+      );
+      
+      if (!hasTitle && !hasEventlog) {
+        console.log('[Snapshot] 跳过空白事件:', item.id.slice(-8));
+        return false;
+      }
+      
+      return true;
+    });
+    
+    // 2.5 添加Ghost事件（在时间段内删除的事件）
+    const deletedInRange = new Set(
+      operations
+        .filter(op => op.operation === 'delete' && op.eventId)
+        .map(op => op.eventId)
+    );
+    
+    deletedInRange.forEach(eventId => {
+      if (!filteredItems.some(item => item.id === eventId)) {
+        // 从历史记录构造Ghost事件
+        const ghostEvent = {
+          id: eventId,
+          _isDeleted: true,
+          _deletedAt: operations.find(op => op.eventId === eventId)?.timestamp,
+          // ... 其他字段从最后一次快照恢复
+        };
+        filteredItems.push(ghostEvent);
+      }
+    });
+    
+    console.log('[Snapshot] 最终显示:', filteredItems.length, '个事件');
+  }
+  
+  return filteredItems;
+}, [items, session.filter.dateRange, session.snapshotVersion]); // 🔥 依赖 snapshotVersion
+```
+
+### 12.4 状态更新触发机制
+
+#### 自动触发场景
+
+```typescript
+// 场景1: 用户选择日期范围
+dispatch({ type: 'SET_DATE_RANGE', payload: { start, end } });
+// → snapshotVersion + 1
+// → computeEditorItems 重新计算
+// → getEventStatuses 重新查询
+// → StatusLineContainer 重新渲染
+
+// 场景2: 用户点击"重置过滤器"
+dispatch({ type: 'RESET_FILTERS' });
+// → dateRange = null (退出Snapshot模式)
+// → snapshotVersion + 1
+// → computeEditorItems 切换回常规模式
+```
+
+#### 手动触发场景
+
+```typescript
+// 场景3: 用户编辑事件后，需要刷新Snapshot
+EventHub.on('event:updated', (eventId) => {
+  if (session.filter.dateRange) {
+    dispatch({ type: 'INCREMENT_SNAPSHOT_VERSION' });
+  }
+});
+
+// 场景4: 用户删除事件后，需要添加Ghost事件
+EventHub.on('event:deleted', (eventId) => {
+  if (session.filter.dateRange) {
+    dispatch({ type: 'INCREMENT_SNAPSHOT_VERSION' });
+  }
+});
+```
+
+### 12.5 性能优化策略
+
+#### 缓存机制
+
+```typescript
+// Snapshot数据缓存（避免重复查询）
+const snapshotCacheRef = useRef<{
+  snapshot: any;
+  timestamp: number;
+  dateRangeKey: string;
+} | null>(null);
+
+const generateEventSnapshot = useCallback(async () => {
+  if (!session.filter.dateRange) return null;
+  
+  const startTimeStr = formatTimeForStorage(session.filter.dateRange.start);
+  const endTimeStr = formatTimeForStorage(session.filter.dateRange.end);
+  const dateRangeKey = `${startTimeStr}-${endTimeStr}`;
+  
+  // 检查缓存（5秒TTL）
+  if (
+    snapshotCacheRef.current &&
+    snapshotCacheRef.current.dateRangeKey === dateRangeKey &&
+    Date.now() - snapshotCacheRef.current.timestamp < 5000
+  ) {
+    console.log('[Snapshot] 使用缓存数据');
+    return snapshotCacheRef.current.snapshot;
+  }
+  
+  // 查询新数据
+  const summary = await EventHistoryService.getEventOperationsSummary(
+    startTimeStr,
+    endTimeStr
+  );
+  
+  const snapshot = {
+    dateRange: { start: startTimeStr, end: endTimeStr },
+    created: summary.created.length,
+    updated: summary.updated.length,
+    completed: summary.completed.length,
+    deleted: summary.deleted.length,
+    details: [...summary.created, ...summary.updated, ...summary.completed, ...summary.deleted]
+  };
+  
+  // 更新缓存
+  snapshotCacheRef.current = {
+    snapshot,
+    timestamp: Date.now(),
+    dateRangeKey
+  };
+  
+  return snapshot;
+}, [session.filter.dateRange, session.snapshotVersion]);
+```
+
+#### 增量更新优化
+
+```typescript
+// 只在 snapshotVersion 变化时重新计算
+const segments = useMemo(() => {
+  // 矩阵算法计算竖线列分配...
+}, [editorItems, session.filter.dateRange, session.snapshotVersion]);
+```
+
+### 12.6 边界情况处理
+
+| 场景 | 处理策略 | 实现位置 |
+|------|---------|---------|
+| **dateRange = null** | 退出Snapshot模式，恢复常规过滤 | computeEditorItems L1520 |
+| **时间段外无操作** | 返回空数组，不显示竖线 | getEventStatuses L1745 |
+| **事件跨时间段创建** | 只显示时间段内的操作 | queryHistory 过滤 |
+| **Ghost事件无历史** | 使用删除时的快照数据 | EventHistoryService L450 |
+| **并发编辑冲突** | 递增 snapshotVersion 强制刷新 | INCREMENT_SNAPSHOT_VERSION |
+| **快速切换日期** | 缓存机制（5秒TTL）避免重复查询 | snapshotCacheRef L1449 |
+
+### 12.7 测试清单
+
+| 测试项 | 预期结果 | 状态 |
+|--------|---------|------|
+| 选择日期范围 | 进入Snapshot模式，显示时间段内事件 | ✅ |
+| 退出日期范围 | 恢复常规模式，隐藏Ghost事件 | ✅ |
+| Ghost事件显示 | 已删除事件显示3条竖线（New/Updated/Del） | ✅ |
+| 空白事件过滤 | 标题和eventlog都为空的事件不显示 | ✅ |
+| 编辑事件后刷新 | snapshotVersion递增，重新计算 | ✅ |
+| 快速切换日期 | 缓存生效，不重复查询 | ✅ |
+| 并发操作 | 状态一致性保证，不丢失更新 | ✅ |
+
+---
+
+## 13. 版本历史
 
 ### 12.1 性能优化
 

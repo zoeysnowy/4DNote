@@ -579,6 +579,52 @@ export class IndexedDBService {
     });
   }
 
+  /**
+   * 🔒 批量更新事件（事务性）- Phase 3优化
+   * 
+   * 使用单个IndexedDB事务处理所有更新，提供原子性保证
+   * 
+   * @param events - 完整的事件对象数组
+   */
+  async batchUpdateEvents(events: StorageEvent[]): Promise<void> {
+    await this.initialize();
+    
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      console.log('[IndexedDB] 🔒 Starting batch update transaction:', {
+        count: events.length,
+        eventIds: events.map(e => e.id.slice(-8)).join(', ')
+      });
+
+      const transaction = this.db.transaction('events', 'readwrite');
+      const store = transaction.objectStore('events');
+
+      // 在单个事务中更新所有事件
+      for (const event of events) {
+        store.put(event);
+      }
+
+      transaction.oncomplete = () => {
+        console.log('[IndexedDB] ✅ Batch update transaction completed');
+        resolve();
+      };
+      
+      transaction.onerror = () => {
+        console.error('[IndexedDB] ❌ Batch update transaction failed:', transaction.error);
+        reject(transaction.error);
+      };
+      
+      transaction.onabort = () => {
+        console.error('[IndexedDB] ❌ Batch update transaction aborted');
+        reject(new Error('Transaction aborted'));
+      };
+    });
+  }
+
   // ==================== 其他 Stores ====================
 
   // Tags

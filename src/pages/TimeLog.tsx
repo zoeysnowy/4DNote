@@ -6,6 +6,7 @@ import ContentSelectionPanel from '../components/ContentSelectionPanel';
 import { EventService } from '../services/EventService';
 import { EventHub } from '../services/EventHub';
 import { TagService } from '../services/TagService';
+import { EventTreeAPI } from '../services/EventTree/TreeAPI';
 import { ModalSlate } from '../components/ModalSlate/ModalSlate';
 import { LogSlate } from '../components/LogSlate/LogSlate';
 import { HierarchicalTagPicker } from '../components/HierarchicalTagPicker/HierarchicalTagPicker';
@@ -25,7 +26,7 @@ import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
-import type { Event, EventTreeNode } from '../types';
+import type { Event } from '../types';
 import './TimeLog.css';
 
 // 导入图标
@@ -65,7 +66,7 @@ import EventManagerIconSvg from '../assets/icons/EventManager.svg';
 import AllMenuIconSvg from '../assets/icons/AllMenu.svg';
 import TimePropertyIconSvg from '../assets/icons/TimeProperty.svg';
 
-// 🚀 全局滚动标记：避免重复滚动到今天（不受 HMR 影响）
+// 🚀 全局滚动标记：避免重复滚动到今天（不受HMR 影响）
 let hasScrolledToTodayGlobal = false;
 
 interface TimeLogProps {
@@ -121,10 +122,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [tabManagerEvents, setTabManagerEvents] = useState<Event[]>([]);
   const [activeTabId, setActiveTabId] = useState<string>('timelog'); // 'timelog' 或事件ID
 
-  // 🆕 v2.19: 追踪空 Note 事件（用于自动清理）
+  // 🆕 v2.19: 追踪空Note 事件（用于自动清理）
   const emptyNotesRef = useRef<Set<string>>(new Set());
 
-  // 🆕 v2.19: 从 localStorage 恢复 LogTab 状态
+  // 🆕 v2.19: 从localStorage 恢复 LogTab 状态
   useEffect(() => {
     const restoreLogTabs = async () => {
       try {
@@ -148,7 +149,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           setShowTabManager(true);
         }
       } catch (error) {
-        console.error('❌ [TimeLog] 恢复 LogTab 状态失败:', error);
+        console.error('✅[TimeLog] 恢复 LogTab 状态失败', error);
         localStorage.removeItem('4dnote-logtabs');
       }
     };
@@ -156,7 +157,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     restoreLogTabs();
   }, []);
 
-  // 🆕 v2.19: 持久化 LogTab 状态到 localStorage
+  // 🆕 v2.19: 持久化LogTab 状态到 localStorage
   useEffect(() => {
     if (tabManagerEvents.length === 0) {
       localStorage.removeItem('4dnote-logtabs');
@@ -179,7 +180,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         // 加载事件
         const event = await EventService.getEventById(targetEventId);
         if (!event) {
-          console.warn('⚠️ [TimeLog] 导航目标事件不存在:', targetEventId);
+          console.warn('⚠️ [TimeLog] 导航目标事件不存在', targetEventId);
           return;
         }
 
@@ -192,17 +193,17 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         setShowTabManager(true);
         setActiveTabId(targetEventId);
 
-        // 滚动到事件位置
-        setTimeout(() => {
+        // ✅v2.21.1: 使用 requestAnimationFrame 替代 setTimeout，更适合 DOM 操作
+        requestAnimationFrame(() => {
           const eventElement = document.querySelector(`[data-event-id="${targetEventId}"]`);
           if (eventElement) {
             eventElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
-        }, 300);
+        });
 
-        console.log('✅ [TimeLog] 导航到事件:', targetEventId);
+        console.log('✅[TimeLog] 导航到事件', targetEventId);
       } catch (error) {
-        console.error('❌ [TimeLog] 导航失败:', error);
+        console.error('✅[TimeLog] 导航失败:', error);
       }
     };
 
@@ -212,19 +213,19 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 🆕 v2.19: 页面卸载时清理所有空 Note
   useEffect(() => {
     return () => {
-      // 组件卸载时删除所有仍为空的 Note
+      // 组件卸载时删除所有仍为空空Note
       const emptyNoteIds = Array.from(emptyNotesRef.current);
       if (emptyNoteIds.length > 0) {
-        console.log('🗑️ [TimeLog] Cleaning up empty notes on unmount:', emptyNoteIds);
+        console.log('🗑✅[TimeLog] Cleaning up empty notes on unmount:', emptyNoteIds);
         
         // 异步删除，不阻塞卸载
         Promise.all(
           emptyNoteIds.map(async (eventId) => {
             try {
               await EventService.deleteEvent(eventId);
-              console.log('✅ [TimeLog] Deleted empty note:', eventId);
+              console.log('✅[TimeLog] Deleted empty note:', eventId);
             } catch (error) {
-              console.error('❌ [TimeLog] Failed to delete empty note:', eventId, error);
+              console.error('✅[TimeLog] Failed to delete empty note:', eventId, error);
             }
           })
         );
@@ -234,20 +235,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
   // Handler: Open event in tab manager or separate window
   const handleOpenInTab = useCallback(async (event: Event) => {
-    console.log('🏷️ [TimeLog] handleOpenInTab called:', event.id);
+    console.log('🏷✅[TimeLog] handleOpenInTab called:', event.id);
     console.log('🔍 [TimeLog] supportsMultiWindow:', supportsMultiWindow());
     
     // Electron 环境下优先使用多窗口
     if (supportsMultiWindow()) {
       const success = await openEventInWindow(event.id, event);
       if (success) {
-        console.log('✅ Opened event in separate window:', event.id);
+        console.log('✅Opened event in separate window:', event.id);
         return;
       }
       console.warn('⚠️ Failed to open window, falling back to tab manager');
     }
     
-    // Web 环境或窗口打开失败，使用标签页管理器
+    // Web 环境或窗口打开失败，使用标签页管理✅
     console.log('📑 [TimeLog] Opening in tab manager');
     setTabManagerEvents(prev => {
       const exists = prev.find(e => e.id === event.id);
@@ -260,14 +261,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     console.log('📑 [TimeLog] showTabManager set to true');
   }, []);
   
-  // 动态滚动加载状态 - 支持双向无限滚动
+  // 动态滚动加载状态- 支持双向无限滚动
   const [dynamicStartDate, setDynamicStartDate] = useState<Date | null>(null);
   const [dynamicEndDate, setDynamicEndDate] = useState<Date | null>(null);
   const [isLoadingEarlier, setIsLoadingEarlier] = useState(false);
   const [isLoadingLater, setIsLoadingLater] = useState(false);
   
-  // 🔧 异步加载事件数据（需要在 useEffect 之前定义）
-  // ✅ 使用过滤后的时间轴事件，排除无时间的 Task 和附属事件
+  // 🔧 异步加载事件数据（需要在 useEffect 之前定义✅
+  // ✅使用过滤后的时间轴事件，排除无时间的 Task 和附属事件
   const [allEvents, setAllEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
 
@@ -284,7 +285,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const isLoadingEarlierRef = useRef(false);
   const isLoadingLaterRef = useRef(false);
   
-  // 同步 state 到 ref
+  // 同步 state ✅ref
   useEffect(() => {
     dynamicStartDateRef.current = dynamicStartDate;
     dynamicEndDateRef.current = dynamicEndDate;
@@ -311,11 +312,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     return () => TagService.removeListener(listener);
   }, []);
 
-  // 双向无限滚动监听器（优化：使用 ref 避免闭包问题）
+  // 双向无限滚动监听器（优化：使✅ref 避免闭包问题✅
   useEffect(() => {
-    // 等待加载完成和 DOM 渲染
+    // 等待加载完成✅DOM 渲染
     if (loadingEvents) {
-      console.log('⏳ [TimeLog] Waiting for events to load before attaching scroll listener');
+      console.log('✅[TimeLog] Waiting for events to load before attaching scroll listener');
       return;
     }
 
@@ -325,7 +326,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       return;
     }
 
-    console.log('✅ [TimeLog] Scroll listener attached', {
+    console.log('✅[TimeLog] Scroll listener attached', {
       scrollHeight: container.scrollHeight,
       clientHeight: container.clientHeight,
       canScroll: container.scrollHeight > container.clientHeight
@@ -358,14 +359,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
       // 向上滚动接近顶部时，加载历史数据
       // 🔧 修改触发条件：由于今天在顶部，用户一开始就可能接近顶部
-      // 但不应该立即触发加载，需要用户主动滚动
+      // 但不应该立即触发加载，需要用户主动滚✅
       if (scrollTop < 100 && scrollTop > 0 && !isLoadingEarlierRef.current) {
         console.log('🔼 [TimeLog] 触发历史加载！scrollTop=' + scrollTop);
         isLoadingEarlierRef.current = true;
         setIsLoadingEarlier(true);
         
         const loadHistory = async () => {
-          // 保存当前可见的第一个元素作为锚点
+          // 保存当前可见的第一个元素作为锚✅
           const firstVisibleElement = container.querySelector('.timeline-date-group');
           const firstVisibleTop = firstVisibleElement ? firstVisibleElement.getBoundingClientRect().top : 0;
           const containerTop = container.getBoundingClientRect().top;
@@ -373,7 +374,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           
           const currentStart = dynamicStartDateRef.current || new Date();
           const newStart = new Date(currentStart);
-          newStart.setDate(newStart.getDate() - 30); // 往前加载30天
+          newStart.setDate(newStart.getDate() - 30); // 往前加✅0✅
           
           // console.log('📅 [TimeLog] Loading history:', {
           //   from: newStart.toISOString(),
@@ -398,9 +399,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             setDynamicStartDate(newStart);
             dynamicStartDateRef.current = newStart;
             
-            console.log(`✅ [TimeLog] Loaded ${historyEvents.length} history events (filtered)`);
+            console.log(`✅[TimeLog] Loaded ${historyEvents.length} history events (filtered)`);
             
-            // 🔧 保持视图稳定：等待 DOM 更新后，将锚点元素恢复到原来的视觉位置
+            // 🔧 保持视图稳定：等✅DOM 更新后，将锚点元素恢复到原来的视觉位✅
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
                 if (firstVisibleElement) {
@@ -419,12 +420,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
               });
             });
           } catch (error) {
-            console.error('❌ [TimeLog] Failed to load history:', error);
+            console.error('✅[TimeLog] Failed to load history:', error);
           } finally {
-            setTimeout(() => {
+            // ✅v2.21.1: 使用 queueMicrotask 替代 setTimeout
+            queueMicrotask(() => {
               isLoadingEarlierRef.current = false;
               setIsLoadingEarlier(false);
-            }, 300);
+            });
           }
         };
         
@@ -440,7 +442,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         const loadFuture = async () => {
           const currentEnd = dynamicEndDateRef.current || new Date();
           const newEnd = new Date(currentEnd);
-          newEnd.setDate(newEnd.getDate() + 30); // 往后加载30天
+          newEnd.setDate(newEnd.getDate() + 30); // 往后加✅0✅
           newEnd.setHours(23, 59, 59, 999);
           
           // console.log('📅 [TimeLog] Loading future:', {
@@ -463,14 +465,15 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             allEventsRef.current = uniqueEvents;
             setDynamicEndDate(newEnd);
             
-            console.log(`✅ [TimeLog] Loaded ${futureEvents.length} future events (filtered)`);
+            console.log(`✅[TimeLog] Loaded ${futureEvents.length} future events (filtered)`);
           } catch (error) {
-            console.error('❌ [TimeLog] Failed to load future events:', error);
+            console.error('✅[TimeLog] Failed to load future events:', error);
           } finally {
-            setTimeout(() => {
+            // ✅v2.21.1: 使用 queueMicrotask 替代 setTimeout
+            queueMicrotask(() => {
               isLoadingLaterRef.current = false;
               setIsLoadingLater(false);
-            }, 300);
+            });
           }
         };
         
@@ -486,9 +489,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         clearTimeout(scrollTimeoutRef.current);
       }
     };
-  }, [loadingEvents]); // 只依赖 loadingEvents，其他状态通过 ref 访问
+  }, [loadingEvents]); // 只依✅loadingEvents，其他状态通过 ref 访问
 
-  // 获取所有标签（与 PlanManager 一致）
+  // 获取所有标签（✅PlanManager 一致）
   const allTags = useMemo(() => {
     const tags = TagService.getFlatTags();
     if (tagServiceVersion === 0) {
@@ -503,13 +506,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
 
 
-  // 格式化日期显示
+  // 格式化日期显✅
   function formatDateDisplay(date: Date): string {
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const month = date.getMonth() + 1;
     const day = date.getDate();
     const weekday = weekdays[date.getDay()];
-    return `${month}月${day}日 | ${weekday}`;
+    return `${month}✅{day}✅| ${weekday}`;
   }
 
   // 初始化加载事件数据
@@ -526,15 +529,15 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       
       setLoadingEvents(true);
       try {
-        // 🚀 [PERFORMANCE] 计算初始加载范围：今天前后7天（足够显示，配合双向无限滚动）
+        // 🚀 [PERFORMANCE] 计算初始加载范围：今天前✅天（足够显示，配合双向无限滚动）
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         const initialStartDate = new Date(today);
-        initialStartDate.setDate(initialStartDate.getDate() - 7); // 优化：从45天减少到7天
+        initialStartDate.setDate(initialStartDate.getDate() - 7); // 优化：从45天减少到7✅
         
         const initialEndDate = new Date(today);
-        initialEndDate.setDate(initialEndDate.getDate() + 7); // 优化：从45天减少到7天
+        initialEndDate.setDate(initialEndDate.getDate() + 7); // 优化：从45天减少到7✅
         initialEndDate.setHours(23, 59, 59, 999);
         
         console.log('📅 [TimeLog] Initial load range (Today ±7 days):', {
@@ -543,18 +546,18 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         });
         
         const dbQueryStartTime = performance.now();
-        // 加载今天前后7天的事件（使用 getTimelineEvents 过滤）
+        // 加载今天前后7天的事件（使✅getTimelineEvents 过滤✅
         const events = await EventService.getTimelineEvents(
           formatTimeForStorage(initialStartDate),
           formatTimeForStorage(initialEndDate)
         );
         const dbQueryTime = performance.now() - dbQueryStartTime;
         
-        console.log(`✅ [TimeLog] Loaded ${events.length} timeline events (Today ±7 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
+        console.log(`✅[TimeLog] Loaded ${events.length} timeline events (Today ±7 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
         setAllEvents(events);
         allEventsRef.current = events;
         
-        // 更新动态日期范围
+        // 更新动态日期范✅
         setDynamicStartDate(initialStartDate);
         setDynamicEndDate(initialEndDate);
         dynamicStartDateRef.current = initialStartDate;
@@ -564,7 +567,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         console.log(`⏱️ [TimeLog] Total event load time: ${totalLoadTime.toFixed(2)}ms`);
         
       } catch (error) {
-        console.error('❌ [TimeLog] Failed to load events:', error);
+        console.error('✅[TimeLog] Failed to load events:', error);
         setAllEvents([]);
         allEventsRef.current = [];
       } finally {
@@ -579,7 +582,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       const detail = (e as CustomEvent).detail;
       console.log('🔔 [TimeLog] 收到事件更新通知:', detail);
       
-      // 🔒 循环更新防护：跳过来自 TimeLog 自身的本地更新
+      // 🔒 循环更新防护：跳过来✅TimeLog 自身的本地更✅
       const timeLogSources = [
         'TimeLog-eventlogChange', 
         'TimeLog-tagsChange',
@@ -605,20 +608,20 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             // 更新现有事件
             const newEvents = [...prev];
             newEvents[index] = updatedEvent;
-            console.log('✅ [TimeLog] 更新事件:', {
+            console.log('✅[TimeLog] 更新事件:', {
               id: updatedEvent.id.slice(-8),
               title: updatedEvent.title?.simpleTitle
             });
             return newEvents;
           } else {
-            // 新事件：检查是否符合 Timeline 过滤条件
+            // 新事件：检查是否符✅Timeline 过滤条件
             const shouldShow = !updatedEvent.isTimer && 
                               !updatedEvent.isTimeLog && 
                               !updatedEvent.isOutsideApp &&
                               (updatedEvent.startTime || updatedEvent.endTime || updatedEvent.createdAt);
             
             if (shouldShow) {
-              console.log('✅ [TimeLog] 添加新事件:', {
+              console.log('✅[TimeLog] 添加新事件', {
                 id: updatedEvent.id.slice(-8),
                 title: updatedEvent.title?.simpleTitle
               });
@@ -646,14 +649,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     };
   }, []);
 
-  // 初始滚动到今天的位置（移到 getTodayDateKey 定义之后）
+  // 初始滚动到今天的位置（移✅getTodayDateKey 定义之后✅
 
-  // 🚀 [PERFORMANCE] 获取事件列表（按时间排序）
+  // 🚀 [PERFORMANCE] 获取事件列表（按时间排序✅
   // EventService.getTimelineEvents 已经完成过滤，这里只需排序
   const events = useMemo(() => {
     const startTime = performance.now();
     
-    // 按时间正序排序（最早的在前）
+    // 按时间正序排序（最早的在前✅
     const sorted = [...allEvents].sort((a, b) => {
       const timeA = a.startTime || a.endTime || a.createdAt || '';
       const timeB = b.startTime || b.endTime || b.createdAt || '';
@@ -714,7 +717,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     
     const sorted = dates.sort((a, b) => {
       // 强制正序：最早的日期在前 (Ascending)
-      // 使用时间戳比较以确保准确性
+      // 使用时间戳比较以确保准确✅
       return new Date(a).getTime() - new Date(b).getTime();
     });
     
@@ -722,7 +725,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     return sorted;
   }, [eventsByDate]);
 
-  // 生成时间轴段（month headers + compressed ranges + event dates）
+  // 生成时间轴段（month headers + compressed ranges + event dates✅
   type TimelineSegment = 
     | { type: 'month-header'; year: number; month: number }
     | { type: 'events'; dateKey: string }
@@ -793,7 +796,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     // 第二步：渲染历史数据（从昨天往前）
     const historySegments: TimelineSegment[] = [];
     let historyDate = new Date(now);
-    historyDate.setDate(historyDate.getDate() - 1); // 从昨天开始
+    historyDate.setDate(historyDate.getDate() - 1); // 从昨天开✅
 
     while (historyDate >= startDate) {
       const dateKey = `${historyDate.getFullYear()}-${String(historyDate.getMonth() + 1).padStart(2, '0')}-${String(historyDate.getDate()).padStart(2, '0')}`;
@@ -828,7 +831,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       }
     }
 
-    // 合并历史和未来段落
+    // 合并历史和未来段✅
     const segments = [...historySegments, ...futureSegments];
     
     // console.log('📊 [TimeLog] Timeline segments before split:', {
@@ -845,33 +848,33 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     
     segments.forEach(segment => {
       if (segment.type === 'compressed') {
-        // 检查是否跨月
+        // 检查是否跨✅
         const startMonth = `${segment.startDate.getFullYear()}-${segment.startDate.getMonth() + 1}`;
         const endMonth = `${segment.endDate.getFullYear()}-${segment.endDate.getMonth() + 1}`;
         
         if (startMonth === endMonth) {
-          // 同月，直接添加
+          // 同月，直接添✅
           finalSegments.push(segment);
         } else {
-          // 跨月，需要拆分
+          // 跨月，需要拆✅
           let currentDate = new Date(segment.startDate);
           
           while (currentDate <= segment.endDate) {
-            // 该月的最后一天（月末）
+            // 该月的最后一天（月末✅
             const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
             monthEnd.setHours(23, 59, 59, 999);
             
             // 实际结束日期：取月末和segment.endDate中较小的
             const actualEnd = monthEnd < segment.endDate ? monthEnd : new Date(segment.endDate);
             
-            // 添加该月的compressed段
+            // 添加该月的compressed✅
             finalSegments.push({
               type: 'compressed',
               startDate: new Date(currentDate), // 使用当前日期（第一次是segment.startDate，后续是下月1号）
               endDate: actualEnd
             });
             
-            // 移动到下个月第一天
+            // 移动到下个月第一✅
             currentDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1);
             currentDate.setHours(0, 0, 0, 0);
           }
@@ -881,12 +884,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       }
     });
 
-    // 插入月份标题：
-    // - compressed段：总是插入月份标题（视觉上更清晰，每个压缩段都显示月份）
+    // 插入月份标题✅
+    // - compressed段：总是插入月份标题（视觉上更清晰，每个压缩段都显示月份✅
     // - events段：只在新月份时插入月份标题
     // 
-    // 注意：compressed段后紧跟同月的events段时，会出现同月份标题连续出现2次的情况，
-    // 这是**期望行为**，因为compressed段需要独立的月份标识，否则用户无法识别日期所属月份
+    // 注意：compressed段后紧跟同月的events段时，会出现同月份标题连续出✅次的情况✅
+    // 这是**期望行为**，因为compressed段需要独立的月份标识，否则用户无法识别日期所属月✅
     const segmentsWithMonthHeaders: TimelineSegment[] = [];
     let lastMonthKey: string | null = null;
 
@@ -900,7 +903,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         currentMonthKey = `${segment.startDate.getFullYear()}-${segment.startDate.getMonth() + 1}`;
       }
 
-      // compressed段：总是插入月份标题（即使与上一个段月份相同）
+      // compressed段：总是插入月份标题（即使与上一个段月份相同✅
       if (segment.type === 'compressed') {
         const [year, month] = currentMonthKey.split('-').map(Number);
         segmentsWithMonthHeaders.push({ type: 'month-header', year, month });
@@ -916,8 +919,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       segmentsWithMonthHeaders.push(segment);
     });
 
-    // 调试日志（已移除，月份标题重复是正常行为）
-    // compressed 段后紧跟同月 events 段时，月份标题会连续出现 2 次，这是期望的设计
+    // 调试日志（已移除，月份标题重复是正常行为✅
+    // compressed 段后紧跟同月 events 段时，月份标题会连续出现 2 次，这是期望的设✅
     
     // 最终调试：检查今天的位置
     const todaySegmentIndex = segmentsWithMonthHeaders.findIndex(
@@ -946,7 +949,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   }, [timelineSegments.length, loadingEvents]);
 
-  // 格式化日期标题（例如：12月5日 | 周四）
+  // 格式化日期标题（例如✅2✅✅| 周四✅
   const formatDateTitle = (dateKey: string): string => {
     const date = new Date(dateKey);
     const month = date.getMonth() + 1;
@@ -954,16 +957,16 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const weekday = weekdays[date.getDay()];
     
-    // 判断是否是今天
+    // 判断是否是今✅
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const isToday = date.getTime() === today.getTime();
     
     if (isToday) {
-      return `${month}月${day}日 | ${weekday} (今天)`;
+      return `${month}✅{day}✅| ${weekday} (今天)`;
     }
     
-    return `${month}月${day}日 | ${weekday}`;
+    return `${month}✅{day}✅| ${weekday}`;
   };
 
   // 获取今天的日期key
@@ -972,7 +975,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   }, []);
 
-  // 找到今天的日期key（用于滚动定位，无论是否有事件都返回）
+  // 找到今天的日期key（用于滚动定位，无论是否有事件都返回✅
   const findTodayFirstDateKey = useCallback(() => {
     return getTodayDateKey();
   }, [getTodayDateKey]);
@@ -980,11 +983,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 初始滚动到今天的位置（只执行一次）
   useEffect(() => {
     if (!loadingEvents && !hasScrolledToTodayGlobal && todayEventRef.current && timelineContainerRef.current) {
-      hasScrolledToTodayGlobal = true; // 🚀 全局标记，防止重复滚动（HMR 不会重置）
+      hasScrolledToTodayGlobal = true; // 🚀 全局标记，防止重复滚动（HMR 不会重置✅
       const scrollStartTime = performance.now();
       console.log('🎯 [TimeLog] Scrolling to today marker');
       
-      // 使用 requestAnimationFrame 确保 DOM 已完全渲染（比 setTimeout 更快更准确）
+      // 使用 requestAnimationFrame 确保 DOM 已完全渲染（✅setTimeout 更快更准确）
       requestAnimationFrame(() => {
         if (todayEventRef.current && timelineContainerRef.current) {
           const container = timelineContainerRef.current;
@@ -994,7 +997,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           const containerRect = container.getBoundingClientRect();
           const todayRect = todayElement.getBoundingClientRect();
           
-          // 滚动到今天的位置（让今天显示在容器顶部，留一点padding）
+          // 滚动到今天的位置（让今天显示在容器顶部，留一点padding✅
           const scrollTop = container.scrollTop + (todayRect.top - containerRect.top) - 20;
           
           console.log('📍 [TimeLog] Scroll calculation:', {
@@ -1023,7 +1026,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   };
 
-  // 处理标签可见性变化
+  // 处理标签可见性变✅
   const handleTagVisibilityChange = (tagId: string, visible: boolean) => {
     setHiddenTags(prev => {
       const next = new Set(prev);
@@ -1056,9 +1059,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
   // 切换 eventlog 展开/折叠
   const toggleLogExpanded = async (eventId: string) => {
-    // 🆕 v2.19: 折叠前检查是否是空 Note，如果是则删除
+    // 🆕 v2.19: 折叠前检查是否是空Note，如果是则删✅
     if (expandedLogs.has(eventId) && emptyNotesRef.current.has(eventId)) {
-      console.log('🗑️ [TimeLog] Deleting empty note on collapse:', eventId);
+      console.log('🗑✅[TimeLog] Deleting empty note on collapse:', eventId);
       
       try {
         // 从数据库删除
@@ -1071,10 +1074,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         // 从追踪中移除
         emptyNotesRef.current.delete(eventId);
         
-        console.log('✅ [TimeLog] Empty note deleted:', eventId);
-        return; // 不需要切换展开状态，因为事件已删除
+        console.log('✅[TimeLog] Empty note deleted:', eventId);
+        return; // 不需要切换展开状态，因为事件已删✅
       } catch (error) {
-        console.error('❌ [TimeLog] Failed to delete empty note:', error);
+        console.error('✅[TimeLog] Failed to delete empty note:', error);
         // 删除失败，继续正常的折叠逻辑
       }
     }
@@ -1099,7 +1102,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     loadCalendars();
   }, []);
   
-  // 🆕 获取多选日历显示信息（第一个 + 等）
+  // 🆕 获取多选日历显示信息（第一✅+ 等）
   const getMultiCalendarDisplayInfo = (calendarIds: string[]) => {
     if (!calendarIds || calendarIds.length === 0) {
       return { displayText: '选择日历...', color: '#9ca3af', hasMore: false };
@@ -1152,7 +1155,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const handleLogChange = async (eventId: string, slateJson: string) => {
     console.log('📝 [TimeLog] Saving eventlog for:', eventId);
     
-    // 🆕 v2.19: 用户编辑了 eventlog，从空 Note 追踪中移除
+    // 🆕 v2.19: 用户编辑了eventlog，从空Note 追踪中移除
     if (emptyNotesRef.current.has(eventId)) {
       // 检查是否真的有内容（不是空 paragraph）
       try {
@@ -1161,27 +1164,27 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           if (node.type === 'paragraph') {
             return node.children.some((child: any) => child.text && child.text.trim() !== '');
           }
-          return true; // 其他类型节点视为有内容
+          return true; // 其他类型节点视为有内✅
         });
         
         if (hasContent) {
           emptyNotesRef.current.delete(eventId);
-          console.log('✅ [TimeLog] Note has content, removed from empty tracking:', eventId);
+          console.log('✅[TimeLog] Note has content, removed from empty tracking:', eventId);
         }
       } catch (error) {
-        console.error('❌ [TimeLog] Failed to parse eventlog:', error);
+        console.error('✅[TimeLog] Failed to parse eventlog:', error);
       }
     }
     
-    // 使用 EventHub 保存（带循环更新防护）
+    // 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, {
-      eventlog: slateJson  // EventService 会自动处理格式转换
+      eventlog: slateJson  // EventService 会自动处理格式转✅
     }, {
       source: 'TimeLog-eventlogChange'
     });
   };
   
-  // 从 event.eventlog 提取 Slate JSON 字符串
+  // ✅event.eventlog 提取 Slate JSON 字符✅
   const getEventLogContent = (event: Event): string => {
     if (!event.eventlog) {
       return '';
@@ -1192,7 +1195,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       return event.eventlog.slateJson || '';
     }
     
-    // 旧格式兼容：字符串格式
+    // 旧格式兼容：字符串格✅
     if (typeof event.eventlog === 'string') {
       return event.eventlog;
     }
@@ -1205,12 +1208,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   // 处理标题编辑
-  // 缓存待保存的标题变化（失焦时保存）
+  // 缓存待保存的标题变化（失焦时保存✅
   const pendingTitleChanges = useRef<Map<string, string>>(new Map());
   
   const handleTitleSave = useCallback(async (eventId: string, slateJson: string) => {
-    // 失焦时立即保存，不使用防抖
-    // 提取纯文本作为 simpleTitle
+    // 失焦时立即保存，不使用防✅
+    // 提取纯文本作✅simpleTitle
     let simpleTitle = '';
     try {
       const parsed = JSON.parse(slateJson || '[{"type":"paragraph","children":[{"text":""}]}]');
@@ -1222,11 +1225,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       simpleTitle = '';
     }
     
-    // 🔧 获取当前事件的原始 title，避免用空标题覆盖现有标题
+    // 🔧 获取当前事件的原✅title，避免用空标题覆盖现有标✅
     const currentEvent = allEventsRef.current.find(e => e.id === eventId);
     const currentTitle = currentEvent?.title;
     
-    // 🛡️ 保护机制：如果新标题为空，且当前标题不为空，则不保存（避免意外覆盖）
+    // 🛡✅保护机制：如果新标题为空，且当前标题不为空，则不保存（避免意外覆盖）
     if (!simpleTitle && currentTitle?.simpleTitle) {
       console.warn('⚠️ [TimeLog] 阻止用空标题覆盖现有标题:', {
         eventId: eventId.slice(-8),
@@ -1242,21 +1245,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       slateJsonLength: slateJson.length 
     });
     
-    // 🔥 使用 EventHub 保存（带循环更新防护）
+    // 🔥 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, {
       title: {
         fullTitle: slateJson,  // Slate JSON 格式
-        simpleTitle: simpleTitle,  // 纯文本
-        // colorTitle 会由 EventService.normalizeTitle 自动从 fullTitle 生成
+        simpleTitle: simpleTitle,  // 纯文✅
+        // colorTitle 会由 EventService.normalizeTitle 自动✅fullTitle 生成
       }
     }, {
       source: 'TimeLog-titleSave'
     });
     
-    console.log('✅ [TimeLog] Title saved:', simpleTitle);
+    console.log('✅[TimeLog] Title saved:', simpleTitle);
     
-    // EventHub 会自动触发 eventsUpdated 事件，无需手动更新
-    // 这样可以避免输入时失焦问题
+    // EventHub 会自动触✅eventsUpdated 事件，无需手动更新
+    // 这样可以避免输入时失焦问✅
   }, []);
 
   // 处理标签编辑
@@ -1265,14 +1268,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   const handleTagsChange = async (eventId: string, tagIds: string[]) => {
-    // 使用 EventHub 保存（带循环更新防护）
+    // 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, { tags: tagIds }, {
       source: 'TimeLog-tagsChange'
     });
     setEditingTagsId(null);
   };
 
-  // 处理参与者编辑
+  // 处理参与者编✅
   const handleAttendeesEdit = (event: Event) => {
     setEditingAttendeesId(event.id);
   };
@@ -1286,20 +1289,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const handleToggleIsNote = async (event: Event) => {
     const newIsNoteValue = !event.isNote;
     
-    // 如果是取消标记，弹出确认对话框
+    // 如果是取消标记，弹出确认对话✅
     if (event.isNote) {
       const confirm = window.confirm(
         '确定要取消标记为重要笔记吗？\n' +
-        '这将同时取消该事件所在 EventTree 中所有子事件的标记。'
+        '这将同时取消该事件所在EventTree 中所有子事件的标记。'
       );
       if (!confirm) return;
     }
 
-    // 获取 EventTree：找到所有子事件
-    const eventTree = await EventService.buildEventTree(event.id);
-    const allEventIds = [event.id, ...collectChildEventIds(eventTree)];
+    // ✅ [EventTreeAPI] 获取完整子树（包括当前事件）
+    const allEvents = await EventService.getAllEvents();
+    const subtree = EventTreeAPI.getSubtree(event.id, allEvents);
+    const allEventIds = subtree.map(e => e.id);
     
-    // 批量更新所有子事件的 isNote 字段
+    // 批量更新所有子事件✅isNote 字段
     for (const id of allEventIds) {
       await EventHub.updateFields(id, { isNote: newIsNoteValue }, {
         source: 'TimeLog-toggleIsNote'
@@ -1314,23 +1318,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
     try {
       await EventService.deleteEvent(event.id);
-      console.log('✅ [TimeLog] 删除事件成功:', event.id);
+      console.log('✅[TimeLog] 删除事件成功:', event.id);
     } catch (error) {
-      console.error('❌ [TimeLog] 删除事件失败:', event.id, error);
+      console.error('✅[TimeLog] 删除事件失败:', event.id, error);
       alert('删除失败，请重试');
     }
-  };
-
-  // 🆕 v2.19: 收集 EventTree 中所有子事件的 ID
-  const collectChildEventIds = (tree: EventTreeNode): string[] => {
-    const ids: string[] = [];
-    if (tree.children && tree.children.length > 0) {
-      for (const child of tree.children) {
-        ids.push(child.id);
-        ids.push(...collectChildEventIds(child));
-      }
-    }
-    return ids;
   };
 
   // 处理时间编辑
@@ -1339,7 +1331,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   const handleTimeChange = async (eventId: string, updates: { startTime?: string; endTime?: string }) => {
-    // 使用 EventHub 保存（带循环更新防护）
+    // 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, updates, {
       source: 'TimeLog-timeChange'
     });
@@ -1352,7 +1344,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
 
 
-  // 处理点击事件空白区域：展开 eventlog 并插入 timestamp + 预行
+  // 处理点击事件空白区域：展开 eventlog 并插✅timestamp + 预行
   const handleEventClick = (e: React.MouseEvent, eventId: string) => {
     // 检查是否点击了交互元素（避免在编辑其他字段时触发）
     const target = e.target as HTMLElement;
@@ -1366,7 +1358,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       target.closest('.event-meta-row') ||
       target.closest('.event-meta-icon-bar') ||
       target.closest('.time-action-btn') ||
-      target.closest('.event-log-box'); // 避免在已展开的 log 区域重复触发
+      target.closest('.event-log-box'); // 避免在已展开✅log 区域重复触发
     
     if (isInteractiveElement) {
       return; // 如果点击的是交互元素，不执行
@@ -1383,13 +1375,18 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
     
     // 触发 ModalSlate 插入 timestamp + 预行 + 光标定位
-    setTimeout(() => {
+    // 📝 注意: 如果需要展开，等待动画完成（100ms✅
+    const delay = wasExpanded ? 0 : 100;
+    const timerId = setTimeout(() => {
       const slateRef = modalSlateRefs.current.get(eventId);
       if (slateRef && slateRef.insertTimestampAndFocus) {
         slateRef.insertTimestampAndFocus();
       }
-    }, wasExpanded ? 0 : 100); // 如果需要展开，等待动画完成
-  };
+    }, delay);
+    
+    // ✅注意: 此处✅setTimeout 是必需的，用于等待展开动画
+    // 如果组件在动画过程中卸载，应该在 cleanup 中清✅
+    return () => clearTimeout(timerId);
 
   // 新建事件模态框状态
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -1400,7 +1397,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [editingEvent, setEditingEvent] = useState<Event | null>(null);
 
   // 处理 TimeGap 点击创建事件
-  // 处理创建事件（打开 EventEditModal）
+  // 处理创建事件（打开 EventEditModal✅
   const handleCreateEvent = (startTime: Date) => {
     const newEvent: Event = {
       id: generateEventId(),
@@ -1432,16 +1429,16 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           simpleTitle: '',
           colorTitle: '',
           fullTitle: ''
-        }, // 允许空标题
-        startTime: '', // 🔧 设置为空字符串而不是 null
-        endTime: '', // 🔧 设置为空字符串而不是 null
-        tags: [], // 允许空标签
+        }, // 允许空标✅
+        startTime: '', // 🔧 设置为空字符串而不受null
+        endTime: '', // 🔧 设置为空字符串而不受null
+        tags: [], // 允许空标✅
         isAllDay: false,
-        // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤）
+        // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤✅
         isPlan: false,
         isTimeCalendar: false,
         isTask: false, // 明确标记为非Task
-        // ⚠️ 空笔记不应该有 Block-Level Timestamp（避免显示时间戳）
+        // ⚠️ 空笔记不应该✅Block-Level Timestamp（避免显示时间戳✅
         eventlog: JSON.stringify([
           {
             type: 'paragraph',
@@ -1455,21 +1452,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       const result = await EventService.createEvent(newEvent);
       
       if (!result.success) {
-        console.error('❌ [TimeLog] Failed to create note:', result.error);
+        console.error('✅[TimeLog] Failed to create note:', result.error);
         alert(`创建笔记失败: ${result.error}`);
         return;
       }
       
-      console.log('✅ [TimeLog] Note created in database:', newEvent.id);
+      console.log('✅[TimeLog] Note created in database:', newEvent.id);
       
       // 验证笔记是否真的存储到数据库
       const savedNote = await EventService.getEventById(newEvent.id);
       if (!savedNote) {
-        console.error('❌ [TimeLog] Note not found in database immediately after creation!');
-        alert('笔记创建失败：无法从数据库读取');
+        console.error('✅[TimeLog] Note not found in database immediately after creation!');
+        alert('笔记创建失败：无法从数据库读取！');
         return;
       }
-      console.log('✅ [TimeLog] Verified note in database:', {
+      console.log('✅[TimeLog] Verified note in database:', {
         id: savedNote.id,
         title: savedNote.title,
         startTime: savedNote.startTime,
@@ -1478,7 +1475,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       });
       
       // 🔧 直接将新笔记添加到列表中，而不是重新加载全部事件
-      // 这样可以避免日期范围过滤导致的问题
+      // 这样可以避免日期范围过滤导致的问✅
       setAllEvents(prev => {
         // 检查是否已存在（避免重复）
         if (prev.find(e => e.id === savedNote.id)) {
@@ -1486,23 +1483,23 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           return prev;
         }
         
-        // 按 createdAt 降序插入（最新的在前面）
+        // ✅createdAt 降序插入（最新的在前面）
         const newList = [savedNote, ...prev];
         console.log('📋 [TimeLog] Added note to list:', newList.length);
         return newList;
       });
       allEventsRef.current = [savedNote, ...allEventsRef.current];
       
-      // 🆕 v2.19: 追踪空 Note（用于自动清理）
+      // 🆕 v2.19: 追踪空Note（用于自动清理）
       emptyNotesRef.current.add(newEvent.id);
       console.log('📝 [TimeLog] Tracking empty note:', newEvent.id);
       
       // 自动展开新创建的笔记
       setExpandedLogs(prev => new Set([...prev, newEvent.id]));
       
-      // 等待 DOM 更新后滚动到笔记位置并聚焦
-      setTimeout(() => {
-        // 1. 滚动到新创建的笔记
+      // ✅v2.21.1: 使用 requestAnimationFrame 链替代嵌✅setTimeout
+      requestAnimationFrame(() => {
+        // 1. 滚动到新创建的笔✅
         const noteElement = document.querySelector(`[data-event-id="${newEvent.id}"]`);
         console.log('🔍 [TimeLog] Looking for note element:', newEvent.id, noteElement ? 'FOUND' : 'NOT FOUND');
         
@@ -1510,38 +1507,38 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           console.log('📍 [TimeLog] Scrolling to note:', newEvent.id);
           noteElement.scrollIntoView({ 
             behavior: 'smooth', 
-            block: 'center' // 将笔记显示在视口中央
+            block: 'center'
           });
         } else {
-          console.warn('❌ [TimeLog] Note element not found in DOM, cannot scroll');
+          console.warn('✅[TimeLog] Note element not found in DOM, cannot scroll');
         }
         
         // 2. 聚焦到编辑器
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           const modalSlateRef = modalSlateRefs.current.get(newEvent.id);
           console.log('🔍 [TimeLog] ModalSlate ref:', newEvent.id, modalSlateRef ? 'FOUND' : 'NOT FOUND');
           
           if (modalSlateRef?.editor) {
             try {
-              // 使用 ReactEditor.focus 聚焦编辑器
+              // 使用 ReactEditor.focus 聚焦编辑✅
               const { ReactEditor } = require('slate-react');
               ReactEditor.focus(modalSlateRef.editor);
               // 将光标移到末尾（paragraph 的末尾）
               const { Transforms, Editor } = require('slate');
               Transforms.select(modalSlateRef.editor, Editor.end(modalSlateRef.editor, []));
-              console.log('✅ [TimeLog] Editor focused and cursor positioned');
+              console.log('✅[TimeLog] Editor focused and cursor positioned');
             } catch (err) {
-              console.warn('❌ [TimeLog] Failed to focus editor:', err);
+              console.warn('✅[TimeLog] Failed to focus editor:', err);
             }
           } else {
-            console.warn('❌ [TimeLog] ModalSlate ref not available');
+            console.warn('✅[TimeLog] ModalSlate ref not available');
           }
-        }, 300); // 等待滚动动画完成
-      }, 200);
+        });
+      });
       
-      console.log('✅ [TimeLog] Created note (no time):', newEvent.id);
+      console.log('✅[TimeLog] Created note (no time):', newEvent.id);
     } catch (error) {
-      console.error('❌ [TimeLog] Failed to create note:', error);
+      console.error('✅[TimeLog] Failed to create note:', error);
     }
   };
 
@@ -1553,7 +1550,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   const handleCreateSave = async (savedEvent: Event) => {
-    // 使用 EventHub 创建（带循环更新防护）
+    // 使用 EventHub 创建（带循环更新防护✅
     await EventHub.createEvent(savedEvent);
     
     // 关闭模态框
@@ -1567,7 +1564,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   const handleEditSave = async (savedEvent: Event) => {
-    // 使用 EventHub 更新（带循环更新防护）
+    // 使用 EventHub 更新（带循环更新防护✅
     await EventHub.updateFields(savedEvent.id, savedEvent, {
       source: 'TimeLog-editSave'
     });
@@ -1580,7 +1577,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // ⏱️ 性能监控：整体渲染时间（仅首次）
   useEffect(() => {
     const renderTime = performance.now() - mountTimeRef.current;
-    if (renderTime < 100) { // 只在首次渲染时输出
+    if (renderTime < 100) { // 只在首次渲染时输✅
       console.log(`⏱️ [TimeLog] Initial render time: ${renderTime.toFixed(2)}ms`);
     }
   }, []);
@@ -1594,13 +1591,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       console.log(`├─ Events Loaded: ${events.length}`);
       console.log(`├─ Dates Grouped: ${eventsByDate.size}`);
       console.log(`├─ Timeline Segments: ${timelineSegments.length}`);
-      console.log(`└─ Status: ✅ Ready\n`);
+      console.log(`└─ Status: ✅Ready\n`);
     }
   }, [loadingEvents, events.length, eventsByDate.size, timelineSegments.length]);
 
   return (
     <div className={`timelog-page ${!isPanelVisible ? 'panel-hidden' : ''}`}>
-      {/* 左侧内容选取区 - 完全复用 ContentSelectionPanel */}
+      {/* 左侧内容选取✅- 完全复用 ContentSelectionPanel */}
       <ContentSelectionPanel
         pageType="timelog"
         isPanelVisible={isPanelVisible}
@@ -1614,7 +1611,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         onTagVisibilityChange={handleTagVisibilityChange}
       />
 
-      {/* 中间时光日志区 - 标签栏+卡片组合 */}
+      {/* 中间时光日志✅- 标签✅卡片组合 */}
       <div className="timelog-card-container">
         {/* 标签栏：有tab时渲染在卡片上方 */}
         {showTabManager && (
@@ -1647,11 +1644,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       onClick={(e) => {
                         e.stopPropagation();
                         setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
-                        // 如果关闭的是当前激活标签，切换到时光日志
+                        // 如果关闭的是当前激活标签，切换到时光日期
                         if (activeTabId === event.id) {
                           setActiveTabId('timelog');
                         }
-                        // 如果只剩一个事件，关闭标签管理器
+                        // 如果只剩一个事件，关闭标签管理✅
                         if (tabManagerEvents.length <= 1) {
                           setShowTabManager(false);
                           setActiveTabId('timelog');
@@ -1669,7 +1666,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
         {/* 白色背景卡片 */}
         <div className={`timelog-main-card ${tabManagerEvents.length > 0 ? 'has-tabs' : ''}`}>
-          {/* 标题区：无tab时显示普通标题 */}
+          {/* 标题区：无tab时显示普通标✅*/}
           {tabManagerEvents.length === 0 && (
             <div className="timelog-header-section">
               <div className="timelog-header-border">
@@ -1679,8 +1676,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             </div>
           )}
 
-          {/* 内容区域：根据激活标签显示不同内容 */}
-          {/* 时光日志列表 - 使用 CSS 隐藏而非条件渲染，保留滚动状态 */}
+          {/* 内容区域：根据激活标签显示不同内✅*/}
+          {/* 时光日志列表 - 使用 CSS 隐藏而非条件渲染，保留滚动状态*/}
           <div 
             className="timelog-events-list" 
             ref={timelineContainerRef}
@@ -1688,7 +1685,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           >
             {loadingEvents ? (
             <div className="timelog-empty">
-              <p>加载中...</p>
+              <p>加载✅..</p>
             </div>
           ) : events.length === 0 ? (
             <div className="timelog-empty">
@@ -1697,7 +1694,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           ) : (
             timelineSegments.map((segment, segmentIndex) => {
               if (segment.type === 'month-header') {
-                // 月份标题：检查下一个segment是否是compressed，如果是则合并渲染
+                // 月份标题：检查下一个segment是否是compressed，如果是则合并渲✅
                 const nextSegment = timelineSegments[segmentIndex + 1];
                 const hasCompressedNext = nextSegment && nextSegment.type === 'compressed';
                 
@@ -1716,11 +1713,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   });
                   
                   if (hasExpandedDateInNext) {
-                    // 有展开的日期，将压缩段拆分成：压缩段1 + 展开日期 + 压缩段2
+                    // 有展开的日期，将压缩段拆分成：压缩✅ + 展开日期 + 压缩✅
                     const segments: JSX.Element[] = [];
                     let isFirstSegment = true;
                     
-                    // 遍历压缩段的所有日期，按展开状态分段渲染
+                    // 遍历压缩段的所有日期，按展开状态分段渲✅
                     const currentDate = new Date(nextSegment.startDate);
                     let compressedStart: Date | null = null;
                     
@@ -1735,7 +1732,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           compressedEnd.setDate(compressedEnd.getDate() - 1);
                           
                           if (isFirstSegment) {
-                            // 第一个段落：月份标题 + 压缩段在同一行
+                            // 第一个段落：月份标题 + 压缩段在同一✅
                             segments.push(
                               <div key={`month-header-compressed-${segment.year}-${segment.month}`} className="timeline-month-header">
                                 <div className="timeline-month-info">
@@ -1754,7 +1751,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                             );
                             isFirstSegment = false;
                           } else {
-                            // 后续段落：压缩段带月份标题
+                            // 后续段落：压缩段带月份标✅
                             segments.push(
                               <div key={`month-header-compressed-mid-${dateKey}`} className="timeline-month-header">
                                 <div className="timeline-month-info">
@@ -1774,7 +1771,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           }
                           compressedStart = null;
                         } else if (isFirstSegment) {
-                          // 第一个就是展开的日期，只渲染月份标题
+                          // 第一个就是展开的日期，只渲染月份标✅
                           segments.push(
                             <div key={`month-header-${segment.year}-${segment.month}`} className="timeline-month-header">
                               <div className="timeline-month-info">
@@ -1840,7 +1837,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     return <React.Fragment key={`month-${segment.year}-${segment.month}-${segmentIndex}`}>{segments}</React.Fragment>;
                   }
                   
-                  // 没有展开的日期，渲染月份标题和压缩段在同一行
+                  // 没有展开的日期，渲染月份标题和压缩段在同一✅
                   return (
                     <div key={`month-${segment.year}-${segment.month}-${segmentIndex}`} className="timeline-month-header">
                       <div className="timeline-month-info">
@@ -1856,7 +1853,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           console.log('📅 [TimeLog] Formatted dateKey:', dateKey);
                           setExpandedDates(prev => {
                             const newSet = new Set(prev).add(dateKey);
-                            console.log('✅ [TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
+                            console.log('✅[TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
                             return newSet;
                           });
                         }}
@@ -1875,7 +1872,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   );
                 }
               } else if (segment.type === 'compressed') {
-                // 检查是否已经在上一个月份标题中渲染过
+                // 检查是否已经在上一个月份标题中渲染✅
                 const prevSegment = timelineSegments[segmentIndex - 1];
                 if (prevSegment && prevSegment.type === 'month-header') {
                   // 已经在月份标题行渲染过，跳过
@@ -1897,7 +1894,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                 });
                 
                 if (hasExpandedDate) {
-                  // 有展开的日期，将压缩段拆分成：压缩段1 + 展开日期 + 压缩段2
+                  // 有展开的日期，将压缩段拆分成：压缩✅ + 展开日期 + 压缩✅
                   const segments: JSX.Element[] = [];
                   
                   const currentDate = new Date(segment.startDate);
@@ -1958,7 +1955,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     currentDate.setDate(currentDate.getDate() + 1);
                   }
                   
-                  // 如果最后还有累积的压缩段，渲染它
+                  // 如果最后还有累积的压缩段，渲染✅
                   if (compressedStart) {
                     segments.push(
                       <div key={`compressed-after-${segmentIndex}`} className="timeline-compressed-segment">
@@ -1988,7 +1985,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         console.log('📅 [TimeLog] Formatted dateKey:', dateKey);
                         setExpandedDates(prev => {
                           const newSet = new Set(prev).add(dateKey);
-                          console.log('✅ [TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
+                          console.log('✅[TimeLog] expandedDates updated, new size:', newSet.size, 'dates:', Array.from(newSet));
                           return newSet;
                         });
                       }}
@@ -1996,12 +1993,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   </div>
                 );
               } else {
-                // 渲染事件日期段
+                // 渲染事件日期✅
                 const dateKey = segment.dateKey;
                 const dateEvents = eventsByDate.get(dateKey) || [];
                 const todayDateKey = findTodayFirstDateKey();
                 const isToday = dateKey === todayDateKey;
-                const hasNoEvents = dateEvents.length === 0; // 单独1天空白
+                const hasNoEvents = dateEvents.length === 0; // 单独1天空✅
                 
                 // 调试：检查今天的判断（仅首次渲染时输出）
                 if (isToday && import.meta.env.DEV && false) {
@@ -2015,7 +2012,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                 
                 return (
                   <div key={dateKey} className="timeline-date-group" data-date-key={dateKey}>
-                    {/* 日期标题 - 使用sticky定位，自动实现条件置顶 */}
+                    {/* 日期标题 - 使用sticky定位，自动实现条件置✅*/}
                     <div 
                       className="timeline-date-header"
                       ref={isToday ? todayEventRef : null}
@@ -2023,7 +2020,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       <h2 className="timeline-date-title">{formatDateTitle(dateKey)}</h2>
                     </div>
                     
-                    {/* 空白日期（无事件）：显示完整的 TimeGap 虚线 */}
+                    {/* 空白日期（无事件）：显示完整✅TimeGap 虚线 */}
                     {dateEvents.length === 0 && (
                       <>
                         <TimeGap
@@ -2049,7 +2046,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       </>
                     )}
                     
-                    {/* 该日期的所有事件 */}
+                    {/* 该日期的所有事件*/}
                     {dateEvents.map((event, index) => {
                       const nextEvent = dateEvents[index + 1];
                       return (
@@ -2071,12 +2068,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     onMouseEnter={() => setHoveredTimeId(event.id)}
                     onMouseLeave={() => setHoveredTimeId(null)}
                   >
-                    {/* 时间显示区域（带幽灵菜单） */}
+                    {/* 时间显示区域（带幽灵菜单✅*/}
                     <div 
                       className="time-display-wrapper"
                     >
                       {!event.startTime && !event.endTime && event.eventlog ? (
-                        // 笔记事件：显示 createdAt 时间
+                        // 笔记事件：显✅createdAt 时间
                         <span className="time-text single-time">
                           {event.createdAt ? formatTime(event.createdAt) : '--:--'}
                         </span>
@@ -2113,7 +2110,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         </span>
                       )}
                       
-                      {/* 🆕 日历选择器弹窗 */}
+                      {/* 🆕 日历选择器弹✅*/}
                       {showCalendarPicker === event.id && createPortal(
                         <div
                           onClick={(e) => e.stopPropagation()}
@@ -2158,7 +2155,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         setHoveredRightId(event.id);
                       }}
                       onMouseLeave={() => {
-                        // 延迟隐藏，给用户时间移到Tippy子菜单
+                        // 延迟隐藏，给用户时间移到Tippy子菜✅
                         rightMenuHideTimerRef.current = setTimeout(() => {
                           setHoveredRightId(null);
                         }, 200);
@@ -2183,7 +2180,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       {/* 三组分层菜单 - 横向延伸 */}
                       {hoveredRightId === event.id && (
                         <div className="right-menu-groups">
-                        {/* 组1: EventManager */}
+                        {/* ✅: EventManager */}
                         <Tippy
                           content={
                             <div className="right-submenu">
@@ -2201,7 +2198,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               </div>
                               <div className="right-submenu-item">
                                 <img src={ProjectIconSvg} className="right-submenu-icon" alt="project" />
-                                <span className="right-submenu-text">查看事件树</span>
+                                <span className="right-submenu-text">查看事件</span>
                               </div>
                               <div className="right-submenu-item" onClick={() => handleDelete(event)}>
                                 <img src={DeleteIconSvg} className="right-submenu-icon" alt="delete" />
@@ -2226,7 +2223,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           </button>
                         </Tippy>
 
-                        {/* 组2: Edit */}
+                        {/* ✅: Edit */}
                         <Tippy
                           content={
                             <div className="right-submenu">
@@ -2268,7 +2265,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           </button>
                         </Tippy>
 
-                        {/* 组3: Time */}
+                        {/* ✅: Time */}
                         <Tippy
                           content={
                             <div className="right-submenu">
@@ -2309,7 +2306,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               </Tippy>
                               <div className="right-submenu-item">
                                 <img src={DdlIconSvg} className="right-submenu-icon" alt="ddl" />
-                                <span className="right-submenu-text">添加截止日</span>
+                                <span className="right-submenu-text">添加截止</span>
                               </div>
                               <div className="right-submenu-item">
                                 <img src={RotationIconSvg} className="right-submenu-icon" alt="rotation" />
@@ -2342,7 +2339,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     </div> {/* 关闭 time-display-wrapper */}
                   </div> {/* 关闭 event-time-col */}
                   
-                  {/* 🆕 日历来源信息（右对齐） */}
+                  {/* 🆕 日历来源信息（右对齐✅*/}
                   <div className="time-calendar-source-wrapper">
                     {/* 同步模式图标（在日历选择器左侧） */}
                     <div 
@@ -2375,7 +2372,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         const isEmpty = selectedIds.length === 0;
                         const firstCal = availableCalendars.find(c => c.id === selectedIds[0]);
                         
-                        // 限制日历名称最多8个字符
+                        // 限制日历名称最✅个字✅
                         const calendarName = isEmpty ? '选择日历...' : (firstCal?.name || '未知日历');
                         const displayName = calendarName.length > 8 
                           ? calendarName.substring(0, 8) + '...' 
@@ -2401,7 +2398,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               minWidth: 0
                             }}>
                               {displayName}
-                              {selectedIds.length > 1 && <span style={{ color: '#9ca3af' }}> 等</span>}
+                              {selectedIds.length > 1 && <span style={{ color: '#9ca3af' }}> (+{selectedIds.length})</span>}
                             </span>
                           </>
                         );
@@ -2424,7 +2421,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {(() => {
                       const titleObj = typeof event.title === 'object' ? event.title : null;
                       
-                      // 检查实际内容是否为空
+                      // 检查实际内容是否为✅
                       let hasTitle = false;
                       if (titleObj?.simpleTitle?.trim()) {
                         hasTitle = true;
@@ -2449,13 +2446,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         >
                           {event.emoji && <span className="event-emoji">{event.emoji}</span>}
                           
-                          {/* 标题始终可编辑，像 PlanSlate 一样 */}
+                          {/* 标题始终可编辑，✅PlanSlate 一✅*/}
                           <div className="event-title">
                         <LogSlate
                           mode="title"
                           placeholder="添加标题..."
                           value={(() => {
-                            // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编辑
+                            // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编✅
                             const colorTitle = typeof event.title === 'object' 
                               ? event.title.colorTitle 
                               : null;
@@ -2471,13 +2468,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                             pendingTitleChanges.current.set(event.id, slateJson);
                           }}
                           onBlur={() => {
-                            // 失焦时保存
+                            // 失焦时保✅
                             console.log('👋 [TimeLog] onBlur 触发', {
                               eventId: event.id.slice(-8)
                             });
                             const pendingValue = pendingTitleChanges.current.get(event.id);
                             if (pendingValue !== undefined) {
-                              console.log('💾 [TimeLog] 开始保存标题...', {
+                              console.log('💾 [TimeLog] 开始保存标✅..', {
                                 eventId: event.id.slice(-8),
                                 valueLength: pendingValue.length
                               });
@@ -2492,7 +2489,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         />
                       </div>
                       
-                      {/* 🆕 同步模式选择器弹窗 */}
+                      {/* 🆕 同步模式选择器弹✅*/}
                       {showSyncModePicker === event.id && createPortal(
                         <div
                           onClick={(e) => e.stopPropagation()}
@@ -2614,7 +2611,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           <LocationInput
                             value={getLocationDisplayText(event.location) || ''}
                             onChange={(value) => {
-                              // 直接保存到 EventHub（即时保存）
+                              // 直接保存✅EventHub（即时保存）
                               EventHub.updateFields(event.id, { location: value }, {
                                 source: 'TimeLog-locationChange'
                               });
@@ -2634,7 +2631,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Row 5: Icon bar - 已移至标题右侧的幽灵菜单 */}
                     {/* 旧的 event-meta-icon-bar 已被标题幽灵菜单取代 */}
 
-                    {/* Log Content - 使用 LogSlate 编辑器 */}
+                    {/* Log Content - 使用 LogSlate 编辑✅*/}
                     {expandedLogs.has(event.id) && (
                       <div className="event-log-box">
                         <LogSlate
@@ -2656,10 +2653,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                 </div>
               </div>
               
-              {/* 事件之间/之后的 TimeGap */}
-              {/* 渲染策略：
-                  - 所有日期都显示（事件之间 + 最后事件之后）
-                  - 第一个事件前的 TimeGap 在日期组件开始时渲染
+              {/* 事件之间/之后✅TimeGap */}
+              {/* 渲染策略✅
+                  - 所有日期都显示（事件之✅+ 最后事件之后）
+                  - 第一个事件前✅TimeGap 在日期组件开始时渲染
                   - 性能优化：虚线按需渲染，压缩日期不渲染
               */}
               <TimeGap
@@ -2690,7 +2687,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     key={event.id}
                     eventId={event.id}
                     onClose={() => {
-                      // 关闭标签页，切换回时光日志
+                      // 关闭标签页，切换回时光日期
                       setActiveTabId('timelog');
                       setTabManagerEvents(prev => prev.filter(e => e.id !== event.id));
                       if (tabManagerEvents.length <= 1) {
@@ -2706,7 +2703,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       setAllEvents(updatedEvents);
                     }}
                     onDelete={async (eventId) => {
-                      // 删除事件后刷新列表并关闭标签页
+                      // 删除事件后刷新列表并关闭标签✅
                       await EventService.deleteEvent(eventId);
                       const updatedEvents = await EventService.getEventsInRange(
                         dateRange!.start,
@@ -2727,7 +2724,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         </div>
       </div>
 
-      {/* 新固定玻璃图标栏（替换原右侧三个按钮） */}
+      {/* 新固定玻璃图标栏（替换原右侧三个按钮✅*/}
       <GlassIconBar onAction={(id) => {
         console.log('[GlassIconBar action]', id);
         if (id === 'export') handleExport();
@@ -2759,12 +2756,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         hierarchicalTags={hierarchicalTags}
       />
       
-      {/* 时间编辑器已集成到Right菜单Tippy中 */}
+      {/* 时间编辑器已集成到Right菜单Tippy✅*/}
 
       {/* EventTabManager 已集成到 timelog-main-card 内部 */}
     </div>
   );
 };
+
+}
 
 // 辅助函数：格式化时间
 function formatTime(dateStr: string | Date): string {

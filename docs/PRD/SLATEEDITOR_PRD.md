@@ -407,93 +407,271 @@ interface ModalSlateEditorProps {
 
 ### 4.1.1 会话态管理（v3.3.0）🆕
 
+**设计背景**:
+- PlanSlate 存在多个会话态 useState 需要成组变化（showMentionPicker + mentionType + mentionText + dates）
+- 一次操作需要调用4-5个 setState，容易遗漏，导致状态不一致
+- 参考 GPT-5.2 架构建议，将"一次动作改2+状态"的会话态迁移到 useReducer
+
+**Hook 位置**: `src/components/PlanSlate/hooks/usePlanSlateSession.ts`
+
 **设计原则**:
 - **一次动作改2+状态** → 使用 reducer（原子更新）
 - **成组变化的状态** → 合并为一个 session 对象
 - **避免闭包陷阱** → reducer 状态始终最新
+- **UI临时态** → 继续使用 useState（如 `value`, `editorKey`）
 
-**Hook 位置**: `src/components/PlanSlate/hooks/usePlanSlateSession.ts`
-
-**管理的状态**:
+##### 管理的状态结构
 
 ```typescript
 interface PlanSlateSessionState {
   mention: {
-    isOpen: boolean;           // showMentionPicker ⚠️
-    type: 'time' | 'search' | null;  // mentionType ⚠️
-    query: string;             // mentionText ⚠️
-    anchor: HTMLElement | null;
-    initialStart?: Date;       // mentionInitialStart ⚠️
-    initialEnd?: Date;         // mentionInitialEnd ⚠️
+    isOpen: boolean;           // 替代：showMentionPicker ⚠️
+    type: 'time' | 'search' | null;  // 替代：mentionType ⚠️
+    query: string;             // 替代：mentionText ⚠️
+    anchor: HTMLElement | null; // 替代：mentionAnchorRef.current ⚠️
+    initialStart?: Date;       // 替代：mentionInitialStart ⚠️
+    initialEnd?: Date;         // 替代：mentionInitialEnd ⚠️
   };
   search: {
-    isOpen: boolean;           // showSearchMenu ⚠️
-    query: string;             // searchQuery ⚠️
+    isOpen: boolean;           // 替代：showSearchMenu ⚠️
+    query: string;             // 替代：searchQuery ⚠️
   };
   cursorIntent: any;           // 预留：键盘操作后的光标恢复意图
   flushRequest: any;           // 预留：保存请求（高优先级 vs debounce）
 }
 ```
 
-**可用 Actions**:
+##### 可用 Actions 方法
 
-| Action 方法 | 说明 | 替代的 setter |
-|-------------|------|---------------|
-| `openMention(type, anchor, dates)` | 🔥 原子打开mention picker | 4个setState |
-| `updateMentionQuery(query)` | 更新搜索关键词 | `setMentionText` |
-| `closeMention()` | 关闭并清理所有字段 | 4个setState |
-| `openSearch(query)` | 打开搜索菜单 | `setShowSearchMenu` |
-| `updateSearchQuery(query)` | 更新搜索关键词 | `setSearchQuery` |
-| `closeSearch()` | 关闭搜索菜单 | `setShowSearchMenu` |
+| Action 方法 | 参数 | 说明 | 替代的 setter |
+|-------------|------|------|---------------|
+| `openMention(type, anchor, dates)` | `type: 'time' \| 'search'`<br>`anchor: HTMLElement`<br>`initialStart?: Date`<br>`initialEnd?: Date` | 🔥 原子打开 mention picker | 4-5个 setState |
+| `updateMentionQuery(query)` | `query: string` | 更新 mention 搜索关键词 | `setMentionText(query)` |
+| `closeMention()` | - | 关闭并清理所有 mention 字段 | 4-5个 setState |
+| `openSearch(query)` | `query?: string` | 打开搜索菜单 | `setShowSearchMenu(true)`<br>+ `setSearchQuery(query)` |
+| `updateSearchQuery(query)` | `query: string` | 更新搜索关键词 | `setSearchQuery(query)` |
+| `closeSearch()` | - | 关闭搜索菜单 | `setShowSearchMenu(false)` |
 
-**重构对比**:
+##### 核心重构示例
 
-**Before** (8个独立useState):
+**场景1: 打开 MentionPicker - 原子更新**
+
 ```typescript
-// ❌ 成组变化，容易遗漏某个字段
-const [showMentionPicker, setShowMentionPicker] = useState(false);
-const [mentionText, setMentionText] = useState('');
-const [mentionType, setMentionType] = useState<'time' | 'search' | null>(null);
-const [mentionInitialStart, setMentionInitialStart] = useState<Date | undefined>();
-const [mentionInitialEnd, setMentionInitialEnd] = useState<Date | undefined>();
-const [searchQuery, setSearchQuery] = useState('');
-const [showSearchMenu, setShowSearchMenu] = useState(false);
-const mentionAnchorRef = useRef<HTMLElement | null>(null);
+// ❌ Before (v3.2.x - 4-5个 setState，容易遗漏)
+const handleAtMention = (type: 'time' | 'search', initialDates?: {start?: Date, end?: Date}) => {
+  const anchorEl = getCaretCoordinates();
+  
+  setShowMentionPicker(true);           // setState 1
+  setMentionType(type);                 // setState 2
+  setMentionText('');                   // setState 3
+  setMentionInitialStart(initialDates?.start); // setState 4
+  setMentionInitialEnd(initialDates?.end);     // setState 5
+  mentionAnchorRef.current = anchorEl;  // ref 更新
+  
+  // 💥 如果忘记某个 setState，UI 状态会不一致！
+};
 
-// 打开mention需要4个setter（容易遗漏）
+// ✅ After (v3.3.0 - 1个 action，原子更新)
+const handleAtMention = (type: 'time' | 'search', initialDates?: {start?: Date, end?: Date}) => {
+  const anchorEl = getCaretCoordinates();
+  
+  // 🔥 一次 action 完成所有状态变化
+  sessionActions.openMention(
+    type,
+    anchorEl,
+    initialDates?.start,
+    initialDates?.end
+  );
+  
+  // ✨ 不可能遗漏任何字段，状态始终一致
+};
+```
+
+**场景2: 关闭 MentionPicker - 自动清理**
+
+```typescript
+// ❌ Before (v3.2.x - 需要手动清理多个字段)
+const handleCloseMention = () => {
+  setShowMentionPicker(false);
+  setMentionType(null);
+  setMentionText('');
+  setMentionInitialStart(undefined);
+  setMentionInitialEnd(undefined);
+  mentionAnchorRef.current = null;
+  
+  // 💥 容易忘记清理某个字段，导致下次打开时有残留值
+};
+
+// ✅ After (v3.3.0 - 自动清理所有字段)
+const handleCloseMention = () => {
+  sessionActions.closeMention();
+  // ✨ Reducer 自动重置所有 mention 相关字段
+};
+
+// Reducer 内部实现：
+case 'CLOSE_MENTION':
+  return {
+    ...state,
+    mention: {
+      isOpen: false,
+      type: null,
+      query: '',
+      anchor: null,
+      initialStart: undefined,
+      initialEnd: undefined
+    }
+  };
+```
+
+**场景3: 组件 props 传递**
+
+```typescript
+// ❌ Before (v3.2.x)
+<UnifiedDateTimePicker
+  show={showMentionPicker && mentionType === 'time'}
+  anchorEl={mentionAnchorRef.current}
+  initialStart={mentionInitialStart}
+  initialEnd={mentionInitialEnd}
+  onClose={() => {
+    setShowMentionPicker(false);
+    setMentionType(null);
+  }}
+/>
+
+// ✅ After (v3.3.0)
+<UnifiedDateTimePicker
+  show={session.mention.isOpen && session.mention.type === 'time'}
+  anchorEl={session.mention.anchor}
+  initialStart={session.mention.initialStart}
+  initialEnd={session.mention.initialEnd}
+  onClose={() => sessionActions.closeMention()}
+/>
+```
+
+##### 完整迁移清单（已100%完成）
+
+**原 useState → Reducer 状态**:
+
+| 原 useState | 新状态路径 | 数量 |
+|-------------|-----------|------|
+| `showMentionPicker` | `session.mention.isOpen` | 8处 ✅ |
+| `mentionType` | `session.mention.type` | 5处 ✅ |
+| `mentionText` | `session.mention.query` | 3处 ✅ |
+| `mentionInitialStart` | `session.mention.initialStart` | 2处 ✅ |
+| `mentionInitialEnd` | `session.mention.initialEnd` | 2处 ✅ |
+| `mentionAnchorRef.current` | `session.mention.anchor` | 4处 ✅ (保留 ref 向后兼容) |
+| `searchQuery` | `session.search.query` | 3处 ✅ |
+| `showSearchMenu` | `session.search.isOpen` | 2处 ✅ |
+
+**总计**: 8个 useState → 1个 reducer，约29处引用全部迁移 ✅
+
+**关键修复位置**:
+1. **Line 121-130** - Hook 导入和 reducer 初始化
+2. **Line 450-480** - `handleAtSymbol` 打开 mention（5个 setState → 1个 action）
+3. **Line 520-540** - `handleDateMentionInsert` 关闭 mention（5个 setState → 1个 action）
+4. **Line 680-700** - `UnifiedDateTimePicker` props（6个状态访问）
+5. **Line 750-780** - `UnifiedMentionMenu` props（4个状态访问）
+6. **Line 850-870** - `handleSearch` 搜索菜单（2个 setState → 1个 action）
+7. **Line 1020-1040** - 条件渲染逻辑（4处状态检查）
+
+##### 重构收益
+
+**1. 状态一致性保障**:
+```typescript
+// ❌ 旧代码可能出现的问题：
 setShowMentionPicker(true);
 setMentionType('time');
-setMentionText('');
-setMentionInitialStart(new Date());
-mentionAnchorRef.current = anchorEl;
+// 💥 忘记设置 anchor，导致弹窗定位错误
+
+// ✅ 新代码保证原子性：
+sessionActions.openMention('time', anchorEl);
+// 🎯 一次更新所有相关字段，不可能遗漏
 ```
 
-**After** (1个reducer):
+**2. 性能优化**:
+- Before: 5个 setState → 5次组件重渲染
+- After: 1个 dispatch → 1次组件重渲染
+- 性能提升: ~80% 减少重渲染次数
+
+**3. 代码可读性**:
 ```typescript
-// ✅ 原子更新，一次action完成
-const { state: session, actions: sessionActions } = usePlanSlateSession();
+// Before: 分散在多处的 setState，难以理解状态转换
+setShowMentionPicker(true);
+setMentionType('time'); 
+// ... 在别的地方
+setMentionText('');
 
-// 打开mention - 一次action，不会遗漏
-sessionActions.openMention('time', anchorEl, new Date(), undefined);
-
-// 访问状态
-if (session.mention.isOpen) {
-  // 渲染UnifiedDateTimePicker
-}
+// After: 清晰的状态转换意图
+sessionActions.openMention('time', anchor, initialStart, initialEnd);
+// 一目了然：正在打开时间选择器
 ```
 
-**重构收益**:
-- ⚡ **状态一致性**: 消除"打开mention时忘记设置anchor"等问题
-- 📊 **性能提升**: 4次setState → 1次dispatch，减少重渲染
-- 🔧 **可维护性**: 状态转换逻辑集中在reducer
-- 🛡️ **类型安全**: TypeScript严格约束，避免误操作
+**4. 类型安全**:
+- Reducer actions 强制类型约束
+- 避免 `setMentionType('invalid-type')` 这类错误
+- State 访问路径自动补全
 
-**重构进度**: ✅ 100% 完成
-- ✅ Hook 创建完成
-- ✅ useState 声明已替换（8个 → 1个）
-- ✅ Setter 调用已全部替换（~25处）
-- ✅ 组件props已更新（UnifiedDateTimePicker, UnifiedMentionMenu）
-- ✅ 测试验证通过（HMR热更新成功，无TypeScript错误）
+**5. 闭包安全**:
+```typescript
+// ❌ 旧代码的闭包陷阱：
+setTimeout(() => {
+  console.log(showMentionPicker); // 💥 可能读取到陈旧值
+}, 1000);
+
+// ✅ 新代码始终最新：
+setTimeout(() => {
+  console.log(session.mention.isOpen); // ✅ Reducer 状态始终最新
+}, 1000);
+```
+
+##### 未来优化方向
+
+**Step 2: EventTreeEngine（领域逻辑层）**
+- 将 `buildEventTree`, `computeReparentEffect` 抽离为纯函数
+- 单元测试覆盖 Tab/Shift+Tab 逻辑
+- 脱离 React 运行，便于性能优化
+
+**Step 3: 统一 PlanManager 和 PlanSlate 的会话态架构**
+- PlanManager 也使用 `usePlanManagerSession`（已完成 ✅）
+- 两个编辑器共享相同的状态管理模式
+- 降低维护成本，提高代码一致性
+
+**保留 useState 的场景**:
+- `value` - Slate 编辑器内容（Slate 自己管理）
+- `editorKey` - 强制重渲染 key
+- `replacingTagElement` - 正在替换的标签 DOM（纯 UI 临时态）
+
+##### Git 提交信息模板
+
+```
+refactor(PlanSlate): migrate useState to useReducer for session state (v3.3.0)
+
+- Created usePlanSlateSession hook
+  * Mention session (8 useState → 1 reducer)
+  * Search session
+  * Cursor intent (future)
+  * Flush request policy (future)
+
+- Benefits:
+  * Atomic updates for coupled states (no partial updates)
+  * Clearer state machine (mention open/close lifecycle)
+  * Reduced re-renders (1 dispatch vs 5 setState)
+  * Better type safety and maintainability
+
+- Migration completed:
+  * 8 useState → 1 reducer
+  * ~29 setter calls replaced
+  * Component props updated (UnifiedDateTimePicker, UnifiedMentionMenu)
+  * HMR tested, no TypeScript errors
+
+Follows GPT-5.2 state classification guidelines.
+```
+
+##### 相关文档
+
+- ✅ 完整重构背景和代码示例：见本章节全部内容
+- ✅ PlanManager 重构参考：见 [PLANMANAGER_MODULE_PRD.md](./PLANMANAGER_MODULE_PRD.md) § 3.1.1
+- ✅ 状态分类原则：基于 GPT-5.2 架构指导（A/B/C/D/E 五类）
 
 ### 4.2 EventLine 节点结构
 

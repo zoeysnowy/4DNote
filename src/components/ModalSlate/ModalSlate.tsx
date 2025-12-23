@@ -293,12 +293,12 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
       // 触发插入 timestamp（会自动调用 triggerTimestamp）
       setPendingTimestamp(true);
       
-      // 延迟聚焦到编辑器
-      setTimeout(() => {
+      // ✅ v2.21.1: 使用 requestAnimationFrame 替代 setTimeout
+      requestAnimationFrame(() => {
         ReactEditor.focus(editor);
         // 移动光标到末尾
         Transforms.select(editor, Editor.end(editor, []));
-      }, 100);
+      });
     }
   }), [editor, applyTextFormat, enableTimestamp, parentEventId]);
   
@@ -1004,17 +1004,17 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
     
     // 🔍 监听 @ 字符输入
     if (event.key === '@') {
-      // 延迟检测，等待 @ 插入到编辑器
-      setTimeout(() => {
+      // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+      queueMicrotask(() => {
         checkForMentionTrigger();
-      }, 0);
+      });
     }
     
     // 🎯 空格键触发 Bullet 自动检测
     if (event.key === ' ') {
       console.log('[ModalSlate] 🔍 空格键按下，准备检测 Bullet 触发');
-      // 延迟执行，等待空格插入到编辑器后再检测
-      setTimeout(() => {
+      // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+      queueMicrotask(() => {
         console.log('[ModalSlate] 🔍 开始检测...');
         const trigger = detectBulletTrigger(editor);
         console.log('[ModalSlate] 🔍 检测结果:', trigger);
@@ -1024,13 +1024,13 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
         } else {
           console.log('[ModalSlate] ❌ 未检测到触发字符');
         }
-      }, 0);
+      });
     }
     
     // ✅ Block-Level: Enter 键检查是否需要为新段落添加 timestamp
     if (event.key === 'Enter' && !event.shiftKey && enableTimestamp && timestampServiceRef.current && parentEventId) {
-      // 延迟检查，等待新段落创建后
-      setTimeout(() => {
+      // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
+      queueMicrotask(() => {
         const shouldInsert = timestampServiceRef.current!.shouldInsertTimestamp({
           contextId: parentEventId,
           eventId: parentEventId

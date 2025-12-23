@@ -1444,12 +1444,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       onChangeTimerRef.current = null;
     }, 300);
   }, [immediateStateSync, executeBatchUpdate]);
+  
+  // ✅ v2.21.1: 添加onChange防抖的清理函数（防御性编程）
+  useEffect(() => {
+    return () => {
+      if (onChangeTimerRef.current) {
+        clearTimeout(onChangeTimerRef.current);
+        onChangeTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // 🆕 生成事件变更快照 (带缓存)
   const snapshotCacheRef = useRef<{ snapshot: any, timestamp: number, dateRangeKey: string } | null>(null);
   
-  const generateEventSnapshot = useCallback(() => {
-    if (!dateRange) {
+  const generateEventSnapshot = useCallback(async () => {
+    if (!session.filter.dateRange) {
       return {
         created: 0, updated: 0, completed: 0, deleted: 0, details: []
       };
@@ -1477,7 +1487,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       });
       
       // 使用 EventHistoryService 的新方法获取结构化的操作摘要
-      const summary = EventHistoryService.getEventOperationsSummary(
+      const summary = await EventHistoryService.getEventOperationsSummary(
         startTimeStr,
         endTimeStr
       );
@@ -1561,9 +1571,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // ✅ Snapshot 模式：最简单的逻辑
       // 1. startDateTime 时刻存在的所有事件（基准状态）
       // 2. startDateTime 到 endDateTime 期间的所有操作（显示变化）
-      if (dateRange) {
-        const startTime = formatTimeForStorage(dateRange.start);
-        const endTime = formatTimeForStorage(dateRange.end);
+      if (session.filter.dateRange) {
+        const startTime = formatTimeForStorage(session.filter.dateRange.start);
+        const endTime = formatTimeForStorage(session.filter.dateRange.end);
         
         // 1️⃣ 获取起点时刻的所有事件
         const existingAtStart = await EventHistoryService.getExistingEventsAtTime(startTime);
@@ -1589,7 +1599,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       console.log('[PlanManager] 🆕 范围内创建:', createdInRange.size, '个');
       
       // 2️⃣ 筛选出应该显示的事件：在起点存在 OR 在范围内创建
-      allItems = filteredItems.filter(item => {
+      // 🔥 FIX: Snapshot模式应该从items（所有事件）开始，不是filteredItems（已被常规过滤）
+      allItems = items.filter(item => {
         // 检查是否在时间范围内
         const inRange = existingAtStart.has(item.id) || createdInRange.has(item.id);
         if (!inRange) return false;
@@ -1707,9 +1718,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         }
         
         // 🎯 步骤 4: 标签过滤（应用 hiddenTags）
-        if (hiddenTags.size > 0) {
+        if (session.filter.hiddenTags.size > 0) {
           const itemTags = log.before.tags || [];
-          if (itemTags.some(tag => hiddenTags.has(tag))) {
+          if (itemTags.some(tag => session.filter.hiddenTags.has(tag))) {
             console.log('[PlanManager] ⏭️ 跳过隐藏标签的 ghost:', log.eventId.slice(-8), 'tags:', itemTags);
             return;
           }
@@ -1746,7 +1757,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     // 原因：position 字段不触发历史记录，snapshot 中的 position 可能过期
     let result: Event[];
     
-    if (dateRange) {
+    if (session.filter.dateRange) {
       // 1️⃣ 重新计算所有事件的 bulletLevel（从 EventTree 关系推导）
       const bulletLevels = EventService.calculateAllBulletLevels(allItems);
       
@@ -1862,7 +1873,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       console.error('[PlanManager] ❌ computeEditorItems failed:', error);
       setEditorItems(filteredItems);
     });
-  }, [filteredItems, dateRange, hiddenTags, items, pendingEmptyItems]);
+  }, [filteredItems, session.filter.dateRange, session.filter.hiddenTags, items, pendingEmptyItems]);
 
   // 🆕 状态配置映射函数
   const getStatusConfig = useCallback((status?: string) => {
@@ -1884,7 +1895,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
 
   // 🆕 获取事件的所有状态（支持多状态）- ⚠️ 异步版本
   const getEventStatuses = useCallback(async (eventId: string): Promise<Array<'new' | 'updated' | 'done' | 'missed' | 'deleted'>> => {
-    if (!dateRange) return [];
+    if (!session.filter.dateRange) return [];
+    
+    const currentDateRange = session.filter.dateRange;
     
     try {
       // 🔧 首先检查是否是 ghost 事件（Snapshot 模式下显示为已删除）
@@ -1896,8 +1909,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         console.log(`[getEventStatuses] 👻 ${eventId.slice(-8)}: Ghost事件，将添加deleted状态（同时查询其他状态）`);
       }
       
-      const startTime = formatTimeForStorage(dateRange.start);
-      const endTime = formatTimeForStorage(dateRange.end);
+      const startTime = formatTimeForStorage(currentDateRange.start);
+      const endTime = formatTimeForStorage(currentDateRange.end);
       
       // ✅ 已修复：使用 await 正确处理异步调用
       const eventTitle = eventId.substring(0, 15);
@@ -1999,7 +2012,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       console.error('[getEventStatuses] ❌ 错误:', error);
       return [];
     }
-  }, [dateRange, items]);
+  }, [session.filter.dateRange, items]);
 
   // 🆕 计算状态竖线段 - 支持多状态显示 - ✅ 改用 useEffect + useState 处理异步
   const [statusLineSegments, setStatusLineSegments] = useState<StatusLineSegment[]>([]);
@@ -2077,7 +2090,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     };
     
     computeSegments();
-  }, [editorItems, getEventStatuses, getStatusConfig, dateRange]);
+  }, [editorItems, getEventStatuses, getStatusConfig, session.filter.dateRange]);
 
   // 处理编辑器内容变化
   const handleLinesChange = async (newLines: FreeFormLine<Event>[]) => {
@@ -2532,7 +2545,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
               pendingUpdatedItemsRef.current = null;
             }
             
-            setDateRange(null as any);
+            sessionActions.setDateRange(null as any);
             console.log('[PlanManager] 退出 snapshot 模式');
             return;
           }
@@ -2541,7 +2554,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           normalizedStart.setHours(0, 0, 0, 0);
           const normalizedEnd = new Date(end);
           normalizedEnd.setHours(23, 59, 59, 999);
-          setDateRange({ start: normalizedStart, end: normalizedEnd });
+          sessionActions.setDateRange({ start: normalizedStart, end: normalizedEnd });
           console.log('[PlanManager] 日期范围变更:', { start: normalizedStart, end: normalizedEnd });
         }}
         onTagVisibilityChange={(tagId, visible) => {
@@ -2581,7 +2594,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           totalLines={editorItems.length}
         >
           <PlanSlate
-            key={dateRange ? `snapshot-${dateRange.start.getTime()}-${dateRange.end.getTime()}` : 'normal'}
+            key={session.filter.dateRange ? `snapshot-${session.filter.dateRange.start.getTime()}-${session.filter.dateRange.end.getTime()}` : 'normal'}
             items={editorItems}
             onChange={debouncedOnChange}
             eventStatusMap={eventStatusMap}
@@ -2873,8 +2886,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           const success = insertEmoji(editor, emoji);
           if (success) {
             console.log(`[✅ Emoji 插入成功] ${emoji}`);
-            // 🔥 立即保存变更
-            setTimeout(() => editorApi.flushPendingChanges(), 100);
+            // 🔥 立即保存变更（v2.21.1: 移除不可靠的setTimeout延迟）
+            editorApi.flushPendingChanges();
           }
         }}
         onDateRangeSelect={(start: Date, end: Date) => {
@@ -2908,8 +2921,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           
           if (success) {
             console.log(`[✅ DateMention 插入成功] ${item.id}`);
-            // 🔥 立即保存变更
-            setTimeout(() => editorApi.flushPendingChanges(), 100);
+            // 🔥 立即保存变更（v2.21.1: 移除不可靠的setTimeout延迟）
+            editorApi.flushPendingChanges();
           }
         }}
         onPrioritySelect={(priority: 'low' | 'medium' | 'high' | 'urgent') => {
@@ -3101,9 +3114,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                     key={tag.id}
                     onClick={async () => {
                       // 替换标签
-                      const item = items.find(i => i.id === currentFocusedLineId);
+                      const item = items.find(i => i.id === session.focus.lineId);
                       const editableElement = document.querySelector(
-                        `[data-line-id="${currentFocusedLineId}"] .ProseMirror`
+                        `[data-line-id="${session.focus.lineId}"] .ProseMirror`
                       ) as HTMLElement;
                       
                       if (editableElement && editableElement.isContentEditable) {

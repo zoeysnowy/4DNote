@@ -18,6 +18,12 @@ export {
 // High-Level API
 export { EventTreeAPI } from './TreeAPI';
 
+// Tree Cache (Phase 3)
+export { EventTreeCache, treeCache } from './TreeCache';
+
+// Performance Monitor (Phase 3)
+export { EventTreePerformanceMonitor, perfMonitor } from './PerformanceMonitor';
+
 // Types
 export type {
   EventNode,
