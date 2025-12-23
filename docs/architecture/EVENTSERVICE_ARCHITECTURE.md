@@ -3,7 +3,7 @@
 **版本**: v2.21.0  
 **更新日期**: 2025-12-23  
 **维护者**: GitHub Copilot  
-**状态**: ✅ 已实现（含 Outlook 深度规范化 + CompleteMeta V2）  
+**状态**: ✅ 已实现（含 Outlook 深度规范化 + CompleteMeta V2 + 代码清理）  
 **配套文档**: [EventService Module PRD](../PRD/EVENTSERVICE_MODULE_PRD.md), [Outlook Sync to Nodes](../OUTLOOK_SYNC_TO_NODES.md), [CompleteMeta V2 Implementation Status](./COMPLETEMETA_V2_IMPLEMENTATION_STATUS.md)
 
 ---
@@ -273,12 +273,23 @@ const mergedEvent = { ...originalEvent, ...filteredUpdates };
 const validation = validateEventTime(mergedEvent);
 if (!validation.valid) throw new Error(validation.error);
 
-// 步骤3: 规范化（关键：处理 description 签名、提取时间戳）
-// - Meta-Comment: 从HTML注释提取完整Slate节点元数据
-// - Block-Level: 从文本解析时间戳（降级方案）
-const normalizedEvent = normalizeEvent(mergedEvent, { preserveSignature: true });
+// 步骤3: eventlog变化检测（v2.21.0改进）
+// ✅ 使用Block-Level paragraph计数，避免JSON.stringify误判
+const eventlogChanged = updates.eventlog 
+  ? EventHistoryService.countBlockLevelParagraphs(originalEvent.eventlog) !== 
+    EventHistoryService.countBlockLevelParagraphs(mergedEvent.eventlog)
+  : false;
 
-// 步骤4: 比对变更（现在比对的是完整数据，而非 filteredUpdates）
+// 步骤4: 规范化（关键：处理 description 签名、提取时间戳）
+// - preserveSignature: eventlog没变时保留原签名，避免触发不必要的history记录
+// - CompleteMeta V2: 从hidden div提取完整Slate节点元数据
+// - Block-Level: 从文本解析时间戳（降级方案）
+const normalizedEvent = normalizeEvent(mergedEvent, { 
+  preserveSignature: !eventlogChanged,
+  oldEvent: originalEvent 
+});
+
+// 步骤5: 比对变更（现在比对的是完整数据，而非 filteredUpdates）
 const changeLog = EventHistoryService.logUpdate(
   eventId, 
   originalEvent, 
@@ -300,6 +311,7 @@ const updatedEvent: Event = {
 **核心改进**:
 - **旧流程**: `filteredUpdates` → `logUpdate` → `存储`（❌ description 签名未处理）
 - **新流程**: `filteredUpdates` → `mergedEvent` → `normalizeEvent` → `logUpdate` → `存储`（✅ 准确比对）
+- **v2.21.0**: eventlog变化检测从JSON.stringify改为Block-Level paragraph计数（✅ 避免误判）
 
 **parentEventId 修复 (v2.17.2)**:
 ```typescript
@@ -2551,6 +2563,8 @@ EventService 是 4DNote 的核心业务逻辑层，通过**中枢化规范化架
 - ✅ 高性能查询（Promise 去重、范围缓存、EventStats）
 - ✅ 完整的历史追踪（EventHistoryService 集成）
 - ✅ **CompleteMeta V2 元数据保护**（三层容错匹配 + 增强hint + Base64存储）✨ **v2.21.0 新增**
+- ✅ **History爆炸六层防护**（v2.21.0）- eventlog Block-Level检测 + preserveSignature + 字段忽略 + 去重缓存
+- ✅ **V1代码完全清理**（v2.21.0）- 删除约300行Legacy代码，保持代码简洁
 - ✅ **Outlook 深度规范化集成**（v2.20.0）- MsoList识别、样式清洗、深色适配
 
 **架构约定**:
@@ -2558,6 +2572,8 @@ EventService 是 4DNote 的核心业务逻辑层，通过**中枢化规范化架
 2. Description 存储 HTML，EventLog 存储纯文本 Slate JSON
 3. HTML→纯文本转换在 `normalizeEvent` 统一处理
 4. 本地专属字段在远程同步时跳过
+5. eventlog变化使用Block-Level paragraph计数检测（v2.21.0）
+6. preserveSignature机制防止不必要的签名重新生成（v2.21.0）
 5. 只有真正有变更时才更新 `updatedAt`
 6. **Meta中只保存元数据，不保存文本内容**
 7. **关系数据从本地Service查询，不保存在Meta中**

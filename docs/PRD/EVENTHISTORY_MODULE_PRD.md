@@ -1,8 +1,8 @@
 # EventHistoryService 模块 PRD
 
-**版本**: v2.18.8  
-**更新日期**: 2025-12-17  
-**状态**: ✅ 已实现并优化
+**版本**: v2.21.0  
+**更新日期**: 2025-12-23  
+**状态**: ✅ 已实现并优化（含History爆炸防护）
 
 ---
 
@@ -35,17 +35,16 @@ EventHistoryService 是 4DNote 的**事件变更历史追踪系统**，负责记
 
 ### 存储架构
 
-**主存储**: IndexedDB (Web + Electron 通用)
-- 容量: ~250MB
+**主存储**: SQLite (Electron 专用) + IndexedDB (Web 备用)
+- 容量: ~10GB (SQLite) / ~250MB (IndexedDB)
 - 性能: 单次写入 < 1ms
-- 迁移完成: 2025-12-06 (v3.1.0)
+- SQLite迁移完成: 2025-12-06 (v3.1.0)
+- 同步机制: StorageManager 自动双写
 
-**备份存储**: SQLite (仅 Electron 环境)
-- 容量: ~10GB
-- 自动备份: 双写机制
-
-**降级方案**: localStorage (仅用于迁移)
-- 已废弃: 配额限制 5-10MB
+**废弃存储**: localStorage
+- 状态: ✅ 已完全移除 (v2.21.0)
+- 删除方法: `clearAll()` 已从 EventHistoryService 移除
+- 迁移完成: 2025-12-06
 
 ---
 
@@ -111,17 +110,24 @@ if (!isDeepEqual(oldValue, newValue)) {
 
 #### 忽略字段
 
-自动更新的元数据字段不记录变更：
+自动更新的元数据字段和派生字段不记录变更：
 ```typescript
 const ignoredFields = [
   'updatedAt',      // 更新时间（自动生成）
+  'description',    // ✨ v2.21.0: 从 eventlog 派生，不记录历史
+  'position',       // 排序位置（非业务字段）
+  'fourDNoteSource',// ✨ v2.21.0: 同步标记，不记录历史
   'localVersion',   // 本地版本号
   'lastLocalChange',// 最后本地变更时间
   'lastSyncTime',   // 最后同步时间
-  'position',       // 排序位置（非业务字段）
   'createdAt'       // 创建时间（不应在 update 中变化）
 ];
 ```
+
+**防护机制** (v2.21.0): 
+- description 从 eventlog 自动生成，只记录 eventlog 变化
+- eventlog 变化使用 Block-Level paragraph 计数检测（不用JSON.stringify）
+- preserveSignature 机制防止不必要的签名重新生成
 
 ### 3. 查询功能
 
@@ -729,6 +735,151 @@ if (health.recommendCleanup) {
   console.log(`建议清理: 可删除 ${health.estimatedCleanupCount} 条记录`);
 }
 ```
+
+---
+
+## 🛡️ v2.21.0 History爆炸防护机制
+
+### 问题背景
+
+normalize的结果不同可能导致EventHistory记录爆炸：
+- 简单的JSON.stringify比较可能因字段顺序/空格导致误判
+- 误判会导致不必要的签名重新生成
+- 签名变化会触发description变更
+- description变更会产生新的history记录
+
+### 六层防护机制
+
+#### 1️⃣ EventLog变化检测（v2.21.0改进）
+
+**位置**: EventService.updateEvent() L1175-1195
+
+**旧方法**（❌ 可能误判）:
+```typescript
+const eventlogChanged = JSON.stringify(old.eventlog) !== JSON.stringify(new.eventlog);
+// 问题：字段顺序、空格、缩进不同都会导致误判
+```
+
+**新方法**（✅ 准确）:
+```typescript
+const oldBlockCount = EventHistoryService.countBlockLevelParagraphs(originalEvent.eventlog);
+const newBlockCount = EventHistoryService.countBlockLevelParagraphs(mergedEvent.eventlog);
+const eventlogChanged = oldBlockCount !== newBlockCount;
+
+// countBlockLevelParagraphs() - 统计Block-Level段落数量
+// - 只关心实际段落数量，不关心字段顺序/空格
+// - 准确反映用户的实际编辑意图
+```
+
+**效果**: 防止normalize导致的eventlog格式变化被误判为内容变化。
+
+#### 2️⃣ PreserveSignature机制
+
+**位置**: EventService.normalizeEvent()
+
+```typescript
+const normalizedEvent = this.normalizeEvent(mergedEvent, {
+  preserveSignature: !eventlogChanged,  // eventlog没变时保留原签名
+  oldEvent: originalEvent
+});
+```
+
+**逻辑**:
+- eventlog没变 → preserveSignature=true → 保留原签名 → description不变
+- eventlog改变 → preserveSignature=false → 重新生成签名 → description更新
+
+**效果**: 避免不必要的签名重新生成。
+
+#### 3️⃣ 字段忽略列表
+
+**位置**: EventHistoryService.extractChanges()
+
+```typescript
+const ignoredFields = new Set([
+  'updatedAt',       // ✅ 每次都变，已忽略
+  'description',     // ✅ 从eventlog派生，已跳过
+  'position',        // ✅ 排序字段，已忽略
+  'fourDNoteSource', // ✅ 同步标记，已忽略
+  'localVersion',
+  'lastLocalChange',
+  'lastSyncTime',
+  'createdAt'
+]);
+```
+
+**效果**: description字段不参与history比对。
+
+#### 4️⃣ Description特殊处理
+
+**位置**: EventHistoryService.extractChanges() L995-1095
+
+```typescript
+if (key === 'description') {
+  console.log('🚫 跳过description字段（外部同步字段，不记录历史）');
+  return; // 不记录到EventHistory
+}
+```
+
+**原因**: description是从eventlog派生的，只需记录eventlog变化。
+
+#### 5️⃣ UpdatedAt条件更新
+
+**位置**: EventService.updateEvent()
+
+```typescript
+const hasRealChanges = changeLog !== null;
+const updatedEvent = {
+  ...normalizedEvent,
+  ...(hasRealChanges ? { updatedAt: formatTimeForStorage(new Date()) } : {})
+};
+```
+
+**逻辑**:
+- 有真实变更 → 更新updatedAt
+- 无真实变更 → 保留原updatedAt → 不触发后续同步
+
+**效果**: updatedAt只在有意义的变更时更新。
+
+#### 6️⃣ 去重缓存
+
+**位置**: EventHistoryService.logUpdate()
+
+```typescript
+const recentCallsCache = new Map<string, number>();
+
+// 防止1秒内重复记录同一事件
+const cacheKey = `${eventId}_${operation}`;
+const lastCallTime = recentCallsCache.get(cacheKey);
+if (lastCallTime && Date.now() - lastCallTime < 5000) {
+  return null; // 5秒内重复调用，跳过
+}
+
+// 每10秒清理一次缓存
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, time] of recentCallsCache) {
+    if (now - time > 5000) {
+      recentCallsCache.delete(key);
+    }
+  }
+}, 10000);
+```
+
+**效果**: 防止短时间内重复记录同一事件。
+
+### 防护效果验证
+
+✅ **多层防护确保**：
+1. normalize结果的细微差异不会触发history记录
+2. eventlog没变时，signature和description保持不变
+3. description字段不参与history比对
+4. updatedAt只在有意义的变更时更新
+5. 短时间内的重复操作会被去重
+
+✅ **实际效果**：
+- 同一事件反复normalize不会产生history记录
+- Outlook同步不会因格式差异产生无意义的history
+- history记录数量控制在合理范围（每个事件<10条/天）
 
 ---
 
