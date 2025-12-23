@@ -6468,6 +6468,454 @@ export class EventService {
     }
     return '';
   }
+
+  // ==================== CompleteMeta V2 序列化/反序列化 ====================
+
+  /**
+   * 🆕 [v2.21.0] 序列化 Event 为带 CompleteMeta V2 的 HTML
+   * 
+   * 职责：
+   * - 从 event.eventlog.slateJson 提取节点信息
+   * - 生成 V2 增强 hint（s: 前5字, e: 后5字, l: 长度）
+   * - Base64 编码 Meta
+   * - 拼接完整 description（HTML + hidden div Meta）
+   * 
+   * @param event - 需要序列化的事件
+   * @returns 带 CompleteMeta V2 的 HTML 字符串
+   */
+  static serializeEventDescription(event: Event): string {
+    try {
+      // 1. 解析 SlateJSON
+      const slateNodes = JSON.parse(event.eventlog?.slateJson || '[]');
+      
+      // 2. 生成 V2 Meta（增强 hint 三元组）
+      const meta: any = {
+        v: 2,  // 版本号升级到 2
+        id: event.id,
+        
+        slate: {
+          nodes: slateNodes.map((node: any) => {
+            const textContent = this.extractNodeText(node);
+            
+            // V2 增强 hint：开头 + 结尾 + 长度
+            const len = textContent.length;
+            const start = textContent.substring(0, Math.min(5, len));
+            const end = len > 5 ? textContent.substring(len - 5) : textContent;
+            
+            const metaNode: any = {};
+            
+            // 节点 ID
+            if (node.id) metaNode.id = node.id;
+            
+            // V2 增强 hint
+            if (start) metaNode.s = start;
+            if (end) metaNode.e = end;
+            if (len) metaNode.l = len;
+            
+            // 时间戳
+            if (node.createdAt) metaNode.ts = node.createdAt;
+            if (node.updatedAt) metaNode.ut = node.updatedAt;
+            
+            // 层级和缩进
+            if (node.level !== undefined) metaNode.lvl = node.level;
+            if (node.bulletLevel !== undefined) metaNode.bullet = node.bulletLevel;
+            
+            // Mention 信息
+            if (node.children) {
+              for (const child of node.children) {
+                if (child.mention) {
+                  metaNode.mention = {
+                    type: child.mention.type,
+                    ...(child.mention.targetId && { targetId: child.mention.targetId }),
+                    ...(child.mention.targetName && { targetName: child.mention.targetName }),
+                    ...(child.mention.targetDate && { targetDate: child.mention.targetDate }),
+                    ...(child.mention.displayText && { displayText: child.mention.displayText })
+                  };
+                  break; // 只保存第一个 mention
+                }
+              }
+            }
+            
+            return metaNode;
+          }).filter((node: any) => Object.keys(node).length > 0) // 移除空节点
+        },
+        
+        signature: {
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+          fourDNoteSource: event.fourDNoteSource,
+          source: event.source,
+          lastModifiedSource: event.lastModifiedSource
+        }
+      };
+      
+      // 3. Base64 编码 Meta
+      const metaJson = JSON.stringify(meta);
+      const metaBase64 = btoa(unescape(encodeURIComponent(metaJson)));  // UTF-8 → Base64
+      
+      // 4. 生成可见 HTML（使用现有的 slateNodesToHtml）
+      const visibleHtml = slateNodesToHtml(slateNodes);
+      
+      // 5. 拼接完整 description
+      return `
+<div class="4dnote-content-wrapper" data-4dnote-version="2">
+  ${visibleHtml}
+  
+  <!-- Meta Data Zone (V2) -->
+  <div id="4dnote-meta" style="display:none; font-size:0; line-height:0; opacity:0; mso-hide:all;">
+    ${metaBase64}
+  </div>
+</div>
+      `.trim();
+      
+    } catch (error) {
+      console.error('[serializeEventDescription] 序列化失败:', error);
+      // 降级：返回纯 HTML
+      return event.description || '';
+    }
+  }
+
+  /**
+   * 🆕 [v2.21.0] 反序列化 Outlook HTML 为 Event 数据
+   * 
+   * 职责：
+   * - 提取并解码 CompleteMeta V2
+   * - 从 HTML 提取段落文本
+   * - 执行三层容错匹配算法
+   * - 合并 HTML 文本 + Meta 元数据
+   * 
+   * @param html - Outlook 返回的 HTML description
+   * @param eventId - Event ID（用于日志）
+   * @returns 部分 Event 数据（用于 normalizeEvent）
+   */
+  static deserializeEventDescription(html: string, eventId: string): { eventlog: EventLog; signature?: any } | null {
+    try {
+      // Step 1: 提取 Meta
+      const metaMatch = html.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
+      let meta: any = null;
+      
+      if (metaMatch) {
+        try {
+          const metaBase64 = metaMatch[1].trim();
+          const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+          meta = JSON.parse(metaJson);
+          
+          console.log('[deserializeEventDescription] Meta 解析成功:', {
+            eventId: eventId.slice(-10),
+            version: meta.v,
+            nodeCount: meta.slate?.nodes?.length || 0
+          });
+        } catch (err) {
+          console.warn('[deserializeEventDescription] Meta 解析失败，降级到纯 HTML 解析', err);
+        }
+      }
+      
+      // Step 2: 提取可见 HTML（移除 Meta div）
+      const visibleHtml = html.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '').trim();
+      
+      // Step 3: 从 HTML 提取段落（使用 DOM 解析）
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(visibleHtml, 'text/html');
+      const paragraphs = Array.from(doc.body.querySelectorAll('p, h1, h2, h3, li'));
+      
+      const htmlNodes = paragraphs.map(p => {
+        const text = p.textContent || '';
+        return {
+          type: 'paragraph',
+          children: [{ text }],
+          text  // 临时字段，用于匹配算法
+        };
+      });
+      
+      // Step 4: 如果有 Meta，执行三层容错匹配
+      let finalNodes = htmlNodes;
+      if (meta && meta.v === 2 && meta.slate?.nodes) {
+        const matchResults = this.threeLayerMatch(htmlNodes, meta.slate.nodes);
+        finalNodes = this.applyMatchResults(htmlNodes, meta.slate.nodes, matchResults);
+      }
+      
+      // Step 5: 移除临时 text 字段
+      finalNodes.forEach((node: any) => delete node.text);
+      
+      // Step 6: 返回 EventLog 数据
+      return {
+        eventlog: {
+          slateJson: JSON.stringify(finalNodes),
+          html: visibleHtml
+        },
+        signature: meta?.signature
+      };
+      
+    } catch (error) {
+      console.error('[deserializeEventDescription] 反序列化失败:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 🆕 [v2.21.0] 三层容错匹配算法
+   * 
+   * 设计哲学：
+   * Outlook 往返时，用户可能修改段落（开头、结尾、长度变化），
+   * 传统"完全匹配"会导致节点 ID 丢失。V2 采用三层递进策略：
+   * 
+   * Layer 1 - Exact Anchor（精确锚点）：
+   *   - 找出未修改的段落作为"锚点"
+   *   - 判断标准：开头 5 字符 + 结尾 5 字符 + 长度 三者完全相同
+   * 
+   * Layer 2 - Sandwich Inference（三明治推断）：
+   *   - 利用锚点之间的拓扑关系推断修改段落
+   *   - 逻辑：如果两锚点之间，Meta 有 1 个节点、HTML 也有 1 个节点，则配对
+   * 
+   * Layer 3 - Fuzzy Scoring with Global Optimal（模糊评分 + 全局最优）：
+   *   - 处理剩余节点（多段落同时修改）
+   *   - 算法：计算所有配对分数，按降序排序，贪心匹配
+   *   - 阈值：50 分（满分 100，约 50% 相似度）
+   * 
+   * @param htmlNodes - 从 HTML 提取的段落节点（带 text 字段）
+   * @param metaNodes - Meta 中的节点元数据（带 s/e/l hint）
+   * @returns 匹配结果数组
+   */
+  private static threeLayerMatch(htmlNodes: any[], metaNodes: any[]): any[] {
+    const metaUsed = new Array(metaNodes.length).fill(false);
+    const htmlUsed = new Array(htmlNodes.length).fill(false);
+    const results: any[] = [];
+
+    // ===== Layer 1: 精确锚定 (Exact Anchor) =====
+    for (let h = 0; h < htmlNodes.length; h++) {
+      for (let m = 0; m < metaNodes.length; m++) {
+        if (metaUsed[m] || htmlUsed[h]) continue;
+        
+        if (this.isExactMatch(metaNodes[m], htmlNodes[h].text)) {
+          results.push({ type: 'layer1-exact', metaIndex: m, htmlIndex: h });
+          metaUsed[m] = true;
+          htmlUsed[h] = true;
+          break;
+        }
+      }
+    }
+
+    // ===== Layer 2: 三明治推导 (Sandwich Inference) =====
+    for (let h = 0; h < htmlNodes.length; h++) {
+      if (htmlUsed[h]) continue;
+
+      const prevAnchor = this.findPreviousAnchor(results, h);
+      const nextAnchor = this.findNextAnchor(results, h);
+
+      if (prevAnchor && nextAnchor) {
+        const htmlUnusedInGap = this.countUnusedInRange(htmlUsed, prevAnchor.htmlIndex + 1, nextAnchor.htmlIndex);
+        const metaUnusedInGap = this.countUnusedInRange(metaUsed, prevAnchor.metaIndex + 1, nextAnchor.metaIndex);
+
+        if (htmlUnusedInGap === 1 && metaUnusedInGap === 1) {
+          const metaIndex = this.findUnusedInRange(metaUsed, prevAnchor.metaIndex + 1, nextAnchor.metaIndex);
+          if (metaIndex !== -1) {
+            results.push({ type: 'layer2-sandwich', metaIndex, htmlIndex: h });
+            metaUsed[metaIndex] = true;
+            htmlUsed[h] = true;
+          }
+        }
+      }
+    }
+
+    // ===== Layer 3: 模糊打分 (Fuzzy Scoring) - 全局最优 =====
+    const candidates: any[] = [];
+    for (let h = 0; h < htmlNodes.length; h++) {
+      if (htmlUsed[h]) continue;
+      for (let m = 0; m < metaNodes.length; m++) {
+        if (metaUsed[m]) continue;
+        
+        const score = this.calculateFuzzyScore(metaNodes[m], htmlNodes[h].text);
+        if (score >= 50) {  // 阈值：50 分
+          candidates.push({ score, metaIndex: m, htmlIndex: h });
+        }
+      }
+    }
+
+    // 按分数从高到低排序
+    candidates.sort((a, b) => b.score - a.score);
+
+    // 贪心算法：优先匹配高分的配对
+    for (const { score, metaIndex, htmlIndex } of candidates) {
+      if (metaUsed[metaIndex] || htmlUsed[htmlIndex]) continue;
+      
+      results.push({ type: 'layer3-fuzzy', metaIndex, htmlIndex, score });
+      metaUsed[metaIndex] = true;
+      htmlUsed[htmlIndex] = true;
+    }
+
+    // ===== 处理新增和删除 =====
+    for (let h = 0; h < htmlNodes.length; h++) {
+      if (!htmlUsed[h]) {
+        results.push({ type: 'insert', htmlIndex: h, id: generateBlockId() });
+      }
+    }
+
+    for (let m = 0; m < metaNodes.length; m++) {
+      if (!metaUsed[m]) {
+        results.push({ type: 'delete', metaIndex: m });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * 精确匹配判断
+   */
+  private static isExactMatch(metaNode: any, htmlText: string): boolean {
+    const htmlStart = htmlText.substring(0, Math.min(5, htmlText.length));
+    const htmlEnd = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+    
+    return metaNode.s === htmlStart && 
+           metaNode.e === htmlEnd && 
+           metaNode.l === htmlText.length;
+  }
+
+  /**
+   * V2 模糊打分算法（三维特征）
+   */
+  private static calculateFuzzyScore(metaNode: any, htmlText: string): number {
+    let score = 0;
+
+    const htmlStart = htmlText.substring(0, Math.min(5, htmlText.length));
+    const htmlEnd = htmlText.length > 5 ? htmlText.substring(htmlText.length - 5) : htmlText;
+
+    // 开头匹配：+40 分（完全相同）或部分分数
+    if (metaNode.s === htmlStart) {
+      score += 40;
+    } else if (metaNode.s && htmlStart) {
+      score += this.stringSimilarity(metaNode.s, htmlStart) * 40;
+    }
+
+    // 结尾匹配：+40 分（完全相同）或部分分数
+    if (metaNode.e === htmlEnd) {
+      score += 40;
+    } else if (metaNode.e && htmlEnd) {
+      score += this.stringSimilarity(metaNode.e, htmlEnd) * 40;
+    }
+
+    // 长度相似：+20 分
+    if (metaNode.l && htmlText.length) {
+      const lengthDiff = Math.abs(metaNode.l - htmlText.length);
+      const lengthRatio = 1 - (lengthDiff / Math.max(metaNode.l, htmlText.length));
+      if (lengthRatio > 0.8) {
+        score += 20;
+      } else if (lengthRatio > 0.5) {
+        score += 10;
+      }
+    }
+
+    return score;
+  }
+
+  /**
+   * 字符串相似度（字符级别匹配）
+   */
+  private static stringSimilarity(a: string, b: string): number {
+    const minLen = Math.min(a.length, b.length);
+    if (minLen === 0) return 0;
+    
+    let matches = 0;
+    for (let i = 0; i < minLen; i++) {
+      if (a[i] === b[i]) matches++;
+    }
+    return matches / minLen;
+  }
+
+  /**
+   * 查找前一个锚点
+   */
+  private static findPreviousAnchor(results: any[], htmlIndex: number): any {
+    for (let i = results.length - 1; i >= 0; i--) {
+      if (results[i].htmlIndex !== undefined && results[i].htmlIndex < htmlIndex) {
+        return results[i];
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 查找后一个锚点
+   */
+  private static findNextAnchor(results: any[], htmlIndex: number): any {
+    for (const result of results) {
+      if (result.htmlIndex !== undefined && result.htmlIndex > htmlIndex) {
+        return result;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * 统计范围内未使用的节点数量
+   */
+  private static countUnusedInRange(used: boolean[], start: number, end: number): number {
+    let count = 0;
+    for (let i = start; i < end; i++) {
+      if (!used[i]) count++;
+    }
+    return count;
+  }
+
+  /**
+   * 查找范围内第一个未使用的节点索引
+   */
+  private static findUnusedInRange(used: boolean[], start: number, end: number): number {
+    for (let i = start; i < end; i++) {
+      if (!used[i]) return i;
+    }
+    return -1;
+  }
+
+  /**
+   * 应用匹配结果，合并 HTML 文本 + Meta 元数据
+   */
+  private static applyMatchResults(htmlNodes: any[], metaNodes: any[], matchResults: any[]): any[] {
+    const finalNodes: any[] = [];
+
+    for (const result of matchResults) {
+      if (result.type === 'delete') {
+        // 删除的节点不添加到最终结果
+        continue;
+      }
+
+      if (result.type === 'insert') {
+        // 新增节点：使用 HTML 文本 + 新生成的 ID
+        const htmlNode = htmlNodes[result.htmlIndex];
+        finalNodes.push({
+          type: 'paragraph',
+          id: result.id,
+          children: htmlNode.children
+        });
+        continue;
+      }
+
+      // 匹配成功的节点：HTML 文本 + Meta 元数据
+      const htmlNode = htmlNodes[result.htmlIndex];
+      const metaNode = metaNodes[result.metaIndex];
+
+      const mergedNode: any = {
+        type: 'paragraph',
+        children: htmlNode.children
+      };
+
+      // 恢复元数据
+      if (metaNode.id) mergedNode.id = metaNode.id;
+      if (metaNode.ts) mergedNode.createdAt = metaNode.ts;
+      if (metaNode.ut) mergedNode.updatedAt = metaNode.ut;
+      if (metaNode.lvl !== undefined) mergedNode.level = metaNode.lvl;
+      if (metaNode.bullet !== undefined) mergedNode.bulletLevel = metaNode.bullet;
+
+      // 恢复 Mention 信息
+      if (metaNode.mention && mergedNode.children && mergedNode.children[0]) {
+        mergedNode.children[0].mention = metaNode.mention;
+      }
+
+      finalNodes.push(mergedNode);
+    }
+
+    return finalNodes;
+  }
 }
 
 // 暴露到全局用于调试
