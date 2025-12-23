@@ -1108,8 +1108,10 @@ export class EventHistoryService {
    * 🆕 统计 EventLog 中 Block-Level paragraph 的数量
    * 用于判断 eventlog 的版本变化（数量增加 = 有新的编辑）
    * Block-Level paragraph 是指带有 createdAt 元数据的 paragraph 节点
+   * 
+   * ⚠️ 此方法设为 public，供 EventService 在 updateEvent 时判断 eventlog 是否变化
    */
-  private static countBlockLevelParagraphs(eventlog: any): number {
+  static countBlockLevelParagraphs(eventlog: any): number {
     if (!eventlog) return 0;
     
     try {

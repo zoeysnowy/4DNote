@@ -1176,8 +1176,23 @@ export class EventService {
       // 步骤2: 规范化处理（重新生成 description 签名、处理 eventlog 等）
       // 使用 preserveSignature 选项，避免每次都重新生成签名导致变更
       // 🆕 [v2.18.9] 智能判断：如果 eventlog 没变，就保留原签名
-      const eventlogChanged = mergedEvent.eventlog !== undefined && 
-        JSON.stringify(mergedEvent.eventlog) !== JSON.stringify(originalEvent.eventlog);
+      
+      // 🔍 使用 Block-Level paragraph 计数判断 eventlog 是否变化（避免签名导致误判）
+      let eventlogChanged = false;
+      if (mergedEvent.eventlog !== undefined) {
+        const oldBlockCount = EventHistoryService['countBlockLevelParagraphs'](originalEvent.eventlog);
+        const newBlockCount = EventHistoryService['countBlockLevelParagraphs'](mergedEvent.eventlog);
+        eventlogChanged = oldBlockCount !== newBlockCount;
+        
+        console.log('[EventService.updateEvent] eventlog 变化检测:', {
+          eventId: eventId.slice(-8),
+          oldBlockCount,
+          newBlockCount,
+          changed: eventlogChanged,
+          原因: eventlogChanged ? 'Block-Level paragraph 数量不同' : '数量相同，保留原签名'
+        });
+      }
+      
       const normalizedEvent = this.normalizeEvent(mergedEvent, {
         preserveSignature: !eventlogChanged,  // eventlog 没变就保留签名
         oldEvent: originalEvent  // 🆕 传入旧事件用于 eventlog diff

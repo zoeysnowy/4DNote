@@ -2781,15 +2781,15 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           dbg('picker', '📌 HeadlessFloatingToolbar.onTimeApplied 被调用', { 
             startIso, 
             endIso, 
-            focusedLineId: currentFocusedLineId,
-            对应的eventId: currentFocusedLineId ? (() => {
-              const actualItemId = currentFocusedLineId.replace('-desc','');
+            focusedLineId: session.focus.lineId,
+            对应的eventId: session.focus.lineId ? (() => {
+              const actualItemId = session.focus.lineId.replace('-desc','');
               const item = items.find(i => i.id === actualItemId) || pendingEmptyItems.get(actualItemId);
               return item?.id;
             })() : undefined
           });
           
-          const targetId = currentFocusedLineId || '';
+          const targetId = session.focus.lineId || '';
           if (!targetId) {
             warn('picker', '⚠️ onTimeApplied: 没有 focusedLineId，跳过');
             return;
@@ -2862,13 +2862,13 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           console.log('[PlanManager] onTagSelect 被调用（仅更新状态）', { tagIds });
           
           currentSelectedTagsRef.current = tagIds;
-          setCurrentSelectedTags(tagIds);
+          sessionActions.updateFocusTags(tagIds);
         }}
         onEmojiSelect={(emoji: string) => {
           // 🆕 使用 PlanSlate 的 helper 函数
           const editor = unifiedEditorRef.current;
           const editorApi = (unifiedEditorRef as any).editorApi;
-          if (!editor || !editorApi || !currentFocusedLineId) return;
+          if (!editor || !editorApi || !session.focus.lineId) return;
           
           const success = insertEmoji(editor, emoji);
           if (success) {
@@ -2881,19 +2881,19 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           // 🆕 使用 PlanSlate 的 helper 函数插入 DateMention
           const editor = unifiedEditorRef.current;
           const editorApi = (unifiedEditorRef as any).editorApi;
-          if (!editor || !editorApi || !currentFocusedLineId) {
+          if (!editor || !editorApi || !session.focus.lineId) {
             console.warn('[onDateRangeSelect] 没有编辑器或焦点行');
             return;
           }
           
-          const actualItemId = currentFocusedLineId.replace('-desc', '');
+          const actualItemId = session.focus.lineId.replace('-desc', '');
           const item = items.find(i => i.id === actualItemId);
           if (!item) {
             console.warn('[onDateRangeSelect] 找不到对应的 item');
             return;
           }
           
-          const isDescriptionMode = currentFocusedMode === 'description';
+          const isDescriptionMode = session.focus.mode === 'description';
           const startIso = formatTimeForStorage(start);
           const endIso = end && end.getTime() !== start.getTime() ? formatTimeForStorage(end) : undefined;
           
@@ -2919,12 +2919,12 @@ const PlanManager: React.FC<PlanManagerProps> = ({
 
         }}
         availableTags={existingTags}
-        currentTags={currentSelectedTags}
-        currentIsTask={currentIsTask}
+        currentTags={session.focus.selectedTags}
+        currentIsTask={session.focus.isTask}
         onTaskToggle={async (isTask: boolean) => {
           // 🆕 切换任务状态
-          if (currentFocusedLineId && currentFocusedMode === 'title') {
-            const actualItemId = currentFocusedLineId.replace('-desc', '');
+          if (session.focus.lineId && session.focus.mode === 'title') {
+            const actualItemId = session.focus.lineId.replace('-desc', '');
             const item = items.find(i => i.id === actualItemId);
             if (item) {
               const updatedItem: Event = {
@@ -2934,7 +2934,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
               // ✅ 使用 EventHub 保存
               try {
                 await EventHub.updateFields(updatedItem.id, updatedItem, { source: 'PlanManager' });
-                setCurrentIsTask(isTask); // 更新本地状态
+                sessionActions.setFocus(session.focus.lineId!, { isTask }); // 更新本地状态
               } catch (error) {
                 console.error('[add_task] 保存失败:', error);
               }
@@ -2980,23 +2980,23 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             <div style={{ padding: 0 }}>
               <UnifiedDateTimePicker
                 eventId={(() => {
-                  const targetId = (pickerTargetItemIdRef.current || currentFocusedLineId || '').replace('-desc','');
+                  const targetId = (pickerTargetItemIdRef.current || session.focus.lineId || '').replace('-desc','');
                   if (!targetId) return undefined;
                   // 🔧 [FIX] 先在 items 中查找，再检查 pendingEmptyItems
                   const item = items.find(i => i.id === targetId) || pendingEmptyItems.get(targetId);
                   return item?.id;
                 })()}
                 useTimeHub={true}
-                initialStart={(items.find(i => i.id === (pickerTargetItemIdRef.current || currentFocusedLineId || '').replace('-desc',''))?.startTime) || undefined}
-                initialEnd={(items.find(i => i.id === (pickerTargetItemIdRef.current || currentFocusedLineId || '').replace('-desc',''))?.endTime) || undefined}
+                initialStart={(items.find(i => i.id === (pickerTargetItemIdRef.current || session.focus.lineId || '').replace('-desc',''))?.startTime) || undefined}
+                initialEnd={(items.find(i => i.id === (pickerTargetItemIdRef.current || session.focus.lineId || '').replace('-desc',''))?.endTime) || undefined}
                 onApplied={async () => {
-                  const targetId = pickerTargetItemIdRef.current || currentFocusedLineId || '';
+                  const targetId = pickerTargetItemIdRef.current || session.focus.lineId || '';
                   if (!targetId) return;
                   const item = items.find(i => i.id === targetId || i.id === targetId.replace('-desc',''));
                   const editableElement = document.querySelector(
                     `[data-line-id="${targetId}"] .ProseMirror`
                   ) as HTMLElement | null;
-                  const isDescriptionMode = currentFocusedMode === 'description';
+                  const isDescriptionMode = session.focus.mode === 'description';
 
                   // ✅ 修复：从 TimeHub 读取最新时间，而不是使用旧的 item 数据
                   if (item) {
