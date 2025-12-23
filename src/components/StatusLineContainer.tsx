@@ -97,7 +97,7 @@ export const StatusLineContainer: React.FC<StatusLineContainerProps> = ({
       matrix.get(segment.startIndex)!.set(segment.status, segment);
     });
     
-    console.log(`[StatusLineContainer] 🎯 矩阵算法: ${segments.length}个segments, ${maxEventIndex + 1}行, ${new Set(segments.map(s => s.status)).size}种状态`);
+    // console.log(`[StatusLineContainer] 🎯 矩阵算法: ${segments.length}个segments, ${maxEventIndex + 1}行, ${new Set(segments.map(s => s.status)).size}种状态`);
     
     // 步骤2: 纵向扫描，合并连续的相同状态（俄罗斯方块算法）
     const statusTypes = ['new', 'updated', 'deleted', 'done', 'missed'] as const;
@@ -159,10 +159,10 @@ export const StatusLineContainer: React.FC<StatusLineContainerProps> = ({
       // 如果找到了可用列，加入该列；否则创建新列
       if (targetColumnIndex !== -1) {
         columns[targetColumnIndex].push(...group.segments);
-        console.log(`[StatusLineContainer] 🔗 状态[${group.status}]合并到列${targetColumnIndex}: ${group.segments.length}个segments`);
+        // console.log(`[StatusLineContainer] 🔗 状态[${group.status}]合并到列${targetColumnIndex}: ${group.segments.length}个segments`);
       } else {
         columns.push([...group.segments]);
-        console.log(`[StatusLineContainer] 📊 状态[${group.status}]新建列${columns.length - 1}: ${group.segments.length}个segments`);
+        // console.log(`[StatusLineContainer] 📊 状态[${group.status}]新建列${columns.length - 1}: ${group.segments.length}个segments`);
       }
     });
     
@@ -174,7 +174,7 @@ export const StatusLineContainer: React.FC<StatusLineContainerProps> = ({
     });
     
     const elapsed = performance.now() - startTime;
-    console.log(`[StatusLineContainer] ✅ 列分配完成: ${columns.length}列, ${columnMap.size}个segments, 耗时 ${elapsed.toFixed(2)}ms`);
+    // console.log(`[StatusLineContainer] ✅ 列分配完成: ${columns.length}列, ${columnMap.size}个segments, 耗时 ${elapsed.toFixed(2)}ms`);
     
     return columnMap;
   }, [segmentsHash]); // 🚀 使用hash触发，支持增量更新
@@ -245,11 +245,11 @@ export const StatusLineContainer: React.FC<StatusLineContainerProps> = ({
         }
       });
       
-      console.log('[StatusLineContainer] 🔍 DOM查询:', {
-        总行数: allEventLines.length,
-        事件数: eventIdToLines.size,
-        segments数: baseSegments.length
-      });
+      // console.log('[StatusLineContainer] 🔍 DOM查询:', {
+      //   总行数: allEventLines.length,
+      //   事件数: eventIdToLines.size,
+      //   segments数: baseSegments.length
+      // });
       
       const updated = baseSegments.map(segment => {
         // 通过 editorItems 的 index 找到对应的事件
@@ -284,18 +284,18 @@ export const StatusLineContainer: React.FC<StatusLineContainerProps> = ({
         };
       });
       
-      console.log('[StatusLineContainer] 渲染segments:', {
-        输入segments数: segments.length,
-        输出rendered数: updated.length,
-        详情: updated.map(r => ({
-          index: r.startIndex,
-          status: r.status,
-          column: r.column,
-          left: r.left,
-          top: r.top,
-          height: r.height
-        }))
-      });
+      // console.log('[StatusLineContainer] 渲染segments:', {
+      //   输入segments数: segments.length,
+      //   输出rendered数: updated.length,
+      //   详情: updated.map(r => ({
+      //     index: r.startIndex,
+      //     status: r.status,
+      //     column: r.column,
+      //     left: r.left,
+      //     top: r.top,
+      //     height: r.height
+      //   }))
+      // });
       
       setRenderedSegments(updated);
     };

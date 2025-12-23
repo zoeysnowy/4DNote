@@ -2838,9 +2838,9 @@ export class EventService {
         
         console.log('[EventService] ⚠️ 未发现 Meta-Comment，使用传统解析流程');
         
-        // � [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
+        // 📌 [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
         // 问题：如果先提取文本，签名会作为纯文本保留下来
-        let cleanedHtml = eventlogInput;
+        cleanedHtml = eventlogInput;
         
         // 1. 移除 Outlook/4DNote 签名段落（<p> 或 <div> 包含签名）
         cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<br\s*\/?>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi, '');
@@ -6451,6 +6451,12 @@ export class EventService {
               normalized !== '#000000' && 
               normalized !== '#ffffff') {
             cleanedStyles[prop] = value;
+            
+            // 🆕 为浅色高亮背景自动添加深色文字（防止深色模式黄底白字）
+            const isLight = this.isLightColor(normalized);
+            if (isLight) {
+              cleanedStyles['color'] = '#000000';  // 强制黑色文字
+            }
           }
         }
       }
@@ -6461,6 +6467,30 @@ export class EventService {
     Object.entries(cleanedStyles).forEach(([prop, value]) => {
       element.style.setProperty(prop, value);
     });
+  }
+
+  private static isLightColor(hex: string): boolean {
+    // 判断颜色是否为浅色（需要深色文字）
+    // 使用 YIQ 亮度公式
+    const rgb = this.hexToRgb(hex);
+    if (!rgb) return false;
+    
+    const yiq = ((rgb.r * 299) + (rgb.g * 587) + (rgb.b * 114)) / 1000;
+    return yiq >= 128;  // 亮度 >= 128 为浅色
+  }
+
+  private static hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+    hex = hex.replace('#', '');
+    if (hex.length === 3) {
+      hex = hex.split('').map(c => c + c).join('');
+    }
+    if (hex.length !== 6) return null;
+    
+    return {
+      r: parseInt(hex.substring(0, 2), 16),
+      g: parseInt(hex.substring(2, 4), 16),
+      b: parseInt(hex.substring(4, 6), 16)
+    };
   }
 
   private static normalizeColor(color: string): string {

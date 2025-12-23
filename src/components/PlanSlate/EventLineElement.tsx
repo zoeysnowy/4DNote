@@ -53,16 +53,16 @@ export const EventLineElement: React.FC<EventLineElementProps> = ({
   
   // 🔧 调试：记录 eventlog 行的关键信息
   if (isEventlogMode && process.env.NODE_ENV === 'development') {
-    console.log('[EventLineElement] eventlog 渲染:', {
-      eventId: element.eventId?.slice(-8),
-      lineId: element.lineId,
-      level: element.level,
-      paddingLeft,
-      showCheckbox,
-      prefixWidth,
-      hasMetadata: !!metadata,
-      checkType
-    });
+    // console.log('[EventLineElement] eventlog 渲染:', {
+    //   eventId: element.eventId?.slice(-8),
+    //   lineId: element.lineId,
+    //   level: element.level,
+    //   paddingLeft,
+    //   showCheckbox,
+    //   prefixWidth,
+    //   hasMetadata: !!metadata,
+    //   checkType
+    // });
   }
   
   // 🆕 处理 placeholder 点击

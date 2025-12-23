@@ -106,12 +106,12 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
 
   // 监听 activePickerIndex 变化，通过数字键激活对应的 picker
   useEffect(() => {
-    console.log(`[数字键 useEffect] activePickerIndex: ${activePickerIndex}, activePicker: ${activePicker}`);
+    // console.log(`[数字键 useEffect] activePickerIndex: ${activePickerIndex}, activePicker: ${activePicker}`);
     
     // 🔑 守卫：如果 activePickerIndex 为 null，说明没有数字键按下，直接返回
     // 这样可以避免 activePicker 变化时触发不必要的逻辑
     if (activePickerIndex === null || activePickerIndex === undefined) {
-      console.log('[数字键 useEffect] ⏭️ activePickerIndex 为 null，跳过执行');
+      // console.log('[数字键 useEffect] ⏭️ activePickerIndex 为 null，跳过执行');
       return;
     }
     
@@ -191,34 +191,34 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
   // 🆕 FloatingBar 重新打开时重置 activePicker（避免显示上次的 Picker 状态）
   const prevShowRef = useRef(false);
   useEffect(() => {
-    console.log('[FloatingBar useEffect] 触发检查', {
-      'position.show': position.show,
-      'prevShowRef.current': prevShowRef.current,
-      'activePicker当前值': activePicker,
-      'position对象': position
-    });
+    // console.log('[FloatingBar useEffect] 触发检查', {
+    //   'position.show': position.show,
+    //   'prevShowRef.current': prevShowRef.current,
+    //   'activePicker当前值': activePicker,
+    //   'position对象': position
+    // });
     
     // 🔑 只在从 false → true 时重置（真正打开时）
     if (position.show && !prevShowRef.current) {
-      console.log('[FloatingBar useEffect] 🔓 首次打开，重置 activePicker');
+      // console.log('[FloatingBar useEffect] 🔓 首次打开，重置 activePicker');
       setActivePicker(null);
     } else if (position.show && prevShowRef.current) {
-      console.log('[FloatingBar useEffect] 🔄 position 更新但保持打开状态，不重置 activePicker');
+      // console.log('[FloatingBar useEffect] 🔄 position 更新但保持打开状态，不重置 activePicker');
     } else if (!position.show) {
-      console.log('[FloatingBar useEffect] 🔒 FloatingBar 关闭');
+      // console.log('[FloatingBar useEffect] 🔒 FloatingBar 关闭');
     }
     prevShowRef.current = position.show;
   }, [position.show]);
 
   // 监听 activePicker 变化，通知父组件子选择器状态
   useEffect(() => {
-    console.log(`[activePicker useEffect] 🔄 activePicker 变化: ${activePicker}`);
-    console.log('[activePicker useEffect] 调用堆栈:', new Error().stack);
+    // console.log(`[activePicker useEffect] 🔄 activePicker 变化: ${activePicker}`);
+    // console.log('[activePicker useEffect] 调用堆栈:', new Error().stack);
     
     // 🔑 通知父组件：textColor 或 bgColor 打开时，子选择器处于打开状态
     const isSubPickerOpen = activePicker === 'textColor' || activePicker === 'bgColor';
     onSubPickerStateChange?.(isSubPickerOpen, activePicker);
-    console.log(`[activePicker useEffect] 🎨 子选择器状态: ${isSubPickerOpen ? '打开' : '关闭'}`);
+    // console.log(`[activePicker useEffect] 🎨 子选择器状态: ${isSubPickerOpen ? '打开' : '关闭'}`);
     
     // 🆕 重置 emoji 选择索引和焦点区域
     if (activePicker === 'emoji') {
@@ -523,10 +523,10 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
 
   // 渲染文本格式化按钮
   const renderTextFormatButton = (feature: ToolbarFeatureType) => {
-    console.log('[renderTextFormatButton] 🎬 渲染特性:', feature);
+    // console.log('[renderTextFormatButton] 🎬 渲染特性:', feature);
     const btnConfig = textFeatureConfig[feature as keyof typeof textFeatureConfig];
     if (!btnConfig) {
-      console.log('[renderTextFormatButton] ❌ 没有找到配置:', feature);
+      // console.log('[renderTextFormatButton] ❌ 没有找到配置:', feature);
       return null;
     }
 

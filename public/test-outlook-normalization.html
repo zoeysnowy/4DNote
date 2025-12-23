@@ -465,6 +465,13 @@
                 normalized !== '#ffffff') {
               cleanedStyles[prop] = value;
               keptStyles++;
+              
+              // 🆕 为浅色高亮背景自动添加深色文字（防止深色模式黄底白字）
+              const isLight = isLightColor(normalized);
+              if (isLight) {
+                cleanedStyles['color'] = '#000000';  // 强制黑色文字
+                keptStyles++;
+              }
             }
           }
         }
@@ -476,6 +483,30 @@
       });
       
       return { removedColor, removedFont, keptStyles };
+    }
+
+    function isLightColor(hex) {
+      // 判断颜色是否为浅色（需要深色文字）
+      // 使用 YIQ 亮度公式
+      const rgb = hexToRgb(hex);
+      if (!rgb) return false;
+      
+      const yiq = ((rgb.r * 299) + (rgb.g * 587) + (rgb.b * 114)) / 1000;
+      return yiq >= 128;  // 亮度 >= 128 为浅色
+    }
+
+    function hexToRgb(hex) {
+      hex = hex.replace('#', '');
+      if (hex.length === 3) {
+        hex = hex.split('').map(c => c + c).join('');
+      }
+      if (hex.length !== 6) return null;
+      
+      return {
+        r: parseInt(hex.substring(0, 2), 16),
+        g: parseInt(hex.substring(2, 4), 16),
+        b: parseInt(hex.substring(4, 6), 16)
+      };
     }
 
     function normalizeColor(color) {

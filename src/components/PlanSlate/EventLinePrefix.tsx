@@ -38,18 +38,18 @@ const EventLinePrefixComponent: React.FC<EventLinePrefixProps> = ({ element, onS
   const checkType = metadata.checkType;
   const showCheckbox = checkType === 'once' || checkType === 'recurring';
   
-  console.log('🔍 [EventLinePrefix] Render:', {
-    eventId: element.eventId?.slice(-10),
-    hasMetadata: !!element.metadata,
-    metadataKeys: element.metadata ? Object.keys(element.metadata) : [],
-    checkType,
-    showCheckbox,
-    isCompleted,
-    checked数组: metadata.checked,
-    unchecked数组: metadata.unchecked,
-    lastChecked,
-    lastUnchecked
-  });
+  // console.log('🔍 [EventLinePrefix] Render:', {
+  //   eventId: element.eventId?.slice(-10),
+  //   hasMetadata: !!element.metadata,
+  //   metadataKeys: element.metadata ? Object.keys(element.metadata) : [],
+  //   checkType,
+  //   showCheckbox,
+  //   isCompleted,
+  //   checked数组: metadata.checked,
+  //   unchecked数组: metadata.unchecked,
+  //   lastChecked,
+  //   lastUnchecked
+  // });
   
   const emoji = metadata.emoji;
 

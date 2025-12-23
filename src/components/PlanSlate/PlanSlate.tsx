@@ -539,17 +539,17 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   className = '',
 }) => {
   // 🔍 版本标记 - 用于验证代码是否被加载
-  console.log('%c[PlanSlate v2.15] 组件加载 - 包含 itemsHash 详细日志', 'background: #4ECDC4; color: white; font-weight: bold; padding: 4px 8px;');
+  // console.log('%c[PlanSlate v2.15] 组件加载 - 包含 itemsHash 详细日志', 'background: #4ECDC4; color: white; font-weight: bold; padding: 4px 8px;');
   
   // 🆕 Debug: 检查 timestamp 相关的 props
-  console.log('[PlanSlate] 初始化参数:', {
-    eventId,
-    enableTimestamp,
-    hasItems: !!items,
-    itemsLength: items?.length || 0,
-    eventIdType: typeof eventId,
-    enableTimestampType: typeof enableTimestamp
-  });
+  // console.log('[PlanSlate] 初始化参数:', {
+  //   eventId,
+  //   enableTimestamp,
+  //   hasItems: !!items,
+  //   itemsLength: items?.length || 0,
+  //   eventIdType: typeof eventId,
+  //   enableTimestampType: typeof enableTimestamp
+  // });
   
   // 🆕 Debug: 监听 eventId 和 enableTimestamp 的变化
   React.useEffect(() => {
@@ -614,13 +614,13 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         : `str:${(eventlog || '').length}:${(eventlog || '').substring(0, 20)}`;
       
       if (index < 5) {  // 只记录前5个事件
-        console.log(`[itemsHash] Event[${index}] ${titleStr}:`, {
-          eventlogType,
-          isObject,
-          slateJsonLength: isObject ? eventlog.slateJson?.length : 0,
-          plainTextLength: isObject ? eventlog.plainText?.length : 0,
-          eventlogStr
-        });
+        // console.log(`[itemsHash] Event[${index}] ${titleStr}:`, {
+        //   eventlogType,
+        //   isObject,
+        //   slateJsonLength: isObject ? eventlog.slateJson?.length : 0,
+        //   plainTextLength: isObject ? eventlog.plainText?.length : 0,
+        //   eventlogStr
+        // });
       }
       
       // 🔧 包含时间字段：startTime、endTime、dueDateTime、isAllDay
@@ -630,15 +630,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       // 🔍 记录 Event[3] 的完整 hash
       if (index === 3) {
-        console.log('%c[itemsHash] Event[3] 完整 hash:', 'background: #FF6B6B; color: white; padding: 2px 6px;', {
-          itemHash,
-          id: item.id.slice(-10),
-          titleStr,
-          tagsStr,
-          eventlogStr,
-          timeStr,
-          updatedAt: item.updatedAt
-        });
+        // console.log('%c[itemsHash] Event[3] 完整 hash:', 'background: #FF6B6B; color: white; padding: 2px 6px;', {
+        //   itemHash,
+        //   id: item.id.slice(-10),
+        //   titleStr,
+        //   tagsStr,
+        //   eventlogStr,
+        //   timeStr,
+        //   updatedAt: item.updatedAt
+        // });
       }
       
       return itemHash;
@@ -646,17 +646,17 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     
     // 🛡️ 优化：如果 hash 未变化，返回之前的引用（避免触发 useEffect）
     if (hash === prevItemsHashRef.current) {
-      console.log('%c[⏭️ itemsHash 未变化，使用缓存]', 'background: #2196F3; color: white; padding: 2px 6px;');
+      // console.log('%c[⏭️ itemsHash 未变化，使用缓存]', 'background: #2196F3; color: white; padding: 2px 6px;');
       return prevItemsHashRef.current;
     }
     
-    console.log('%c[🔍 itemsHash 重新计算]', 'background: #9C27B0; color: white; padding: 2px 6px;', {
-      itemsLength: items.length,
-      hashLength: hash.length,
-      hashPreview: hash.substring(0, 100) + '...',
-      hasChanged: hash !== prevItemsHashRef.current,
-      changedCount: hash.split('|').filter((h, i) => h !== prevItemsHashRef.current.split('|')[i]).length
-    });
+    // console.log('%c[🔍 itemsHash 重新计算]', 'background: #9C27B0; color: white; padding: 2px 6px;', {
+    //   itemsLength: items.length,
+    //   hashLength: hash.length,
+    //   hashPreview: hash.substring(0, 100) + '...',
+    //   hasChanged: hash !== prevItemsHashRef.current,
+    //   changedCount: hash.split('|').filter((h, i) => h !== prevItemsHashRef.current.split('|')[i]).length
+    // });
     
     prevItemsHashRef.current = hash;
     return hash;
@@ -1168,15 +1168,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
     
     // 🔥 调试：记录每次 onChange 的选区状态
-    console.log('%c[🔄 onChange]', 'background: #2196F3; color: white; padding: 2px 6px;', {
-      timestamp,
-      hasSelection: !!editor.selection,
-      selection: editor.selection ? {
-        anchor: editor.selection.anchor,
-        focus: editor.selection.focus
-      } : null,
-      operations: editor.operations.map(op => op.type)
-    });
+    // console.log('%c[🔄 onChange]', 'background: #2196F3; color: white; padding: 2px 6px;', {
+    //   timestamp,
+    //   hasSelection: !!editor.selection,
+    //   selection: editor.selection ? {
+    //     anchor: editor.selection.anchor,
+    //     focus: editor.selection.focus
+    //   } : null,
+    //   operations: editor.operations.map(op => op.type)
+    // });
     
     // 🆕 v1.8.4: 检测是否有删除节点操作
     const hasRemoveNode = editor.operations.some(op => op.type === 'remove_node');
@@ -1422,72 +1422,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
     }
     
-    // 立即执行保存逻辑（不等待 setTimeout）
-    (() => {
-      if (pendingChangesRef.current) {
-        
-        const filteredNodes = (pendingChangesRef.current as unknown as EventLineNode[]).filter(node => {
-          return !(node.metadata as any)?.isPlaceholder && node.eventId !== '__placeholder__';
-        });
-        
-        if (filteredNodes.length === 0) {
-          if (isDebugEnabled()) {
-            console.warn('[PlanSlate] filteredNodes 为空，跳过保存');
-          }
-          return; // ⚡️ 早返回，避免无效保存
-        }
-        
-        const planItems = slateNodesToPlanItems(filteredNodes);
-        
-        if (planItems.length === 0) {
-          if (isDebugEnabled()) {
-            console.warn('[PlanSlate] planItems 为空，跳过保存', {
-              filteredNodes数量: filteredNodes.length
-            });
-          }
-          return; // ⚡️ 早返回
-        }
-        
-        // ⚡️ 立即调用 onChange，数据进入 EventService Transient Buffer
-        onChange(planItems);
-        
-        if (isDebugEnabled()) {
-          console.log(`%c[✅ ${timestamp}] 已保存 ${planItems.length} 项到内存层`, 
-            'background: #4CAF50; color: white; padding: 2px 6px; border-radius: 2px;');
-        }
-        
-        // 🔴 LEGACY CODE REMOVED: 下面的代码已删除
-        // 原来的逻辑：序列化后继续检查、调用 onChange
-        // 新逻辑：立即调用 onChange，不需要额外检查
-        if (false) { // 保留代码结构用于编译，实际永不执行
-          console.error('🔴 [诊断] slateNodesToPlanItems 返回空数组！', {
-            filteredNodes数量: filteredNodes.length,
-            planItems数量: planItems.length,
-            filteredNodes示例: filteredNodes.slice(0, 3).map(n => ({
-              eventId: n.eventId,
-              lineId: n.lineId,
-              mode: n.mode,
-              children数量: n.children.length
-            }))
-          });
-        }
-        
-        // 检测 eventlog 行删除
-        planItems.forEach(item => {
-          const hasDescriptionNode = filteredNodes.some(node => {
-            const eventLine = node as EventLineNode;
-            return (eventLine.eventId === item.eventId || eventLine.lineId.startsWith(item.id)) 
-                   && eventLine.mode === 'eventlog';
-          });
-          
-          if (!hasDescriptionNode && item.description) {
-            item.description = '';
-          }
-        });
-        
-        // ⚠️ LEGACY: onChange 已在上面调用，这里的代码不会执行
-      }
-    })(); // ⚡️ 立即执行函数（IIFE）
+    // 🔥 FIX: 统一调用 flushPendingChanges，消除重复代码
+    flushPendingChanges();
     
     // 🔥 立即通知焦点变化（用于 FloatingBar 和 TagPicker）
     if (onFocus && editor.selection) {
@@ -1515,13 +1451,47 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     }
     
     if (pendingChangesRef.current) {
+      console.log('[flushPendingChanges] 💾 立即保存触发:', {
+        pendingChanges数量: (pendingChangesRef.current as unknown as EventLineNode[]).length,
+        节点详情: (pendingChangesRef.current as unknown as EventLineNode[]).map(n => ({
+          eventId: n.eventId?.slice(-8) || n.eventId,
+          mode: n.mode,
+          isPlaceholder: (n.metadata as any)?.isPlaceholder,
+          children: JSON.stringify(n.children).slice(0, 80)
+        }))
+      });
+      
       if (isDebugEnabled()) {
         console.log(`%c[💾 立即保存] 触发`, 
           'background: #FF9800; color: white; padding: 2px 6px; border-radius: 2px;');
       }
       
       const filteredNodes = (pendingChangesRef.current as unknown as EventLineNode[]).filter(node => {
-        return !(node.metadata as any)?.isPlaceholder && node.eventId !== '__placeholder__';
+        // 过滤 placeholder
+        if ((node.metadata as any)?.isPlaceholder || node.eventId === '__placeholder__') {
+          return false;
+        }
+        
+        // 🔥 FIX: 过滤空白行（只有title模式，且内容为空）
+        if (node.mode === 'title') {
+          const firstParagraph = node.children?.[0];
+          const fragment = firstParagraph?.children || [];
+          
+          // 检查是否有非空文本
+          const hasText = fragment.some((child: any) => {
+            return child.text && child.text.trim() !== '';
+          });
+          
+          if (!hasText) {
+            console.log('[flushPendingChanges] 🗑️ 过滤空白title行:', {
+              eventId: node.eventId?.slice(-8),
+              children: JSON.stringify(node.children).slice(0, 100)
+            });
+            return false;
+          }
+        }
+        
+        return true;
       });
       
       const planItems = slateNodesToPlanItems(filteredNodes);
@@ -2576,32 +2546,32 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     const [currentNode, currentPath] = match;
     const eventLine = currentNode as unknown as EventLineNode;
     
-    // 🆕 v1.8: 如果在 placeholder 行，拦截所有输入，在它之前创建新行
+    // 🆕 v1.8: 如果在 placeholder 行，将其转换成真实事件
     if ((eventLine.metadata as any)?.isPlaceholder || eventLine.eventId === '__placeholder__') {
-      // 允许导航键
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(event.key)) {
+      // 允许导航键（不触发转换）
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Escape'].includes(event.key)) {
         return;
       }
       
-      event.preventDefault();
+      // 🔥 用户开始输入，将placeholder转换成真实事件
+      const newEventId = generateEventId();
       
-      // 任何输入都在 placeholder 之前创建新行
-      const newLine = createEmptyEventLine(0);
-      const insertPath = [currentPath[0]];
-      
-      Transforms.insertNodes(editor, newLine as any, { at: insertPath });
-      
-      // 聚焦到新行并插入输入的字符
-      setTimeout(() => {
-        safeFocusEditor(editor, insertPath);
-        
-        // 如果是可打印字符，插入它
-        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey) {
-          Transforms.insertText(editor, event.key);
+      Transforms.setNodes(editor, {
+        eventId: newEventId,
+        lineId: newEventId,
+        metadata: {
+          ...(eventLine.metadata || {}),
+          isPlaceholder: undefined, // 移除placeholder标记
         }
-      }, 50);
+      } as any, { at: currentPath });
       
-      logOperation('Type on placeholder - 创建新行', { key: event.key });
+      logOperation('Placeholder转换成真实事件', { 
+        oldEventId: eventLine.eventId,
+        newEventId,
+        key: event.key 
+      });
+      
+      // 让正常的输入处理继续
       return;
     }
     
@@ -3057,6 +3027,49 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
               oldMetadata: currentNode.metadata?.parentEventId,
               newMetadata: updatedMetadata.parentEventId
             });
+            
+            // 🔥 FIX: 同时更新父节点的 childEventIds（双向链接）
+            try {
+              const allNodes = Array.from(Node.children(editor, []));
+              const parentNodeEntry = allNodes.find(([node]) => {
+                const eventNode = node as EventLineNode;
+                return eventNode.eventId === previousEventId && eventNode.type === 'event-line';
+              });
+              
+              if (parentNodeEntry) {
+                const [parentNode, parentPath] = parentNodeEntry;
+                const parentEventLine = parentNode as EventLineNode;
+                const existingChildIds = parentEventLine.metadata?.childEventIds || [];
+                
+                // 避免重复添加
+                if (!existingChildIds.includes(currentEventId)) {
+                  const updatedParentMetadata = {
+                    ...(parentEventLine.metadata || {}),
+                    childEventIds: [...existingChildIds, currentEventId]
+                  };
+                  
+                  Transforms.setNodes(
+                    editor,
+                    { metadata: updatedParentMetadata } as unknown as Partial<Node>,
+                    { at: parentPath }
+                  );
+                  
+                  console.log('[Tab] 🔗 Updated parent childEventIds:', {
+                    parentId: previousEventId.slice(-8),
+                    childId: currentEventId.slice(-8),
+                    oldChildIds: existingChildIds.map(id => id.slice(-8)),
+                    newChildIds: updatedParentMetadata.childEventIds.map(id => id.slice(-8))
+                  });
+                }
+              } else {
+                console.warn('[Tab] ⚠️ Parent node not found:', {
+                  parentId: previousEventId.slice(-8),
+                  searchedNodes: allNodes.length
+                });
+              }
+            } catch (e) {
+              console.error('[Tab] ❌ Failed to update parent childEventIds:', e);
+            }
             
             Transforms.setNodes(
               editor,
