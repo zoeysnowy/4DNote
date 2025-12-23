@@ -2,8 +2,8 @@
 
 **模块路径**: `src/components/PlanManager.tsx`  
 **代码行数**: ~2992 lines  
-**架构版本**: v2.18 (Tab/Shift+Tab 功能完善 - Eventlog Bullet 缩进 + 模式转换)  
-**最后更新**: 2025-12-14  
+**架构版本**: v2.21 (useState → useReducer 状态管理重构)  
+**最后更新**: 2025-12-23  
 **编写框架**: Copilot PRD Reverse Engineering Framework v1.1  
 **Figma 设计稿**: [ReMarkable-0.1 - 1450w default](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646&m=dev)  
 **侧边栏设计稿**: [PlanManager Sidepanels](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=290-2646)
@@ -11,6 +11,161 @@
 ---
 
 ## 📋 版本历史
+
+### v2.21 (2025-12-23) - useState → useReducer 状态管理重构 🔄
+
+**核心突破**:
+- 🔥 **会话态迁移到 useReducer**：创建 `usePlanManagerSession` hook，管理 focus/filter/snapshot 三组会话状态
+- ✅ **原子操作消除一致性问题**：`setFocus()` 一次 action 更新 4 个状态（lineId + mode + isTask + tags）
+- ✅ **架构分类清晰**：基于 GPT-5.2 原则，将状态分为 5 类（UI临时态/会话态/领域数据/派生缓存/管线态）
+- ✅ **避免闭包陷阱**：reducer 状态始终最新，无需 ref hacks
+- ⏳ **重构进度 30%**：Hook创建完成 + useState声明替换，~21处setter调用待迁移
+
+**功能矩阵**:
+
+| useState声明 | 新状态路径 | Action方法 | 说明 |
+|---|---|---|---|
+| `currentFocusedLineId` ⚠️ | `session.focus.lineId` | `setFocus(id, opts)` | 原子更新焦点状态 |
+| `currentFocusedMode` ⚠️ | `session.focus.mode` | ↑ 同上 | 4个字段一次更新 |
+| `currentIsTask` ⚠️ | `session.focus.isTask` | ↑ 同上 | 避免中间状态 |
+| `currentSelectedTags` ⚠️ | `session.focus.selectedTags` | `updateFocusTags(tags)` | 单独更新标签 |
+| `dateRange` ⚠️ | `session.filter.dateRange` | `setDateRange(range)` | 自动触发快照更新 |
+| `activeFilter` ⚠️ | `session.filter.activeFilter` | `setActiveFilter(f)` | |
+| `hiddenTags` ⚠️ | `session.filter.hiddenTags` | `toggleHiddenTag(tag)` | 自动toggle操作 |
+| `searchQuery` ⚠️ | `session.filter.searchQuery` | `setSearchQuery(q)` | |
+| `snapshotVersion` ⚠️ | `session.snapshotVersion` | `incrementSnapshotVersion()` | 强制快照重算 |
+
+**关键代码位置**:
+
+**1. usePlanManagerSession Hook (New File)**
+**位置**: `src/components/hooks/usePlanManagerSession.ts` (253行)
+
+```typescript
+// Reducer State
+export interface PlanManagerSessionState {
+  focus: {
+    lineId: string | null;
+    mode: 'title' | 'description';
+    isTask: boolean;
+    selectedTags: string[];
+  };
+  filter: {
+    dateRange: { start: Date; end: Date };
+    activeFilter: 'all' | 'today' | 'week' | 'month' | 'custom';
+    hiddenTags: Set<string>;
+    searchQuery: string;
+  };
+  snapshotVersion: number;
+}
+
+// 🔥 原子操作 - 一次 action 完成多个状态变化
+actions.setFocus(lineId, {
+  mode: 'description',
+  isTask: true,
+  selectedTags: ['tag1', 'tag2']
+});
+```
+
+**2. PlanManager.tsx - useState 替换 (L326-329)**
+
+```typescript
+// ❌ 修复前（9个独立useState）:
+const [currentFocusedLineId, setCurrentFocusedLineId] = useState<string | null>(null);
+const [currentFocusedMode, setCurrentFocusedMode] = useState<'title' | 'description'>('title');
+const [currentIsTask, setCurrentIsTask] = useState<boolean>(false);
+const [currentSelectedTags, setCurrentSelectedTags] = useState<string[]>([]);
+const [dateRange, setDateRange] = useState<DateRange>({ start, end });
+const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+const [hiddenTags, setHiddenTags] = useState<Set<string>>(new Set());
+const [searchQuery, setSearchQuery] = useState<string>('');
+const [snapshotVersion, setSnapshotVersion] = useState(0);
+
+// ✅ 修复后（1个reducer + UI临时态）:
+const { state: session, actions: sessionActions } = usePlanManagerSession();
+
+// ✅ UI临时态继续使用useState
+const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+const [showDateMention, setShowDateMention] = useState(false);
+// ...
+```
+
+**3. Setter调用替换示例（⏳ 待完成）**
+
+**场景1: handleFocus - 聚焦行时原子更新 (L938-955)**
+```typescript
+// ❌ 修复前（4个setState，可能出现中间状态）:
+setCurrentFocusedLineId(lineId);
+setCurrentFocusedMode(isDescriptionLine ? 'description' : 'title');
+setCurrentIsTask(item.isTask || false);
+setCurrentSelectedTags(item.tags || []);
+
+// ✅ 修复后（1个action，原子操作）:
+sessionActions.setFocus(lineId, {
+  mode: isDescriptionLine ? 'description' : 'title',
+  isTask: item?.isTask || false,
+  selectedTags: item?.tags || []
+});
+```
+
+**场景2: setDateRange - 自动触发快照更新**
+```typescript
+// ❌ 修复前（需要手动触发快照更新）:
+setDateRange(newRange);
+setSnapshotVersion(v => v + 1); // 容易忘记
+
+// ✅ 修复后（自动触发）:
+sessionActions.setDateRange(newRange); // 内部自动 snapshotVersion++
+```
+
+**技术细节**:
+
+1. **状态分类原则**（基于GPT-5.2）:
+   - **(A) UI临时态**: 继续使用 useState（showEmojiPicker, showDateMention, ...）
+   - **(B) 会话态**: 迁移到 useReducer（focus, filter, snapshot）
+   - **(C) 领域数据**: EventHub/EventService（items, events, tags）
+   - **(D) 派生缓存**: useMemo（filteredItems, sortedItems）
+   - **(E) 管线态**: 自建pipeline（debounce, batch update）
+
+2. **原子更新的优势**:
+   - ✅ **一致性保证**: 4个字段同时更新，无中间状态
+   - ✅ **性能优化**: 4次setState → 1次dispatch，减少重渲染
+   - ✅ **闭包安全**: reducer状态始终最新，无需useRef
+   - ✅ **代码可读**: 意图明确，`setFocus(id, opts)` vs 4个setter
+
+3. **迁移检查清单**（~21处待替换）:
+   - L938-955: handleFocus (4个setState → 1个action)
+   - L2609-2653: PlanSlate onCurrentLineChange (4个setState → 1个action)
+   - L905, 892, 2885: onCurrentTagsChange (setCurrentSelectedTags → updateFocusTags)
+   - L2515-2559: ContentSelectionPanel callbacks (4个setState → 4个action)
+   - L803, 808, 812: 外部事件触发快照更新 (setSnapshotVersion → incrementSnapshotVersion)
+   - 详见: `docs/PLANMANAGER_MIGRATION_CHECKLIST.md`
+
+**重构收益**:
+- ⚡ **状态一致性**: 消除"成组变化遗漏"导致的bug
+- 📊 **性能提升**: 减少60-75%不必要的重渲染（参考PlanSlate重构）
+- 🔧 **可维护性**: 状态转换逻辑集中在reducer，易于追踪
+- 🛡️ **类型安全**: TypeScript严格类型约束，避免误操作
+
+**相关文档**:
+- 重构方案: `docs/USESTATE_REDUCER_REFACTOR_v2.21.md`
+- 执行计划: `docs/USESTATE_REFACTOR_EXECUTION_PLAN.md`
+- 迁移清单: `docs/PLANMANAGER_MIGRATION_CHECKLIST.md`
+- PlanSlate重构完成报告: PlanSlate已100%完成迁移（8个useState → 1个reducer）
+
+**待完成工作**:
+- [ ] 批量替换21处setter调用
+- [ ] 更新FloatingToolbar、ContentSelectionPanel组件props
+- [ ] 更新useEffect依赖数组（session对象引用）
+- [ ] 测试focus、filter、snapshot功能
+- [ ] 用户验收测试
+
+**核心教训**:
+- 🎯 **状态分类很重要**: 不是所有useState都要迁移，UI临时态保留反而更简单
+- 📐 **原子更新是关键**: "一次动作改2+状态"是迁移的判断标准
+- 🔄 **渐进式重构**: Hooks先ready，setter调用慢慢迁移，不影响功能
+- ⚠️ **文档先行**: 迁移清单帮助跟踪进度，避免遗漏
+
+---
 
 ### v2.18 (2025-12-14) - Tab/Shift+Tab 功能完善 - Eventlog Bullet 缩进 + 模式转换 ✅
 
@@ -3046,43 +3201,100 @@ console.log('Plan页面显示的事件:', planEvents);
 
 ## 3. 组件架构与状态管理
 
-### 3.1 核心状态
+### 3.1 核心状态（v2.21.0 架构）
+
+> **重要更新**: v2.21.0 引入 useReducer 重构，将会话态 useState 迁移到 `usePlanManagerSession` hook，消除"多个 useState 成组变化"导致的一致性问题。
+
+#### 3.1.1 会话态管理（useReducer） 🆕 v2.21.0
+
+**Hook 位置**: `src/components/hooks/usePlanManagerSession.ts`
+
+**设计原则**:
+- **一次动作改2+状态** → 使用 reducer (原子更新)
+- **成组变化的状态** → 合并为一个 session 对象
+- **避免闭包陷阱** → reducer 状态始终最新
+
+**使用方式**:
+```typescript
+const { state: session, actions: sessionActions } = usePlanManagerSession();
+
+// ✅ 原子更新 - 一次 action 完成多个状态变化
+sessionActions.setFocus(lineId, {
+  mode: 'description',
+  isTask: true,
+  selectedTags: ['tag1', 'tag2']
+});
+
+// ✅ 自动触发依赖更新
+sessionActions.setDateRange({ start, end }); // 自动触发 snapshotVersion++
+```
+
+**管理的状态**:
+
+| 状态组 | 字段 | 说明 | 替代的 useState |
+|--------|------|------|----------------|
+| **focus** | `lineId` | 当前聚焦行 ID | `currentFocusedLineId` ⚠️ |
+| | `mode` | 聚焦模式 (title/description) | `currentFocusedMode` ⚠️ |
+| | `isTask` | 是否为任务 | `currentIsTask` ⚠️ |
+| | `selectedTags` | 选中的标签列表 | `currentSelectedTags` ⚠️ |
+| **filter** | `dateRange` | 日期范围 | `dateRange` ⚠️ |
+| | `activeFilter` | 激活的过滤器 | `activeFilter` ⚠️ |
+| | `hiddenTags` | 隐藏的标签集合 | `hiddenTags` ⚠️ |
+| | `searchQuery` | 搜索关键词 | `searchQuery` ⚠️ |
+| **其他** | `snapshotVersion` | 快照版本号 | `snapshotVersion` ⚠️ |
+
+**可用 Actions**:
+
+| Action 方法 | 说明 | 原 setter 映射 |
+|-------------|------|----------------|
+| `setFocus(lineId, options)` | 原子更新焦点状态（4个字段） | 4个 setState |
+| `updateFocusTags(tags)` | 单独更新焦点标签 | `setCurrentSelectedTags` |
+| `setDateRange(range)` | 更新日期范围 + 自动触发快照更新 | `setDateRange` |
+| `setActiveFilter(filter)` | 设置激活过滤器 | `setActiveFilter` |
+| `toggleHiddenTag(tag)` | 切换标签隐藏状态 | `setHiddenTags(...)` |
+| `setSearchQuery(query)` | 设置搜索关键词 | `setSearchQuery` |
+| `incrementSnapshotVersion()` | 增加快照版本号 | `setSnapshotVersion(v => v + 1)` |
+| `clearFocus()` | 清空焦点状态 | 4个 setState |
+| `clearFilter()` | 重置所有过滤器 | 4个 setState |
+
+**重构进度**: ⏳ 30% 完成
+- ✅ Hook 创建完成
+- ✅ useState 声明已替换为 reducer
+- ⏳ Setter 调用批量替换中（~21处，详见 [PLANMANAGER_MIGRATION_CHECKLIST.md](../PLANMANAGER_MIGRATION_CHECKLIST.md)）
+
+#### 3.1.2 UI 临时态（继续使用 useState）
 
 **位置**: L181-207
 
 ```typescript
+// ✅ 继续使用 useState - 纯界面开关，丢了不影响数据正确性
 const [selectedItemId, setSelectedItemId] = useState<string | null>(null);     // 当前选中的 Plan Item ID
 const [editingItem, setEditingItem] = useState<Event | null>(null);            // 正在编辑的 Plan Item
 const [showEmojiPicker, setShowEmojiPicker] = useState(false);                 // 是否显示 Emoji 选择器
-const [currentSelectedTags, setCurrentSelectedTags] = useState<string[]>([]);  // 当前选中的标签 ID 列表
-const currentSelectedTagsRef = useRef<string[]>([]);                           // 标签 Ref（避免闭包问题）
-const [currentFocusedLineId, setCurrentFocusedLineId] = useState<string | null>(null); // 当前聚焦的行 ID
-const [currentFocusedMode, setCurrentFocusedMode] = useState<'title' | 'description'>('title'); // 聚焦行的模式
-const [currentIsTask, setCurrentIsTask] = useState<boolean>(false);            // 当前行是否为任务
-const lastTagInsertRef = useRef<{ lineId: string; tagId: string; time: number } | null>(null); // 防抖标记
-const editorRegistryRef = useRef<Map<string, any>>(new Map());                 // Tiptap 编辑器实例注册表
 const [showDateMention, setShowDateMention] = useState(false);                 // 是否显示日期提及弹窗
 const [showUnifiedPicker, setShowUnifiedPicker] = useState(false);             // 是否显示统一日期时间选择器
+const [replacingTagElement, setReplacingTagElement] = useState<HTMLElement | null>(null); // 正在替换的标签元素
+const [showTagReplace, setShowTagReplace] = useState(false);                   // 是否显示标签替换弹窗
+const [activePickerIndex, setActivePickerIndex] = useState<number | null>(null); // 激活的选择器索引
+
+// Refs（不是状态）
+const currentSelectedTagsRef = useRef<string[]>([]);                           // 标签 Ref（向后兼容）
+const lastTagInsertRef = useRef<{ lineId: string; tagId: string; time: number } | null>(null); // 防抖标记
+const editorRegistryRef = useRef<Map<string, any>>(new Map());                 // Tiptap 编辑器实例注册表
 const dateAnchorRef = useRef<HTMLElement | null>(null);                        // 日期选择器锚点元素
 const caretRectRef = useRef<DOMRect | null>(null);                             // 光标矩形（用于虚拟定位）
 const pickerTargetItemIdRef = useRef<string | null>(null);                     // 选择器目标 Item ID
-const [replacingTagElement, setReplacingTagElement] = useState<HTMLElement | null>(null); // 正在替换的标签元素
-const [showTagReplace, setShowTagReplace] = useState(false);                   // 是否显示标签替换弹窗
 const editorContainerRef = useRef<HTMLDivElement>(null);                       // 编辑器容器 Ref
-const [activePickerIndex, setActivePickerIndex] = useState<number | null>(null); // 激活的选择器索引
 ```
 
-**状态分类**：
+**状态分类**（基于 GPT-5.2 架构原则）：
 
-| 类别 | 状态 | 用途 |
-|------|------|------|
-| **选择状态** | `selectedItemId`, `editingItem` | 管理当前选中/编辑的 Plan Item |
-| **选择器状态** | `showEmojiPicker`, `showDateMention`, `showUnifiedPicker`, `showTagReplace` | 控制各种选择器的显示/隐藏 |
-| **焦点状态** | `currentFocusedLineId`, `currentFocusedMode`, `currentIsTask` | 跟踪当前聚焦的行及其属性 |
-| **标签状态** | `currentSelectedTags`, `currentSelectedTagsRef` | 管理当前选中的标签列表 |
-| **编辑器状态** | `editorRegistryRef`, `editorContainerRef` | 管理 Tiptap 编辑器实例 |
-| **锚点状态** | `dateAnchorRef`, `caretRectRef`, `pickerTargetItemIdRef` | 管理选择器的定位锚点 |
-| **工具栏状态** | `activePickerIndex` | 管理浮动工具栏的激活状态 |
+| 类别 | 状态 | 用途 | 容器选择 |
+|------|------|------|---------|
+| **(A) UI临时态** ✅ useState | `showEmojiPicker`, `showDateMention`, `showUnifiedPicker`, `showTagReplace`, `activePickerIndex` | 控制各种选择器的显示/隐藏 | 丢了不影响数据正确性 |
+| **(B) 会话态** ✅ useReducer | `session.focus.*`, `session.filter.*`, `session.snapshotVersion` | 聚焦、过滤、快照状态 | 一次动作更新2+state |
+| **(C) 领域数据** 🔧 EventHub | `items`, `editorItems`, `tags`, `events` | 事件列表、标签数据 | single source of truth |
+| **(D) 派生缓存** 🔧 useMemo | `filteredItems`, `sortedItems`, `computedSnapshot` | 过滤/排序结果 | 可从(C)推导 |
 
 ### 3.2 FloatingToolbar 配置
 

@@ -2736,12 +2736,6 @@ export class EventService {
         // Step 3: 样式白名单清洗（P0 - 防止黑底黑字）
         cleanedHtml = this.sanitizeInlineStyles(cleanedHtml);
         
-        // Step 4: CID 图片处理（P1 - 需要 attachments 参数）
-        // TODO: 在 OutlookSyncService 调用时传入 attachments
-        // if (options?.outlookAttachments) {
-        //   cleanedHtml = await this.processCidImages(cleanedHtml, options.outlookAttachments);
-        // }
-        
         // 📌 [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
         // 问题：如果先提取文本，签名会作为纯文本保留下来
         cleanedHtml = eventlogInput;
@@ -2873,10 +2867,6 @@ export class EventService {
       }]);
       return this.convertSlateJsonToEventLog(slateJson);
     }
-    
-    // 🆕 情况6: 从 description 字符串生成（用于远程同步回退）
-    // 注意：这个分支通常不会被直接调用，因为上面的"纯文本字符串"分支已覆盖
-    // 但保留作为明确的文档说明
     
     // 情况7: 未知对象格式 - 尝试智能提取
     if (typeof eventlogInput === 'object' && eventlogInput !== null) {
