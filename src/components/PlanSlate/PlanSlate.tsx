@@ -1685,21 +1685,23 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   // 🆕 @提及搜索框变化回调（实时更新解析结果）
   const handleMentionSearchChange = useCallback((text: string, parsed: { start?: Date; end?: Date } | null) => {
-    setMentionText(text);
-    if (parsed && parsed.start) {
-      setMentionInitialStart(parsed.start);
-      setMentionInitialEnd(parsed.end);
+    // 🆕 v2.21.0: 更新mention query
+    sessionActions.updateMentionQuery(text);
+    
+    // 更新初始时间（如果解析成功）
+    if (parsed && parsed.start && session.mention.anchor) {
+      sessionActions.openMention('time', session.mention.anchor, parsed.start, parsed.end);
     }
-  }, []);
+  }, [session.mention.anchor, sessionActions]);
   
   // 🆕 @提及选择时间
   const handleMentionSelect = useCallback(async (startStr: string, endStr?: string, allDay?: boolean, userInputText?: string) => {
     if (!editor.selection) return;
     
     try {
-      // 🔧 使用 UnifiedDateTimePicker 传递的完整文本，回退到 mentionText
-      const finalUserText = userInputText || mentionText || '';
-      console.log('[@ Mention] 确认插入:', { startStr, endStr, mentionText, userInputText, finalUserText });
+      // 🔧 使用 UnifiedDateTimePicker 传递的完整文本，回退到 session.mention.query
+      const finalUserText = userInputText || session.mention.query || '';
+      console.log('[@ Mention] 确认插入:', { startStr, endStr, userInputText, finalUserText });
       
       // 找到@符号的位置
       const { anchor } = editor.selection;
@@ -2533,21 +2535,21 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     // 🆕 @提及激活时，拦截 Enter 和 Escape 键
     console.log('[@ Mention DEBUG] handleKeyDown:', { 
       key: event.key, 
-      showMentionPicker,
-      mentionInitialStart: mentionInitialStart ? formatTimeForStorage(mentionInitialStart) : undefined,
-      mentionInitialEnd: mentionInitialEnd ? formatTimeForStorage(mentionInitialEnd) : undefined
+      showMentionPicker: session.mention.isOpen,
+      mentionInitialStart: session.mention.initialStart ? formatTimeForStorage(session.mention.initialStart) : undefined,
+      mentionInitialEnd: session.mention.initialEnd ? formatTimeForStorage(session.mention.initialEnd) : undefined
     });
     
-    if (showMentionPicker) {
+    if (session.mention.isOpen) {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
         console.log('[@ Mention] Enter 键被拦截，触发选择');
         // 直接调用 handleMentionSelect，使用当前解析的时间
-        if (mentionInitialStart) {
+        if (session.mention.initialStart) {
           handleMentionSelect(
-            formatTimeForStorage(mentionInitialStart),
-            mentionInitialEnd ? formatTimeForStorage(mentionInitialEnd) : undefined
+            formatTimeForStorage(session.mention.initialStart),
+            session.mention.initialEnd ? formatTimeForStorage(session.mention.initialEnd) : undefined
           );
         }
         return;
@@ -3873,7 +3875,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     const leaf = props.leaf as TextNode;
     
     // 🆕 检查是否是 @ 提及文本（高亮显示）
-    if (showMentionPicker && editor.selection) {
+    if (session.mention.isOpen && editor.selection) {
       try {
         const { anchor } = editor.selection;
         const [node] = Editor.node(editor, anchor.path);
@@ -3940,7 +3942,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     }
     
     return <span {...props.attributes}>{children}</span>;
-  }, [showMentionPicker, editor]);
+  }, [session.mention.isOpen, editor]);
   
   // ==================== 渲染 ====================
   
@@ -3999,20 +4001,20 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             />
             
             {/* 🆕 @提及选择器 - 直接使用 UnifiedDateTimePicker（绝对定位） */}
-            {showMentionPicker && mentionType === 'time' && mentionAnchorRef.current && (
+            {session.mention.isOpen && session.mention.type === 'time' && session.mention.anchor && (
               <div
                 style={{
                   position: 'fixed',
-                  top: `${mentionAnchorRef.current.style.top}`,
-                  left: `${mentionAnchorRef.current.style.left}`,
+                  top: `${session.mention.anchor.style.top}`,
+                  left: `${session.mention.anchor.style.left}`,
                   zIndex: 10000,
                 }}
               >
                 <UnifiedDateTimePicker
                   useTimeHub={true} // 🔧 启用 TimeHub 模式，确保使用 onApplied 回调
-                  initialStart={mentionInitialStart}
-                  initialEnd={mentionInitialEnd}
-                  initialText={mentionText} // 🔧 传递用户在 @ 后输入的初始文本
+                  initialStart={session.mention.initialStart}
+                  initialEnd={session.mention.initialEnd}
+                  initialText={session.mention.query} // 🔧 传递用户在 @ 后输入的初始文本
                   onSearchChange={handleMentionSearchChange} // 🆕 实时更新解析结果
                   onApplied={handleMentionSelect}
                   onClose={handleMentionClose}
@@ -4021,19 +4023,19 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             )}
             
             {/* 🔍 Unified Mention 搜索菜单（事件/标签/AI搜索） */}
-            {showSearchMenu && mentionType === 'search' && mentionAnchorRef.current && (
+            {session.search.isOpen && session.mention.type === 'search' && session.mention.anchor && (
               <div
                 style={{
                   position: 'fixed',
-                  top: `${mentionAnchorRef.current.style.top}`,
-                  left: `${mentionAnchorRef.current.style.left}`,
+                  top: `${session.mention.anchor.style.top}`,
+                  left: `${session.mention.anchor.style.left}`,
                   zIndex: 10000,
                 }}
               >
                 <UnifiedMentionMenu
-                  query={searchQuery}
+                  query={session.search.query}
                   onSelect={handleSearchSelect}
-                  onClose={() => setShowSearchMenu(false)}
+                  onClose={() => sessionActions.closeSearch()}
                   context="editor"
                 />
               </div>

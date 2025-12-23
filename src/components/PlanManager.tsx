@@ -37,6 +37,8 @@ import { calculateFixedPopupPosition } from '../utils/popupPositionUtils';
 import ContentSelectionPanel from './ContentSelectionPanel';
 import UpcomingEventsPanel from './UpcomingEventsPanel';
 import { isEventExpired } from '../utils/upcomingEventsHelper'; // ✅ TIME_ARCHITECTURE 规范的工具函数
+// 🆕 v2.21.0: 会话态管理 Hook
+import { usePlanManagerSession } from './hooks/usePlanManagerSession';
 
 // � 初始化调试标志 - 在模块加载时立即从 localStorage 读取
 if (typeof window !== 'undefined') {
@@ -330,29 +332,11 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     (window as any).__PLAN_EVENTS__ = items;
   }, [items]);
   
-  // 当前选中的标签（用于 FloatingToolbar）
-  const [currentSelectedTags, setCurrentSelectedTags] = useState<string[]>([]);
-  // 使用 ref 追踪最新的选中标签，避免闭包问题
-  const currentSelectedTagsRef = useRef<string[]>([]);
+  // 🆕 v2.21.0: 统一的会话态管理（替代9个useState）
+  const { state: session, actions: sessionActions } = usePlanManagerSession();
   
-  // 保存当前聚焦的行 ID，用于添加标签等操作
-  const [currentFocusedLineId, setCurrentFocusedLineId] = useState<string | null>(null);
-  
-  // 🆕 保存当前聚焦行的模式（title 或 description）
-  const [currentFocusedMode, setCurrentFocusedMode] = useState<'title' | 'description'>('title');
-  
-  // 🆕 保存当前聚焦行的 isTask 状态
-  const [currentIsTask, setCurrentIsTask] = useState<boolean>(false);
-  
-  // 🆕 ContentSelectionPanel 状态管理
-  // 默认为 null（普通模式，不显示 snapshot 竖线）
-  const [dateRange, setDateRange] = useState<{start: Date, end: Date} | null>(null);
-  const [activeFilter, setActiveFilter] = useState<'tags' | 'tasks' | 'favorites' | 'new'>('tags');
-  const [hiddenTags, setHiddenTags] = useState<Set<string>>(new Set());
-  const [searchQuery, setSearchQuery] = useState('');
-  
-  // 🆕 强制 snapshot 重新计算的版本号
-  const [snapshotVersion, setSnapshotVersion] = useState(0);
+  // 🔄 向后兼容：保留原有的ref名称
+  const currentSelectedTagsRef = useRef<string[]>(session.focus.selectedTags);
   
   // 🚀 性能优化: 缓存事件状态查询结果
   const eventStatusCacheRef = useRef<Map<string, { status: 'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined, timestamp: number }>>(new Map());
