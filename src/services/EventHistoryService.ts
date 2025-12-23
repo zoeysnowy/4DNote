@@ -8,8 +8,8 @@
  * 4. 自动清理过期历史记录
  * 
  * ⚠️ 存储架构变更（2025-12-06）：
- * - 历史记录已从 localStorage 迁移到 IndexedDB
- * - localStorage 仅用作 IndexedDB 不可用时的降级方案
+ * - 历史记录已从 localStorage 迁移到 SQLite (IndexedDB)
+ * - localStorage 仅用作 SQLite 不可用时的降级方案
  * - 自动清理机制防止存储溢出
  */
 
@@ -128,7 +128,7 @@ export class EventHistoryService {
   }
 
   /**
-   * 迁移 localStorage 历史记录到 IndexedDB
+   * 迁移 localStorage 历史记录到 SQLite (IndexedDB)
    */
   private static async migrateFromLocalStorage(): Promise<void> {
     try {
@@ -145,7 +145,7 @@ export class EventHistoryService {
         return;
       }
 
-      historyLogger.log(`🔄 开始迁移 ${logs.length} 条历史记录到 IndexedDB...`);
+      historyLogger.log(`🔄 开始迁移 ${logs.length} 条历史记录到 SQLite (IndexedDB)...`);
       
       let migratedCount = 0;
       for (const log of logs) {
@@ -171,9 +171,9 @@ export class EventHistoryService {
 
       historyLogger.log(`✅ 迁移完成: ${migratedCount}/${logs.length} 条`);
       
-      // 直接清除旧数据（已迁移到 IndexedDB，无需备份到 localStorage）
+      // 直接清除旧数据（已迁移到 SQLite，无需备份到 localStorage）
       localStorage.removeItem(HISTORY_STORAGE_KEY);
-      historyLogger.log('✅ 已清除 localStorage 旧数据（已迁移到 IndexedDB）');
+      historyLogger.log('✅ 已清除 localStorage 旧数据（已迁移到 SQLite）');
     } catch (error) {
       historyLogger.error('❌ 迁移失败:', error);
     }
@@ -708,14 +708,6 @@ export class EventHistoryService {
     return rows.join('\n');
   }
 
-  /**
-   * 清空所有历史记录（慎用！）
-   */
-  static clearAll(): void {
-    localStorage.removeItem(HISTORY_STORAGE_KEY);
-    historyLogger.warn('⚠️ 已清空所有历史记录');
-  }
-
   // ==================== 私有方法 ====================
 
   /**
@@ -1020,7 +1012,6 @@ export class EventHistoryService {
       const oldValue = (before as any)[key];
       const newValue = (after as any)[key];
 
-      // � [v2.18.8] 调试 description 变更
       // 🔍 [v2.18.8] 调试 description 变更
       // ✅ 只在 UPDATE 操作时触发（before 有值），CREATE 操作不触发
       if (key === 'description' && before && oldValue !== undefined) {

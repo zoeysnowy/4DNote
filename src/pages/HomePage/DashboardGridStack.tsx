@@ -81,20 +81,26 @@ export const DashboardGridStack: React.FC<DashboardGridStackProps> = ({
       const savedLayout = localStorage.getItem(STORAGE_KEY);
       if (savedLayout) {
         const layout = JSON.parse(savedLayout);
-        // 等待DOM渲染完成后再应用布局
+        // 等待 GridStack 完全初始化后再应用布局
         setTimeout(() => {
+          if (!gridInstanceRef.current) return;
+          
           layout.forEach((item: any) => {
             const el = gridRef.current?.querySelector(`[gs-id="${item.id}"]`) as HTMLElement;
-            if (el && grid) {
-              grid.update(el, {
-                x: item.x,
-                y: item.y,
-                w: item.w,
-                h: item.h,
-              });
+            if (el && gridInstanceRef.current) {
+              // 检查元素是否已被 GridStack 管理
+              const node = (gridInstanceRef.current as any).engine.nodes.find((n: any) => n.el === el);
+              if (node) {
+                gridInstanceRef.current.update(el, {
+                  x: item.x,
+                  y: item.y,
+                  w: item.w,
+                  h: item.h,
+                });
+              }
             }
           });
-        }, 100);
+        }, 200); // 增加延迟，确保 GridStack 完全初始化
       }
     } catch (error) {
       console.warn('[DashboardGridStack] 恢复布局失败:', error);

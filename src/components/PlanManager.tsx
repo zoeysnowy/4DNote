@@ -343,7 +343,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   
   // 🆕 事件状态计算函数 (带缓存) - ⚠️ 异步版本
   const getEventStatus = useCallback(async (eventId: string, metadata?: any): Promise<'new' | 'updated' | 'done' | 'missed' | 'deleted' | undefined> => {
-    if (!dateRange) return undefined;
+    if (!session.filter.dateRange) return undefined;
     
     // 🔧 首先检查是否是 ghost 事件（Snapshot 模式下显示为已删除）
     // 优先从 metadata 检查（更准确），否则从 items 查找
@@ -363,8 +363,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     try {
       // 从EventHistoryService获取事件在指定时间段的历史记录
-      const startTime = formatTimeForStorage(dateRange.start);
-      const endTime = formatTimeForStorage(dateRange.end);
+      const startTime = formatTimeForStorage(session.filter.dateRange.start);
+      const endTime = formatTimeForStorage(session.filter.dateRange.end);
       const history = await EventHistoryService.queryHistory({ 
         eventId, 
         startTime, 
@@ -420,7 +420,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       console.warn(`[getEventStatus] Error getting status for event ${eventId}:`, error);
       return undefined;
     }
-  }, [dateRange, items]);
+  }, [session.filter.dateRange, items]);
   
   // 避免重复插入同一标签的防抖标记（同一行同一标签在短时间内仅插入一次）
   const lastTagInsertRef = useRef<{ lineId: string; tagId: string; time: number } | null>(null);
@@ -800,16 +800,16 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (isDeleted) {
         // 增量删除
         setItems(prev => prev.filter(event => event.id !== eventId));
-        setSnapshotVersion(v => v + 1);
+        sessionActions.incrementSnapshotVersion();
         console.log('[PlanManager] 🗑️ Event deleted:', eventId?.slice(-10));
       } else if (isNewEvent) {
         // 增量添加（使用增量更新逻辑）
         await incrementalUpdateEvent(eventId);
-        setSnapshotVersion(v => v + 1);
+        sessionActions.incrementSnapshotVersion();
       } else if (eventId) {
         // 🎯 增量更新（核心改进）
         await incrementalUpdateEvent(eventId);
-        setSnapshotVersion(v => v + 1);
+        sessionActions.incrementSnapshotVersion();
       } else {
         // 没有 eventId，可能是批量操作，全量刷新
         console.warn('[PlanManager] ⚠️ No eventId in update event, may need full reload');
@@ -885,11 +885,11 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // 🆕 监听 TagPicker 打开，同步实际的标签状态
   useEffect(() => {
     // 🎯 只在 TagPicker 打开时（activePickerIndex 从非0变为0）同步 Slate 状态
-    if (activePickerIndex !== 0 || !currentFocusedLineId) return;
+    if (activePickerIndex !== 0 || !session.focus.lineId) return;
     
     // 📌 Description 模式下不同步状态（mention-only 标签不记住勾选）
-    if (currentFocusedMode === 'description') {
-      setCurrentSelectedTags([]);
+    if (session.focus.mode === 'description') {
+      sessionActions.updateFocusTags([]);
       currentSelectedTagsRef.current = [];
       console.log('[TagPicker Sync] Description 模式，清空勾选状态');
       return;
@@ -899,13 +899,13 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     if (!editor) return;
 
     // 🔧 使用 helpers 中的 extractTagsFromLine 函数
-    const tagIds = extractTagsFromLine(editor, currentFocusedLineId);
+    const tagIds = extractTagsFromLine(editor, session.focus.lineId);
     
     // 更新状态
-    setCurrentSelectedTags(tagIds);
+    sessionActions.updateFocusTags(tagIds);
     currentSelectedTagsRef.current = tagIds;
     console.log('[TagPicker Sync] Title 模式，同步已选标签:', tagIds);
-  }, [activePickerIndex, currentFocusedMode, currentFocusedLineId]); // 🔥 添加 currentFocusedLineId 依赖
+  }, [activePickerIndex, session.focus.mode, session.focus.lineId, sessionActions]); // 🔥 添加 currentFocusedLineId 依赖
 
   // 将文本格式命令路由到当前 Slate 编辑器
   const handleTextFormat = useCallback((command: string, value?: string) => {
@@ -934,26 +934,15 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (target.hasAttribute('contenteditable')) {
         const lineId = target.getAttribute('data-line-id');
         if (lineId) {
-          // 更新当前聚焦的行 ID
-          setCurrentFocusedLineId(lineId);
-          
-          // 🆕 检测当前行的模式
           const isDescriptionLine = lineId.includes('-desc') || target.classList.contains('description-mode');
-          setCurrentFocusedMode(isDescriptionLine ? 'description' : 'title');
-          
-          // 找到对应的 Event，更新当前选中的标签和 isTask 状态
-          const actualItemId = lineId.replace('-desc', ''); // 移除 -desc 后缀获取真实 item id
+          const actualItemId = lineId.replace('-desc', '');
           const item = items.find(i => i.id === actualItemId);
-          if (item) {
-            // 🆕 更新 isTask 状态
-            setCurrentIsTask(item.isTask || false);
-            
-            // 🔥 标签状态由 useEffect (L776-822) 从 Slate 节点同步，不在这里设置
-            // 避免使用过时的 item.tags 覆盖 Slate 中最新的标签状态
-          } else {
-            // 🔥 新行没有 item，标签状态会在 useEffect 中自动清空
-            setCurrentIsTask(false);
-          }
+          
+          // ✅ 使用 sessionActions.setFocus 原子更新
+          sessionActions.setFocus(lineId, {
+            mode: isDescriptionLine ? 'description' : 'title',
+            isTask: item?.isTask || false
+          });
         }
       }
     };
@@ -985,8 +974,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           selection.addRange(range);
           dateAnchorRef.current = anchor;
           // 记录当前行对应的 itemId 作为目标
-          if (currentFocusedLineId) {
-            pickerTargetItemIdRef.current = currentFocusedLineId.replace('-desc','');
+          if (session.focus.lineId) {
+            pickerTargetItemIdRef.current = session.focus.lineId.replace('-desc','');
           }
           setShowUnifiedPicker(true);
         }
@@ -1468,8 +1457,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     try {
       // 从EventHistoryService获取指定时间范围的历史记录
-      const startTimeStr = formatTimeForStorage(dateRange.start);
-      const endTimeStr = formatTimeForStorage(dateRange.end);
+      const startTimeStr = formatTimeForStorage(session.filter.dateRange.start);
+      const endTimeStr = formatTimeForStorage(session.filter.dateRange.end);
       const dateRangeKey = `${startTimeStr}-${endTimeStr}`;
       
       // 🚀 检查缓存 (3秒内有效)
@@ -1484,7 +1473,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           start: startTimeStr,
           end: endTimeStr
         },
-        snapshotVersion
+        snapshotVersion: session.snapshotVersion
       });
       
       // 使用 EventHistoryService 的新方法获取结构化的操作摘要
@@ -1517,17 +1506,17 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         created: 0, updated: 0, completed: 0, deleted: 0, details: []
       };
     }
-  }, [dateRange, snapshotVersion]); // 添加 snapshotVersion 依赖
+  }, [session.filter.dateRange, session.snapshotVersion]); // 添加 snapshotVersion 依赖
   
   // 🆕 过滤后的事件列表
   const filteredItems = useMemo(() => {
     let result = [...items, ...Array.from(pendingEmptyItems.values())];
     
     // 应用标签隐藏过滤
-    if (hiddenTags.size > 0) {
+    if (session.filter.hiddenTags.size > 0) {
       result = result.filter(item => {
         const itemTags = item.tags || [];
-        return !itemTags.some(tag => hiddenTags.has(tag));
+        return !itemTags.some(tag => session.filter.hiddenTags.has(tag));
       });
     }
     
@@ -1535,8 +1524,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     // 日期范围仅用于计算事件状态竖线，不用于过滤事件显示
     
     // 应用搜索过滤
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    if (session.filter.searchQuery.trim()) {
+      const query = session.filter.searchQuery.toLowerCase();
       result = result.filter(item => 
         item.title?.simpleTitle?.toLowerCase().includes(query) ||
         item.description?.toLowerCase().includes(query) ||
@@ -1545,7 +1534,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
     
     return result;
-  }, [items, pendingEmptyItems, hiddenTags, dateRange, searchQuery]);
+  }, [items, pendingEmptyItems, session.filter.hiddenTags, session.filter.dateRange, session.filter.searchQuery]);
   
   // 将 Event[] 转换为 FreeFormLine<Event>[]
   // ✅ 重构: 直接准备 Event[] 给 PlanSlate，移除 FreeFormLine 中间层
@@ -2507,16 +2496,16 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         pageType="plan"
         isPanelVisible={isPanelVisible}
         onPanelVisibilityChange={onPanelVisibilityChange}
-        dateRange={dateRange}
+        dateRange={session.filter.dateRange}
         snapshot={generateEventSnapshot()}
         tags={TagService.getFlatTags()}
-        hiddenTags={hiddenTags}
+        hiddenTags={session.filter.hiddenTags}
         onFilterChange={(filter) => {
-          setActiveFilter(filter);
+          sessionActions.setActiveFilter(filter);
           console.log('[PlanManager] 切换过滤模式:', filter);
         }}
         onSearchChange={(query) => {
-          setSearchQuery(query);
+          sessionActions.setSearchQuery(query);
           console.log('[PlanManager] 搜索查询:', query);
         }}
         onDateSelect={(date) => {
@@ -2525,7 +2514,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           dayStart.setHours(0, 0, 0, 0);
           const dayEnd = new Date(date);
           dayEnd.setHours(23, 59, 59, 999);
-          setDateRange({ start: dayStart, end: dayEnd });
+          sessionActions.setDateRange({ start: dayStart, end: dayEnd });
           console.log('[PlanManager] 选择日期:', date);
         }}
         onDateRangeChange={(start, end) => {
@@ -2556,15 +2545,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           console.log('[PlanManager] 日期范围变更:', { start: normalizedStart, end: normalizedEnd });
         }}
         onTagVisibilityChange={(tagId, visible) => {
-          setHiddenTags(prev => {
-            const next = new Set(prev);
-            if (visible) {
-              next.delete(tagId);
-            } else {
-              next.add(tagId);
-            }
-            return next;
-          });
+          sessionActions.toggleHiddenTag(tagId);
           console.log('[PlanManager] 标签可见性变更:', { tagId, visible });
         }}
       />
@@ -2605,17 +2586,17 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             onChange={debouncedOnChange}
             eventStatusMap={eventStatusMap}
           onFocus={(lineId) => {
-            // ✅ 重构: 直接从 lineId 判断模式
-            setCurrentFocusedLineId(lineId);
+            // ✅ 重构: 使用 sessionActions.setFocus 原子更新
             const isDescMode = lineId.includes('-desc');
-            setCurrentFocusedMode(isDescMode ? 'description' : 'title');
-            
-            // 查找 item 更新 isTask
             const baseId = lineId.replace('-desc', '');
             const matchedItem = editorItems.find(item => item.id === baseId);
-            if (matchedItem) {
-              setCurrentIsTask(matchedItem.isTask || false);
-            } else {
+            
+            sessionActions.setFocus(lineId, {
+              mode: isDescMode ? 'description' : 'title',
+              isTask: matchedItem?.isTask || false
+            });
+            
+            if (!matchedItem) {
               // 🆕 用户激活新行时，立即创建 pendingEmptyItems
               const existsInPending = pendingEmptyItems.has(baseId);
               const existsInItems = items.some(item => item.id === baseId);
@@ -2650,7 +2631,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                 setPendingEmptyItems(prev => new Map(prev).set(baseId, newPendingItem));
                 dbg('plan', '🆕 用户激活新行，创建 pendingEmptyItems', { lineId: baseId });
               }
-              setCurrentIsTask(false);
             }
           }}
           onEditorReady={(editorApi) => {
@@ -2782,14 +2762,14 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         activePickerIndex={activePickerIndex}
         onActivePickerIndexConsumed={() => setActivePickerIndex(null)} // 🔑 立即重置
         onSubPickerStateChange={(isOpen) => setIsSubPickerOpen(isOpen)} // 🔑 追踪子选择器状态
-        eventId={currentFocusedLineId ? (() => {
-          const actualItemId = currentFocusedLineId.replace('-desc','');
+        eventId={session.focus.lineId ? (() => {
+          const actualItemId = session.focus.lineId.replace('-desc','');
           // 🔧 [FIX] 先在 items 中查找，再检查 pendingEmptyItems
           const item = items.find(i => i.id === actualItemId) || pendingEmptyItems.get(actualItemId);
           return item?.id;
         })() : undefined}
         useTimeHub={true}
-        editorMode={currentFocusedMode === 'description' ? 'eventlog' : currentFocusedMode}
+        editorMode={session.focus.mode === 'description' ? 'eventlog' : session.focus.mode}
         slateEditorRef={unifiedEditorRef}
         onRequestClose={() => {
           // 🆕 Picker 关闭时自动关闭整个 FloatingBar
