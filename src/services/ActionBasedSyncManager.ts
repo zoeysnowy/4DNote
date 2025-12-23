@@ -3411,7 +3411,24 @@ private getUserSettings(): any {
           // 描述处理：添加同步备注管理
           if (action.data.description !== undefined) {
             // ✅ [v2.18.1] 单一数据源 - 直接使用 description（已包含签名）
-            const descriptionSource = action.data.description || '';
+            let descriptionSource = action.data.description || '';
+            
+            // 🔥 [v2.21.0] 使用 CompleteMeta V2 序列化 description
+            // 如果事件有 eventlog.slateJson，则嵌入 Base64 Meta 到 HTML
+            if (localEvent?.eventlog?.slateJson) {
+              try {
+                descriptionSource = EventService.serializeEventDescription({
+                  ...localEvent,
+                  ...action.data
+                });
+                console.log('[UPDATE] ✅ CompleteMeta V2 序列化成功:', {
+                  eventId: action.entityId.slice(-10),
+                  hasMetaDiv: descriptionSource.includes('id="4dnote-meta"')
+                });
+              } catch (err) {
+                console.warn('[UPDATE] CompleteMeta 序列化失败，使用原始 description', err);
+              }
+            }
             
             const updateDescription = this.processEventDescription(
               descriptionSource,
@@ -4949,6 +4966,24 @@ private getUserSettings(): any {
       // htmlContent = EventService.processCidImages(htmlContent, remoteEvent.attachments);
     }
     
+    // 🔥 [v2.21.0 CompleteMeta V2 反序列化] 尝试从 Outlook HTML 中恢复节点 ID 和元数据
+    // 如果 HTML 中包含 CompleteMeta V2（hidden div），则执行三层容错匹配算法
+    // 优势：
+    //   1. 保留节点 ID（mention 链接不断裂）
+    //   2. 恢复 mention、timestamp、bulletLevel 等元数据
+    //   3. 抗修改能力：用户在 Outlook 修改段落后仍能正确匹配（90%+ 保留率）
+    let deserializedData: any = null;
+    if (htmlContent.includes('id="4dnote-meta"')) {
+      deserializedData = EventService.deserializeEventDescription(htmlContent, remoteEvent.id);
+      
+      if (deserializedData) {
+        console.log('[convertRemoteEventToLocal] ✅ CompleteMeta V2 反序列化成功:', {
+          eventId: remoteEvent.id.slice(-10),
+          nodeCount: JSON.parse(deserializedData.eventlog.slateJson).length
+        });
+      }
+    }
+    
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
     // 不要重复添加前缀！同时 externalId 应该是纯 Outlook ID（不带前缀）
     const pureOutlookId = remoteEvent.id.replace(/^outlook-/, '');
@@ -4959,13 +4994,13 @@ private getUserSettings(): any {
     //   1. 单一数据源（description）
     //   2. 逻辑集中（EventService 完全负责签名提取、eventlog 生成）
     //   3. 接口简洁（ActionBasedSyncManager 不需要知道内部细节）
+    // 
+    // 🔥 [v2.21.0] 如果有反序列化数据，优先使用（保留节点 ID 和元数据）
     const partialEvent = {
       id: remoteEvent.id, // 已经是 'outlook-AAMkAD...'
       title: cleanTitle,  // ✅ 传递字符串，让 normalizeTitle() 转换
-      description: htmlContent,  // ✅ 传递原始 HTML，normalizeEvent 会：
-                                 //    1. 提取签名中的时间戳和创建者
-                                 //    2. 移除签名后生成 eventlog
-                                 //    3. 重新生成带新签名的 description
+      description: htmlContent,  // ✅ 传递清洗后的 HTML
+      ...(deserializedData?.eventlog && { eventlog: deserializedData.eventlog }), // 🆕 如果有反序列化数据，直接使用
       startTime: this.safeFormatDateTime(remoteEvent.start?.dateTime || remoteEvent.start),
       endTime: this.safeFormatDateTime(remoteEvent.end?.dateTime || remoteEvent.end),
       isAllDay: remoteEvent.isAllDay || false,
@@ -5219,11 +5254,27 @@ private getUserSettings(): any {
    */
   private async createEventInOutlookCalendar(event: any, calendarId: string): Promise<any> {
     try {
+      // 🔥 [v2.21.0] 使用 CompleteMeta V2 序列化 description
+      // 在 description HTML 中嵌入 Base64 编码的元数据（节点 ID、mention、timestamp 等）
+      // 确保 Outlook → 4DNote 往返时能恢复这些信息
+      let descriptionHtml = event.description || '';
+      if (event.eventlog?.slateJson) {
+        try {
+          descriptionHtml = EventService.serializeEventDescription(event);
+          console.log('[createEventInOutlookCalendar] ✅ CompleteMeta V2 序列化成功:', {
+            eventId: event.id.slice(-10),
+            hasMetaDiv: descriptionHtml.includes('id="4dnote-meta"')
+          });
+        } catch (err) {
+          console.warn('[createEventInOutlookCalendar] CompleteMeta 序列化失败，使用原始 description', err);
+        }
+      }
+      
       const eventData = {
         subject: event.title?.simpleTitle || '',
         body: {
           contentType: 'html',
-          content: event.description || ''
+          content: descriptionHtml  // 🆕 使用序列化后的 HTML（含 Meta）
         },
         start: {
           dateTime: event.startTime,

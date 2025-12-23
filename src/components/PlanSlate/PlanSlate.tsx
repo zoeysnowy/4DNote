@@ -75,6 +75,7 @@ import {
   createEmptyEventLine,
   slateNodesToRichHtml,
   parseExternalHtml,
+  setEventLineLevel,  // 🔥 v2.20.0: 统一层级更新函数
 } from './serialization';
 import { insertDateMention, insertEventMention, insertTag } from './helpers';
 import { formatTimeForStorage } from '../../utils/timeUtils';
@@ -436,7 +437,7 @@ const withCustom = (editor: CustomEditor) => {
               currentLevel,
             });
             
-            Transforms.setNodes(editor, { level: 0 }, { at: path });
+            setEventLineLevel(editor, path, 0);  // 🔥 使用统一函数
             Transforms.setNodes(editor, { bulletLevel: 0 } as any, { at: [...path, 0] });
             return; // 修复一个问题后返回
           }
@@ -451,7 +452,7 @@ const withCustom = (editor: CustomEditor) => {
               normalizedLevel,
             });
             
-            Transforms.setNodes(editor, { level: normalizedLevel }, { at: path });
+            setEventLineLevel(editor, path, normalizedLevel);  // 🔥 使用统一函数
             Transforms.setNodes(editor, { bulletLevel: normalizedLevel } as any, { at: [...path, 0] });
             return; // 修复一个问题后返回
           }
@@ -562,7 +563,7 @@ function adjustBulletLevelsAfterDelete(editor: CustomEditor) {
           totalAdjustments++;
           
           // 同时更新 EventLine.level 和 paragraph.bulletLevel
-          Transforms.setNodes(editor, { level: newLevel }, { at: current.linePath });
+          setEventLineLevel(editor, current.linePath, newLevel);  // 🔥 使用统一函数
           Transforms.setNodes(editor, { bulletLevel: newLevel } as any, { at: [...current.linePath, 0] });
           
           // 更新当前记录，供后续行参考
@@ -735,6 +736,14 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         items数量: items.length,
         items示例: items.slice(0, 3).map(i => ({ id: i.id, title: i.title?.simpleTitle?.substring(0, 20) || '' }))
       });
+    }
+    
+    // 🔥 v2.20.0: 检查是否已经存在 placeholder，避免重复添加
+    const hasPlaceholder = baseNodes.some(n => n.eventId === '__placeholder__');
+    
+    if (hasPlaceholder) {
+      vlog('✅ [诊断] baseNodes 已包含 placeholder，不添加新的');
+      return baseNodes;
     }
     
     // 🎯 v1.8: 在末尾添加一个特殊的 placeholder 行（第 i+1 行）
@@ -1533,50 +1542,18 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           'background: #FF9800; color: white; padding: 2px 6px; border-radius: 2px;');
       }
       
-      // 只过滤 placeholder
-      const nodesWithoutPlaceholder = nodesToSave.filter(node => {
+      // 只过滤 placeholder，保留所有真实节点（包括空白节点）
+      const filteredNodes = nodesToSave.filter(node => {
         if ((node.metadata as any)?.isPlaceholder || node.eventId === '__placeholder__') {
           return false;
         }
         return true;
       });
       
-      // 🔥 检测空白节点并删除（不管有无历史记录）
-      const toDelete: string[] = [];
-      const finalNodes = nodesWithoutPlaceholder.filter(node => {
-        // 检查是否为空白 title 行
-        if (node.mode === 'title') {
-          const firstParagraph = node.children?.[0];
-          const fragment = firstParagraph?.children || [];
-          
-          const hasText = fragment.some((child: any) => {
-            return child.text && child.text.trim() !== '';
-          });
-          
-          if (!hasText && node.eventId) {
-            // 空白节点，删除（不管有无历史）
-            const hasHistory = EventHistoryService.hasHistory(node.eventId);
-            console.log('[flushPendingChanges] 🗑️ 空白节点删除:', {
-              eventId: node.eventId.slice(-8),
-              hasHistory
-            });
-            toDelete.push(node.eventId);
-            return false; // 从保存列表中移除
-          }
-        }
-        return true;
-      });
-      
-      // 调用删除回调
-      if (toDelete.length > 0 && onDeleteRequest) {
-        console.log('[flushPendingChanges] 📢 删除空白事件:', toDelete.map(id => id.slice(-8)));
-        toDelete.forEach(id => onDeleteRequest(id));
-      }
-      
       // 重置删除标志
       hasDeleteOperationRef.current = false;
       
-      const planItems = slateNodesToPlanItems(finalNodes);
+      const planItems = slateNodesToPlanItems(filteredNodes);
       
       // 检测 eventlog 行删除
       planItems.forEach(item => {
@@ -3138,18 +3115,28 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           // ⚡ 乐观更新 - 立即修改 Slate Editor 状态
           // 🔥 同时更新 metadata，让 serialization 能读取到 parentEventId
           Editor.withoutNormalizing(editor, () => {
-            const currentNode = Node.get(editor, currentPath) as EventLineNode;
-            const updatedMetadata = {
-              ...(currentNode.metadata || {}),
-              parentEventId: previousEventId, // 🆕 添加到 metadata
-            };
-            
             console.log('[Tab] 🔥 Updating Slate metadata:', {
               currentEventId: currentEventId.slice(-8),
               previousEventId: previousEventId.slice(-8),
-              oldMetadata: currentNode.metadata?.parentEventId,
-              newMetadata: updatedMetadata.parentEventId
+              oldBulletLevel: (Node.get(editor, currentPath) as EventLineNode).metadata?.bulletLevel,
+              newBulletLevel: newBulletLevel
             });
+            
+            // 🔥 v2.20.0: 使用统一函数更新层级（同时更新 level 和 bulletLevel）
+            setEventLineLevel(editor, currentPath, newBulletLevel);
+            
+            // 🔥 更新 parentEventId（setEventLineLevel 只负责层级）
+            const currentNode = Node.get(editor, currentPath) as EventLineNode;
+            Transforms.setNodes(
+              editor,
+              { 
+                metadata: {
+                  ...currentNode.metadata,
+                  parentEventId: previousEventId,  // 🔥 父子关系单独更新
+                }
+              } as unknown as Partial<Node>,
+              { at: currentPath }
+            );
             
             // 🔥 FIX: 同时更新父节点的 childEventIds（双向链接）
             try {
@@ -3194,16 +3181,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
               console.error('[Tab] ❌ Failed to update parent childEventIds:', e);
             }
             
-            Transforms.setNodes(
-              editor,
-              { 
-                level: newBulletLevel,
-                metadata: updatedMetadata // 🆕 同步更新 metadata
-              } as unknown as Partial<Node>,
-              { at: currentPath }
-            );
-            
-            // 🔧 更新所有子段落的 bulletLevel（如果是bullet paragraph）
+            //  更新所有子段落的 bulletLevel（如果是bullet paragraph）
             try {
               const paragraphs = Array.from(Node.children(editor, currentPath));
               paragraphs.forEach(([para, paraPath], index) => {
@@ -3280,13 +3258,28 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         const updatedMetadata = {
           ...(currentNode.metadata || {}),
           parentEventId: newParentEventId, // 🔥 更新父事件ID
+          bulletLevel: newLevel, // 🔥 v2.20.0: 同步更新 bulletLevel，避免序列化时冲突
         };
         
+        console.log('[Shift+Tab] 🔥 Updating Slate metadata:', {
+          currentEventId: currentEventId.slice(-8),
+          newParentEventId: newParentEventId?.slice(-8) || 'ROOT',
+          oldBulletLevel: currentNode.metadata?.bulletLevel,
+          newBulletLevel: newLevel
+        });
+        
+        // 🔥 v2.20.0: 使用统一函数更新层级
+        setEventLineLevel(editor, currentPath, newLevel);
+        
+        // 🔥 更新 parentEventId（setEventLineLevel 只负责层级）
+        const finalNode = Node.get(editor, currentPath) as EventLineNode;
         Transforms.setNodes(
           editor,
           { 
-            level: newLevel,
-            metadata: updatedMetadata // 🔥 同步更新 metadata
+            metadata: {
+              ...finalNode.metadata,
+              parentEventId: newParentEventId,  // 🔥 父子关系单独更新
+            }
           } as unknown as Partial<Node>,
           { at: currentPath }
         );

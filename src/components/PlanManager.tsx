@@ -1129,9 +1129,13 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       删除IDs: crossDeletedIds.map(id => id.slice(-8))
     });
     
-    if (crossDeletedIds.length > 0) {
+    // 🔥 v2.20.0: 如果 realItems 为空，跳过跨行删除检测
+    // PlanSlate 会通过 onDeleteRequest 单独处理删除，这里不应该误判
+    if (crossDeletedIds.length > 0 && realItems.length > 0) {
       actions.delete.push(...crossDeletedIds);
       dbg('plan', `📋 收集跨行删除动作: ${crossDeletedIds.length} 个`);
+    } else if (crossDeletedIds.length > 0 && realItems.length === 0) {
+      console.log('[executeBatchUpdate] ⏭️ 跳过跨行删除（realItems为空，可能是placeholder过滤）');
     }
     
     // ===== 阶段 2: 内容处理（更新、空白删除） =====

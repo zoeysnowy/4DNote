@@ -4,7 +4,7 @@
  * 负责 Slate 节点 ↔ PlanItem 数组的双向转换
  */
 
-import { Descendant, Text } from 'slate';
+import { Descendant, Text, Editor, Transforms, Node, Path } from 'slate';
 import { formatTimeForStorage } from '../../utils/timeUtils';
 import { 
   EventLineNode, 
@@ -18,6 +18,45 @@ import {
 } from './types';
 import { TimeHub } from '../../services/TimeHub';  // 🆕 导入 TimeHub
 import { generateEventId } from '../../utils/idGenerator';  // 🆕 v2.17: UUID 生成器
+
+// ==================== 层级同步工具函数 ====================
+
+/**
+ * 🔥 v2.20.0: 统一的层级更新函数
+ * 
+ * 同时更新 EventLineNode.level 和 metadata.bulletLevel，避免不一致
+ * 
+ * @param editor Slate 编辑器实例
+ * @param path EventLineNode 的路径
+ * @param newLevel 新的层级值
+ */
+export function setEventLineLevel(
+  editor: Editor,
+  path: Path,
+  newLevel: number
+): void {
+  const currentNode = Node.get(editor, path) as EventLineNode;
+  
+  Transforms.setNodes(
+    editor,
+    { 
+      level: newLevel,  // Slate 视觉层级
+      metadata: {
+        ...(currentNode.metadata || {}),
+        bulletLevel: newLevel,  // 🔥 数据持久层级（必须同步）
+      }
+    } as unknown as Partial<Node>,
+    { at: path }
+  );
+  
+  console.log('[setEventLineLevel] Level synchronized:', {
+    eventId: currentNode.eventId?.slice(-8) || 'unknown',
+    path,
+    newLevel,
+    oldLevel: currentNode.level,
+    oldBulletLevel: currentNode.metadata?.bulletLevel
+  });
+}
 
 // ==================== PlanItem → Slate 节点 ====================
 

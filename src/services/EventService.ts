@@ -6544,8 +6544,8 @@ export class EventService {
           createdAt: event.createdAt,
           updatedAt: event.updatedAt,
           fourDNoteSource: event.fourDNoteSource,
-          source: event.source,
-          lastModifiedSource: event.lastModifiedSource
+          source: event.source
+          // lastModifiedSource 字段已废弃，不包含在 Event 类型中
         }
       };
       
