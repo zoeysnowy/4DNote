@@ -78,6 +78,8 @@ import {
   setEventLineLevel,  // 🔥 v2.20.0: 统一层级更新函数
 } from './serialization';
 import { insertDateMention, insertEventMention, insertTag } from './helpers';
+// 🆕 v2.21.0: 会话态管理 Hook
+import { usePlanSlateSession } from './hooks/usePlanSlateSession';
 import { formatTimeForStorage } from '../../utils/timeUtils';
 import {
   initDebug,
@@ -1199,17 +1201,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   const pendingChangesRef = React.useRef<Descendant[] | null>(null);
   const hasDeleteOperationRef = React.useRef<boolean>(false); // 🆕 v2.20.0: 追踪删除操作
   
-  // 🆕 @提及状态
-  const [showMentionPicker, setShowMentionPicker] = useState(false);
-  const [mentionText, setMentionText] = useState('');
-  const mentionAnchorRef = useRef<HTMLElement | null>(null);
-  const [mentionInitialStart, setMentionInitialStart] = useState<Date | undefined>();
-  const [mentionInitialEnd, setMentionInitialEnd] = useState<Date | undefined>();
+  // 🆕 v2.21.0: 统一的会话态管理（替代8个useState）
+  const { state: session, actions: sessionActions } = usePlanSlateSession();
   
-  // 🔍 Unified Mention 状态（事件/标签/AI搜索）
-  const [mentionType, setMentionType] = useState<'time' | 'search' | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showSearchMenu, setShowSearchMenu] = useState(false);
+  // 🔄 向后兼容：保留原有的ref名称
+  const mentionAnchorRef = useRef<HTMLElement | null>(session.mention.anchor);
   
   // 🆕 v1.8: 跟踪最近保存的事件ID，避免增量更新覆盖
   const recentlySavedEventsRef = React.useRef<Set<string>>(new Set());
