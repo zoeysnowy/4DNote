@@ -3274,8 +3274,8 @@ export class EventService {
       console.log('[normalizeEvent] 🔒 保留原有签名（preserveSignature=true）');
     } else {
       // 正常流程：重新生成签名
-      // 🆕 [v2.20.0] 使用 Meta-Comment 包裹的 HTML，确保 Outlook 往返时保留元数据
-      // 数据流：Slate JSON → Meta-Comment HTML → description → Outlook → 解析Meta回Slate JSON
+      // 🆕 [v2.21.0] 本地使用标准 HTML，Outlook 同步时由 serializeEventDescription() 生成 CompleteMeta V2
+      // 数据流：本地 Slate JSON → 标准 HTML（description）→ Outlook 同步时 → CompleteMeta V2（Hidden div + Base64）
       
       // Step 1: 从 eventlog 获取 Slate节点
       let slateNodes: any[] = [];
@@ -5033,26 +5033,6 @@ export class EventService {
     });
     
     return matchedEvent || null;
-  }
-
-  /**
-   * 同步事件到远程日历（支持 Private 模式）
-   * 
-   * @param event 要同步的事件
-   * @param syncMode 同步模式
-   * @param calendarId 目标日历 ID  
-   * @param syncType 同步类型：'plan' 或 'actual'
-   * @deprecated 使用 syncToMultipleCalendars 替代，支持多日历同步
-   */
-  static async syncToRemoteCalendar(
-    event: Event, 
-    syncMode: string, 
-    calendarId: string,
-    syncType: 'plan' | 'actual'
-  ): Promise<string | null> {
-    // 调用新的多日历同步方法
-    const result = await this.syncToMultipleCalendars(event, [calendarId], syncMode, syncType);
-    return result.get(calendarId) || null;
   }
 
   /**

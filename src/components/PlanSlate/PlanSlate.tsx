@@ -1329,8 +1329,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                   pointInTime: parsed.pointInTime,
                 });
                 
-                setMentionType('time');
-                setShowSearchMenu(false);
+                // 🆕 v2.21.0: 准备打开时间选择器（关闭搜索菜单）
+                sessionActions.closeSearch();
                 
                 // 提取开始和结束时间
                 let startTime: Date | undefined;
@@ -1386,12 +1386,10 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                   mentionAnchorRef.current.style.top = `${rect.bottom}px`;
                   mentionAnchorRef.current.style.left = `${rect.left}px`;
                   
-                  setMentionText(text);
-                  setMentionInitialStart(startTime);
-                  setMentionInitialEnd(endTime);
-                  setShowMentionPicker(true);
+                  // 🆕 v2.21.0: 原子操作打开mention picker
+                  sessionActions.openMention('time', mentionAnchorRef.current, startTime, endTime);
                 } else {
-                  setShowMentionPicker(false);
+                  sessionActions.closeMention();
                 }
               } else if (text.length >= 0) {
                 // 🔍 优先级2: 时间解析失败 → 显示搜索菜单（包括空查询 @）
@@ -1402,10 +1400,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                   showSearchMenu: true
                 });
                 
-                setMentionType('search');
-                setSearchQuery(text);
-                setShowMentionPicker(false);
-                setShowSearchMenu(true);
+                // 🆕 v2.21.0: 原子操作打开搜索菜单
+                sessionActions.openSearch(text);
                 
                 // 创建虚拟 anchor 元素用于 Tippy 定位
                 const domRange = ReactEditor.toDOMRange(editor, editor.selection);
@@ -1427,10 +1423,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
               // 空输入（只输入 @），显示搜索菜单
               console.log('[@ Mention] 空输入，显示搜索菜单');
               
-              setMentionType('search');
-              setSearchQuery('');
-              setShowMentionPicker(false);
-              setShowSearchMenu(true);
+              // 🆕 v2.21.0: 原子操作打开搜索菜单
+              sessionActions.openSearch('');
               
               // 创建虚拟 anchor 元素用于 Tippy 定位
               const domRange = ReactEditor.toDOMRange(editor, editor.selection);
@@ -1450,15 +1444,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             }
           } else {
             // 没有检测到 @，关闭所有菜单
-            setShowMentionPicker(false);
-            setShowSearchMenu(false);
+            sessionActions.closeMention();
+            sessionActions.closeSearch();
           }
         } else {
           // 不是文本节点
-          if (showMentionPicker || showSearchMenu) {
+          if (session.mention.isOpen || session.search.isOpen) {
             console.log('[@ Mention] 不在文本节点，清除状态');
-            setShowMentionPicker(false);
-            setShowSearchMenu(false);
+            sessionActions.closeMention();
+            sessionActions.closeSearch();
           }
         }
       } catch (err) {
@@ -1472,7 +1466,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     
     // 🆕 v2.10.1: 当用户正在输入 @ 提及时，暂停保存
     // 等用户确认 DateMention 后，会调用 flushPendingChanges() 手动保存
-    if (showMentionPicker) {
+    if (session.mention.isOpen) {
       if (isDebugEnabled()) {
         console.log(`%c[⏸️ ${timestamp}] @ 提及输入中，暂停自动保存`, 
           'background: #FF9800; color: white; padding: 2px 6px; border-radius: 2px;');
@@ -1786,17 +1780,17 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
       
       // 清除状态
-      setShowMentionPicker(false);
+      sessionActions.closeMention();
     } catch (err) {
       console.error('[@ Mention] 插入失败:', err);
-      setShowMentionPicker(false);
+      sessionActions.closeMention();
     }
-  }, [editor, mentionText, flushPendingChanges]);
+  }, [editor, session.mention.query, flushPendingChanges]);
   
   // 🆕 @提及关闭
   const handleMentionClose = useCallback(() => {
     console.log('[@ Mention] 关闭');
-    setShowMentionPicker(false);
+    sessionActions.closeMention();
     
     // 🆕 v2.10.1: 关闭 Picker 时，删除 @xxx 文本（用户取消输入）
     if (editor.selection && Range.isCollapsed(editor.selection)) {
@@ -1945,10 +1939,10 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
       
       // 关闭搜索菜单
-      setShowSearchMenu(false);
+      sessionActions.closeSearch();
     } catch (err) {
       console.error('[Unified Mention] 插入失败:', err);
-      setShowSearchMenu(false);
+      sessionActions.closeSearch();
     }
   }, [editor, flushPendingChanges]);
   
