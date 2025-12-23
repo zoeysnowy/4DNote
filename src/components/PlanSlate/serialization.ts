@@ -116,6 +116,13 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
         if (item.eventlog.slateJson) {
           try {
             eventlogParagraphs = JSON.parse(item.eventlog.slateJson);
+            
+            // 🔥 FIX: 过滤掉空的paragraph（只有空text的paragraph）
+            eventlogParagraphs = eventlogParagraphs.filter((para: any) => {
+              if (para.type !== 'paragraph') return true;
+              const children = para.children || [];
+              return children.some((child: any) => child.text && child.text.trim() !== '');
+            });
           } catch (err) {
             console.warn('[planItemsToSlateNodes] 无法解析 slateJson，回退到 HTML:', err);
             // 回退到 HTML
@@ -457,12 +464,36 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         }
       }
       
-      // 🔥 [FIX] childEventIds 清理（移除空数组）
+      // 🔥 [FIX] childEventIds 清理（移除空数组和 placeholder）
       // 🆕 v2.17: UUID迁移完成，所有ID都是真实的UUID格式
+      // 🆕 v2.20.0: 过滤掉 __placeholder__（占位符不应该出现在父子关系中）
       if (metadata.childEventIds && Array.isArray(metadata.childEventIds)) {
+        const originalChildren = metadata.childEventIds;
+        
+        // 过滤掉 placeholder 和空字符串
+        const filteredChildren = metadata.childEventIds.filter(id => 
+          id && 
+          id !== '__placeholder__' && 
+          id.startsWith('event_')
+        );
+        
+        // 调试：如果过滤掉了 placeholder，记录日志
+        if (filteredChildren.length !== originalChildren.length) {
+          console.log('[Serialization] 🗑️ Filtered placeholders from childEventIds:', {
+            eventId: baseId.slice(-8),
+            before: originalChildren,
+            after: filteredChildren,
+            filtered: originalChildren.filter((id: string) => 
+              !filteredChildren.includes(id)
+            )
+          });
+        }
+        
         // 移除空数组
-        if (metadata.childEventIds.length === 0) {
+        if (filteredChildren.length === 0) {
           metadata.childEventIds = undefined;
+        } else {
+          metadata.childEventIds = filteredChildren;
         }
       }
       
@@ -661,10 +692,28 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
       hasRealTitle = !!(item.title.simpleTitle?.trim() || item.title.colorTitle?.trim());
     }
     
-    // 🔧 修复: eventlog 现在是对象，不是字符串
-    const hasEventlog = item.eventlog && typeof item.eventlog === 'object' 
-      ? !!(item.eventlog.slateJson || item.eventlog.html || item.eventlog.plainText)
-      : !!(item.eventlog && typeof item.eventlog === 'string' && item.eventlog.trim());
+    // 🔧 修复: eventlog 现在是对象，需要检查实际文本内容
+    let hasEventlog = false;
+    if (item.eventlog && typeof item.eventlog === 'object') {
+      // 检查slateJson是否有实际文本内容
+      if (item.eventlog.slateJson) {
+        try {
+          const slateNodes = JSON.parse(item.eventlog.slateJson);
+          hasEventlog = slateNodes.some((para: any) => {
+            const children = para.children || [];
+            return children.some((child: any) => child.text && child.text.trim() !== '');
+          });
+        } catch (e) {
+          hasEventlog = false;
+        }
+      }
+      // 如果slateJson没有内容，检查plainText
+      if (!hasEventlog && item.eventlog.plainText) {
+        hasEventlog = !!item.eventlog.plainText.trim();
+      }
+    } else if (item.eventlog && typeof item.eventlog === 'string') {
+      hasEventlog = !!item.eventlog.trim();
+    }
     
     const isEmpty = !hasRealTitle && 
                    !item.content?.trim() && 

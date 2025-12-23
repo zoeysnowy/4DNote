@@ -8334,3 +8334,83 @@ const metadata = {
 ```
 
 **文件**: `src/components/ContentSelectionPanel.tsx` (Line ~250)
+---
+
+## 🐛 Bug 修复记录
+
+### v2.19.1 (2025-12-23) - 删除事件后仍显示问题修复 ✅
+
+**问题描述**:
+- 🐛 **症状**: 用户删除事件后，刷新页面时已删除的事件仍然显示在 PlanManager 列表中
+- 🔍 **根本原因**: 
+  - PlanManager 使用 soft-delete 机制（设置 `deletedAt` 字段而非物理删除）
+  - 但过滤逻辑中缺少对 `deletedAt` 字段的检查
+  - 导致 `getEventById()` 返回已删除事件时，过滤函数仍将其视为有效事件
+
+**影响范围**:
+1. **初始化加载**: `loadInitialData` 中的 `filterPlanEvents` 会包含已删除事件
+2. **增量更新**: `incrementalUpdateEvent` 中的 `shouldShowEvent` 会保留已删除事件
+3. **bulletLevel 计算**: 已删除事件参与 EventTree 层级计算
+4. **显示逻辑**: 用户看到已删除的事件仍然存在
+
+**修复方案**:
+
+**1. PlanManager.tsx - shouldShowEvent 函数 (L800)**
+```typescript
+const shouldShowEvent = (event: Event | null | undefined): boolean => {
+  if (!event) return false;
+  
+  // 🗑️ 步骤0: 排除已删除的事件
+  if (event.deletedAt) return false;
+  
+  const now = new Date();
+  
+  // 步骤1: 并集条件
+  const matchesInclusionCriteria = 
+    event.isPlan === true || 
+    (event.checkType && event.checkType !== 'none') ||
+    event.isTimeCalendar === true;
+  
+  if (!matchesInclusionCriteria) return false;
+  // ... 其他检查
+}
+```
+
+**2. planManagerFilters.ts - shouldShowInPlanManager 函数 (L18)**
+```typescript
+export function shouldShowInPlanManager(
+  event: Event,
+  options: {
+    mode: 'normal' | 'snapshot';
+    dateRange?: { start: Date; end: Date };
+    showCompleted?: boolean;
+  } = { mode: 'normal' }
+): boolean {
+  // 🗑️ 步骤0: 排除已删除的事件
+  if (event.deletedAt) return false;
+  
+  // 步骤1: 并集条件
+  const matchesInclusionCriteria =
+    event.isPlan === true ||
+    (event.checkType && event.checkType !== 'none') ||
+    event.isTimeCalendar === true;
+  
+  if (!matchesInclusionCriteria) return false;
+  // ... 其他检查
+}
+```
+
+**验证结果**:
+- ✅ 已删除事件在初始化时正确过滤
+- ✅ 增量更新时已删除事件被移除
+- ✅ bulletLevel 计算不再包含已删除事件
+- ✅ 用户界面正确反映删除状态
+
+**相关文件**:
+- `src/components/PlanManager.tsx` (Line ~800, ~860)
+- `src/utils/planManagerFilters.ts` (Line ~18)
+
+**设计原则**:
+- **Soft-Delete 一致性**: 所有读取路径都必须检查 `deletedAt` 字段
+- **过滤优先级**: `deletedAt` 检查应放在所有过滤条件之前（步骤0）
+- **统一过滤逻辑**: 初始化和增量更新使用相同的过滤规则

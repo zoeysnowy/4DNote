@@ -35,6 +35,7 @@ import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
 
 // ✅ 从 SlateCore 导入共享服务
 import { EventLogTimestampService } from '../SlateCore/services/timestampService';
+import { EventHistoryService } from '../../services/EventHistoryService'; // 🆕 v2.20.0: 检查事件历史
 
 // ✅ 从 SlateCore 导入共享操作工具（备用，后续可能使用）
 import {
@@ -58,11 +59,15 @@ import {
 } from '../SlateCore/operations/clipboardHelpers';
 
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
+
+// 🆕 v2.20.0: EventTree Engine for Tab/Shift+Tab optimization
+import { EventTreeAPI } from '../../services/EventTree';
 import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
 import { SlateErrorBoundary } from './ErrorBoundary';
 import { EventService } from '../../services/EventService';
 import { EventHub } from '../../services/EventHub';
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
+import { generateEventId } from '../../utils/idGenerator';
 import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
 import {
   planItemsToSlateNodes,
@@ -172,7 +177,7 @@ export interface PlanSlateHandle {
 
 // 自定义编辑器配置
 const withCustom = (editor: CustomEditor) => {
-  const { isInline, isVoid, normalizeNode, insertBreak } = editor;
+  const { isInline, isVoid, normalizeNode, insertBreak, deleteBackward, deleteForward } = editor;
 
   editor.isInline = element => {
     const e = element as any;
@@ -182,6 +187,60 @@ const withCustom = (editor: CustomEditor) => {
   editor.isVoid = element => {
     const e = element as any;
     return (e.type === 'tag' || e.type === 'dateMention' || e.type === 'event-mention') ? true : isVoid(element);
+  };
+
+  // 🆕 v2.20.0: 自定义 deleteBackward 处理跨行选区删除
+  editor.deleteBackward = (...args) => {
+    const { selection } = editor;
+    
+    // 如果有选中内容（非折叠选区），允许跨 event-line 删除
+    if (selection && !Range.isCollapsed(selection)) {
+      console.log('[deleteBackward] 跨行删除选中内容', {
+        anchor: selection.anchor,
+        focus: selection.focus,
+        isExpanded: !Range.isCollapsed(selection)
+      });
+      
+      try {
+        // 使用 Slate 的 Transforms.delete 删除选中内容
+        Transforms.delete(editor, { at: selection });
+        console.log('[deleteBackward] ✅ 跨行删除成功');
+        return; // 阻止默认行为
+      } catch (e) {
+        console.error('[deleteBackward] ❌ 跨行删除失败:', e);
+        // 失败时执行默认行为
+      }
+    }
+    
+    // 折叠选区或删除失败时，执行默认行为
+    deleteBackward(...args);
+  };
+
+  // 🆕 v2.20.0: 自定义 deleteForward 处理跨行选区删除
+  editor.deleteForward = (...args) => {
+    const { selection } = editor;
+    
+    // 如果有选中内容（非折叠选区），允许跨 event-line 删除
+    if (selection && !Range.isCollapsed(selection)) {
+      console.log('[deleteForward] 跨行删除选中内容', {
+        anchor: selection.anchor,
+        focus: selection.focus,
+        isExpanded: !Range.isCollapsed(selection)
+      });
+      
+      try {
+        // 使用 Slate 的 Transforms.delete 删除选中内容
+        Transforms.delete(editor, { at: selection });
+        console.log('[deleteForward] ✅ 跨行删除成功');
+        return; // 阻止默认行为
+      } catch (e) {
+        console.error('[deleteForward] ❌ 跨行删除失败:', e);
+        // 失败时执行默认行为
+      }
+    }
+    
+    // 折叠选区或删除失败时，执行默认行为
+    deleteForward(...args);
   };
 
   // 🆕 拦截 insertBreak（Enter 键）以继承 bullet 属性
@@ -414,11 +473,10 @@ const withCustom = (editor: CustomEditor) => {
  * 2. 当前层级不能比前一个层级高出 1 以上
  */
 function adjustBulletLevelsAfterDelete(editor: CustomEditor) {
-  // 延迟执行，确保删除操作完成
-  setTimeout(() => {
-    console.log('%c[删除后调整] 开始检查 bullet 层级', 'background: #9C27B0; color: white;');
-    
-    const allLines = Array.from(Editor.nodes(editor, {
+  // 🔥 严谨修复：Transforms 是同步的，删除后 editor.children 已是最新状态，无需 setTimeout
+  console.log('%c[删除后调整] 开始检查 bullet 层级', 'background: #9C27B0; color: white;');
+  
+  const allLines = Array.from(Editor.nodes(editor, {
       at: [],
       match: n => !Editor.isEditor(n) && SlateElement.isElement(n) && (n as any).type === 'event-line',
     }));
@@ -520,7 +578,6 @@ function adjustBulletLevelsAfterDelete(editor: CustomEditor) {
     } else {
       console.log('%c[删除后调整] ℹ️ 无需调整', 'background: #607D8B; color: white;');
     }
-  }, 0);
 }
 
 export const PlanSlate: React.FC<PlanSlateProps> = ({
@@ -1131,6 +1188,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   // 🆕 自动保存定时器
   const autoSaveTimerRef = React.useRef<NodeJS.Timeout | null>(null);
   const pendingChangesRef = React.useRef<Descendant[] | null>(null);
+  const hasDeleteOperationRef = React.useRef<boolean>(false); // 🆕 v2.20.0: 追踪删除操作
   
   // 🆕 @提及状态
   const [showMentionPicker, setShowMentionPicker] = useState(false);
@@ -1185,6 +1243,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       console.log('%c[🔍 检测到删除操作]', 'background: #FF5722; color: white;', {
         operations: editor.operations.filter(op => op.type === 'remove_node'),
       });
+      
+      // 🆕 v2.20.0: 标记有删除操作，强制保存空内容
+      hasDeleteOperationRef.current = true;
       
       // 删除后自动调整 bullet 层级
       adjustBulletLevelsAfterDelete(editor);
@@ -1444,19 +1505,25 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   }, [onChange, onFocus, editor]);
   
   // 🆕 立即保存函数（用于 Enter 和失焦）
-  const flushPendingChanges = useCallback(() => {
+  // 🔥 方案 A：支持直接传入最新节点（消除对异步 onChange 的依赖）
+  const flushPendingChanges = useCallback((directNodes?: Descendant[]) => {
     if (autoSaveTimerRef.current) {
       clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = null;
     }
     
-    if (pendingChangesRef.current) {
+    // 🔥 优先使用直接传入的最新节点（editor.children），否则兜底使用 Ref
+    const nodesToSave = (directNodes || pendingChangesRef.current) as unknown as EventLineNode[];
+    
+    if (nodesToSave) {
       console.log('[flushPendingChanges] 💾 立即保存触发:', {
-        pendingChanges数量: (pendingChangesRef.current as unknown as EventLineNode[]).length,
-        节点详情: (pendingChangesRef.current as unknown as EventLineNode[]).map(n => ({
+        数据来源: directNodes ? 'editor.children (同步)' : 'pendingChangesRef (异步)',
+        节点数量: nodesToSave.length,
+        节点详情: nodesToSave.map(n => ({
           eventId: n.eventId?.slice(-8) || n.eventId,
           mode: n.mode,
           isPlaceholder: (n.metadata as any)?.isPlaceholder,
+          parentEventId: (n.metadata as any)?.parentEventId?.slice(-8),
           children: JSON.stringify(n.children).slice(0, 80)
         }))
       });
@@ -1466,39 +1533,54 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           'background: #FF9800; color: white; padding: 2px 6px; border-radius: 2px;');
       }
       
-      const filteredNodes = (pendingChangesRef.current as unknown as EventLineNode[]).filter(node => {
-        // 过滤 placeholder
+      // 只过滤 placeholder
+      const nodesWithoutPlaceholder = nodesToSave.filter(node => {
         if ((node.metadata as any)?.isPlaceholder || node.eventId === '__placeholder__') {
           return false;
         }
-        
-        // 🔥 FIX: 过滤空白行（只有title模式，且内容为空）
+        return true;
+      });
+      
+      // 🔥 检测空白节点并删除（不管有无历史记录）
+      const toDelete: string[] = [];
+      const finalNodes = nodesWithoutPlaceholder.filter(node => {
+        // 检查是否为空白 title 行
         if (node.mode === 'title') {
           const firstParagraph = node.children?.[0];
           const fragment = firstParagraph?.children || [];
           
-          // 检查是否有非空文本
           const hasText = fragment.some((child: any) => {
             return child.text && child.text.trim() !== '';
           });
           
-          if (!hasText) {
-            console.log('[flushPendingChanges] 🗑️ 过滤空白title行:', {
-              eventId: node.eventId?.slice(-8),
-              children: JSON.stringify(node.children).slice(0, 100)
+          if (!hasText && node.eventId) {
+            // 空白节点，删除（不管有无历史）
+            const hasHistory = EventHistoryService.hasHistory(node.eventId);
+            console.log('[flushPendingChanges] 🗑️ 空白节点删除:', {
+              eventId: node.eventId.slice(-8),
+              hasHistory
             });
-            return false;
+            toDelete.push(node.eventId);
+            return false; // 从保存列表中移除
           }
         }
-        
         return true;
       });
       
-      const planItems = slateNodesToPlanItems(filteredNodes);
+      // 调用删除回调
+      if (toDelete.length > 0 && onDeleteRequest) {
+        console.log('[flushPendingChanges] 📢 删除空白事件:', toDelete.map(id => id.slice(-8)));
+        toDelete.forEach(id => onDeleteRequest(id));
+      }
+      
+      // 重置删除标志
+      hasDeleteOperationRef.current = false;
+      
+      const planItems = slateNodesToPlanItems(finalNodes);
       
       // 检测 eventlog 行删除
       planItems.forEach(item => {
-        const hasDescriptionNode = filteredNodes.some(node => {
+        const hasDescriptionNode = nodesToSave.some(node => {
           const eventLine = node as EventLineNode;
           return (eventLine.eventId === item.eventId || eventLine.lineId.startsWith(item.id)) 
                  && eventLine.mode === 'eventlog';
@@ -1564,14 +1646,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       if (eventId !== '__placeholder__' && timestampServiceRef.current.shouldInsertTimestamp(eventId)) {
         console.log('[Timestamp] 需要插入时间戳', { eventId: eventId.slice(-8) });
         
-        // 延迟插入以避免与当前操作冲突
-        setTimeout(() => {
-          try {
-            timestampServiceRef.current.insertTimestamp(editor, eventId);
-          } catch (error) {
-            console.error('[Timestamp] 插入失败:', error);
-          }
-        }, 100);
+        // 🔥 严谨修复：同步插入，避免竞态问题（用户快速打字时光标可能移走）
+        try {
+          timestampServiceRef.current.insertTimestamp(editor, eventId);
+        } catch (error) {
+          console.error('[Timestamp] 插入失败:', error);
+        }
       } else {
         console.log('[Timestamp Debug] 跳过插入:', {
           isPlaceholder: eventId === '__placeholder__',
@@ -2005,7 +2085,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         });
         
         // 4. 恢复光标到移动后的标题行
-        setTimeout(() => {
+        // 🔥 使用 requestAnimationFrame 等待 React 渲染完成
+        requestAnimationFrame(() => {
           Transforms.select(editor, {
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
@@ -2013,7 +2094,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           
           // 🆕 v2.16: 移动后更新 position 和 parentEventId
           updateEventPositionAndParent(titleLine.node.eventId, [targetIndex]);
-        }, 10);
+        });
       });
       
       console.log(`[moveTitleWithEventlogs] 上移事件组 (${eventGroupSize} 行): ${titleLineIndex} → ${targetIndex}`);
@@ -2070,7 +2151,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         });
         
         // 4. 恢复光标到移动后的标题行
-        setTimeout(() => {
+        // 🔥 使用 requestAnimationFrame 等待 React 渲染完成
+        requestAnimationFrame(() => {
           Transforms.select(editor, {
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
@@ -2078,7 +2160,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           
           // 🆕 v2.16: 移动后更新 position 和 parentEventId
           updateEventPositionAndParent(titleLine.node.eventId, [targetIndex]);
-        }, 10);
+        });
       });
       
       console.log(`[moveTitleWithEventlogs] 下移事件组 (${eventGroupSize} 行): ${titleLineIndex} → ${targetIndex}`);
@@ -2137,12 +2219,13 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         Transforms.insertNodes(editor, targetNode as unknown as Node, { at: [eventlogLineIndex] });
         
         // 5. 恢复光标
-        setTimeout(() => {
+        // 🔥 使用 requestAnimationFrame 等待 React 渲染完成
+        requestAnimationFrame(() => {
           Transforms.select(editor, {
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
           });
-        }, 10);
+        });
       });
       
       console.log(`[moveEventlogParagraph] 上移段落: ${eventlogLineIndex} ↔ ${targetIndex}`);
@@ -2186,12 +2269,13 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         Transforms.insertNodes(editor, currentNode as unknown as Node, { at: [targetIndex] });
         
         // 5. 恢复光标
-        setTimeout(() => {
+        // 🔥 使用 requestAnimationFrame 等待 React 渲染完成
+        requestAnimationFrame(() => {
           Transforms.select(editor, {
             anchor: { path: [targetIndex, 0, 0], offset: 0 },
             focus: { path: [targetIndex, 0, 0], offset: 0 },
           });
-        }, 10);
+        });
       });
       
       console.log(`[moveEventlogParagraph] 下移段落: ${eventlogLineIndex} ↔ ${targetIndex}`);
@@ -2465,14 +2549,18 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (event.nativeEvent?.isComposing) return;
     
     // 🎯 空格键触发 Bullet 自动检测
+    // 🔥 严谨修复：拦截式（不让空格上屏再“擦屁股”）
     if (event.key === ' ') {
-      setTimeout(() => {
-        const trigger = detectBulletTrigger(editor);
-        if (trigger) {
-          console.log('[PlanSlate] 🎯 检测到 Bullet 触发字符:', trigger);
-          applyBulletAutoConvert(editor, trigger);
-        }
-      }, 0);
+      // 同步检测触发字符（光标前的字符）
+      const trigger = detectBulletTrigger(editor);
+      if (trigger) {
+        console.log('[PlanSlate] 🎯 检测到 Bullet 触发字符:', trigger);
+        // 阻止空格上屏
+        event.preventDefault();
+        // 同步转换为 bullet
+        applyBulletAutoConvert(editor, trigger);
+        return;
+      }
     }
     
     // 🆕 @提及激活时，拦截 Enter 和 Escape 键
@@ -2548,31 +2636,66 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     
     // 🆕 v1.8: 如果在 placeholder 行，将其转换成真实事件
     if ((eventLine.metadata as any)?.isPlaceholder || eventLine.eventId === '__placeholder__') {
-      // 允许导航键（不触发转换）
-      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'Escape'].includes(event.key)) {
+      // 🔥 FIX: 允许导航键离开 placeholder（ArrowUp 回到上一行）
+      // 但阻止 ArrowDown 进入 placeholder（已在后面处理）
+      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        // 允许向上、向左、向右导航离开 placeholder
         return;
       }
       
-      // 🔥 用户开始输入，将placeholder转换成真实事件
-      const newEventId = generateEventId();
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        return;
+      }
       
-      Transforms.setNodes(editor, {
-        eventId: newEventId,
-        lineId: newEventId,
-        metadata: {
-          ...(eventLine.metadata || {}),
-          isPlaceholder: undefined, // 移除placeholder标记
-        }
-      } as any, { at: currentPath });
+      // ArrowDown 保持拦截（避免进入更下方的 placeholder）
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        return;
+      }
       
-      logOperation('Placeholder转换成真实事件', { 
-        oldEventId: eventLine.eventId,
-        newEventId,
-        key: event.key 
-      });
-      
-      // 让正常的输入处理继续
-      return;
+      // 🔥 Tab键：先转换成真实事件，然后继续执行缩进逻辑
+      if (event.key === 'Tab') {
+        const newEventId = generateEventId();
+        
+        Transforms.setNodes(editor, {
+          eventId: newEventId,
+          lineId: newEventId,
+          metadata: {
+            ...(eventLine.metadata || {}),
+            isPlaceholder: undefined, // 移除placeholder标记
+          }
+        } as any, { at: currentPath });
+        
+        logOperation('Placeholder转换成真实事件（Tab缩进）', { 
+          oldEventId: eventLine.eventId,
+          newEventId,
+          key: event.key 
+        });
+        
+        // 继续执行Tab缩进逻辑（不return）
+      } else {
+        // 其他按键：用户开始输入，将placeholder转换成真实事件
+        const newEventId = generateEventId();
+        
+        Transforms.setNodes(editor, {
+          eventId: newEventId,
+          lineId: newEventId,
+          metadata: {
+            ...(eventLine.metadata || {}),
+            isPlaceholder: undefined, // 移除placeholder标记
+          }
+        } as any, { at: currentPath });
+        
+        logOperation('Placeholder转换成真实事件', { 
+          oldEventId: eventLine.eventId,
+          newEventId,
+          key: event.key 
+        });
+        
+        // 让正常的输入处理继续
+        return;
+      }
     }
     
     // 🆕 Backspace 键 - 在空的 bullet 段落删除 bullet
@@ -3117,11 +3240,13 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           console.log('[Tab] 📤 立即刷新 debounce，持久化父子关系:', {
             eventId: currentEventId.slice(-8),
             parentEventId: previousEventId.slice(-8),
-            action: 'flush pending changes immediately'
+            action: 'flush pending changes with latest editor.children'
           });
           
-          // 立即触发保存（清空 debounce 队列）
-          flushPendingChanges();
+          // 🔥 严谨修复：直接传递 editor.children（Transforms 执行后已是最新状态）
+          // editor.children 在 withoutNormalizing 结束后已包含更新后的 metadata
+          // 无需等待 onChange，完全同步，消除时序竞态
+          flushPendingChanges(editor.children);
         };
         
         // 🆕 v2.16: 池化ID系统 - 所有事件都使用真实ID
@@ -3531,7 +3656,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             adjustBulletLevelsAfterDelete(editor);
             
             // 🆕 v1.8: 如果删除后光标在 placeholder 行，移动到上一行
-            setTimeout(() => {
+            // 🔥 使用 requestAnimationFrame 等待 React 渲染完成
+            requestAnimationFrame(() => {
               if (editor.selection) {
                 const match = Editor.above(editor, {
                   match: n => (n as any).type === 'event-line',
@@ -3555,7 +3681,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                   }
                 }
               }
-            }, 10);
+            });
             
             if (isDebugEnabled()) {
               window.console.log('删除后光标:', editor.selection);
@@ -3695,9 +3821,10 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       Transforms.insertNodes(editor, newLine as any, { at: insertPath });
       
       // 聚焦到新行
-      setTimeout(() => {
+      // 🔥 使用 requestAnimationFrame 等待 DOM 更新
+      requestAnimationFrame(() => {
         safeFocusEditor(editor, insertPath);
-      }, 50);
+      });
       
       logOperation('Placeholder clicked - 创建新行', { insertPath });
     } catch (err) {
@@ -3844,10 +3971,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
       
       // 延迟聚焦，确保 DOM 已更新
-      setTimeout(() => {
+      // 🔥 使用 requestAnimationFrame 等待渲染完成
+      requestAnimationFrame(() => {
         // 使用安全的焦点设置方法
         safeFocusEditor(editor, [0, 0, 0]);
-      }, 50);
+      });
     } catch (err) {
       console.error('[handleGrayTextClick] Error:', err);
     }

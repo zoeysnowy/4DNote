@@ -1340,7 +1340,10 @@ export class IndexedDBService {
         const results = request.result || [];
         const duration = performance.now() - perfStart;
         
-        console.log(`[IndexedDB] ⚡ EventStats query: ${duration.toFixed(1)}ms → ${results.length} records`);
+        // 只在慢查询（>50ms）或有结果时输出日志，避免刷屏
+        if (duration > 50 || results.length > 0) {
+          console.log(`[IndexedDB] ⚡ EventStats query: ${duration.toFixed(1)}ms → ${results.length} records`);
+        }
         
         resolve({
           items: results,

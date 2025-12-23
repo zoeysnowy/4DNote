@@ -4929,10 +4929,25 @@ private getUserSettings(): any {
     
     // ✅ [v2.18.0 架构优化] 直接获取原始 HTML，让 normalizeEvent 统一处理
     // 优势：保留 Outlook HTML 格式，避免 HTML → 纯文本 → 重新生成 HTML 的损失
-    const htmlContent = remoteEvent.body?.content || 
+    let htmlContent = remoteEvent.body?.content || 
                        remoteEvent.description || 
                        remoteEvent.bodyPreview || 
                        '';
+    
+    // 🔥 [v2.20.0 Outlook 深度规范化] 应用 Outlook 专属的 HTML 清洗流程
+    // 优化点：
+    //   1. P0: 移除 Office XML 残留标签（<o:p>, <w:sdtPr>, xmlns等）
+    //   2. P0: 识别并转换 MsoList 伪列表为语义化 <ul>/<ol>
+    //   3. P0: 样式白名单清洗 + 明色背景自动添加黑色文字（防止白色文字）
+    //   4. P2: 空行折叠（5个连续空行 → 1个空行）
+    // 注：P1 CID 图片处理需要 event.attachments 参数，暂未实现
+    if (htmlContent && htmlContent.trim()) {
+      htmlContent = EventService.cleanOutlookXmlTags(htmlContent);
+      htmlContent = EventService.processMsoLists(htmlContent);
+      htmlContent = EventService.sanitizeInlineStyles(htmlContent);
+      // CID 图片处理（P1）需要在 MicrosoftCalendarService 添加 attachments 获取
+      // htmlContent = EventService.processCidImages(htmlContent, remoteEvent.attachments);
+    }
     
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
     // 不要重复添加前缀！同时 externalId 应该是纯 Outlook ID（不带前缀）

@@ -23,6 +23,7 @@ import { EventService } from '../services/EventService'; // 🔧 仅用于查询
 import { EventHistoryService } from '../services/EventHistoryService'; // 🆕 用于事件历史快照
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
 import { generateEventId } from '../utils/calendarUtils';
+import { EventTreeAPI } from '../services/EventTree'; // 🆕 v2.20.0: EventTree Engine
 import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
 import { icons } from '../assets/icons';
 import { useEventTime } from '../hooks/useEventTime';
@@ -451,305 +452,123 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // 🔧 FIX: 异步加载初始数据
   useEffect(() => {
     const loadInitialData = async () => {
-      console.log('[PlanManager] 开始异步加载初始数据...');
+      console.log('[PlanManager] 🚀 v2.20.0 - 使用 EventTreeAPI 加载初始数据...');
       
-      // 🔧 FIX: 不使用缓存，每次都重新加载并计算 bulletLevel
-      // （因为 EventTree 关系可能已更新，缓存的 bulletLevel 可能过期）
-      console.log('[PlanManager] 清空缓存，强制重新加载数据（确保 bulletLevel 最新）');
+      // 清空缓存，强制重新加载
       initialItemsRef.current = null;
       
       try {
-        // 从 EventService 异步加载所有事件
-        const now = new Date();
+        // 1. 加载所有事件
         const rawEvents = await EventService.getAllEvents();
         
-        // 🛡️ 过滤掉 ghost 事件（带 _isDeleted 标记的临时事件）
+        // 2. 过滤掉 ghost 事件（带 _isDeleted 标记的临时事件）
         const allEvents = rawEvents.filter(e => !(e as any)._isDeleted);
         
         if (rawEvents.length !== allEvents.length) {
-          console.warn('[PlanManager] 🚨 发现并过滤了', rawEvents.length - allEvents.length, '个 ghost 事件！');
+          console.warn('[PlanManager] 🚨 过滤了', rawEvents.length - allEvents.length, '个 ghost 事件');
         }
         
-        console.log('[PlanManager] 初始化 - 从 EventService 加载:', {
-          总事件数: allEvents.length,
-        });
+        console.log('[PlanManager] 从 EventService 加载:', allEvents.length, '个事件');
         
-        // 🔧 数据迁移：为旧的 isPlan 事件批量设置 checkType（仅执行一次）
+        // 3. 数据迁移：为旧的 isPlan 事件批量设置 checkType（仅执行一次）
         const needsMigration = allEvents.filter(e => e.isPlan && !e.checkType);
         if (needsMigration.length > 0) {
           console.log('🔧 [数据迁移] 检测到需要迁移的 isPlan 事件:', needsMigration.length);
           
-          // 直接修改内存中的事件对象
           needsMigration.forEach(event => {
             event.checkType = 'once';
           });
           
-          // 批量更新到存储（静默更新，不触发事件广播）
           for (const event of needsMigration) {
             await EventService.updateEvent(event.id, { checkType: 'once' }, false);
           }
           console.log(`✅ [数据迁移] 已静默更新 ${needsMigration.length} 个事件的 checkType`);
         }
         
-        // 🔥 FIX: 使用统一的过滤函数（消除重复代码）
+        // 4. 使用统一的过滤函数
         const filtered = filterPlanEvents(allEvents, { mode: 'normal' });
+        console.log('[PlanManager] 过滤后的 Plan 事件:', filtered.length);
         
-        console.log('[PlanManager] 初始化 - 过滤后的 Plan 事件:', filtered.length);
-        
-        // 🔍 调试：检查 parentEventId 和 bulletLevel
-        console.log('[PlanManager] 🔍 EventTree 数据检查（计算前）:', {
-          总数: filtered.length,
-          有parentEventId的事件: filtered.filter(e => e.parentEventId).length,
-          有childEventIds的事件: filtered.filter(e => e.childEventIds && e.childEventIds.length > 0).length,
-          有bulletLevel的事件: filtered.filter(e => e.bulletLevel !== undefined).length,
-          示例数据: filtered.slice(0, 5).map(e => ({
-            id: e.id.slice(-8),
-            title: typeof e.title === 'string' ? e.title.slice(0, 20) : e.title?.simpleTitle?.slice(0, 20) || '',
-            hasParentEventId: 'parentEventId' in e,
-            parentEventIdValue: e.parentEventId ? e.parentEventId.slice(-8) : 'undefined',
-            hasChildEventIds: 'childEventIds' in e,
-            childEventIdsValue: e.childEventIds,
-            bulletLevel: e.bulletLevel,
-            position: e.position,
-            createdAt: e.createdAt,
-            allKeys: Object.keys(e).filter(k => k.includes('Event') || k.includes('child') || k.includes('parent'))
-          }))
-        });
-        
-        // 🎯 关键修复：初始化时也要计算 bulletLevel（从 EventTree 关系推导）
-        const bulletLevels = EventService.calculateAllBulletLevels(filtered);
-        
-        console.log('[PlanManager] 🔍 计算后的 bulletLevel:', {
-          计算结果数量: bulletLevels.size,
-          计算结果: Array.from(bulletLevels.entries()).slice(0, 5).map(([id, level]) => ({
-            id: id.slice(-8),
-            level
-          }))
-        });
-        
-        // 将计算出的 bulletLevel 附加到事件对象上
-        // 🔥 v2.17: 在这里就过滤掉空标题事件，避免它们干扰树遍历
-        console.log('[PlanManager] 🔍 过滤前所有事件:', {
-          总数: filtered.length,
-          详情: filtered.map(e => ({
-            id: e.id?.slice(-8),
-            fullId: e.id,
-            title_string: typeof e.title === 'string' ? e.title : undefined,
-            title_simpleTitle: typeof e.title === 'object' ? e.title?.simpleTitle : undefined,
-            title_fullTitle: typeof e.title === 'object' ? e.title?.fullTitle?.slice(0, 50) : undefined,
-            title对象: typeof e.title === 'object' ? e.title : undefined,
-            isEmpty: !(typeof e.title === 'string' ? e.title.trim() : e.title?.simpleTitle?.trim()),
-            hasContent: !!e.content?.trim(),
-            hasDescription: !!e.description?.trim(),
-            hasEventlog: !!e.eventlog
-          }))
-        });
-        
-        // 🔥 FIX: 使用统一的isEmpty检测删除空白事件
+        // 5. 删除空白事件
         const emptyEvents = filtered.filter(isEmptyEvent);
+        let remainingFiltered = filtered;
         
         if (emptyEvents.length > 0) {
-          console.warn('[PlanManager] 🗑️ 发现', emptyEvents.length, '个空白事件，准备删除:', 
-            emptyEvents.map(e => ({
-              id: e.id?.slice(-8),
-              isPlan: e.isPlan,
-              checkType: e.checkType
-            })));
+          console.warn('[PlanManager] 🗑️ 发现', emptyEvents.length, '个空白事件，准备删除');
           
-          // 批量删除空白事件
           for (const emptyEvent of emptyEvents) {
             try {
               await EventService.deleteEvent(emptyEvent.id!);
-              console.log('[PlanManager] ✅ 已删除空白事件:', emptyEvent.id?.slice(-8));
             } catch (err) {
               console.error('[PlanManager] ❌ 删除空白事件失败:', emptyEvent.id?.slice(-8), err);
             }
           }
           
-          // 从filtered中移除已删除的事件
           const deletedIds = new Set(emptyEvents.map(e => e.id));
-          const remainingFiltered = filtered.filter(e => !deletedIds.has(e.id));
-          
+          remainingFiltered = filtered.filter(e => !deletedIds.has(e.id));
           console.log('[PlanManager] 清理完成，剩余事件数:', remainingFiltered.length);
         }
         
-        const eventsWithLevels = (remainingFiltered.length > 0 ? remainingFiltered : filtered)
-          .filter(event => {
-            const titleStr = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '';
-            return titleStr.trim(); // 只保留非空标题的事件
-          })
-          .map(event => ({
-            ...event,
-            bulletLevel: bulletLevels.get(event.id!) || 0
-          })) as Event[];
-        
-        // 🎯 关键修复：按照层级结构排序事件（深度优先遍历）
-        // 1. 先找出所有顶层事件（bulletLevel === 0）
-        // 2. 对每个顶层事件，递归添加其子事件
-        const sortedEvents: Event[] = [];
-        const eventMap = new Map(eventsWithLevels.map(e => [e.id!, e]));
-        const visited = new Set<string>();
-        
-        // 递归添加事件及其子事件
-        const addEventWithChildren = (event: Event) => {
-          if (visited.has(event.id!)) return;
-          
-          visited.add(event.id!);
-          sortedEvents.push(event);
-          
-          // 🔍 调试 UUID 根事件的 childEventIds
-          if (event.title?.simpleTitle?.includes('UUID根事件')) {
-            console.log(`[PlanManager] 🔍 ${event.title.simpleTitle} 的 childEventIds:`, {
-              eventId: event.id?.slice(-8),
-              childEventIds: event.childEventIds,
-              childEventIds数量: event.childEventIds?.length || 0
-            });
-          }
-          
-          // 🆕 v2.16: 按 position 排序子事件（fallback 到 createdAt）
-          const children = (event.childEventIds || [])
-            .map(childId => eventMap.get(childId))
-            .filter((child): child is Event => !!child)
-            .sort((a, b) => {
-              // 优先使用 position 排序
-              if (a.position !== undefined && b.position !== undefined) {
-                return a.position - b.position;
-              }
-              // 一个有 position，一个没有
-              if (a.position !== undefined) return -1; // 有 position 的排前面
-              if (b.position !== undefined) return 1;
-              // 都没有 position，使用 createdAt
-              const timeA = new Date(a.createdAt || 0).getTime();
-              const timeB = new Date(b.createdAt || 0).getTime();
-              return timeA - timeB; // 先创建的在前
-            });
-          
-          children.forEach(child => addEventWithChildren(child));
-        };
-        
-        // 🆕 v2.16: 找出所有顶层事件，按 position 排序（fallback 到 createdAt）
-        const topLevelEvents = eventsWithLevels
-          .filter(e => {
-            // 🔥 关键修复：只有真正无 parentEventId 的事件才是顶层事件
-            // 如果有 parentEventId 但父事件被过滤掉了，不要当作顶层处理
-            // 这样可以保持正确的 bulletLevel 层级显示
-            if (e.parentEventId) return false;
-            
-            // 🔥 排除空标题的占位符事件（编辑器初始化时创建的）
-            const titleStr = typeof e.title === 'string' ? e.title : e.title?.simpleTitle || '';
-            if (!titleStr.trim()) return false;
-            
-            return true;
-          });
-        
-        // 🔍 调试：查看 topLevelEvents 内容
-        console.log('[PlanManager] 🔍 topLevelEvents 检查:', {
-          总数: topLevelEvents.length,
-          详情: topLevelEvents.map(e => ({
-            id: e.id?.slice(-8),
-            title: typeof e.title === 'string' ? e.title.slice(0, 30) : e.title?.simpleTitle?.slice(0, 30) || '',
-            parentEventId: e.parentEventId,
-            bulletLevel: e.bulletLevel,
-            childEventIds数量: e.childEventIds?.length || 0,
-            childEventIds完整: e.childEventIds,
-            childEventIds映射: (e.childEventIds || []).map(cid => ({
-              id: cid.slice(-8),
-              exists: eventMap.has(cid),
-              title: eventMap.get(cid)?.title?.simpleTitle?.slice(0, 20) || 'unknown'
-            }))
-          }))
+        // 6. 过滤已删除和空标题的事件
+        const validEvents = remainingFiltered.filter(event => {
+          if (event.deletedAt) return false;
+          const titleStr = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '';
+          return titleStr.trim();
         });
         
-        const sortedTopLevel = topLevelEvents.sort((a, b) => {
-            // 优先使用 position 排序
-            if (a.position !== undefined && b.position !== undefined) {
-              console.log(`[PlanManager] 🔍 排序: ${a.title?.simpleTitle} (pos=${a.position}) vs ${b.title?.simpleTitle} (pos=${b.position})`);
-              return a.position - b.position;
-            }
-            // 一个有 position，一个没有
-            if (a.position !== undefined) {
-              console.log(`[PlanManager] 🔍 排序: ${a.title?.simpleTitle} (pos=${a.position}) 排前于 ${b.title?.simpleTitle} (no pos)`);
-              return -1;
-            }
-            if (b.position !== undefined) {
-              console.log(`[PlanManager] 🔍 排序: ${b.title?.simpleTitle} (pos=${b.position}) 排前于 ${a.title?.simpleTitle} (no pos)`);
-              return 1;
-            }
-            // 都没有 position，使用 createdAt
-            const timeA = new Date(a.createdAt || 0).getTime();
-            const timeB = new Date(b.createdAt || 0).getTime();
-            console.log(`[PlanManager] 🔍 排序: ${a.title?.simpleTitle} (created=${a.createdAt}) vs ${b.title?.simpleTitle} (created=${b.createdAt})`);
-            return timeA - timeB; // 先创建的在前
-          });
+        console.log('[PlanManager] 有效事件数:', validEvents.length);
         
-        // 深度优先遍历所有顶层事件
-        sortedTopLevel.forEach(event => addEventWithChildren(event));
-        
-        // 🔍 调试：检查树遍历后的状态
-        console.log('[PlanManager] 🔍 树遍历完成:', {
-          topLevelEvents数量: sortedTopLevel.length,
-          visited数量: visited.size,
-          sortedEvents数量: sortedEvents.length,
-          eventsWithLevels总数: eventsWithLevels.length
+        // 🆕 v2.20.0: 使用 EventTreeAPI 一次性计算树结构
+        console.log('[PlanManager] 🌲 使用 EventTreeAPI 构建树...');
+        const treeResult = EventTreeAPI.buildTree(validEvents, {
+          validateStructure: true,
+          computeBulletLevels: true,
+          sortSiblings: true,
         });
         
-        // 🔥 关键修复：添加任何遗漏的事件（父事件被过滤导致的孤立子事件）
-        // 按 bulletLevel 和 position 排序，保持正确的层级显示
-        const orphanedEvents = eventsWithLevels
-          .filter(event => !visited.has(event.id!))
-          .sort((a, b) => {
-            // 先按 bulletLevel 排序
-            const levelA = a.bulletLevel || 0;
-            const levelB = b.bulletLevel || 0;
-            if (levelA !== levelB) return levelA - levelB;
-            
-            // bulletLevel 相同，按 position 排序
-            if (a.position !== undefined && b.position !== undefined) {
-              return a.position - b.position;
-            }
-            if (a.position !== undefined) return -1;
-            if (b.position !== undefined) return 1;
-            
-            // 都没有 position，按 createdAt
-            const timeA = new Date(a.createdAt || 0).getTime();
-            const timeB = new Date(b.createdAt || 0).getTime();
-            return timeA - timeB;
-          });
+        console.log('[PlanManager] 🌲 树构建完成:', {
+          总节点数: treeResult.nodes.length,
+          根节点数: treeResult.rootIds.length,
+          最大深度: treeResult.stats.maxDepth,
+          错误数: treeResult.errors.length,
+          计算时间: treeResult.stats.computeTime + 'ms'
+        });
         
-        if (orphanedEvents.length > 0) {
-          console.log('[PlanManager] 🔧 发现孤立事件（父事件被过滤）:', {
-            count: orphanedEvents.length,
-            详情: orphanedEvents.map(e => ({
-              id: e.id?.slice(-8),
-              title: e.title?.simpleTitle?.slice(0, 30),
-              bulletLevel: e.bulletLevel,
-              parentEventId: e.parentEventId?.slice(-8),
-              父事件是否在visited: e.parentEventId ? visited.has(e.parentEventId) : 'N/A'
-            }))
-          });
-          sortedEvents.push(...orphanedEvents);
+        // 报告树验证错误
+        if (treeResult.errors.length > 0) {
+          console.warn('[PlanManager] 🚨 树结构验证错误:', treeResult.errors.map(err => ({
+            类型: err.type,
+            节点: err.nodeId?.slice(-8),
+            消息: err.message
+          })));
         }
         
-        // 🔍 调试：检查 sortedEvents 的实际顺序（前 30 个，带层级缩进）
+        // 7. 使用 EventTreeAPI.toDFSList() 获取 DFS 排序的事件列表
+        const sortedEvents = EventTreeAPI.toDFSList(validEvents);
+        
+        console.log('[PlanManager] 📊 DFS 排序完成:', sortedEvents.length, '个事件');
+        
+        // 8. 附加 bulletLevel 到事件对象
+        const bulletLevels = treeResult.bulletLevels;
+        const eventsWithLevels = sortedEvents.map(event => ({
+          ...event,
+          bulletLevel: bulletLevels.get(event.id!) || 0
+        })) as Event[];
+        
+        // 调试：检查排序结果（前 30 个）
         console.log('[PlanManager] 🔍 sortedEvents 顺序检查（前30个）:');
-        sortedEvents.slice(0, 30).forEach((e, idx) => {
+        eventsWithLevels.slice(0, 30).forEach((e, idx) => {
           const indent = '  '.repeat(e.bulletLevel || 0);
           console.log(`[${idx}] ${indent}L${e.bulletLevel} ${e.title?.simpleTitle?.slice(0, 40)} (父:${e.parentEventId?.slice(-8) || 'ROOT'})`);
         });
         
-        // 🔥 关键检查：验证前10个事件的 ID 顺序
-        console.log('[PlanManager] 🔥 sortedEvents 前10个事件ID:', 
-          sortedEvents.slice(0, 10).map(e => e.id?.slice(-8))
-        );
+        // 🔍 调试工具：将排序后的事件列表暴露到 window 对象
+        (window as any).__PLAN_EVENTS__ = eventsWithLevels;
+        console.log('💡 调试提示：使用 window.__PLAN_EVENTS__ 查看排序后的事件列表');
         
         // 缓存并设置
-        initialItemsRef.current = sortedEvents;
-        setItems(sortedEvents);
-        
-        // 🔍 调试工具：将排序后的事件列表暴露到 window 对象
-        (window as any).__PLAN_EVENTS__ = sortedEvents; // 🔥 修复：暴露排序后的数组
-        (window as any).__PLAN_EVENTS_RAW__ = eventsWithLevels; // 保留原始数组用于对比
-        console.log('💡 调试提示：使用 window.__PLAN_EVENTS__ 查看排序后的事件列表');
+        initialItemsRef.current = eventsWithLevels;
+        setItems(eventsWithLevels);
       } catch (error) {
         console.error('[PlanManager] 加载初始数据失败:', error);
         setItems([]);
@@ -801,6 +620,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     const shouldShowEvent = (event: Event | null | undefined): boolean => {
       if (!event) return false;
       
+      // 🗑️ 步骤 0: 排除已删除的事件
+      if (event.deletedAt) return false;
+      
       const now = new Date();
       
       // 步骤 1: 并集条件
@@ -826,7 +648,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         if (typeof eventlogField === 'string') {
           hasEventlog = eventlogField.trim().length > 0;
         } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-          hasEventlog = (eventlogField.slateJson || eventlogField.html || eventlogField.plainText || '').trim().length > 0;
+          // 检查slateJson是否有实际文本内容
+          if (eventlogField.slateJson) {
+            try {
+              const slateNodes = JSON.parse(eventlogField.slateJson);
+              hasEventlog = slateNodes.some((node: any) => {
+                const children = node.children || [];
+                return children.some((child: any) => child.text && child.text.trim() !== '');
+              });
+            } catch (e) {
+              hasEventlog = false;
+            }
+          }
+          // 如果slateJson没有内容，检查plainText
+          if (!hasEventlog && eventlogField.plainText) {
+            hasEventlog = !!eventlogField.plainText.trim();
+          }
         }
       }
       if (!hasTitle && !hasEventlog) return false;
@@ -1505,15 +1342,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         let cleanedCount = 0;
         
         for (const [id, item] of prev.entries()) {
-          // 检查是否为完全空白的事件
-          const isEmpty = (
-            !item.title?.simpleTitle?.trim() && 
-            !item.content?.trim() && 
-            !item.description?.trim() &&
-            !item.startTime &&
-            !item.endTime &&
-            !item.dueDateTime
-          );
+          // 🔥 FIX: 使用统一的isEmpty检测，包括eventlog检查
+          const isEmpty = isEmptyEvent(item);
           
           // 检查创建时间是否超过5分钟
           const createdTime = new Date(item.createdAt || 0).getTime();
@@ -1544,15 +1374,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     updatedItems.forEach((updatedItem: any) => {
       const existingItem = itemsMap[updatedItem.id];
       
-      // 检查是否为空白新行
-      const isEmpty = (
-        !updatedItem.title?.simpleTitle?.trim() && 
-        !updatedItem.content?.trim() && 
-        !updatedItem.description?.trim() &&
-        !updatedItem.startTime &&
-        !updatedItem.endTime &&
-        !updatedItem.dueDateTime
-      );
+      // 🔥 FIX: 使用统一的isEmpty检测，包括eventlog检查
+      const isEmpty = isEmptyEvent(updatedItem);
       
       if (isEmpty && !existingItem) {
         // 新空白行：立即添加到 pendingEmptyItems
@@ -1807,12 +1630,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           if (typeof eventlogField === 'string') {
             hasEventlog = eventlogField.trim().length > 0;
           } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-            const slateContent = eventlogField.slateJson || '';
-            const htmlContent = eventlogField.html || '';
-            const plainContent = eventlogField.plainText || '';
-            hasEventlog = slateContent.trim().length > 0 || 
-                         htmlContent.trim().length > 0 || 
-                         plainContent.trim().length > 0;
+            // 检查slateJson是否有实际文本内容
+            if (eventlogField.slateJson) {
+              try {
+                const slateNodes = JSON.parse(eventlogField.slateJson);
+                hasEventlog = slateNodes.some((node: any) => {
+                  const children = node.children || [];
+                  return children.some((child: any) => child.text && child.text.trim() !== '');
+                });
+              } catch (e) {
+                hasEventlog = false;
+              }
+            }
+            // 如果slateJson没有内容，检查plainText
+            if (!hasEventlog && eventlogField.plainText) {
+              hasEventlog = !!eventlogField.plainText.trim();
+            }
           }
         }
         
@@ -1865,15 +1698,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             // 字符串格式：去除空白后检查是否有内容
             hasEventlog = eventlogField.trim().length > 0;
           } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-            // EventLog 对象格式：检查 slateJson, html, plainText
-            const slateContent = eventlogField.slateJson || '';
-            const htmlContent = eventlogField.html || '';
-            const plainContent = eventlogField.plainText || '';
-            
-            // 任一字段有实质内容即算有 eventlog
-            hasEventlog = slateContent.trim().length > 0 || 
-                         htmlContent.trim().length > 0 || 
-                         plainContent.trim().length > 0;
+            // EventLog 对象格式：检查 slateJson 是否有实际文本内容
+            if (eventlogField.slateJson) {
+              try {
+                const slateNodes = JSON.parse(eventlogField.slateJson);
+                hasEventlog = slateNodes.some((node: any) => {
+                  const children = node.children || [];
+                  return children.some((child: any) => child.text && child.text.trim() !== '');
+                });
+              } catch (e) {
+                hasEventlog = false;
+              }
+            }
+            // 如果slateJson没有内容，检查plainText
+            if (!hasEventlog && eventlogField.plainText) {
+              hasEventlog = !!eventlogField.plainText.trim();
+            }
           }
         }
         

@@ -784,11 +784,8 @@ export class EventHistoryService {
       const totalCount = stats?.total || 0;
       let totalDeleted = 0;
 
-      historyLogger.log(`🧹 开始智能清理: 当前 ${totalCount} 条记录`);
-
       // 🔧 获取所有记录
       const allLogs = await sm.queryEventHistory({ limit: totalCount + 1000 });
-      historyLogger.log(`  📊 查询到 ${allLogs.length} 条记录，开始分析...`);
 
       // 🔴 层级1: 删除无意义变更（脏数据）
       const meaninglessLogs = allLogs.filter(log => {
@@ -822,12 +819,9 @@ export class EventHistoryService {
       });
 
       if (meaninglessLogs.length > 0) {
-        historyLogger.log(`  🗑️ 层级1: 发现 ${meaninglessLogs.length} 条脏数据（无意义变更）`);
         await Promise.all(meaninglessLogs.map(log => sm.deleteEventHistory(log.id)));
         totalDeleted += meaninglessLogs.length;
-        historyLogger.log(`  🔴 层级1: 删除 ${meaninglessLogs.length} 条脏数据`);
-      } else {
-        historyLogger.log(`  ✅ 层级1: 没有发现脏数据`);
+        historyLogger.log(`🧹 清理脏数据: 删除 ${meaninglessLogs.length} 条无意义变更`);
       }
 
       // 🟡 层级2: 删除 backfill 记录
@@ -835,23 +829,21 @@ export class EventHistoryService {
       const backfillLogs = remainingLogs.filter(log => log.source === 'backfill-from-timestamp');
       
       if (backfillLogs.length > 0) {
-        historyLogger.log(`  🟡 层级2: 发现 ${backfillLogs.length} 条 backfill 记录`);
         await Promise.all(backfillLogs.map(log => sm.deleteEventHistory(log.id)));
         totalDeleted += backfillLogs.length;
-        historyLogger.log(`  🟡 层级2: 删除 ${backfillLogs.length} 条 backfill 记录`);
+        historyLogger.log(`🧹 清理backfill: 删除 ${backfillLogs.length} 条记录`);
       }
 
       // ✅ 保留所有有意义的变更
       const meaningfulLogs = remainingLogs.filter(log => 
         !meaninglessLogs.includes(log) && !backfillLogs.includes(log)
       );
-      
-      if (meaningfulLogs.length > 0) {
-        historyLogger.log(`  ✅ 保留 ${meaningfulLogs.length} 条有意义的变更记录`);
-      }
 
       const finalCount = totalCount - totalDeleted;
-      historyLogger.log(`✅ 清理完成: 删除 ${totalDeleted} 条记录，剩余 ${finalCount} 条`);
+      // 只在有实际删除时才输出日志
+      if (totalDeleted > 0) {
+        historyLogger.log(`🧹 智能清理: 删除 ${totalDeleted} 条记录，剩余 ${finalCount} 条`);
+      }
       return totalDeleted;
     } catch (error) {
       historyLogger.error('❌ 清理失败:', error);

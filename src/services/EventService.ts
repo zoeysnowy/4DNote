@@ -25,6 +25,7 @@ import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
 import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
 import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
+import { EventTreeAPI } from './EventTree'; // 🆕 EventTree Engine 集成
 
 const eventLogger = logger.module('EventService');
 
@@ -267,7 +268,10 @@ export class EventService {
       });
       
       const duration = performance.now() - perfStart;
-      eventLogger.log(`📊 [Performance] getEventStatsByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
+      // 只在慢查询（>50ms）或有结果时输出日志，避免刷屏
+      if (duration > 50 || stats.length > 0) {
+        eventLogger.log(`📊 [Performance] getEventStatsByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
+      }
       
       return stats;
     } catch (error) {
@@ -5761,9 +5765,12 @@ export class EventService {
 
   /**
    * 计算事件的 bulletLevel（基于 EventTree 层级）
+   * 
+   * ✅ v2.20.0: 使用 EventTreeAPI 统一计算
+   * 
    * @param event - 目标事件
    * @param eventMap - 事件 Map（用于快速查找父事件）
-   * @param visited - 已访问的事件 ID（防止循环引用）
+   * @param visited - 已访问的事件 ID（防止循环引用）- 已废弃，TreeEngine 内部处理
    * @returns bulletLevel 层级（0=根事件, 1=一级子, 2=二级子...）
    */
   static calculateBulletLevel(
@@ -5771,112 +5778,26 @@ export class EventService {
     eventMap: Map<string, Event>,
     visited: Set<string> = new Set()
   ): number {
-    // 防止循环引用
-    if (visited.has(event.id!)) {
-      eventLogger.error('🔄 [EventService] Circular reference detected in EventTree:', event.id);
-      return 0;
-    }
+    // 转换 eventMap 为数组
+    const events = Array.from(eventMap.values());
     
-    // 根事件（无父事件）
-    if (!event.parentEventId) return 0;
-    
-    const parent = eventMap.get(event.parentEventId);
-    if (!parent) {
-      eventLogger.warn('⚠️ [EventService] Parent not found:', event.parentEventId, 'for event:', event.id);
-      return 0; // 父事件不存在，降级为根事件
-    }
-    
-    // 递归计算父事件的层级
-    visited.add(event.id!);
-    return this.calculateBulletLevel(parent, eventMap, visited) + 1;
+    // 委托给 EventTreeAPI
+    return EventTreeAPI.calculateBulletLevel(event.id!, events);
   }
 
   /**
    * 批量计算所有事件的 bulletLevel
+   * 
+   * ✅ v2.20.0: 使用 EventTreeAPI 统一计算
+   * 
    * @param events - 事件列表
    * @returns Map<eventId, bulletLevel>
    */
   static calculateAllBulletLevels(events: Event[]): Map<string, number> {
-    const eventMap = new Map(events.map(e => [e.id!, e]));
-    const levels = new Map<string, number>();
+    // 委托给 EventTreeAPI
+    const levels = EventTreeAPI.calculateAllBulletLevels(events);
     
-    // 🔍 DEBUG: 检查 eventMap 是否包含 parentEventId
-    console.log('[EventService] 🔍 calculateAllBulletLevels input:', {
-      eventsCount: events.length,
-      eventsWithParent: events.filter(e => e.parentEventId).length,
-      sampleEvents: events.slice(0, 3).map(e => ({
-        id: e.id?.slice(-8),
-        parentEventId: e.parentEventId?.slice(-8),
-        title: e.title?.simpleTitle?.slice(0, 20)
-      }))
-    });
-    
-    // 🔥 关键修复：检查并加载缺失的父事件
-    // 如果子事件的 parentEventId 不在 eventMap 中，说明父事件被过滤掉了
-    // 但为了正确计算层级，我们需要知道父事件的完整层级链
-    const missingParentIds = new Set<string>();
-    events.forEach(event => {
-      if (event.parentEventId && !eventMap.has(event.parentEventId)) {
-        missingParentIds.add(event.parentEventId);
-      }
-    });
-    
-    if (missingParentIds.size > 0) {
-      console.log('[EventService] 🔍 检测到缺失的父事件:', {
-        missingCount: missingParentIds.size,
-        missingIds: Array.from(missingParentIds).slice(0, 5).map(id => id.slice(-8))
-      });
-      
-      // 注意：这里不能使用 async/await，因为这是同步函数
-      // 我们只能基于当前 eventMap 计算，无法动态加载
-      // 解决方案：如果父事件不存在，从数据库中的 bulletLevel 字段读取
-    }
-    
-    events.forEach(event => {
-      if (!event.id) return;
-      
-      // 🔥 关键修复：如果父事件不在 eventMap 中，优先使用数据库中的 bulletLevel
-      // 这避免了因为父事件被过滤导致层级计算错误
-      let level: number;
-      
-      if (event.parentEventId && !eventMap.has(event.parentEventId)) {
-        // 父事件被过滤掉了，使用数据库中保存的 bulletLevel
-        if (event.bulletLevel !== undefined && event.bulletLevel !== null) {
-          level = event.bulletLevel;
-          console.log('[EventService] 🔧 使用数据库 bulletLevel (父事件缺失):', {
-            eventId: event.id.slice(-8),
-            parentEventId: event.parentEventId.slice(-8),
-            bulletLevel: level,
-            title: event.title?.simpleTitle?.slice(0, 30)
-          });
-        } else {
-          // 数据库中也没有 bulletLevel，降级为根事件
-          level = 0;
-          console.warn('[EventService] ⚠️ 父事件缺失且无 bulletLevel，降级为根:', {
-            eventId: event.id.slice(-8),
-            parentEventId: event.parentEventId.slice(-8)
-          });
-        }
-      } else {
-        // 正常情况：父事件存在或无父事件，递归计算
-        const visited = new Set<string>();
-        level = this.calculateBulletLevel(event, eventMap, visited);
-        
-        // 🔍 DEBUG: 记录每个事件的计算结果
-        if (event.parentEventId) {
-          console.log('[EventService] 🔍 Calculated level:', {
-            eventId: event.id.slice(-8),
-            parentEventId: event.parentEventId.slice(-8),
-            calculatedLevel: level,
-            parentExists: eventMap.has(event.parentEventId)
-          });
-        }
-      }
-      
-      levels.set(event.id, level);
-    });
-    
-    eventLogger.log('📊 [EventService] Calculated bullet levels for', events.length, 'events');
+    eventLogger.log('📊 [EventService] Calculated bullet levels for', events.length, 'events via EventTreeAPI');
     return levels;
   }
 

@@ -21,6 +21,9 @@ export function shouldShowInPlanManager(
     showCompleted?: boolean;
   } = { mode: 'normal' }
 ): boolean {
+  // 🗑️ 步骤0: 排除已删除的事件
+  if (event.deletedAt) return false;
+  
   // 步骤1: 并集条件
   const matchesInclusionCriteria =
     event.isPlan === true ||
@@ -95,10 +98,27 @@ export function isEmptyEvent(event: Event): boolean {
   }
 
   // 检查eventlog
-  const hasEventlog =
-    event.eventlog && typeof event.eventlog === 'object'
-      ? !!(event.eventlog.slateJson || event.eventlog.html || event.eventlog.plainText)
-      : !!(event.eventlog && typeof event.eventlog === 'string' && event.eventlog.trim());
+  let hasEventlog = false;
+  if (event.eventlog && typeof event.eventlog === 'object') {
+    // 检查slateJson是否有实际文本内容
+    if (event.eventlog.slateJson) {
+      try {
+        const slateNodes = JSON.parse(event.eventlog.slateJson);
+        hasEventlog = slateNodes.some((node: any) => {
+          const children = node.children || [];
+          return children.some((child: any) => child.text && child.text.trim() !== '');
+        });
+      } catch (e) {
+        hasEventlog = false;
+      }
+    }
+    // 如果slateJson没有内容，检查plainText
+    if (!hasEventlog && event.eventlog.plainText) {
+      hasEventlog = !!event.eventlog.plainText.trim();
+    }
+  } else if (event.eventlog && typeof event.eventlog === 'string') {
+    hasEventlog = !!event.eventlog.trim();
+  }
 
   const isEmpty =
     !hasRealTitle &&
