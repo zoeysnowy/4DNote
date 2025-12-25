@@ -803,8 +803,9 @@ export class EventService {
         
         // ✅ v2.21.1: 使用 queueMicrotask，同步完成后立即清理
         queueMicrotask(() => {
-          // 延迟到下一个微任务队列，确保广播完成
-          setTimeout(() => pendingLocalUpdates.delete(finalEvent.id), 3000);
+          // ✅ P0修复：与 ActionBasedSyncManager 同步间隔对齐（60秒）
+          // 避免过早清理导致同步冲突，或过晚清理导致内存泄漏
+          setTimeout(() => pendingLocalUpdates.delete(finalEvent.id), 60000);
         });
       }
 
@@ -1199,6 +1200,43 @@ export class EventService {
         oldEvent: originalEvent  // 🆕 传入旧事件用于 eventlog diff
       });
       
+      // 🆕 v3.1: 维护 lastNonBlankAt 和 bestSnapshot（空白事件清理支持）
+      const { isBlankCanonical, contentScore, createSnapshot, chooseBestSnapshot } = 
+        await import('../utils/eventContentSemantics');
+      
+      const isCurrentlyBlank = isBlankCanonical(normalizedEvent);
+      
+      // 如果事件当前非空，更新 lastNonBlankAt
+      if (!isCurrentlyBlank) {
+        normalizedEvent.lastNonBlankAt = formatTimeForStorage(new Date());
+        
+        // 计算当前快照的评分
+        const currentSnapshot = createSnapshot(normalizedEvent);
+        
+        // 与 bestSnapshot 比较，选择最佳版本
+        const existingBest = originalEvent.bestSnapshot;
+        const newBest = chooseBestSnapshot(existingBest, currentSnapshot);
+        
+        // 只有在评分提升时才更新 bestSnapshot（避免频繁写入）
+        if (!existingBest || (newBest && newBest.score > (existingBest.score || 0))) {
+          normalizedEvent.bestSnapshot = newBest;
+          eventLogger.log('📸 [Snapshot] Updated bestSnapshot:', {
+            eventId: eventId.slice(-8),
+            oldScore: existingBest?.score || 0,
+            newScore: newBest?.score || 0
+          });
+        }
+      }
+      // 如果事件变为空白，保留原有的 lastNonBlankAt 和 bestSnapshot（不覆盖）
+      else {
+        if (originalEvent.lastNonBlankAt) {
+          normalizedEvent.lastNonBlankAt = originalEvent.lastNonBlankAt;
+        }
+        if (originalEvent.bestSnapshot) {
+          normalizedEvent.bestSnapshot = originalEvent.bestSnapshot;
+        }
+      }
+      
       // 步骤3: 记录事件历史（比对 normalize 后的完整数据）
       const changeLog = EventHistoryService.logUpdate(
         eventId, 
@@ -1421,7 +1459,9 @@ export class EventService {
         
         // ✅ v2.21.1: 使用 queueMicrotask，同步完成后立即清理
         queueMicrotask(() => {
-          setTimeout(() => pendingLocalUpdates.delete(eventId), 3000);
+          // ✅ P0修复：与 ActionBasedSyncManager 同步间隔对齐（60秒）
+          // 避免过早清理导致同步冲突，或过晚清理导致内存泄漏
+          setTimeout(() => pendingLocalUpdates.delete(eventId), 60000);
         });
       }
 
@@ -1570,15 +1610,36 @@ export class EventService {
         canRestore: true,
       });
 
-      // 🆕 v2.16: 记录事件历史（跳过池化占位事件）
-      if (!(deletedEvent as any)._isPlaceholder) {
-        EventHistoryService.logDelete(deletedEvent, 'user-edit');
-      } else {
-        eventLogger.log('⏭️ [EventIdPool] 跳过占位事件的删除历史记录:', {
+      // 🆕 v3.1: 智能 EventHistory 记录（区分从未非空 vs 曾经非空）
+      const shouldWriteHistory = await this.shouldWriteHistoryOnDelete(deletedEvent, {
+        reason: 'user-delete',
+        source: 'user'
+      });
+      
+      if (shouldWriteHistory) {
+        // 曾经有过实质内容：记录 delete history（带 bestSnapshot）
+        const { chooseBestSnapshot, createSnapshot } = 
+          await import('../utils/eventContentSemantics');
+        
+        // 使用 bestSnapshot（如果有），否则使用当前状态
+        const bestSnapshot = deletedEvent.bestSnapshot || createSnapshot(deletedEvent);
+        
+        EventHistoryService.logDeleteWithSnapshot(deletedEvent, bestSnapshot, 'user-edit');
+        
+        eventLogger.log('📸 [Snapshot] Recorded delete history with bestSnapshot:', {
           eventId: eventId.slice(-8),
-          _isPlaceholder: true
+          snapshotScore: bestSnapshot.score,
+          lastNonBlankAt: deletedEvent.lastNonBlankAt
+        });
+      } else {
+        // 从未有过实质内容：不写 history（减少噪音）
+        eventLogger.log('⏭️ [Snapshot] Skipped history for never-blank event:', {
+          eventId: eventId.slice(-8),
+          reason: 'lastNonBlankAt not set'
         });
       }
+      
+      // 🆕 v2.16: 跳过池化占位事件的删除历史记录（已由上面的逻辑处理）
       
       // 🚀 [PERFORMANCE] 同步删除 EventStats
       await storageManager.deleteEventStats(eventId);
@@ -1925,6 +1986,92 @@ export class EventService {
   }
 
   /**
+   * 🆕 v3.1: 批量清理空白事件
+   * 
+   * 用途：
+   * - PlanManager 在提交点批量清理空行
+   * - Tag/TimeLog 页面的空白事件清理
+   * - 定期维护任务
+   * 
+   * 清理规则：
+   * - 只删除通过 isBlankCanonical 判定的空白事件
+   * - 从未非空的事件：不写 history
+   * - 曾经非空的事件：写 history（带 bestSnapshot）
+   * 
+   * @param eventIds 待清理的事件ID列表
+   * @returns 删除成功的事件ID列表
+   */
+  static async cleanupBlankEvents(eventIds: string[]): Promise<{
+    deletedIds: string[];
+    skippedIds: string[];
+    errors: string[];
+  }> {
+    try {
+      eventLogger.log('🧹 [BlankCleanup] Starting cleanup:', {
+        totalEvents: eventIds.length
+      });
+      
+      const { isBlankCanonical } = await import('../utils/eventContentSemantics');
+      
+      const deletedIds: string[] = [];
+      const skippedIds: string[] = [];
+      const errors: string[] = [];
+      
+      // 逐个检查和删除
+      for (const eventId of eventIds) {
+        try {
+          // 获取最新状态
+          const event = await this.getEventById(eventId);
+          
+          if (!event) {
+            skippedIds.push(eventId);
+            continue;
+          }
+          
+          // 检查是否为空白事件
+          if (!isBlankCanonical(event)) {
+            skippedIds.push(eventId);
+            eventLogger.log('⏭️ [BlankCleanup] Event is not blank, skipping:', {
+              eventId: eventId.slice(-8)
+            });
+            continue;
+          }
+          
+          // 删除空白事件
+          const result = await this.deleteEvent(eventId, false);
+          
+          if (result.success) {
+            deletedIds.push(eventId);
+          } else {
+            errors.push(`${eventId}: ${result.error}`);
+          }
+        } catch (error) {
+          errors.push(`${eventId}: ${error}`);
+          eventLogger.error('❌ [BlankCleanup] Failed to delete event:', {
+            eventId,
+            error
+          });
+        }
+      }
+      
+      eventLogger.log('✅ [BlankCleanup] Cleanup completed:', {
+        deleted: deletedIds.length,
+        skipped: skippedIds.length,
+        errors: errors.length
+      });
+      
+      return { deletedIds, skippedIds, errors };
+    } catch (error) {
+      eventLogger.error('❌ [BlankCleanup] Cleanup failed:', error);
+      return {
+        deletedIds: [],
+        skippedIds: eventIds,
+        errors: [String(error)]
+      };
+    }
+  }
+
+  /**
    * 批量创建事件（用于导入或迁移场景）
    * 🔥 v3.0.0: 使用 StorageManager 批量创建（高性能）
    */
@@ -2016,6 +2163,36 @@ export class EventService {
   /**
    * 获取同步管理器实例（用于外部调试�?
    */
+  /**
+   * 判断删除事件时是否应该写入 EventHistory
+   * 
+   * 规则：
+   * 1. 从未有过实质内容的空白事件（lastNonBlankAt 不存在）：不写 history
+   * 2. 曾经有过实质内容的事件（lastNonBlankAt 存在）：写 history
+   * 3. 池化占位事件（_isPlaceholder）：不写 history
+   * 
+   * @param event 待删除的事件
+   * @param opts 删除选项
+   * @returns true = 应该写 history, false = 跳过 history
+   */
+  private static async shouldWriteHistoryOnDelete(
+    event: Event,
+    opts: { reason: string; source: string }
+  ): Promise<boolean> {
+    // 池化占位事件：不写 history
+    if ((event as any)._isPlaceholder) {
+      return false;
+    }
+    
+    // 从未有过实质内容：不写 history
+    if (!event.lastNonBlankAt) {
+      return false;
+    }
+    
+    // 其他情况：写 history
+    return true;
+  }
+
   static getSyncManager() {
     return syncManagerInstance;
   }
@@ -3273,9 +3450,10 @@ export class EventService {
       // Step 2: 生成标准 HTML（用于本地 description）
       // 注：本地不需要嵌入 Meta，因为有完整的 eventlog.slateJson
       // 同步到 Outlook 时由 serializeEventDescription() 生成带 CompleteMeta V2 的 HTML
+      // 🔥 [v2.21.0 FIX] 本地 description 不包含 Block-Level Timestamp，避免与签名重复
       let coreContent = '';
       if (slateNodes.length > 0) {
-        coreContent = slateNodesToHtml(slateNodes);
+        coreContent = slateNodesToHtml(slateNodes, { includeTimestamps: false });
       } else {
         // 降级：使用纯 HTML
         coreContent = normalizedEventLog.html || normalizedEventLog.plainText || '';
@@ -4017,7 +4195,8 @@ export class EventService {
       slateNodes = this.flattenSlateNodes(slateNodes);
       normalizedSlateJson = JSON.stringify(slateNodes); // 使用扁平化后的数据
       
-      const htmlDescription = slateNodesToHtml(slateNodes);
+      // 🔥 [v2.21.0 FIX] eventlog.html 不包含时间戳（已在 slateJson 中作为元数据）
+      const htmlDescription = slateNodesToHtml(slateNodes, { includeTimestamps: false });
       const plainTextDescription = htmlDescription.replace(/<[^>]*>/g, '');
       
       return {
@@ -6437,7 +6616,8 @@ export class EventService {
       const metaBase64 = btoa(unescape(encodeURIComponent(metaJson)));  // UTF-8 → Base64
       
       // 4. 生成可见 HTML（使用现有的 slateNodesToHtml）
-      const visibleHtml = slateNodesToHtml(slateNodes);
+      // 🔥 [v2.21.0 FIX] Outlook 同步需要包含 Block-Level Timestamp（供往返解析）
+      const visibleHtml = slateNodesToHtml(slateNodes, { includeTimestamps: true });
       
       // 5. 拼接完整 description
       return `

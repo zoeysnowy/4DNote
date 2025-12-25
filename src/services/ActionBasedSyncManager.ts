@@ -1532,11 +1532,8 @@ export class ActionBasedSyncManager {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
-    // 🔧 [NEW] 停止完整性检查
-    if (this.indexIntegrityCheckInterval) {
-      clearInterval(this.indexIntegrityCheckInterval);
-      this.indexIntegrityCheckInterval = null;
-    }
+    // ✅ P0修复：完整性检查已改用 requestIdleCallback，无需 clearInterval
+    // (requestIdleCallback 会在 isRunning=false 时自动停止调度)
     // ✨ 清理视图变化定时器
     if (this.viewChangeTimeout) {
       clearTimeout(this.viewChangeTimeout);
@@ -5385,15 +5382,32 @@ private getUserSettings(): any {
   // ==================== 完整性检查方法 ====================
 
   /**
-   * 🔧 启动完整性检查调度器
-   * 🔧 [FIX] 降低检查频率：从 5 秒改为 30 秒，减少对 UI 的潜在影响
+   * ✅ P0修复：启动完整性检查调度器
+   * 使用 requestIdleCallback 在浏览器空闲时执行，避免影响用户体验
    */
   private startIntegrityCheckScheduler() {
-    // 🔧 [FIX] 每 30 秒尝试一次检查（低频但足够）
-    this.indexIntegrityCheckInterval = setInterval(() => {
-      this.tryIncrementalIntegrityCheck();
-    }, 30000); // 30 秒间隔（原来是 5 秒）
-      // console.log('✅ [Integrity] Scheduler started (30-second interval, <10ms per check)');
+    // ✅ P0修复：使用 requestIdleCallback 在浏览器空闲时执行完整性检查
+    const scheduleNextCheck = () => {
+      if (!this.isRunning) return; // 停止时不再调度
+      
+      if ('requestIdleCallback' in window) {
+        requestIdleCallback(() => {
+          this.tryIncrementalIntegrityCheck();
+          // 下次检查也在空闲时执行
+          scheduleNextCheck();
+        }, { timeout: 60000 }); // 最多60秒后强制执行
+      } else {
+        // 降级方案：不支持 requestIdleCallback 时使用较低频率的 setTimeout
+        setTimeout(() => {
+          this.tryIncrementalIntegrityCheck();
+          scheduleNextCheck();
+        }, 30000);
+      }
+    };
+    
+    // 启动调度
+    scheduleNextCheck();
+    // console.log('✅ [Integrity] Scheduler started (using requestIdleCallback for optimal performance)');
   }
 
   /**

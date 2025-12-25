@@ -1312,16 +1312,30 @@ function App() {
         }
         
         // 🔇 运行中静默保存，StorageManager 已处理持久化
+        
+        // ✅ P0修复：通过BroadcastChannel通知其他窗口Timer已更新
+        try {
+          const timerChannel = new BroadcastChannel('4dnote-timer-channel');
+          timerChannel.postMessage({
+            type: 'timer-updated',
+            timer: globalTimer,
+            timestamp: Date.now()
+          });
+          timerChannel.close();
+        } catch (e) {
+          // BroadcastChannel不支持时降级到storage事件
+          AppLogger.warn('BroadcastChannel not supported, falling back to storage event');
+        }
       } catch (error) {
         AppLogger.error('💾 [Timer] Failed to save timer event:', error);
       }
     };
 
-    // 立即保存一✅
+    // 立即保存一次
     saveTimerEvent();
 
-    // 🔧 ✅0秒保存一次（降低频率，减少性能影响✅
-    const saveInterval = setInterval(saveTimerEvent, 30000);
+    // ✅ P0修复：降低保存频率到5分钟（已有beforeunload保护）
+    const saveInterval = setInterval(saveTimerEvent, 5 * 60 * 1000);
 
     // 清理函数
     return () => {
@@ -1834,7 +1848,11 @@ function App() {
         break;
 
       case 'timelog':
-        content = <TimeLog isPanelVisible={isPanelVisible} onPanelVisibilityChange={setIsPanelVisible} />;
+        content = (
+          <PageContainer title="时间轴" subtitle="事件时间轴与历史记录" className="timelog-container">
+            <TimeLog isPanelVisible={isPanelVisible} onPanelVisibilityChange={setIsPanelVisible} />
+          </PageContainer>
+        );
         break;
 
       case 'tag':

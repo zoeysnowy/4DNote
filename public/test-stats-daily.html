@@ -889,25 +889,6 @@
       tooltip.classList.remove('show');
     }
 
-    // Tooltip 辅助函数
-    function showTooltip(event, text) {
-      const tooltip = document.getElementById('pieTooltip');
-      tooltip.textContent = text;
-      tooltip.classList.add('show');
-      updateTooltipPosition(event);
-    }
-
-    function updateTooltipPosition(event) {
-      const tooltip = document.getElementById('pieTooltip');
-      tooltip.style.left = (event.pageX + 15) + 'px';
-      tooltip.style.top = (event.pageY + 15) + 'px';
-    }
-
-    function hideTooltip() {
-      const tooltip = document.getElementById('pieTooltip');
-      tooltip.classList.remove('show');
-    }
-
     // 启动应用
     init();
   </script>

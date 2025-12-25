@@ -300,6 +300,44 @@ export class EventHistoryService {
   }
 
   /**
+   * 🆕 v3.1: 记录事件删除（带 best snapshot）
+   * 用于空白事件清理场景：记录事件的"最富有状态"而非删除前的空状态
+   * 
+   * @param event 被删除的事件（当前状态）
+   * @param snapshot 最佳快照（历史上最丰富的状态）
+   * @param source 删除来源
+   */
+  static logDeleteWithSnapshot(
+    event: Event,
+    snapshot: import('../utils/eventContentSemantics').EventSnapshot,
+    source: string = 'user'
+  ): EventChangeLog {
+    const log: EventChangeLog = {
+      id: this.generateLogId(),
+      eventId: event.id,
+      operation: 'delete',
+      timestamp: formatTimeForStorage(new Date()),
+      before: { ...event },
+      source,
+      // 🆕 附加 best snapshot（用于 Snapshot 附件模式展示）
+      metadata: {
+        bestSnapshot: snapshot,
+        snapshotScore: snapshot.score,
+        lastNonBlankAt: event.lastNonBlankAt,
+        deletionContext: 'blank-cleanup'
+      }
+    };
+
+    this.saveLog(log);
+    historyLogger.log('🗑️📸 [Delete+Snapshot] 记录删除（含最佳快照）:', {
+      title: event.title,
+      snapshotScore: snapshot.score,
+      capturedAt: snapshot.capturedAt
+    });
+    return log;
+  }
+
+  /**
    * 记录签到操作
    */
   static logCheckin(eventId: string, eventTitle: string, metadata?: Record<string, any>): EventChangeLog {

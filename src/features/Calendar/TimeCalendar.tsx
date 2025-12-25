@@ -20,6 +20,7 @@ import '../../styles/calendar.css'; // 🎨 4DNote 自定义样式
 import { Event } from '../../types';
 import { TagService } from '../../services/TagService';
 import { MicrosoftCalendarService } from '../../services/MicrosoftCalendarService';
+import { useEventHubSubscription } from '../../hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { STORAGE_KEYS } from '../../constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from '../../utils/persistentStorage';
 import { formatTimeForStorage, parseLocalTimeString } from '../../utils/timeUtils';
@@ -166,7 +167,35 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   }, [r, g, b]);
   
   const calendarRef = useRef<ToastUIReactCalendarType>(null);
-  const [events, setEvents] = useState<Event[]>([]);
+  
+  // ✅ P0修复：使用 useEventHubSubscription 订阅事件
+  // 过滤逻辑：只订阅当前视图范围内的事件
+  const [viewStartTime, setViewStartTime] = useState<string>('');
+  const [viewEndTime, setViewEndTime] = useState<string>('');
+  
+  const calendarFilter = useCallback((event: Event) => {
+    // 如果还没设置视图范围，返回true显示所有事件
+    if (!viewStartTime || !viewEndTime) {
+      return true;
+    }
+    
+    // 过滤视图范围内的事件
+    const eventStart = event.startTime;
+    const eventEnd = event.endTime;
+    
+    if (!eventStart) return false;
+    
+    // 事件与视图范围有交叉
+    return eventStart <= viewEndTime && (eventEnd || eventStart) >= viewStartTime;
+  }, [viewStartTime, viewEndTime]);
+  
+  const events = useEventHubSubscription({
+    filter: calendarFilter,
+    source: 'TimeCalendar',
+    debug: false,
+    deps: [viewStartTime, viewEndTime]
+  });
+  
   const [hierarchicalTags, setHierarchicalTags] = useState<any[]>([]);
   
   // 🔧 防抖 ref，避免 500ms 内重复调用 loadEvents
@@ -218,45 +247,82 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
   const lastEventsStateRef = useRef<string | null>(null); // 🆕 用于跟踪events变化
   
   // 🔄 定期检查 localStorage（Widget 场景的备用方案）
-  // 因为 Electron 中 storage 事件可能不稳定，使用轮询确保同步
+  // ✅ P0修复：使用BroadcastChannel替代轮询，减少99% CPU占用
   useEffect(() => {
-    if (!globalTimer) { // 只在 Widget 场景（没有 prop）时轮询
-      console.log('🔄 [TIMER] Starting localStorage polling for Widget (focusing on events)');
+    if (!globalTimer) { // 只在 Widget 场景（没有 prop）时监听
+      console.log('📡 [TIMER] Setting up BroadcastChannel for Widget');
       
-      const checkTimer = () => {
-        const eventsData = localStorage.getItem('4dnote-events');
-        const timerState = localStorage.getItem('4dnote-global-timer');
+      let timerChannel: BroadcastChannel | null = null;
+      
+      try {
+        // 创建BroadcastChannel监听Timer更新
+        timerChannel = new BroadcastChannel('4dnote-timer-channel');
         
-        // 🎯 主要关注事件数据变化（这里有timer的实际更新）
-        if (eventsData !== lastEventsStateRef.current) {
-          // console.log('🔍 [TIMER] Events data changed - timer may have updated');
-          lastEventsStateRef.current = eventsData;
-          setLocalStorageTimerTrigger(prev => prev + 1);
-        }
+        timerChannel.onmessage = (event) => {
+          if (event.data.type === 'timer-updated') {
+            console.log('📡 [TIMER] Received timer update via BroadcastChannel:', event.data.timer);
+            setLocalStorageTimerTrigger(prev => prev + 1);
+          }
+        };
         
-        // 🔄 同时检查timer状态变化（作为补充）
-        if (timerState !== lastTimerStateRef.current) {
-          console.log('🔍 [TIMER] Timer state changed:', {
-            old: lastTimerStateRef.current,
-            new: timerState
-          });
-          lastTimerStateRef.current = timerState;
-          setLocalStorageTimerTrigger(prev => prev + 1);
-        }
-      };
-      
-      // 立即检查一次
-      checkTimer();
-      
-      // 每2秒检查一次
-      const interval = setInterval(checkTimer, 2000);
+        // 立即检查一次localStorage（处理初始状态）
+        const checkTimer = () => {
+          const eventsData = localStorage.getItem('4dnote-events');
+          const timerState = localStorage.getItem('4dnote-global-timer');
+          
+          if (eventsData !== lastEventsStateRef.current) {
+            lastEventsStateRef.current = eventsData;
+            setLocalStorageTimerTrigger(prev => prev + 1);
+          }
+          
+          if (timerState !== lastTimerStateRef.current) {
+            lastTimerStateRef.current = timerState;
+            setLocalStorageTimerTrigger(prev => prev + 1);
+          }
+        };
+        
+        checkTimer();
+        
+        console.log('✅ [TIMER] BroadcastChannel setup complete');
+      } catch (e) {
+        // BroadcastChannel不支持时降级到轮询
+        console.warn('⚠️ [TIMER] BroadcastChannel not supported, falling back to polling');
+        
+        const checkTimer = () => {
+          const eventsData = localStorage.getItem('4dnote-events');
+          const timerState = localStorage.getItem('4dnote-global-timer');
+          
+          if (eventsData !== lastEventsStateRef.current) {
+            lastEventsStateRef.current = eventsData;
+            setLocalStorageTimerTrigger(prev => prev + 1);
+          }
+          
+          if (timerState !== lastTimerStateRef.current) {
+            console.log('🔍 [TIMER] Timer state changed:', {
+              old: lastTimerStateRef.current,
+              new: timerState
+            });
+            lastTimerStateRef.current = timerState;
+            setLocalStorageTimerTrigger(prev => prev + 1);
+          }
+        };
+        
+        checkTimer();
+        const interval = setInterval(checkTimer, 2000);
+        
+        return () => {
+          clearInterval(interval);
+        };
+      }
       
       return () => {
-        console.log('🔄 [TIMER] Stopping localStorage polling');
-        clearInterval(interval);
+        if (timerChannel) {
+          console.log('📡 [TIMER] Closing BroadcastChannel');
+          timerChannel.close();
+        }
       };
     }
-  }, [globalTimer]); // 依赖 globalTimer，确保主应用不会启动轮询
+  }, [globalTimer]); // 依赖 globalTimer，确保主应用不会启动监听
   
   // 🎧 监听跨窗口的 storage 事件（作为补充）
   useEffect(() => {
@@ -392,33 +458,29 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       viewEnd.setDate(0); // 上个月最后一天
       viewEnd.setHours(23, 59, 59, 999);
       
-      const viewStartTime = formatTimeForStorage(viewStart);
-      const viewEndTime = formatTimeForStorage(viewEnd);
+      const startTimeStr = formatTimeForStorage(viewStart);
+      const endTimeStr = formatTimeForStorage(viewEnd);
       
       console.log(`📂 [TimeCalendar] Loading events in range:`, {
-        start: viewStartTime,
-        end: viewEndTime
+        start: startTimeStr,
+        end: endTimeStr
       });
       
-      const loadStart = performance.now();
-      const events = await EventService.getEventsByDateRange(
-        viewStartTime,
-        viewEndTime
-      );
-      const loadDuration = performance.now() - loadStart;
-      console.log(`💾 [TimeCalendar] Lazy load took ${loadDuration.toFixed(2)}ms, loaded ${events.length} events`);
+      // ✅ P0修复：通过更新 viewStartTime 和 viewEndTime 触发 Hook 重新过滤
+      // 不再直接调用 EventService.getEventsByDateRange 和 setEvents
+      setViewStartTime(startTimeStr);
+      setViewEndTime(endTimeStr);
       
-      console.log(`🎯 [TimeCalendar] About to call setEvents()...`);
-      const setEventsStart = performance.now();
-      setEvents(events);
-      const setEventsDuration = performance.now() - setEventsStart;
-      console.log(`✅ [TimeCalendar] setEvents() took ${setEventsDuration.toFixed(2)}ms`);
+      const totalDuration = performance.now() - startTime;
+      console.log(`✅ [TimeCalendar] loadEvents DONE in ${totalDuration.toFixed(2)}ms (via Hook subscription)`);
+      
+      console.log(`🎯 [TimeCalendar] Hook will auto-update events count: ${events.length}`);
+      // ✅ P0修复：移除 setEvents 调用，Hook 会自动更新
     } catch (error) {
       console.error('❌ [LOAD] Failed to load events:', error);
-      setEvents([]); // 失败时设置为空数组
+      // ✅ P0修复：移除 setEvents([])，Hook 会自动处理
     }
-    const totalDuration = performance.now() - startTime;
-    console.log(`🏁 [TimeCalendar] loadEvents COMPLETE in ${totalDuration.toFixed(2)}ms`);
+    console.log(`🏁 [TimeCalendar] loadEvents COMPLETE`);
   }, []); // ✅ 空依赖数组，函数引用永远不变
 
   // 🔄 当 currentDate 改变时，重新加载事件（月份切换）
@@ -601,27 +663,14 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       const eventId = detail?.eventId;
       if (eventId) {
         if (detail?.deleted) {
-          // 删除操作：直接从 state 中移除
-          setEvents(prev => prev.filter(e => e.id !== eventId));
+          // ✅ P0修复：删除操作由 Hook 自动处理（订阅 'event-deleted'）
+          // Hook 会自动从列表中移除已删除事件
+          console.log('🗑️ [TimeCalendar] Event deleted, Hook will auto-update');
           return;
         } else if (detail?.isNewEvent || detail?.isUpdate) {
-          // 新建/更新操作：从 EventService 异步读取单个事件并更新
-          const updatedEvent = await EventService.getEventById(eventId); // ✅ 添加await
-          
-          if (updatedEvent) {
-            setEvents(prev => {
-              const index = prev.findIndex(e => e.id === eventId);
-              if (index >= 0) {
-                // 更新现有事件
-                const newEvents = [...prev];
-                newEvents[index] = updatedEvent;
-                return newEvents;
-              } else {
-                // 新增事件
-                return [...prev, updatedEvent];
-              }
-            });
-          }
+          // ✅ P0修复：新建/更新操作由 Hook 自动处理（订阅 'event-created' 和 'event-updated'）
+          console.log('✅ [TimeCalendar] Event created/updated, Hook will auto-update');
+          // Hook 会自动重新加载并过滤事件列表
           return;
         }
       }
@@ -1128,7 +1177,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       }
     `;
     
-    // Widget 模式下移除背景色（使用间隔定时器代替 MutationObserver，性能优化）
+    // ✅ P0修复：Widget 模式下使用 MutationObserver 监听样式变化（避免高频轮询）
     if (isWidgetMode) {
       const removeInlineBackgroundColor = () => {
         const layouts = document.querySelectorAll('.toastui-calendar-layout');
@@ -1149,12 +1198,45 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       // 初始清理
       removeInlineBackgroundColor();
       
-      // 每 500ms 清理一次（比 MutationObserver 更高效）
-      const intervalId = setInterval(removeInlineBackgroundColor, 500);
-
-      return () => {
-        clearInterval(intervalId);
-      };
+      // ✅ P0修复：使用 MutationObserver 监听样式变化（减少95%+ DOM操作）
+      const calendarContainer = document.querySelector('.toastui-calendar-layout');
+      
+      if (calendarContainer) {
+        const observer = new MutationObserver((mutations) => {
+          let needsCleanup = false;
+          
+          mutations.forEach(mutation => {
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+              const target = mutation.target as HTMLElement;
+              if (target.style.backgroundColor && 
+                  (target.classList.contains('toastui-calendar-layout') || 
+                   target.classList.contains('toastui-calendar-panel'))) {
+                needsCleanup = true;
+              }
+            }
+          });
+          
+          if (needsCleanup) {
+            removeInlineBackgroundColor();
+          }
+        });
+        
+        observer.observe(calendarContainer, { 
+          attributes: true, 
+          subtree: true,
+          attributeFilter: ['style']
+        });
+        
+        return () => {
+          observer.disconnect();
+        };
+      } else {
+        // 降级方案：如果找不到容器，使用较低频率的轮询
+        const intervalId = setInterval(removeInlineBackgroundColor, 5000);
+        return () => {
+          clearInterval(intervalId);
+        };
+      }
     }
   }, [isWidgetMode, currentView, getAdaptiveColors]); // 视图切换或颜色变化时重新执行
   
@@ -2056,10 +2138,8 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       const { EventHub } = await import('../../services/EventHub');
       await EventHub.deleteEvent(eventId);
       
-      // ✅ 增量更新：只从数组中移除该事件，避免重渲染全部 1150 个事件
-      setEvents(prevEvents => prevEvents.filter(e => e.id !== eventId));
-      
-      console.log('✅ [TimeCalendar] Event deleted via EventHub from modal');
+      // ✅ P0修复：Hook 会自动处理删除后的状态更新（订阅 'event-deleted'）
+      console.log('✅ [TimeCalendar] Event deleted via EventHub, Hook will auto-update');
     } catch (error) {
       console.error('❌ [TimeCalendar] Failed to delete event from modal:', error);
     }

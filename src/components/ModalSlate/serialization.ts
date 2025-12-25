@@ -132,8 +132,18 @@ export function slateNodesToJson(nodes: Descendant[]): string {
 
 /**
  * 将 Slate nodes 转换为 HTML 字符串（用于 description 字段同步）
+ * @param nodes - Slate 节点数组
+ * @param options - 转换选项
+ * @param options.includeTimestamps - 是否包含 Block-Level Timestamp 文本（默认 false）
+ *   - false: 用于本地 description（不需要时间戳文本，已有签名）
+ *   - true: 用于 Outlook 同步（需要 Block-Level Timestamp 供往返）
  */
-export function slateNodesToHtml(nodes: Descendant[]): string {
+export function slateNodesToHtml(
+  nodes: Descendant[], 
+  options?: { includeTimestamps?: boolean }
+): string {
+  const includeTimestamps = options?.includeTimestamps ?? false;
+  
   return nodes
     .map(node => {
       if ('type' in node) {
@@ -142,9 +152,11 @@ export function slateNodesToHtml(nodes: Descendant[]): string {
             const text = extractTextFromNode(node);
             const paraNode = node as any;
             
-            // 🆕 [v2.18.8] 保留 Block-Level Timestamp（格式：YYYY-MM-DD HH:mm:ss）
+            // 🆕 [v2.21.0] 条件保留 Block-Level Timestamp（格式：YYYY-MM-DD HH:mm:ss）
+            // ✅ 本地 description: includeTimestamps=false → 不包含时间戳（避免与签名重复）
+            // ✅ Outlook 同步: includeTimestamps=true → 包含时间戳（供往返解析）
             let timestampPrefix = '';
-            if (paraNode.createdAt) {
+            if (includeTimestamps && paraNode.createdAt) {
               const timestamp = typeof paraNode.createdAt === 'number' 
                 ? paraNode.createdAt 
                 : new Date(paraNode.createdAt).getTime();

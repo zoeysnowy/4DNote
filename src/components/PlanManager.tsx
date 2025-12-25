@@ -21,6 +21,7 @@ import { shouldShowInPlanManager, filterPlanEvents, isEmptyEvent } from '../util
 import { extractCalendarIds, buildEventForSave, detectChanges } from '../utils/planManagerHelpers';
 import { EventService } from '../services/EventService'; // 🔧 仅用于查询（getEventById）
 import { EventHistoryService } from '../services/EventHistoryService'; // 🆕 用于事件历史快照
+import { useEventHubSubscription } from '../hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
 import { generateEventId } from '../utils/calendarUtils';
 import { EventTreeAPI } from '../services/EventTree'; // 🆕 v2.20.0: EventTree Engine
@@ -287,26 +288,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   // console.log('%c[PlanManager v2.15] 组件加载 - 包含 itemsHash 诊断日志', 'background: #FF6B6B; color: white; font-weight: bold; padding: 4px 8px;');
   
   // ✅ PlanManager 自己维护 items state
-  // 🛡️ PERFORMANCE FIX: 使用useRef缓存初始数据，避免重复计算
-  const initialItemsRef = useRef<Event[] | null>(null);
-  
-  const [items, setItems] = useState<Event[]>(() => {
-    if (initialItemsRef.current) {
-      console.log('[PlanManager] 使用缓存的初始数据:', {
-        数量: initialItemsRef.current.length,
-        示例: initialItemsRef.current.slice(0, 3).map(e => ({
-          id: (e.id || '').slice(-10),
-          title: (e.title?.simpleTitle || '').slice(0, 20),
-          isPlan: e.isPlan
-        }))
-      });
-      return initialItemsRef.current;
+  // ✅ P0修复：使用 useEventHubSubscription 订阅 EventHub
+  // 过滤逻辑：只订阅 isPlan 事件，过滤 ghost 事件
+  const planFilter = useCallback((event: Event) => {
+    // 过滤 ghost 事件（带 _isDeleted 标记的临时事件）
+    if ((event as any)._isDeleted) {
+      return false;
     }
     
-    // 🔧 FIX: 初始化为空数组，通过 useEffect 异步加载数据
-    // （不能在 useState 初始化器中调用 async 方法）
-    console.log('[PlanManager] 初始化为空数组，等待 useEffect 加载数据');
-    return [];
+    // 只订阅 isPlan 事件
+    return event.isPlan === true;
+  }, []);
+  
+  const items = useEventHubSubscription({
+    filter: planFilter,
+    source: 'PlanManager',
+    debug: false
   });
   
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
@@ -433,50 +430,32 @@ const PlanManager: React.FC<PlanManagerProps> = ({
   const onChangeTimerRef = useRef<NodeJS.Timeout | null>(null);
   const pendingUpdatedItemsRef = useRef<any[] | null>(null);
   
-  // 🔧 FIX: 异步加载初始数据
+  // ✅ P0修复：数据迁移和清理（仅在首次加载时执行）
+  const hasMigratedRef = useRef(false);
   useEffect(() => {
-    const loadInitialData = async () => {
-      console.log('[PlanManager] 🚀 v2.20.0 - 使用 EventTreeAPI 加载初始数据...');
-      
-      // 清空缓存，强制重新加载
-      initialItemsRef.current = null;
+    if (items.length === 0 || hasMigratedRef.current) {
+      return; // 还没加载数据或已经执行过迁移
+    }
+    
+    const runMigrationAndCleanup = async () => {
+      hasMigratedRef.current = true;
       
       try {
-        // 1. 加载所有事件
-        const rawEvents = await EventService.getAllEvents();
+        console.log('[PlanManager] 🔧 执行数据迁移和清理...', items.length, '个事件');
         
-        // 2. 过滤掉 ghost 事件（带 _isDeleted 标记的临时事件）
-        const allEvents = rawEvents.filter(e => !(e as any)._isDeleted);
-        
-        if (rawEvents.length !== allEvents.length) {
-          console.warn('[PlanManager] 🚨 过滤了', rawEvents.length - allEvents.length, '个 ghost 事件');
-        }
-        
-        console.log('[PlanManager] 从 EventService 加载:', allEvents.length, '个事件');
-        
-        // 3. 数据迁移：为旧的 isPlan 事件批量设置 checkType（仅执行一次）
-        const needsMigration = allEvents.filter(e => e.isPlan && !e.checkType);
+        // 1. 数据迁移：为旧的 isPlan 事件批量设置 checkType
+        const needsMigration = items.filter(e => e.isPlan && !e.checkType);
         if (needsMigration.length > 0) {
           console.log('🔧 [数据迁移] 检测到需要迁移的 isPlan 事件:', needsMigration.length);
-          
-          needsMigration.forEach(event => {
-            event.checkType = 'once';
-          });
           
           for (const event of needsMigration) {
             await EventService.updateEvent(event.id, { checkType: 'once' }, false);
           }
-          console.log(`✅ [数据迁移] 已静默更新 ${needsMigration.length} 个事件的 checkType`);
+          console.log(`✅ [数据迁移] 已更新 ${needsMigration.length} 个事件的 checkType`);
         }
         
-        // 4. 使用统一的过滤函数
-        const filtered = filterPlanEvents(allEvents, { mode: 'normal' });
-        console.log('[PlanManager] 过滤后的 Plan 事件:', filtered.length);
-        
-        // 5. 删除空白事件
-        const emptyEvents = filtered.filter(isEmptyEvent);
-        let remainingFiltered = filtered;
-        
+        // 2. 删除空白事件
+        const emptyEvents = items.filter(isEmptyEvent);
         if (emptyEvents.length > 0) {
           console.warn('[PlanManager] 🗑️ 发现', emptyEvents.length, '个空白事件，准备删除');
           
@@ -488,79 +467,15 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             }
           }
           
-          const deletedIds = new Set(emptyEvents.map(e => e.id));
-          remainingFiltered = filtered.filter(e => !deletedIds.has(e.id));
-          console.log('[PlanManager] 清理完成，剩余事件数:', remainingFiltered.length);
+          console.log('[PlanManager] 清理完成');
         }
-        
-        // 6. 过滤已删除和空标题的事件
-        const validEvents = remainingFiltered.filter(event => {
-          if (event.deletedAt) return false;
-          const titleStr = typeof event.title === 'string' ? event.title : event.title?.simpleTitle || '';
-          return titleStr.trim();
-        });
-        
-        console.log('[PlanManager] 有效事件数:', validEvents.length);
-        
-        // 🆕 v2.20.0: 使用 EventTreeAPI 一次性计算树结构
-        console.log('[PlanManager] 🌲 使用 EventTreeAPI 构建树...');
-        const treeResult = EventTreeAPI.buildTree(validEvents, {
-          validateStructure: true,
-          computeBulletLevels: true,
-          sortSiblings: true,
-        });
-        
-        console.log('[PlanManager] 🌲 树构建完成:', {
-          总节点数: treeResult.nodes.length,
-          根节点数: treeResult.rootIds.length,
-          最大深度: treeResult.stats.maxDepth,
-          错误数: treeResult.errors.length,
-          计算时间: treeResult.stats.computeTime + 'ms'
-        });
-        
-        // 报告树验证错误
-        if (treeResult.errors.length > 0) {
-          console.warn('[PlanManager] 🚨 树结构验证错误:', treeResult.errors.map(err => ({
-            类型: err.type,
-            节点: err.nodeId?.slice(-8),
-            消息: err.message
-          })));
-        }
-        
-        // 7. 使用 EventTreeAPI.toDFSList() 获取 DFS 排序的事件列表
-        const sortedEvents = EventTreeAPI.toDFSList(validEvents);
-        
-        console.log('[PlanManager] 📊 DFS 排序完成:', sortedEvents.length, '个事件');
-        
-        // 8. 附加 bulletLevel 到事件对象
-        const bulletLevels = treeResult.bulletLevels;
-        const eventsWithLevels = sortedEvents.map(event => ({
-          ...event,
-          bulletLevel: bulletLevels.get(event.id!) || 0
-        })) as Event[];
-        
-        // 调试：检查排序结果（前 30 个）
-        console.log('[PlanManager] 🔍 sortedEvents 顺序检查（前30个）:');
-        eventsWithLevels.slice(0, 30).forEach((e, idx) => {
-          const indent = '  '.repeat(e.bulletLevel || 0);
-          console.log(`[${idx}] ${indent}L${e.bulletLevel} ${e.title?.simpleTitle?.slice(0, 40)} (父:${e.parentEventId?.slice(-8) || 'ROOT'})`);
-        });
-        
-        // 🔍 调试工具：将排序后的事件列表暴露到 window 对象
-        (window as any).__PLAN_EVENTS__ = eventsWithLevels;
-        console.log('💡 调试提示：使用 window.__PLAN_EVENTS__ 查看排序后的事件列表');
-        
-        // 缓存并设置
-        initialItemsRef.current = eventsWithLevels;
-        setItems(eventsWithLevels);
       } catch (error) {
-        console.error('[PlanManager] 加载初始数据失败:', error);
-        setItems([]);
+        console.error('[PlanManager] 迁移和清理失败:', error);
       }
     };
     
-    loadInitialData();
-  }, []); // 只在组件挂载时执行一次
+    runMigrationAndCleanup();
+  }, [items]);
   
   // 🔍 监控 items 数组的变化（调试用）
   useEffect(() => {
@@ -1310,38 +1225,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
   }, [items, itemsMap]);
 
-  // 🆕 定期清理空的 pendingEmptyItems（超过5分钟未填充内容的空行）
-  useEffect(() => {
-    const cleanupTimer = setInterval(() => {
-      const now = Date.now();
-      setPendingEmptyItems(prev => {
-        const next = new Map(prev);
-        let cleanedCount = 0;
-        
-        for (const [id, item] of prev.entries()) {
-          // 🔥 FIX: 使用统一的isEmpty检测，包括eventlog检查
-          const isEmpty = isEmptyEvent(item);
-          
-          // 检查创建时间是否超过5分钟
-          const createdTime = new Date(item.createdAt || 0).getTime();
-          const isOld = now - createdTime > 5 * 60 * 1000; // 5分钟
-          
-          if (isEmpty && isOld) {
-            next.delete(id);
-            cleanedCount++;
-          }
-        }
-        
-        if (cleanedCount > 0) {
-          dbg('plan', '🧹 清理过期空行', { cleanedCount, remainingCount: next.size });
-        }
-        
-        return next;
-      });
-    }, 60000); // 每分钟检查一次
-    
-    return () => clearInterval(cleanupTimer);
-  }, []);
+  // ✅ P0修复：已移除全局轮询清理，改为每个空行独立管理生命周期（见 immediateStateSync）
 
   // 🆕 v1.8: 立即状态同步（不防抖）- 用于更新 UI 状态
   const immediateStateSync = useCallback((updatedItems: any[]) => {
@@ -1384,6 +1268,21 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         } as Event;
         
         setPendingEmptyItems(prev => new Map(prev).set(updatedItem.id, newPendingItem));
+        
+        // ✅ P0修复：每个空行独立管理生命周期（5分钟后自动清理）
+        setTimeout(() => {
+          setPendingEmptyItems(prev => {
+            const current = prev.get(updatedItem.id);
+            // 只在仍然为空且未被填充时清理
+            if (current && isEmptyEvent(current)) {
+              const next = new Map(prev);
+              next.delete(updatedItem.id);
+              dbg('plan', '🧹 自动清理过期空行', { id: updatedItem.id });
+              return next;
+            }
+            return prev;
+          });
+        }, 5 * 60 * 1000); // 5分钟后清理
       }
     });
   }, [itemsMap]);

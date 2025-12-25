@@ -796,17 +796,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     return result;
   }, [itemsHash]); // 使用itemsHash代替items直接依赖
   
-  // 初始化内容
-  const [value, setValue] = useState<EventLineNode[]>(() => {
-    console.log('%c[🎯 useState 初始化] 使用 enhancedValue', 'background: #4CAF50; color: white; padding: 2px 6px;', {
-      enhancedValueLength: enhancedValue.length,
-      hasPlaceholder: enhancedValue.some(n => n.eventId === '__placeholder__')
-    });
-    return enhancedValue;
-  });
-  
-  // 🆕 生成编辑器 key，用于强制重新渲染
-  const [editorKey, setEditorKey] = useState(0);
+  // ✅ P0修复：移除value冗余状态，Slate内部已有editor.children
+  // Slate的单一数据源：editor.children
+  // 不再维护value state，避免双重状态导致Selection丢失
   
   // 🆕 v1.8: 移除 shouldShowPlaceholder，改为在 renderLinePrefix 中渲染
   
@@ -871,28 +863,24 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   // 🔥 智能增量更新：逐个比较 items，只更新变化的 Events
   
-  // 🆕 监听 enhancedValue 变化，同步更新 value
+  // ✅ P0修复：监听 enhancedValue 变化，使用Transforms API更新编辑器
   useEffect(() => {
+    const currentChildren = editor.children as EventLineNode[];
+    
     console.log('%c[🔍 enhancedValue useEffect 触发]', 'background: #E91E63; color: white; padding: 2px 6px;', {
       isInitialized: isInitializedRef.current,
       enhancedValueLength: enhancedValue.length,
-      valueLength: value.length
+      currentChildrenLength: currentChildren.length
     });
     
-    // 🔥 首次初始化：标记为已初始化（value 已在 useState 时设置）
+    // 🔥 首次初始化：只标记，不更新（editor已通过initialValue初始化）
     if (!isInitializedRef.current) {
       console.log('%c[🎉 首次初始化] 标记为已初始化', 'background: #4CAF50; color: white; padding: 2px 6px;', {
         enhancedValueLength: enhancedValue.length,
-        valueLength: value.length
+        currentChildrenLength: currentChildren.length
       });
       isInitializedRef.current = true;
-      
-      // 🔧 如果 enhancedValue 有内容但 value 为空，同步一次
-      if (enhancedValue.length > 0 && value.length === 0) {
-        console.log('%c[⚠️ 修正] value 为空，使用 enhancedValue', 'background: #FF9800; color: white;');
-        setValue(enhancedValue);
-      }
-      return; // ✅ 首次初始化完成，直接返回，不再同步
+      return; // ✅ 首次初始化完成，直接返回
     }
     
     // 🔥 后续更新：检查用户是否正在编辑
@@ -901,34 +889,26 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     const hasPendingChanges = !!pendingChangesRef.current;
     
     if (!hasSelection && !hasPendingChanges) {
-      // 🔄 用户未在编辑，直接替换整个 value
+      // 🔄 用户未在编辑，直接替换整个内容
       console.log('%c[🔄 同步 enhancedValue] 用户未编辑，全量更新', 'background: #4CAF50; color: white; padding: 2px 6px;', {
-        oldLength: value.length,
-        newLength: enhancedValue.length,
-        enhancedValue: enhancedValue.map((n, i) => ({ 
-          index: i,
-          eventId: n.eventId?.slice(-10), 
-          type: n.type,
-          hasChildren: !!n.children,
-          childrenCount: n.children?.length || 0,
-          firstChild: n.children?.[0]?.type
-        }))
+        oldLength: currentChildren.length,
+        newLength: enhancedValue.length
       });
       
-      // 🔧 安全检查：确保 enhancedValue 不为空，且与当前 value 不同
+      // 🔧 安全检查：确保 enhancedValue 不为空，且与当前内容不同
       if (enhancedValue.length > 0) {
-        // 🔍 对比 enhancedValue 和 value 是否真的不同
-        const isDifferent = enhancedValue.length !== value.length || 
-          !enhancedValue.every((node, i) => node.eventId === value[i]?.eventId);
+        // 🔍 对比 enhancedValue 和当前内容是否真的不同
+        const isDifferent = enhancedValue.length !== currentChildren.length || 
+          !enhancedValue.every((node, i) => node.eventId === currentChildren[i]?.eventId);
         
         if (!isDifferent) {
-          console.log('%c[⏭️ 同步跳过] enhancedValue 与 value 相同，无需更新', 'background: #2196F3; color: white; padding: 2px 6px;');
+          console.log('%c[⏭️ 同步跳过] enhancedValue 与当前内容相同，无需更新', 'background: #2196F3; color: white; padding: 2px 6px;');
           return;
         }
         
         skipNextOnChangeRef.current = true;
         
-        // 🔥 使用 Slate Transforms API 直接更新内容（而不是重新挂载编辑器）
+        // ✅ P0修复：使用 Slate Transforms API 直接更新内容（避免重新挂载）
         Editor.withoutNormalizing(editor, () => {
           // 删除所有旧内容
           editor.children.splice(0, editor.children.length);
@@ -938,20 +918,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           editor.onChange();
         });
         
-        // 同时更新 React state（保持一致性）
-        setValue(enhancedValue);
-        
-        console.log('%c[✅ 同步完成] Transforms.replace 已调用', 'background: #4CAF50; color: white; padding: 2px 6px;', {
+        console.log('%c[✅ 同步完成] Transforms API 已调用', 'background: #4CAF50; color: white; padding: 2px 6px;', {
           newLength: enhancedValue.length,
-          skipNextOnChange: skipNextOnChangeRef.current,
-          method: 'Transforms API (高性能)'
+          skipNextOnChange: skipNextOnChangeRef.current
         });
       } else {
-        console.warn('%c[⚠️ 同步跳过] enhancedValue 为空，保持当前 value', 'background: #FF9800; color: white;');
+        console.warn('%c[⚠️ 同步跳过] enhancedValue 为空，保持当前内容', 'background: #FF9800; color: white;');
       }
     } else {
       // 🔧 用户正在编辑时，不做任何更新，避免干扰编辑
-      // 原因：增量更新逻辑复杂且容易出错，用户保存时会触发 eventsUpdated 事件
       console.log('%c[🔄 同步跳过] 用户正在编辑，延迟更新', 'background: #FF9800; color: white; padding: 2px 6px;', {
         hasSelection,
         hasPendingChanges
@@ -998,9 +973,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       if (isDeleted) {
         console.log('[📡 eventsUpdated] 删除事件，增量移除节点');
         
+        // ✅ P0修复：使用editor.children代替value
+        const currentChildren = editor.children as EventLineNode[];
+        
         // 找到所有匹配的节点索引
         const nodesToDelete: number[] = [];
-        value.forEach((node, index) => {
+        currentChildren.forEach((node, index) => {
           const eventLine = node as EventLineNode;
           if (eventLine.eventId === eventId) {
             nodesToDelete.push(index);
@@ -1037,8 +1015,10 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         const newNodes = planItemsToSlateNodes([newItem]);
         if (newNodes.length === 0) return;
         
+        // ✅ P0修复：使用editor.children代替value
+        const currentChildren = editor.children as EventLineNode[];
         // 在 placeholder 之前插入（placeholder 总是最后一个节点）
-        const insertIndex = value.length - 1; // placeholder 的索引
+        const insertIndex = currentChildren.length - 1; // placeholder 的索引
         
         skipNextOnChangeRef.current = true;
         Editor.withoutNormalizing(editor, () => {
@@ -1051,7 +1031,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // 🔥 增量更新：检测用户是否正在编辑这个 Event
       if (pendingChangesRef.current && editor.selection) {
         const currentPath = editor.selection.anchor.path[0];
-        const currentNode = value[currentPath] as EventLineNode;
+        // ✅ P0修复：使用editor.children代替value
+        const currentChildren = editor.children as EventLineNode[];
+        const currentNode = currentChildren[currentPath] as EventLineNode;
         
         console.log(`%c[🔍 增量更新检查]`, 'background: #FFC107; color: black; padding: 2px 6px;', {
           hasPendingChanges: !!pendingChangesRef.current,
@@ -1069,9 +1051,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         }
       }
       
+      // ✅ P0修复：使用editor.children代替value
+      const currentChildren = editor.children as EventLineNode[];
+      
       // 查找需要更新的节点
       const nodesToUpdate: number[] = [];
-      value.forEach((node, index) => {
+      currentChildren.forEach((node, index) => {
         const eventLine = node as EventLineNode;
         if (eventLine.eventId === eventId) {
           nodesToUpdate.push(index);
@@ -1080,7 +1065,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       console.log(`%c[🔍 查找节点]`, 'background: #E91E63; color: white; padding: 2px 6px;', {
         eventId,
-        totalNodes: value.length,
+        totalNodes: currentChildren.length,
         nodesToUpdate,
         nodesToUpdateCount: nodesToUpdate.length,
       });
@@ -1097,7 +1082,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // 🆕 同时更新 children 中的 DateMentionNode
       Editor.withoutNormalizing(editor, () => {
         nodesToUpdate.forEach(index => {
-          const currentNode = value[index] as EventLineNode;
+          // ✅ P0修复：使用editor.children代替value
+          const currentNode = currentChildren[index] as EventLineNode;
           
           // 构建新的 metadata（从 EventService 获取）
           const newMetadata = {
@@ -1198,18 +1184,19 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         });
       });
       
+      // ✅ P0修复：移除setValue调用，Slate内部已通过editor.onChange()触发重渲染
       console.log('%c[🔄 强制重新渲染]', 'background: #FF5722; color: white; padding: 2px 6px;', {
         eventId: eventId?.slice(-10),
         skipNextOnChange: true,
         editorChildrenCount: editor.children.length
       });
       skipNextOnChangeRef.current = true;
-      setValue([...editor.children] as unknown as EventLineNode[]);
+      editor.onChange(); // 触发Slate重新渲染
     };
     
     window.addEventListener('eventsUpdated', handleEventUpdated);
     return () => window.removeEventListener('eventsUpdated', handleEventUpdated);
-  }, [items, value, editor, enhancedValue]);
+  }, [items, editor, enhancedValue]);
   
   // ==================== 内容变化处理 ====================
   
@@ -1298,23 +1285,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     }
     
     // 使用增强的调试工具记录变化
-    logValueChange(value, newValue as unknown as EventLineNode[]);
-    
-    // 🔥 立即更新 UI（Slate 内部状态）
-    // 🚨 DIAGNOSIS: 检测 setValue 被调用时的异常
     const newValueAsNodes = newValue as unknown as EventLineNode[];
-    const hasRealContent = newValueAsNodes.some(node => node.eventId !== '__placeholder__');
+    logValueChange(editor.children as EventLineNode[], newValueAsNodes);
     
-    if (!hasRealContent && value.some(node => node.eventId !== '__placeholder__')) {
-      console.error('🔴 [诊断] setValue 即将清空编辑器！', {
-        当前value有内容: value.filter(n => n.eventId !== '__placeholder__').length,
-        新value只有placeholder: !hasRealContent,
-        newValue数量: newValueAsNodes.length,
-        调用栈: new Error().stack?.split('\n').slice(0, 10)
-      });
-    }
-    
-    setValue(newValueAsNodes);
+    // ✅ P0修复：移除setValue调用，Slate内部已通过editor.children维护状态
+    // 不再需要同步到外部state，避免双重状态
     
     // 🆕 检测@提及触发
     if (editor.selection && Range.isCollapsed(editor.selection)) {
@@ -1695,10 +1670,16 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           
           const newNodes = [...baseNodes, placeholderLine];
           
-          // 🔥 设置标志位，跳过 onChange
+          // ✅ P0修复：使用Transforms API替代setValue + setEditorKey
           skipNextOnChangeRef.current = true;
-          setValue(newNodes);
-          setEditorKey(prev => prev + 1);
+          Editor.withoutNormalizing(editor, () => {
+            // 删除所有旧内容
+            editor.children.splice(0, editor.children.length);
+            // 插入新内容
+            editor.children.push(...newNodes);
+            // 触发编辑器更新
+            editor.onChange();
+          });
         },
         
         getEditor: () => editor,
@@ -2808,11 +2789,14 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         // Title 行：查找所有属于同一个 eventId 的 eventlog 行，在最后一个之后插入
         const baseEventId = eventLine.eventId;
         
+        // ✅ P0修复：使用editor.children代替value
+        const currentChildren = editor.children as EventLineNode[];
+        
         // 查找所有 eventlog 行（lineId 包含 '-desc' 的都是同一个 event 的 eventlog）
         let lastEventlogIndex = currentPath[0];
         try {
-          for (let i = currentPath[0] + 1; i < value.length; i++) {
-            const nextNode = value[i];
+          for (let i = currentPath[0] + 1; i < currentChildren.length; i++) {
+            const nextNode = currentChildren[i];
             if (nextNode.type === 'event-line') {
               // 检查是否属于同一个 event 的 eventlog 行
               // eventlog 行的 eventId 格式: "abc" 或 lineId 格式: "abc-desc", "abc-desc-1234"
@@ -2856,7 +2840,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         if (currentLevel > 0) {
           // 向上查找 level-1 的最近事件作为父事件
           for (let i = currentPath[0] - 1; i >= 0; i--) {
-            const prevNode = value[i];
+            const prevNode = currentChildren[i];
             if (prevNode.type === 'event-line' && prevNode.mode === 'title') {
               const prevLevel = prevNode.level || 0;
               if (prevLevel === currentLevel - 1) {
@@ -3606,25 +3590,28 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         const text = Node.string(paragraph as unknown as Node);
         const startPoint = Editor.start(editor, currentPath);
         
+        // ✅ P0修复：使用editor.children代替value
+        const currentChildren = editor.children as EventLineNode[];
+        
         // 如果内容为空且在行首，删除当前行
         if (!text && Point.equals(selection.anchor, startPoint)) {
           event.preventDefault();
           
           logOperation('Backspace - 删除空行', {
-            totalLines: value.length,
+            totalLines: currentChildren.length,
             currentLine: currentPath[0],
             lineId: eventLine.lineId.slice(-10) + '...',
-            isLastLine: currentPath[0] === value.length - 1,
+            isLastLine: currentPath[0] === currentChildren.length - 1,
           }, 'background: #f44336; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;');
           
           // 🆕 v1.8: 检查是否是倒数第二行（下一行是 placeholder）
-          const isSecondToLast = currentPath[0] === value.length - 2;
-          const nextNode = isSecondToLast ? value[currentPath[0] + 1] : null;
+          const isSecondToLast = currentPath[0] === currentChildren.length - 2;
+          const nextNode = isSecondToLast ? currentChildren[currentPath[0] + 1] : null;
           const nextIsPlaceholder = nextNode && 
             ((nextNode.metadata as any)?.isPlaceholder || nextNode.eventId === '__placeholder__');
           
           // 🔧 如果只剩下当前行和 placeholder，清空当前行而不删除
-          if (value.length === 2 && nextIsPlaceholder) {
+          if (currentChildren.length === 2 && nextIsPlaceholder) {
             if (isDebugEnabled()) {
               window.console.log('操作: 清空倒数第二行（最后一个真实行）');
             }
@@ -3647,7 +3634,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           }
         
           // 多行时删除当前行
-          if (value.length > 2 || (value.length > 1 && !nextIsPlaceholder)) {
+          if (currentChildren.length > 2 || (currentChildren.length > 1 && !nextIsPlaceholder)) {
             if (isDebugEnabled()) {
               window.console.log('操作: 删除当前行');
               window.console.log('删除前光标:', editor.selection);
@@ -3688,7 +3675,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             
             if (isDebugEnabled()) {
               window.console.log('删除后光标:', editor.selection);
-              window.console.log('删除后总行数:', value.length - 1);
+              window.console.log('删除后总行数:', currentChildren.length - 1);
               window.console.groupEnd();
             }
           }
@@ -3720,11 +3707,14 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       }
     }
     
+    // ✅ P0修复：使用editor.children代替value
+    const currentChildren = editor.children as EventLineNode[];
+    
     // 🆕 v1.8: ArrowDown - 防止进入 placeholder 行
     if (event.key === 'ArrowDown') {
       // 检查下一行是否是 placeholder
-      if (currentPath[0] === value.length - 2) {
-        const nextNode = value[currentPath[0] + 1];
+      if (currentPath[0] === currentChildren.length - 2) {
+        const nextNode = currentChildren[currentPath[0] + 1];
         if (nextNode && ((nextNode.metadata as any)?.isPlaceholder || nextNode.eventId === '__placeholder__')) {
           event.preventDefault();
           // 移动到当前行末尾
@@ -3734,7 +3724,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         }
       }
     }
-  }, [editor, value, handleMentionSelect, handleMentionClose]);
+  }, [editor, handleMentionSelect, handleMentionClose]);
   
   // ==================== 复制粘贴增强 ====================
   
@@ -3994,12 +3984,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       >
         {/* 🔧 v1.8: 移除绝对定位的 placeholder，改用最后一行的 renderLinePrefix */}
         
-        {/* 🔧 始终渲染编辑器（至少有 placeholder） */}
-        {value.length > 0 ? (
+        {/* ✅ P0修复：始终渲染编辑器（至少有 placeholder） */}
+        {enhancedValue.length > 0 ? (
           <Slate 
-            key={editorKey} 
             editor={editor} 
-            initialValue={value as unknown as Descendant[]} 
+            initialValue={enhancedValue as unknown as Descendant[]} 
             onChange={handleEditorChange}
           >
             <Editable

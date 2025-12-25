@@ -949,24 +949,26 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   }, [timelineSegments.length, loadingEvents]);
 
-  // 格式化日期标题（例如✅2✅✅| 周四✅
+  // 格式化日期标题（例如 12月25日 | 周四）
   const formatDateTitle = (dateKey: string): string => {
-    const date = new Date(dateKey);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
+    // dateKey 形如 YYYY-MM-DD；用本地时区构造，避免 new Date('YYYY-MM-DD') 的 UTC 解析导致日期偏移
+    const [yearStr, monthStr, dayStr] = dateKey.split('-');
+    const year = Number(yearStr);
+    const month = Number(monthStr);
+    const day = Number(dayStr);
+    const date = new Date(year, month - 1, day);
+
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const weekday = weekdays[date.getDay()];
-    
-    // 判断是否是今✅
+
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const isToday = date.getTime() === today.getTime();
-    
-    if (isToday) {
-      return `${month}✅{day}✅| ${weekday} (今天)`;
-    }
-    
-    return `${month}✅{day}✅| ${weekday}`;
+    const isToday =
+      year === now.getFullYear() &&
+      month === now.getMonth() + 1 &&
+      day === now.getDate();
+
+    const base = `${month}月${day}日 | ${weekday}`;
+    return isToday ? `${base} (今天)` : base;
   };
 
   // 获取今天的日期key
@@ -1377,16 +1379,16 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     // 触发 ModalSlate 插入 timestamp + 预行 + 光标定位
     // 📝 注意: 如果需要展开，等待动画完成（100ms✅
     const delay = wasExpanded ? 0 : 100;
-    const timerId = setTimeout(() => {
+    setTimeout(() => {
       const slateRef = modalSlateRefs.current.get(eventId);
       if (slateRef && slateRef.insertTimestampAndFocus) {
         slateRef.insertTimestampAndFocus();
       }
     }, delay);
-    
+
     // ✅注意: 此处✅setTimeout 是必需的，用于等待展开动画
-    // 如果组件在动画过程中卸载，应该在 cleanup 中清✅
-    return () => clearTimeout(timerId);
+    // 如果组件在动画过程中卸载，需要在组件级 cleanup 中清理
+  };
 
   // 新建事件模态框状态
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -2762,8 +2764,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     </div>
   );
 };
-
-}
 
 // 辅助函数：格式化时间
 function formatTime(dateStr: string | Date): string {

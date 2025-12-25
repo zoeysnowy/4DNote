@@ -61,6 +61,8 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
+    // 只扫描主入口，避免 public/docs/_archive/.history 等大量调试页面里的 ESM 脚本影响预构建
+    entries: ['index.html'],
     include: [
       'react',
       'react-dom',

@@ -499,6 +499,40 @@ export interface Event {
   checkType?: CheckType;    // 签到类型：none(无需签到), once(单次签到), recurring(循环签到)
   recurringConfig?: RecurringConfig; // 循环签到配置（当 checkType='recurring' 时有效）
   
+  // 🆕 v3.1: 空白事件清理与 Snapshot 管理
+  /**
+   * 最后一次非空白状态的时间戳
+   * - undefined: 从未有过实质内容（创建后一直为空）
+   * - ISO 8601 字符串: 最后一次有实质内容的时间
+   * 
+   * 用途：
+   * - 空白事件清理时判断是否需要写 EventHistory
+   * - 从未非空的事件被删除：不写 history（减少噪音）
+   * - 曾经非空的事件被删除：写 history（保留重要信息）
+   */
+  lastNonBlankAt?: string;
+  
+  /**
+   * "最富有状态"的快照（Best Snapshot）
+   * 记录事件历史上内容最丰富的状态（按 contentScore 评分）
+   * 
+   * 用途：
+   * - 事件被删除时，在 EventHistory 中记录最佳状态
+   * - Snapshot 附件模式：展示事件的"巅峰时刻"而非删除前的空状态
+   * - 用户误删后恢复：提供最有价值的版本
+   * 
+   * 数据结构：
+   * ```typescript
+   * {
+   *   eventId: string;
+   *   capturedAt: string; // ISO 8601
+   *   title, tags, eventLog, timeSpec, location, ...
+   *   score: number; // contentScore 评分
+   * }
+   * ```
+   */
+  bestSnapshot?: import('./utils/eventContentSemantics').EventSnapshot;
+  
   // 🆕 v2.1: 日历同步配置（支持 Private 模式和独立事件架构）
   /**
    * 计划安排同步配置

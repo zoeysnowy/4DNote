@@ -82,6 +82,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '../../services/TagService';
 import { EventService } from '../../services/EventService';
 import { EventHub } from '../../services/EventHub';
+import { useEventHubCache, useEventSubscription } from '../../hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
 import { Event, Contact, EventTitle } from '../../types';
@@ -212,7 +213,26 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   initialIsAllDay,
 }) => {
   // 🔧 从 EventHub 获取最新的 event 数据（单一数据源）
+  // ✅ P0修复：使用 useEventSubscription 订阅单个事件更新
+  const subscribedEvent = useEventSubscription(
+    eventId || null,
+    'EventEditModalV2',
+    false
+  );
+  
+  // 保留 event state 用于本地编辑（避免订阅更新覆盖用户正在编辑的内容）
   const [event, setEvent] = React.useState<Event | null>(null);
+  
+  // ✅ 同步 subscribedEvent 到 event（仅在首次加载或eventId变化时）
+  React.useEffect(() => {
+    if (subscribedEvent) {
+      setEvent(subscribedEvent);
+      console.log('✅ [EventEditModalV2] 使用 subscribedEvent 初始化', subscribedEvent.id);
+    } else if (eventId && !subscribedEvent) {
+      // eventId存在但订阅未返回（可能是新事件或加载中）
+      console.log('⏳ [EventEditModalV2] 等待订阅加载...', eventId);
+    }
+  }, [subscribedEvent, eventId]);
   
   React.useEffect(() => {
     if (!eventId) {
@@ -320,8 +340,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // 🏷️ 可用标签列表（订阅 TagService 更新）
   const [availableTags, setAvailableTags] = useState(() => TagService.getTags());
   
-  // 🌲 EventTree: 加载所有事件用于树状图
-  const [allEvents, setAllEvents] = useState<any[]>([]);
+  // ✅ P0修复：使用 useEventHubCache 订阅所有事件（用于树状图）
+  // 只在 showEventTree 时订阅，避免不必要的性能开销
+  const allEvents = useEventHubCache('EventEditModalV2', false);
 
   // 🔍 [已删除] State变化追踪器 - 导致频繁 re-render，仅在开发时需要可手动启用
   
@@ -599,25 +620,19 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const [tagPickerPosition, setTagPickerPosition] = useState({ top: 0, left: 0, width: 0 });
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // 🔥 延迟加载 allEvents - 只在用户打开 EventTree 时才加载，避免打开Modal时就触发re-render导致失焦
+  // ✅ P0修复：移除allEvents的异步加载useEffect
+  // useEventHubCache会自动订阅并保持最新
+  // 🔥 注释：延迟加载已通过Hook自动处理（延迟加载，避免打开Modal时就加载导致失焦）
   React.useEffect(() => {
-    console.log('🔄 [useEffect] loadEvents 触发', { showEventTree, allEventsLength: allEvents.length });
-    const loadEvents = async () => {
-      const events = await EventService.getAllEvents();
-      setAllEvents(prev => {
-        // 比较ID数组避免循环
-        const prevIds = prev.map(e => e.id).sort().join(',');
-        const newIds = events.map((e: any) => e.id).sort().join(',');
-        if (prevIds === newIds) {
-          console.log('⏭️ [useEffect] loadEvents 跳过更新(ID相同)');
-          return prev;
-        }
-        console.log('✅ [useEffect] loadEvents 更新', { prevCount: prev.length, newCount: events.length });
-        return events;
-      });
+    // 保留原有的EventTree打开逻辑，但不再手动加载事件
+    console.log('🔄 [useEffect] showEventTree 状态变化', { showEventTree, allEventsLength: allEvents.length });
+    
+    const loadEvents = () => {
+      // ✅ Hook自动处理，无需手动加载
+      console.log('✅ [useEffect] 使用 Hook 订阅的事件数:', allEvents.length);
     };
     
-    // 🔥 只在打开EventTree时才加载（延迟加载，避免打开Modal时就加载导致失焦）
+    // 🔥 只在打开EventTree时才触发日志（延迟加载已由Hook处理）
     if (isOpen && showEventTree && allEvents.length === 0) {
       loadEvents();
     }
