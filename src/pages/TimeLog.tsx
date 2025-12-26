@@ -738,15 +738,15 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       
       setLoadingEvents(true);
       try {
-        // 初始加载范围：覆盖最近一段时间，避免“今天附近无事件”导致页面看起来是空的
+        // 初始加载范围：过去 7 天 + 未来 30 天（避免“今天附近无事件”导致页面看起来是空的）
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         const initialStartDate = new Date(today);
-        initialStartDate.setDate(initialStartDate.getDate() - 45);
+        initialStartDate.setDate(initialStartDate.getDate() - 7);
         
         const initialEndDate = new Date(today);
-        initialEndDate.setDate(initialEndDate.getDate() + 7);
+        initialEndDate.setDate(initialEndDate.getDate() + 30);
         initialEndDate.setHours(23, 59, 59, 999);
         
         console.log('📅 [TimeLog] Initial load range:', {
@@ -756,10 +756,62 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         
         const dbQueryStartTime = performance.now();
         // 加载初始范围事件（getTimelineEvents 负责过滤）
-        const events = await EventService.getTimelineEvents(
-          formatTimeForStorage(initialStartDate),
+        const getEventTimeSafe = (event: Event): Date | null => {
+          const raw = event.startTime || event.endTime || event.createdAt;
+          if (!raw) return null;
+          const d = new Date(raw);
+          return Number.isNaN(d.getTime()) ? null : d;
+        };
+
+        const countPastEventsInRange = (events: Event[], start: Date, end: Date): number => {
+          let count = 0;
+          for (const event of events) {
+            const t = getEventTimeSafe(event);
+            if (!t) continue;
+            if (t >= start && t <= end) count++;
+          }
+          return count;
+        };
+
+        let effectiveStartDate = new Date(initialStartDate);
+
+        let events = await EventService.getTimelineEvents(
+          formatTimeForStorage(effectiveStartDate),
           formatTimeForStorage(initialEndDate)
         );
+
+        // 如果“过去 7 天（从 effectiveStartDate 到今天）”事件少于 10 个，则继续向前扩展：每次 +3 天，最多扩展到过去 30 天
+        const maxPastDays = 30;
+        const expandStepDays = 3;
+        const desiredMinPastEvents = 10;
+        const maxPastStart = new Date(today);
+        maxPastStart.setDate(maxPastStart.getDate() - maxPastDays);
+
+        while (
+          effectiveStartDate > maxPastStart &&
+          countPastEventsInRange(events, effectiveStartDate, today) < desiredMinPastEvents
+        ) {
+          const nextStart = new Date(effectiveStartDate);
+          nextStart.setDate(nextStart.getDate() - expandStepDays);
+          if (nextStart < maxPastStart) {
+            nextStart.setTime(maxPastStart.getTime());
+          }
+
+          const morePastEvents = await EventService.getTimelineEvents(
+            formatTimeForStorage(nextStart),
+            formatTimeForStorage(effectiveStartDate)
+          );
+
+          const mergedEvents = [...morePastEvents, ...events];
+          events = Array.from(new Map(mergedEvents.map(e => [e.id, e])).values());
+          effectiveStartDate = nextStart;
+
+          // 如果扩展也没带来任何新事件，继续扩展只会浪费查询；直接退出
+          if (morePastEvents.length === 0) {
+            break;
+          }
+        }
+
         const dbQueryTime = performance.now() - dbQueryStartTime;
         
         console.log(`✅[TimeLog] Loaded ${events.length} timeline events (filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
@@ -767,12 +819,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         allEventsRef.current = events;
 
         // 同步面板的日期范围（用于 LogTab 刷新等）
-        setDateRange({ start: initialStartDate, end: initialEndDate });
+        setDateRange({ start: effectiveStartDate, end: initialEndDate });
         
         // 更新动态日期范✅
-        setDynamicStartDate(initialStartDate);
+        setDynamicStartDate(effectiveStartDate);
         setDynamicEndDate(initialEndDate);
-        dynamicStartDateRef.current = initialStartDate;
+        dynamicStartDateRef.current = effectiveStartDate;
         dynamicEndDateRef.current = initialEndDate;
         
         const totalLoadTime = performance.now() - loadStartTime;
@@ -2886,65 +2938,57 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Log Content - 默认只读渲染（使用 LogSlate readOnly 保持样式一致），点击进入唯一编辑器 */}
                     {expandedLogs.has(event.id) && (
                       <div className="event-log-box" ref={setEventlogObserveRef(event.id)} data-eventlog-observe-id={event.id}>
-                        {activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog' ? (
-                          <LogSlate
-                            mode="eventlog"
-                            value={getEventLogContent(event)}
-                            onChange={(slateJson) => handleLogChange(event.id, slateJson)}
-                            onBlur={() => closeEditor(event.id)}
-                            onEscape={() => closeEditor(event.id)}
-                            placeholder="添加日志..."
-                            className="timelog-slate-editor"
-                            showToolbar={true}
-                            enableMention={true}
-                            enableHashtag={true}
-                            showPreline={false}
-                            enableTimestamp={true}
-                            eventId={event.id}
-                            autoFocus={true}
-                          />
-                        ) : (
-                          <div
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              // ✅ 同步切换，保证点击位置在 Slate 内生效
-                              if (!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')) {
-                                flushSync(() => openEditor(event.id, 'eventlog'));
-                              }
-                            }}
-                            style={{ cursor: 'text' }}
-                          >
-                            {inViewEventlogIdsRef.current.has(event.id) ? (
-                              <LogSlate
-                                mode="eventlog"
-                                readOnly={true}
-                                value={getEventLogContent(event)}
-                                onChange={() => {}}
-                                placeholder="添加日志..."
-                                className="timelog-slate-editor"
-                                showToolbar={false}
-                                enableMention={false}
-                                enableHashtag={false}
-                                showPreline={false}
-                                enableTimestamp={true}
-                                eventId={event.id}
-                              />
-                            ) : (
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            // ✅ 同步切换，保证点击位置在 Slate 内生效
+                            if (!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')) {
+                              flushSync(() => openEditor(event.id, 'eventlog'));
+                            }
+                          }}
+                          style={{ cursor: 'text' }}
+                        >
+                          {inViewEventlogIdsRef.current.has(event.id) ? (
+                            <LogSlate
+                              mode="eventlog"
+                              value={getEventLogContent(event)}
+                              onChange={(slateJson) => handleLogChange(event.id, slateJson)}
+                              onBlur={() => {
+                                if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
+                                  closeEditor(event.id);
+                                }
+                              }}
+                              onEscape={() => {
+                                if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
+                                  closeEditor(event.id);
+                                }
+                              }}
+                              readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')}
+                              placeholder="添加日志..."
+                              className="timelog-slate-editor"
+                              showToolbar={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                              enableMention={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                              enableHashtag={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                              showPreline={false}
+                              enableTimestamp={true}
+                              eventId={event.id}
+                              autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                            />
+                          ) : (
+                            <div
+                              className="log-slate-wrapper eventlog-mode timelog-slate-editor"
+                              data-readonly
+                            >
                               <div
-                                className="log-slate-wrapper eventlog-mode timelog-slate-editor"
-                                data-readonly
-                              >
-                                <div
-                                  className="log-slate-editable eventlog-editable"
-                                  dangerouslySetInnerHTML={{
-                                    __html:
-                                      getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
-                                  }}
-                                />
-                              </div>
-                            )}
-                          </div>
-                        )}
+                                className="log-slate-editable eventlog-editable"
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
+                                }}
+                              />
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

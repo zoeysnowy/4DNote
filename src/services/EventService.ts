@@ -23,7 +23,7 @@ import { jsonToSlateNodes, slateNodesToHtml } from '../components/ModalSlate/ser
 import { generateEventId, isValidId } from '../utils/idGenerator'; // 🆕 UUID ID 生成
 import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
-import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
+import { migrateToBlockTimestamp, needsMigration } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
 import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
 import { EventTreeAPI, EventTreeNode } from './EventTree'; // 🆕 EventTree Engine 集成
 
@@ -67,6 +67,119 @@ export class EventService {
   // 仅缓存待写入的数据（防抖队列中的事件），写入成功后立即清除
   // 解决父子事件关联问题：子事件保存时能读取到还未落盘的父事件
   private static pendingWrites = new Map<string, Event>();
+
+  /** 5 分钟规则：normalize 侧用于清理历史过密时间戳 */
+  private static readonly EVENTLOG_TIMESTAMP_COMPACT_GAP_MS = 5 * 60 * 1000;
+
+  /**
+   * 清理/压缩 Block-Level EventLog Slate 节点：
+   * - 删除空白 paragraph（包括末尾 placeholder / 空行堆积）
+   * - 清理签名段落（防止历史数据把签名写进 eventlog）
+   * - 按 5 分钟规则压缩过密 createdAt：相邻时间戳间隔 < 5min → 移除后者 createdAt
+   * - 不会为“普通段落”强行补全 createdAt（避免再次制造过密时间戳）
+   * - 如果整个文档没有任何 createdAt，会给第一个非空段落补一个（用于展示/时间提取）
+   */
+  private static compactBlockLevelEventLogNodes(
+    nodes: any[],
+    options?: { eventCreatedAt?: number; minGapMs?: number }
+  ): any[] {
+    if (!Array.isArray(nodes)) return [];
+
+    const minGapMs = options?.minGapMs ?? this.EVENTLOG_TIMESTAMP_COMPACT_GAP_MS;
+    const baseTimestamp = options?.eventCreatedAt ?? Date.now();
+
+    const isEmptyParagraph = (node: any): boolean => {
+      if (!node || node.type !== 'paragraph') return false;
+      const children = Array.isArray(node.children) ? node.children : [];
+      if (children.length === 0) return true;
+
+      let hasNonWhitespaceText = false;
+      let hasNonTextChild = false;
+
+      for (const child of children) {
+        if (child && typeof child.text === 'string') {
+          if (child.text.trim() !== '') {
+            hasNonWhitespaceText = true;
+            break;
+          }
+        } else if (child && typeof child === 'object') {
+          // tag / mention 等 inline element：即便 text 为空，也不应视为空段落
+          hasNonTextChild = true;
+          break;
+        }
+      }
+
+      return !hasNonWhitespaceText && !hasNonTextChild;
+    };
+
+    const paragraphToPlainText = (node: any): string => {
+      const children = Array.isArray(node?.children) ? node.children : [];
+      return children
+        .map((child: any) => (typeof child?.text === 'string' ? child.text : ''))
+        .join('')
+        .trim();
+    };
+
+    // Step 1: 删除空白段落 + 签名段落
+    const filtered = nodes.filter((node: any) => {
+      if (!node) return false;
+      if (node.type !== 'paragraph') return true;
+
+      if (isEmptyParagraph(node)) return false;
+
+      const plain = paragraphToPlainText(node);
+      if (plain && SignatureUtils.isSignatureParagraph(plain)) {
+        return false;
+      }
+
+      return true;
+    });
+
+    // Step 2: 若没有任何 timestamp，给第一个非空 paragraph 补一个
+    const hasAnyTimestamp = filtered.some(
+      (n: any) => n?.type === 'paragraph' && typeof n.createdAt === 'number'
+    );
+
+    let firstTimestampInjected = false;
+    let lastKeptTimestamp: number | undefined;
+
+    return filtered.map((node: any, index: number) => {
+      if (!node || node.type !== 'paragraph') return node;
+
+      const nextNode: any = { ...node };
+      nextNode.id = nextNode.id || generateBlockId(baseTimestamp + index);
+
+      const hasContent = !isEmptyParagraph(nextNode);
+
+      if (!hasAnyTimestamp && !firstTimestampInjected && hasContent) {
+        nextNode.createdAt = baseTimestamp;
+        firstTimestampInjected = true;
+        lastKeptTimestamp = baseTimestamp;
+        return nextNode;
+      }
+
+      const ts = typeof nextNode.createdAt === 'number' ? nextNode.createdAt : undefined;
+      if (ts === undefined) {
+        // 不补 createdAt：避免把“同一块内的普通段落”变成新的时间戳块
+        return nextNode;
+      }
+
+      if (lastKeptTimestamp === undefined) {
+        lastKeptTimestamp = ts;
+        return nextNode;
+      }
+
+      const delta = ts - lastKeptTimestamp;
+      if (delta >= 0 && delta < minGapMs) {
+        // 5 分钟内 → 移除 createdAt，让它变成“同一块内的普通段落”
+        const { createdAt, updatedAt, ...rest } = nextNode;
+        return rest;
+      }
+
+      lastKeptTimestamp = ts;
+      return nextNode;
+    });
+  }
   
   /**
    * 🔧 [FIX] 确保 StorageManager 已初始化
@@ -2646,11 +2759,20 @@ export class EventService {
           
           // 🆕 [CRITICAL FIX] 检查是否有 paragraph 缺少 createdAt
           // 如果缺少，说明是旧格式，需要从 plainText 重新解析时间戳
-          const hasParagraphWithoutTimestamp = slateNodes.some((node: any) => 
-            node.type === 'paragraph' && !node.createdAt
+          const hasAnyBlockTimestamp = slateNodes.some((node: any) =>
+            node.type === 'paragraph' && typeof node.createdAt === 'number'
           );
-          
-          if (hasParagraphWithoutTimestamp && eventLog.plainText) {
+
+          const hasNonEmptyParagraphWithoutTimestamp = slateNodes.some((node: any) => {
+            if (node.type !== 'paragraph') return false;
+            if (node.createdAt !== undefined) return false;
+            const children = Array.isArray(node.children) ? node.children : [];
+            return children.some((child: any) => typeof child?.text === 'string' && child.text.trim() !== '');
+          });
+
+          // ⚠️ 重要：当前架构允许“同一时间块内的普通段落”没有 createdAt
+          // 因此只有在“整个文档都没有任何 block timestamp”时，才视为旧格式并尝试从 plainText 重新解析
+          if (!hasAnyBlockTimestamp && hasNonEmptyParagraphWithoutTimestamp && eventLog.plainText) {
             console.log('[normalizeEventLog] 🔄 检测到 paragraph 缺少 createdAt，从 plainText 重新解析');
             
             // 检查 plainText 是否包含时间戳
@@ -2666,17 +2788,23 @@ export class EventService {
               console.log('[normalizeEventLog] 解析后的节点:', newSlateNodes);
               return this.convertSlateJsonToEventLog(JSON.stringify(newSlateNodes));
             } else {
-              console.log('[normalizeEventLog] ⚠️ plainText 中未发现时间戳，使用 ensureBlockTimestamps 补全');
-              const ensuredNodes = ensureBlockTimestamps(slateNodes);
-              return this.convertSlateJsonToEventLog(JSON.stringify(ensuredNodes));
+              console.log('[normalizeEventLog] ⚠️ plainText 中未发现时间戳，执行 eventlog 清理/压缩（空白节点 + 5分钟规则）');
+              const compactedNodes = this.compactBlockLevelEventLogNodes(slateNodes, {
+                eventCreatedAt,
+                minGapMs: this.EVENTLOG_TIMESTAMP_COMPACT_GAP_MS,
+              });
+              return this.convertSlateJsonToEventLog(JSON.stringify(compactedNodes));
             }
           }
-          
-          // 🆕 确保所有 paragraph 都有 Block Timestamp 元数据
-          const ensuredNodes = ensureBlockTimestamps(slateNodes);
-          if (JSON.stringify(ensuredNodes) !== JSON.stringify(slateNodes)) {
-            console.log('[EventService] 🔧 补全了缺失的 Block Timestamp 元数据');
-            return this.convertSlateJsonToEventLog(JSON.stringify(ensuredNodes));
+
+          // 🆕 清理空白节点 + 压缩过密时间戳（5 分钟规则）
+          const compactedNodes = this.compactBlockLevelEventLogNodes(slateNodes, {
+            eventCreatedAt,
+            minGapMs: this.EVENTLOG_TIMESTAMP_COMPACT_GAP_MS,
+          });
+          if (JSON.stringify(compactedNodes) !== JSON.stringify(slateNodes)) {
+            console.log('[EventService] 🧹 eventlog 清理/压缩完成（空白节点 + 5分钟规则）');
+            return this.convertSlateJsonToEventLog(JSON.stringify(compactedNodes));
           }
           
           // ❌ 移除旧的 timestamp-divider 检测逻辑（已由 needsMigration 替代）
@@ -2690,6 +2818,15 @@ export class EventService {
           
           // 如果没有纯文本时间戳，直接返回（不再检查 timestamp-divider）
           if (!hasParagraphTimestamp) {
+            // 仍然做一次清理/压缩（修复历史空白节点与过密 createdAt）
+            const compactedNodes2 = this.compactBlockLevelEventLogNodes(slateNodes, {
+              eventCreatedAt,
+              minGapMs: this.EVENTLOG_TIMESTAMP_COMPACT_GAP_MS,
+            });
+            if (JSON.stringify(compactedNodes2) !== JSON.stringify(slateNodes)) {
+              console.log('[EventService] 🧹 eventlog 清理/压缩完成（无纯文本时间戳）');
+              return this.convertSlateJsonToEventLog(JSON.stringify(compactedNodes2));
+            }
             return eventLog; // 已经规范化，跳过解析
           }
         }
@@ -2799,6 +2936,19 @@ export class EventService {
       
       // Slate JSON 字符串（以 [ 开头）
       if (trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(eventlogInput);
+          if (Array.isArray(parsed)) {
+            const compactedNodes = this.compactBlockLevelEventLogNodes(parsed, {
+              eventCreatedAt,
+              minGapMs: this.EVENTLOG_TIMESTAMP_COMPACT_GAP_MS,
+            });
+            return this.convertSlateJsonToEventLog(JSON.stringify(compactedNodes));
+          }
+        } catch {
+          // ignore, fall back
+        }
+
         return this.convertSlateJsonToEventLog(eventlogInput);
       }
       

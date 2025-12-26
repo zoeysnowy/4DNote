@@ -232,6 +232,48 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   
   // 初始值（只在首次渲染时使用）
   const initialValue = useMemo(() => parseValue(value), []);
+
+  // 失焦保存前的轻量清理：移除空段落（包括末尾 placeholder）
+  const cleanupSlateJson = useCallback((json: string): string => {
+    try {
+      const parsed = JSON.parse(json);
+      if (!Array.isArray(parsed)) return json;
+
+      const isEmptyParagraph = (node: any): boolean => {
+        if (!node || node.type !== 'paragraph') return false;
+        const children = Array.isArray(node.children) ? node.children : [];
+        if (children.length === 0) return true;
+
+        let hasNonWhitespaceText = false;
+        let hasNonTextChild = false;
+
+        for (const child of children) {
+          if (child && typeof child.text === 'string') {
+            if (child.text.trim() !== '') {
+              hasNonWhitespaceText = true;
+              break;
+            }
+          } else if (child && typeof child === 'object') {
+            // tag / mention 等：不视为空
+            hasNonTextChild = true;
+            break;
+          }
+        }
+
+        return !hasNonWhitespaceText && !hasNonTextChild;
+      };
+
+      const cleaned = (parsed as any[]).filter((node) => {
+        if (!node) return false;
+        if (node.type !== 'paragraph') return true;
+        return !isEmptyParagraph(node);
+      });
+
+      return JSON.stringify(cleaned);
+    } catch {
+      return json;
+    }
+  }, []);
   
   // 同步外部 value 变化到编辑器
   useEffect(() => {
@@ -359,6 +401,33 @@ export const LogSlate: React.FC<LogSlateProps> = ({
                   applyingTimestampRef.current = true;
                   try {
                     Editor.withoutNormalizing(editor, () => {
+                      // 🧹 TimeLog 体验修复：避免 timestamp 上方残留空段落导致光标“靠下/空一行”
+                      // 仅清理当前段落前面紧挨着的空 paragraph（无文本、无 createdAt）
+                      try {
+                        if (
+                          mode === 'eventlog' &&
+                          showPreline === false &&
+                          Array.isArray(currentPath) &&
+                          currentPath.length === 1
+                        ) {
+                          let i = currentPath[0] - 1;
+                          while (i >= 0) {
+                            const prev = editor.children[i] as any;
+                            if (!prev || prev.type !== 'paragraph') break;
+                            const prevText = Node.string(prev).trim();
+                            const prevHasCreatedAt = !!prev.createdAt;
+                            if (prevText === '' && !prevHasCreatedAt) {
+                              Transforms.removeNodes(editor, { at: [i] });
+                              i--;
+                              continue;
+                            }
+                            break;
+                          }
+                        }
+                      } catch {
+                        // ignore
+                      }
+
                       timestampServiceRef.current!.insertBlockLevelTimestamp(editor, currentPath, eventId);
                       try {
                         Transforms.select(editor, selectionSnapshot);
@@ -432,9 +501,9 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         const paragraphText = para.children?.map((child: any) => child.text || '').join('').trim();
         const isEmptyParagraph = !paragraphText;
         
-        // 🆕 [v2.20.0] 显示时间戳逻辑调整：
-        // - 非空段落：始终显示 timestamp（原有逻辑）
-        // - 空段落：如果有 createdAt（用户刚插入光标），也显示 timestamp（新增）
+        // 🆕 显示时间戳逻辑：
+        // - TimeLog 模式（showPreline=false）：允许空段落显示（用户插入光标后应立即看到 timestamp）
+        // - 其他模式：保持原逻辑（有 createdAt 就显示）
         // - title 模式：永不显示 timestamp
         const shouldShowTimestamp = hasBlockTimestamp && mode !== 'title';
         
@@ -463,14 +532,19 @@ export const LogSlate: React.FC<LogSlateProps> = ({
               >
                 {formatDateTime(new Date(para.createdAt))}
               </div>
-              <p {...props.attributes} style={{ margin: 0 }}>{props.children}</p>
+              <p {...props.attributes} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{props.children}</p>
             </div>
           );
         }
         
         // TimeLog 模式（无时间戳）：直接渲染段落
         if (!showPreline) {
-          return <p {...props.attributes}>{props.children}</p>;
+          // ⚠️ 关键：TimeLog 里必须移除 <p> 默认 margin，否则光标会“空一行”看起来偏下
+          return (
+            <p {...props.attributes} style={{ margin: 0, whiteSpace: 'pre-wrap' }}>
+              {props.children}
+            </p>
+          );
         }
         
         // LogTab/ModalSlate 模式：显示 preline（基于 Block-Level Timestamp）
@@ -610,6 +684,25 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       event.preventDefault();
       if (onEscape) {
         onEscape();
+      }
+      return;
+    }
+
+    // ✅ TimeLog（showPreline=false）模式：Enter 作为“段内换行”而不是新段落
+    // - Enter: 插入 "\n"（soft break）
+    // - Ctrl/Meta+Enter: 保持默认行为（新段落，用于显式开启新块/新时间段）
+    if (
+      mode === 'eventlog' &&
+      showPreline === false &&
+      event.key === 'Enter' &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
+      event.preventDefault();
+      try {
+        Transforms.insertText(editor, '\n');
+      } catch {
+        // ignore
       }
       return;
     }
@@ -782,24 +875,45 @@ export const LogSlate: React.FC<LogSlateProps> = ({
               pendingValueLength: pendingValueRef.current?.length,
               isEditing: isEditingRef.current
             });
-            
-            // 失焦时保存缓存的内容
+
+            const hadRealEdit = pendingValueRef.current !== null || isEditingRef.current;
+
+            // 标记编辑结束（必须在触发 onChange 之前，避免外部 value 同步被“正在编辑”拦截）
+            isEditingRef.current = false;
+
+            // 失焦时保存缓存的内容（先清理空节点，避免 placeholder/空行落盘与残留 UI）
             if (pendingValueRef.current !== null) {
-              console.log('📤 [LogSlate] 调用 onChange', {
-                valueLength: pendingValueRef.current.length
+              const cleanedJson = cleanupSlateJson(pendingValueRef.current);
+              console.log('📤 [LogSlate] 调用 onChange（已清理空节点）', {
+                valueLength: cleanedJson.length
               });
-              onChange(pendingValueRef.current);
+              onChange(cleanedJson);
               pendingValueRef.current = null;
+
+              // 同步清理到当前 editor，避免 blur 后仍看到空段落
+              try {
+                const cleanedNodes = JSON.parse(cleanedJson);
+                if (Array.isArray(cleanedNodes)) {
+                  Editor.withoutNormalizing(editor, () => {
+                    for (let i = editor.children.length - 1; i >= 0; i--) {
+                      Transforms.removeNodes(editor, { at: [i] });
+                    }
+                    Transforms.insertNodes(editor, cleanedNodes as any, { at: [0] });
+                  });
+                }
+              } catch {
+                // ignore
+              }
             } else {
               console.warn('⚠️ [LogSlate] 没有待保存的内容');
             }
-            
-            // 标记编辑结束
-            isEditingRef.current = false;
 
             // ✅ 对齐规则：以 blur 作为“失焦时间”基准（用于 5min 规则）
             if (enableTimestamp && eventId && mode === 'eventlog' && timestampServiceRef.current) {
-              timestampServiceRef.current.updateLastEditTime(eventId, new Date());
+              // 只有发生真实编辑才更新时间，避免“点一下就把 5min 窗口重置”
+              if (hadRealEdit) {
+                timestampServiceRef.current.updateLastEditTime(eventId, new Date());
+              }
             }
             isFocusedRef.current = false;
             insertedTimestampThisFocusRef.current = false;

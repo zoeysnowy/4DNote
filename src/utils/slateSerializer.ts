@@ -131,7 +131,8 @@ export function slateNodesToHtml(nodes: Descendant[]): string {
 function nodeToHtml(node: any): string {
   // 文本节点（处理格式）
   if (SlateText.isText(node)) {
-    let text = escapeHtml(node.text);
+    // \n 作为软换行：序列化为 <br/> 以便 HTML 预览正确显示
+    let text = escapeHtml(node.text).replace(/\n/g, '<br/>');
     
     // 应用文本格式
     if (node.bold) text = `<strong>${text}</strong>`;
