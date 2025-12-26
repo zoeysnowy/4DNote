@@ -4,7 +4,7 @@
  * 定义哪些字段应该同步到 Outlook，哪些是 4DNote 内部字段
  */
 
-import { Event } from '../types';
+import { Contact, Event } from '../types';
 
 /**
  * Microsoft Graph Calendar Event 支持的字段
@@ -357,12 +357,20 @@ export function mergeAttendees(
   
   // 如果远程是 undefined，保留本地的
   return localAttendees;
-}for (const [key, value] of Object.entries(data)) {
+}
+
+/**
+ * 过滤出需要同步到 Outlook 的字段（用于增量 patch）
+ */
+export function filterOutlookSyncFields<T extends Record<string, any>>(data: T): Partial<T> {
+  const filtered: Partial<T> = {};
+
+  for (const [key, value] of Object.entries(data)) {
     if (shouldSyncFieldToOutlook(key)) {
-      filtered[key] = value;
+      (filtered as any)[key] = value;
     }
   }
-  
+
   return filtered;
 }
 
@@ -391,6 +399,14 @@ export const SYNC_COMPARABLE_FIELDS = [
   'isCompleted',  // Microsoft To Do: status
   'categories'    // Outlook: categories
 ] as const;
+
+/**
+ * 判断某个 4DNote 字段是否会影响 Outlook/ToDo 同步
+ */
+export function shouldSyncFieldToOutlook(field: string): boolean {
+  if (INTERNAL_ONLY_FIELDS.has(field)) return false;
+  return (SYNC_COMPARABLE_FIELDS as readonly string[]).includes(field);
+}
 
 /**
  * 不应该做 diff 对比的字段（内部字段或只读字段）
