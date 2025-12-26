@@ -848,6 +848,18 @@
   min-height: 40px !important; /* 大幅降低最小高度，让时间轴紧贴内容 */
 }
 
+/* LogSlate（TimeLog 标题/日志）同样 적용：避免 HTML 预览和编辑态差异 */
+.timelog-slate-editor .log-slate-editable {
+  min-height: 40px !important;
+  white-space: pre-wrap; /* 让文本内的 \n 在预览中换行 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.timelog-slate-editor .log-slate-editable p {
+  margin: 0;
+}
+
 /* ModalSlate 内的 TimestampDivider 会自动应用 SlateCore 的紫蓝渐变样式 */
 
 /* ========================================

@@ -622,7 +622,11 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       requestAnimationFrame(() => {
         try {
           ReactEditor.focus(editor as ReactEditor);
-          Transforms.select(editor, Editor.end(editor, []));
+          // 只在没有 selection 的情况下把光标放到末尾；
+          // 避免用户点击定位后被我们“抢回去”。
+          if (!editor.selection) {
+            Transforms.select(editor, Editor.end(editor, []));
+          }
         } catch (err) {
           console.error('[LogSlate] Failed to focus/select end:', err);
         }
