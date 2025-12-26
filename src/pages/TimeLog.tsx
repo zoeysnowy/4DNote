@@ -509,9 +509,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 格式化日期显✅
   function formatDateDisplay(date: Date): string {
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+    const month = date.getMonth() + 1;
     const day = date.getDate();
     const weekday = weekdays[date.getDay()];
-    return `${day} | ${weekday}`;
+    return `${month} ${day} | ${weekday}`;
   }
 
   // 初始化加载事件数据
@@ -1007,7 +1008,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       month === now.getMonth() + 1 &&
       day === now.getDate();
 
-    return `${day} | ${weekday}${isToday ? ' (今天)' : ''}`;
+    return `${month} ${day} | ${weekday}${isToday ? ' (今天)' : ''}`;
   };
 
   // 获取今天的日期key
