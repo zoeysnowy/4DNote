@@ -512,7 +512,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     const month = date.getMonth() + 1;
     const day = date.getDate();
     const weekday = weekdays[date.getDay()];
-    return `${month} ${day} | ${weekday}`;
+    return `${month}.${day} ${weekday}`;
   }
 
   // 初始化加载事件数据
@@ -989,7 +989,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   }, [timelineSegments.length, loadingEvents]);
 
-  // 格式化日期标题（例如：2 | 周四）
+  // 格式化日期标题（例如：12.14 周日、12.26 周五（今天））
   // 注意：不要用 new Date('YYYY-MM-DD')，在非 UTC+8 时区可能会发生日期/星期偏移
   const formatDateTitle = (dateKey: string): string => {
     const parts = dateKey.split('-').map(n => Number(n));
@@ -1008,7 +1008,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       month === now.getMonth() + 1 &&
       day === now.getDate();
 
-    return `${month} ${day} | ${weekday}${isToday ? ' (今天)' : ''}`;
+    return `${month}.${day} ${weekday}${isToday ? '（今天）' : ''}`;
   };
 
   // 获取今天的日期key
