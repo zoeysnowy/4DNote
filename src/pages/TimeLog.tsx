@@ -529,33 +529,36 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       
       setLoadingEvents(true);
       try {
-        // 🚀 [PERFORMANCE] 计算初始加载范围：今天前✅天（足够显示，配合双向无限滚动）
+        // 初始加载范围：覆盖最近一段时间，避免“今天附近无事件”导致页面看起来是空的
         const today = new Date();
         today.setHours(0, 0, 0, 0);
         
         const initialStartDate = new Date(today);
-        initialStartDate.setDate(initialStartDate.getDate() - 7); // 优化：从45天减少到7✅
+        initialStartDate.setDate(initialStartDate.getDate() - 45);
         
         const initialEndDate = new Date(today);
-        initialEndDate.setDate(initialEndDate.getDate() + 7); // 优化：从45天减少到7✅
+        initialEndDate.setDate(initialEndDate.getDate() + 7);
         initialEndDate.setHours(23, 59, 59, 999);
         
-        console.log('📅 [TimeLog] Initial load range (Today ±7 days):', {
+        console.log('📅 [TimeLog] Initial load range:', {
           start: formatTimeForStorage(initialStartDate),
           end: formatTimeForStorage(initialEndDate)
         });
         
         const dbQueryStartTime = performance.now();
-        // 加载今天前后7天的事件（使✅getTimelineEvents 过滤✅
+        // 加载初始范围事件（getTimelineEvents 负责过滤）
         const events = await EventService.getTimelineEvents(
           formatTimeForStorage(initialStartDate),
           formatTimeForStorage(initialEndDate)
         );
         const dbQueryTime = performance.now() - dbQueryStartTime;
         
-        console.log(`✅[TimeLog] Loaded ${events.length} timeline events (Today ±7 days, filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
+        console.log(`✅[TimeLog] Loaded ${events.length} timeline events (filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
         setAllEvents(events);
         allEventsRef.current = events;
+
+        // 同步面板的日期范围（用于 LogTab 刷新等）
+        setDateRange({ start: initialStartDate, end: initialEndDate });
         
         // 更新动态日期范✅
         setDynamicStartDate(initialStartDate);
@@ -648,6 +651,41 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       window.removeEventListener('eventsUpdated', handleEventsUpdated);
     };
   }, []);
+
+  // 当用户在左侧面板选择日期范围时：更新动态范围并重新加载事件
+  useEffect(() => {
+    if (!dateRange) return;
+
+    const start = new Date(dateRange.start);
+    start.setHours(0, 0, 0, 0);
+
+    const end = new Date(dateRange.end);
+    end.setHours(23, 59, 59, 999);
+
+    setDynamicStartDate(start);
+    setDynamicEndDate(end);
+    dynamicStartDateRef.current = start;
+    dynamicEndDateRef.current = end;
+
+    const reload = async () => {
+      setLoadingEvents(true);
+      try {
+        const loaded = await EventService.getTimelineEvents(
+          formatTimeForStorage(start),
+          formatTimeForStorage(end)
+        );
+        setAllEvents(loaded);
+        allEventsRef.current = loaded;
+        console.log(`✅[TimeLog] Reloaded ${loaded.length} events for selected range`);
+      } catch (error) {
+        console.error('✅[TimeLog] Failed to reload events for range:', error);
+      } finally {
+        setLoadingEvents(false);
+      }
+    };
+
+    reload();
+  }, [dateRange]);
 
   // 初始滚动到今天的位置（移✅getTodayDateKey 定义之后✅
 
@@ -1686,10 +1724,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             {loadingEvents ? (
             <div className="timelog-empty">
               <p>加载✅..</p>
-            </div>
-          ) : events.length === 0 ? (
-            <div className="timelog-empty">
-              <p>暂无事件记录</p>
             </div>
           ) : (
             timelineSegments.map((segment, segmentIndex) => {

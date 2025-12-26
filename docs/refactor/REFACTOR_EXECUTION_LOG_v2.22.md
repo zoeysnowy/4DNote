@@ -68,3 +68,29 @@
 - Revert single commit: `git revert <sha>`.
 - Reset a branch to known-good tag: `git reset --hard refactor-good-...`.
 - Restore WIP stash: `git stash list` then `git stash pop`.
+
+## TimeLog Optimization Targets (v2.22)
+Source: `docs/audits/TimeLog 页面性能诊断与优化规范（保留默认展开阅读、跳转、timegap、压缩日期展开）.md`
+
+### Constraints (must keep)
+- Default expanded readable timeline (no per-item expand required).
+- Read mode supports tag/mention/link jumps.
+- Only one editor active at a time is acceptable; switching editor is seamless.
+- TimeGap insertion UX stays.
+- Compressed date ranges stay; user can expand a day and insert via TimeGap.
+
+### Phase 1 (Stop-the-bleed performance)
+- Read-only renderer for title/eventlog (no Slate editor mounted for reading).
+- `activeEditorEventId` so only one `LogSlate` is mounted for editing.
+- Click delegation for jump targets using `data-kind`/`data-value` (avoid per-token closures).
+
+### Phase 2 (Structural: avoid "scroll gets slower")
+- Incremental index (`eventsById`, `idsByDate`, `datesWithEvents`) to avoid full merge/sort/group on every load.
+- Sparse timeline segments (`month-header` + `day` + `gap`) to keep DOM small while preserving compressed-day UX.
+- Avoid per-render day-by-day scanning inside month/gap rendering.
+
+### Phase 3 (Polish)
+- Read-only render cache (LRU) keyed by `eventId + updatedAt` (upgrade to semantic hash later).
+- Idle/frames scheduling for non-critical render work.
+- Reduce React state churn (large Maps/Sets in refs; small selectors in state).
+- Audit/replace `setTimeout`/polling with `requestAnimationFrame`/`queueMicrotask` where appropriate.

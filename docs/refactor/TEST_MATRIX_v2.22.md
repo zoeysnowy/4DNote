@@ -21,6 +21,22 @@ Goal: enumerate user operations, expected outcomes, and where we validate them (
   - Expect: save persists after refresh; no event_history explosion.
   - Validate: Manual.
 
+- Date range selection
+  - Expect: selecting a month/week range loads events for that range.
+  - Validate: Manual.
+
+- Default reading mode performance
+  - Expect: default readable timeline without mounting dozens of editors.
+  - Validate: Manual (React DevTools / Performance profile).
+
+- Single active editor
+  - Expect: only one event is editable at a time; switching edits is seamless.
+  - Validate: Manual.
+
+- Compressed dates
+  - Expect: empty date ranges are compressed; user can expand a day and insert via TimeGap.
+  - Validate: Manual.
+
 ## TimeCalendar
 - View switching
   - Expect: no timers/polling CPU spikes; view stable.
