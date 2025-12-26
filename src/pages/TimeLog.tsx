@@ -26,6 +26,7 @@ import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
+import { slateNodesToPlainText } from '../utils/slateSerializer';
 import type { Event } from '../types';
 import './TimeLog.css';
 
@@ -271,6 +272,69 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // ✅使用过滤后的时间轴事件，排除无时间的 Task 和附属事件
   const [allEvents, setAllEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+
+  // 性能优化 Phase 1：只挂载一个 Slate 编辑器（默认展开阅读走只读）
+  const [activeEditor, setActiveEditor] = useState<null | { eventId: string; mode: 'title' | 'eventlog' }>(null);
+
+  const extractPlainTextFromSlateJson = useCallback((slateJson: string): string => {
+    if (!slateJson) return '';
+    try {
+      const nodes = JSON.parse(slateJson);
+      if (!Array.isArray(nodes)) return '';
+      return slateNodesToPlainText(nodes as any).trim();
+    } catch {
+      return '';
+    }
+  }, []);
+
+  const getTitlePlainText = useCallback((event: Event): string => {
+    const titleObj = typeof event.title === 'object' ? event.title : null;
+    const simpleTitle = titleObj?.simpleTitle || '';
+    if (simpleTitle.trim()) return simpleTitle;
+
+    const colorTitle = titleObj?.colorTitle || '';
+    if (colorTitle) {
+      const parsed = extractPlainTextFromSlateJson(colorTitle);
+      if (parsed) return parsed;
+    }
+
+    const fullTitle = (titleObj as any)?.fullTitle || '';
+    if (typeof fullTitle === 'string' && fullTitle) {
+      const parsed = extractPlainTextFromSlateJson(fullTitle);
+      if (parsed) return parsed;
+    }
+    return '';
+  }, [extractPlainTextFromSlateJson]);
+
+  const getEventLogPlainText = useCallback((event: Event): string => {
+    if (!event.eventlog) return '';
+
+    if (typeof event.eventlog === 'object') {
+      const anyLog = event.eventlog as any;
+      if (typeof anyLog.plainText === 'string' && anyLog.plainText.trim()) {
+        return anyLog.plainText;
+      }
+      if (typeof anyLog.slateJson === 'string' && anyLog.slateJson) {
+        return extractPlainTextFromSlateJson(anyLog.slateJson);
+      }
+      return '';
+    }
+
+    if (typeof event.eventlog === 'string') {
+      return extractPlainTextFromSlateJson(event.eventlog);
+    }
+
+    return '';
+  }, [extractPlainTextFromSlateJson]);
+
+  const openEditor = useCallback((eventId: string, mode: 'title' | 'eventlog') => {
+    setActiveEditor({ eventId, mode });
+  }, []);
+
+  const closeEditor = useCallback((eventId?: string) => {
+    if (eventId && activeEditor?.eventId !== eventId) return;
+    setActiveEditor(null);
+  }, [activeEditor?.eventId]);
 
   const tagRowRef = useRef<HTMLDivElement | null>(null);
   const modalSlateRefs = useRef<Map<string, any>>(new Map());
@@ -2483,47 +2547,57 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           {event.emoji && <span className="event-emoji">{event.emoji}</span>}
                           
                           {/* 标题始终可编辑，✅PlanSlate 一✅*/}
-                          <div className="event-title">
-                        <LogSlate
-                          mode="title"
-                          placeholder="添加标题..."
-                          value={(() => {
-                            // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编✅
-                            const colorTitle = typeof event.title === 'object' 
-                              ? event.title.colorTitle 
-                              : null;
-                            return colorTitle || '';
-                          })()}
-                          onChange={(slateJson) => {
-                            // 缓存标题变化，不立即保存
-                            console.log('📝 [TimeLog] onChange 收到数据', {
-                              eventId: event.id.slice(-8),
-                              slateJsonLength: slateJson.length,
-                              preview: slateJson.substring(0, 100)
-                            });
-                            pendingTitleChanges.current.set(event.id, slateJson);
-                          }}
-                          onBlur={() => {
-                            // 失焦时保✅
-                            console.log('👋 [TimeLog] onBlur 触发', {
-                              eventId: event.id.slice(-8)
-                            });
-                            const pendingValue = pendingTitleChanges.current.get(event.id);
-                            if (pendingValue !== undefined) {
-                              console.log('💾 [TimeLog] 开始保存标✅..', {
-                                eventId: event.id.slice(-8),
-                                valueLength: pendingValue.length
-                              });
-                              handleTitleSave(event.id, pendingValue);
-                              pendingTitleChanges.current.delete(event.id);
-                            } else {
-                              console.warn('⚠️ [TimeLog] 没有待保存的标题', {
-                                eventId: event.id.slice(-8)
-                              });
-                            }
-                          }}
-                        />
-                      </div>
+                          <div
+                            className="event-title"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(event.id, 'title');
+                            }}
+                          >
+                            {activeEditor?.eventId === event.id && activeEditor.mode === 'title' ? (
+                              <LogSlate
+                                mode="title"
+                                placeholder="添加标题..."
+                                autoFocus={true}
+                                value={(() => {
+                                  // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编辑
+                                  const colorTitle = typeof event.title === 'object'
+                                    ? event.title.colorTitle
+                                    : null;
+                                  return colorTitle || '';
+                                })()}
+                                onChange={(slateJson) => {
+                                  // 缓存标题变化，不立即保存
+                                  pendingTitleChanges.current.set(event.id, slateJson);
+                                }}
+                                onEscape={() => {
+                                  // 取消本次编辑（不保存）
+                                  pendingTitleChanges.current.delete(event.id);
+                                  closeEditor(event.id);
+                                }}
+                                onBlur={() => {
+                                  // 失焦时保存
+                                  const pendingValue = pendingTitleChanges.current.get(event.id);
+                                  if (pendingValue !== undefined) {
+                                    handleTitleSave(event.id, pendingValue);
+                                    pendingTitleChanges.current.delete(event.id);
+                                  }
+                                  closeEditor(event.id);
+                                }}
+                              />
+                            ) : (
+                              <div
+                                style={{
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                {getTitlePlainText(event) || (
+                                  <span style={{ color: '#9ca3af' }}>添加标题...</span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                       
                       {/* 🆕 同步模式选择器弹✅*/}
                       {showSyncModePicker === event.id && createPortal(
@@ -2667,22 +2741,44 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Row 5: Icon bar - 已移至标题右侧的幽灵菜单 */}
                     {/* 旧的 event-meta-icon-bar 已被标题幽灵菜单取代 */}
 
-                    {/* Log Content - 使用 LogSlate 编辑✅*/}
+                    {/* Log Content - 默认只读渲染（性能优化），点击进入唯一编辑器 */}
                     {expandedLogs.has(event.id) && (
                       <div className="event-log-box">
-                        <LogSlate
-                          mode="eventlog"
-                          value={getEventLogContent(event)}
-                          onChange={(slateJson) => handleLogChange(event.id, slateJson)}
-                          placeholder="添加日志..."
-                          className="timelog-slate-editor"
-                          showToolbar={true}
-                          enableMention={true}
-                          enableHashtag={true}
-                          showPreline={false}
-                          enableTimestamp={true}
-                          eventId={event.id}
-                        />
+                        {activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog' ? (
+                          <LogSlate
+                            mode="eventlog"
+                            value={getEventLogContent(event)}
+                            onChange={(slateJson) => handleLogChange(event.id, slateJson)}
+                            onBlur={() => closeEditor(event.id)}
+                            onEscape={() => closeEditor(event.id)}
+                            placeholder="添加日志..."
+                            className="timelog-slate-editor"
+                            showToolbar={true}
+                            enableMention={true}
+                            enableHashtag={true}
+                            showPreline={false}
+                            enableTimestamp={true}
+                            eventId={event.id}
+                            autoFocus={true}
+                          />
+                        ) : (
+                          <div
+                            className="timelog-slate-editor"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(event.id, 'eventlog');
+                            }}
+                            style={{
+                              whiteSpace: 'pre-wrap',
+                              wordBreak: 'break-word',
+                              cursor: 'text',
+                            }}
+                          >
+                            {getEventLogPlainText(event) || (
+                              <span style={{ color: '#9ca3af' }}>添加日志...</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
