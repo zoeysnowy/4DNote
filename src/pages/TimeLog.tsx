@@ -336,6 +336,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     setActiveEditor(null);
   }, [activeEditor?.eventId]);
 
+  const updateLocalEvent = useCallback((eventId: string, patch: Partial<Event>) => {
+    setAllEvents(prev => {
+      const next = prev.map(e => (e.id === eventId ? ({ ...e, ...patch } as Event) : e));
+      allEventsRef.current = next;
+      return next;
+    });
+  }, []);
+
   const tagRowRef = useRef<HTMLDivElement | null>(null);
   const modalSlateRefs = useRef<Map<string, any>>(new Map());
   const timelineContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1282,6 +1290,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       }
     }
     
+    // ✅ 先本地乐观更新，避免退出编辑后“抖动/延迟回显”
+    updateLocalEvent(eventId, { eventlog: slateJson } as any);
+
     // 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, {
       eventlog: slateJson  // EventService 会自动处理格式转✅
@@ -1350,6 +1361,14 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       simpleTitle,
       slateJsonLength: slateJson.length 
     });
+
+    const nextTitle = {
+      fullTitle: slateJson,
+      simpleTitle,
+    };
+
+    // ✅ 先本地乐观更新，避免退出编辑后“抖动/延迟回显”
+    updateLocalEvent(eventId, { title: nextTitle } as any);
     
     // 🔥 使用 EventHub 保存（带循环更新防护✅
     await EventHub.updateFields(eventId, {
@@ -2560,23 +2579,19 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 placeholder="添加标题..."
                                 autoFocus={true}
                                 value={(() => {
-                                  // 使用 colorTitle (Slate JSON，带颜色标记) 用于显示和编辑
                                   const colorTitle = typeof event.title === 'object'
                                     ? event.title.colorTitle
                                     : null;
                                   return colorTitle || '';
                                 })()}
                                 onChange={(slateJson) => {
-                                  // 缓存标题变化，不立即保存
                                   pendingTitleChanges.current.set(event.id, slateJson);
                                 }}
                                 onEscape={() => {
-                                  // 取消本次编辑（不保存）
                                   pendingTitleChanges.current.delete(event.id);
                                   closeEditor(event.id);
                                 }}
                                 onBlur={() => {
-                                  // 失焦时保存
                                   const pendingValue = pendingTitleChanges.current.get(event.id);
                                   if (pendingValue !== undefined) {
                                     handleTitleSave(event.id, pendingValue);
@@ -2586,16 +2601,19 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 }}
                               />
                             ) : (
-                              <div
-                                style={{
-                                  whiteSpace: 'pre-wrap',
-                                  wordBreak: 'break-word',
-                                }}
-                              >
-                                {getTitlePlainText(event) || (
-                                  <span style={{ color: '#9ca3af' }}>添加标题...</span>
-                                )}
-                              </div>
+                              <LogSlate
+                                mode="title"
+                                readOnly={true}
+                                placeholder="添加标题..."
+                                value={(() => {
+                                  const colorTitle = typeof event.title === 'object'
+                                    ? event.title.colorTitle
+                                    : null;
+                                  return colorTitle || '';
+                                })()}
+                                onChange={() => {}}
+                                showToolbar={false}
+                              />
                             )}
                           </div>
                       
@@ -2741,7 +2759,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* Row 5: Icon bar - 已移至标题右侧的幽灵菜单 */}
                     {/* 旧的 event-meta-icon-bar 已被标题幽灵菜单取代 */}
 
-                    {/* Log Content - 默认只读渲染（性能优化），点击进入唯一编辑器 */}
+                    {/* Log Content - 默认只读渲染（使用 LogSlate readOnly 保持样式一致），点击进入唯一编辑器 */}
                     {expandedLogs.has(event.id) && (
                       <div className="event-log-box">
                         {activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog' ? (
@@ -2763,20 +2781,26 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           />
                         ) : (
                           <div
-                            className="timelog-slate-editor"
                             onClick={(e) => {
                               e.stopPropagation();
                               openEditor(event.id, 'eventlog');
                             }}
-                            style={{
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              cursor: 'text',
-                            }}
+                            style={{ cursor: 'text' }}
                           >
-                            {getEventLogPlainText(event) || (
-                              <span style={{ color: '#9ca3af' }}>添加日志...</span>
-                            )}
+                            <LogSlate
+                              mode="eventlog"
+                              readOnly={true}
+                              value={getEventLogContent(event)}
+                              onChange={() => {}}
+                              placeholder="添加日志..."
+                              className="timelog-slate-editor"
+                              showToolbar={false}
+                              enableMention={false}
+                              enableHashtag={false}
+                              showPreline={false}
+                              enableTimestamp={false}
+                              eventId={event.id}
+                            />
                           </div>
                         )}
                       </div>
