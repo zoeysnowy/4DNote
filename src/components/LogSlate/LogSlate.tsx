@@ -273,6 +273,12 @@ export const LogSlate: React.FC<LogSlateProps> = ({
     const isAstChange = editor.operations.some(
       (op) => op.type !== 'set_selection'
     );
+
+    const hasSplitNode = editor.operations.some((op) => op.type === 'split_node');
+    const hasTextEdit = editor.operations.some((op) => op.type === 'insert_text' || op.type === 'remove_text');
+    const hasStructuralEdit = editor.operations.some(
+      (op) => op.type === 'insert_node' || op.type === 'remove_node' || op.type === 'merge_node'
+    );
     
     if (isAstChange) {
       // 标记正在编辑
@@ -304,34 +310,50 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       pendingValueRef.current = json;
     }
 
-    // 🆕 timestamp：只在“内容变化”后给当前段落补 createdAt。
-    // 关键点：不要在纯 selection 变化时写入节点，否则会引起光标/选区不稳定。
-    if (isAstChange && enableTimestamp && eventId && mode === 'eventlog' && editor.selection && timestampServiceRef.current) {
-      const { anchor } = editor.selection;
-      try {
-        const [currentNode, currentPath] = Editor.node(editor, anchor.path.slice(0, -1)) as [any, any];
+    // ✅ timestamp 规则（对齐 TimeLog 设计）：
+    // - timestamp 基于 paragraph.createdAt 渲染
+    // - 只在“新段落产生”（split_node / 回车换行）时决定是否给新段落补 createdAt
+    // - shouldInsertTimestamp 依赖 "lastEditTimestamp"，所以我们会在真实文本编辑时更新时间（避免一直 true）
+    // - 写入 createdAt 时保持 selection，避免光标回跳
+    if (enableTimestamp && eventId && mode === 'eventlog' && timestampServiceRef.current) {
+      // 真实文本编辑：更新时间追踪（不含 split_node），用于 5min 规则
+      if (isAstChange && (hasTextEdit || hasStructuralEdit)) {
+        timestampServiceRef.current.updateLastEditTime(eventId, new Date());
+      }
 
-        if (currentNode.type === 'paragraph' && !currentNode.createdAt) {
-          const nodeText = Node.string(currentNode);
+      // 新段落产生：若满足 5min 规则，立即让 timestamp 渲染出来
+      if (hasSplitNode && editor.selection) {
+        const selectionSnapshot = editor.selection;
+        const { anchor } = selectionSnapshot;
+        try {
+          const [currentNode, currentPath] = Editor.node(editor, anchor.path.slice(0, -1)) as [any, any];
 
-          // 只有当段落已经有内容（用户开始输入）才创建 timestamp
-          if (nodeText.trim() !== '') {
-            const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
-              contextId: eventId,
-              eventId: eventId
-            });
-
-            if (shouldInsert) {
-              const now = Date.now();
-              Editor.withoutNormalizing(editor, () => {
-                Transforms.setNodes(editor, { createdAt: now } as any, { at: currentPath });
+          // 只处理“新段落”的典型形态：空 paragraph 且没有 createdAt
+          if (currentNode?.type === 'paragraph' && !currentNode.createdAt) {
+            const nodeText = Node.string(currentNode);
+            if (nodeText.trim() === '') {
+              const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
+                contextId: eventId,
+                eventId
               });
-              timestampServiceRef.current!.updateLastEditTime(eventId, new Date(now));
+
+              if (shouldInsert) {
+                Editor.withoutNormalizing(editor, () => {
+                  // 直接调用服务，确保 lastEditTimestamp 同步更新
+                  timestampServiceRef.current!.insertBlockLevelTimestamp(editor, currentPath, eventId);
+                  // 保持光标位置，避免 createdAt 写入导致 selection 被重置
+                  try {
+                    Transforms.select(editor, selectionSnapshot);
+                  } catch {
+                    // ignore
+                  }
+                });
+              }
             }
           }
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
     }
     

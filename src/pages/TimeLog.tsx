@@ -97,10 +97,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [hoveredRightMenuId, setHoveredRightMenuId] = useState<string | null>(null);
   const [editingTimeId, setEditingTimeId] = useState<string | null>(null);
 
-  // ✅ 交互过的事件：保留 Slate 实例挂载，用 readOnly 切换实现更“无感”的编辑进入/退出
-  const activatedTitleEditorsRef = useRef<Set<string>>(new Set());
-  const activatedEventlogEditorsRef = useRef<Set<string>>(new Set());
-  const [, forceActivatedEditorsRender] = useState(0);
+  // ✅ 只在可视范围（含预加载 margin）渲染 Slate readOnly，避免一次挂载大量 editor
+  const inViewEventlogIdsRef = useRef<Set<string>>(new Set());
+  const [inViewEventlogVersion, setInViewEventlogVersion] = useState(0);
+  const eventlogObserverRef = useRef<IntersectionObserver | null>(null);
+  const eventlogObservedElsRef = useRef<Map<string, Element>>(new Map());
+  const eventlogObserverInitializedRef = useRef(false);
   
   // Right菜单延迟隐藏的timer
   const rightMenuHideTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -333,17 +335,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   }, [extractPlainTextFromSlateJson]);
 
   const openEditor = useCallback((eventId: string, mode: 'title' | 'eventlog') => {
-    if (mode === 'title') {
-      if (!activatedTitleEditorsRef.current.has(eventId)) {
-        activatedTitleEditorsRef.current.add(eventId);
-        forceActivatedEditorsRender(v => v + 1);
-      }
-    } else {
-      if (!activatedEventlogEditorsRef.current.has(eventId)) {
-        activatedEventlogEditorsRef.current.add(eventId);
-        forceActivatedEditorsRender(v => v + 1);
-      }
-    }
     setActiveEditor({ eventId, mode });
   }, []);
 
@@ -431,6 +422,71 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const todayEventRef = useRef<HTMLDivElement | null>(null);
   const allEventsRef = useRef<Event[]>([]);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // IntersectionObserver：root 使用 TimeLog 的滚动容器，提前预加载一屏（减少“进入可视区才切换”的视觉差）
+  useEffect(() => {
+    if (eventlogObserverInitializedRef.current) return;
+    const root = timelineContainerRef.current;
+    if (!root) return;
+
+    eventlogObserverInitializedRef.current = true;
+    eventlogObserverRef.current = new IntersectionObserver(
+      (entries) => {
+        let changed = false;
+        for (const entry of entries) {
+          const el = entry.target as HTMLElement;
+          const eventId = el.getAttribute('data-eventlog-observe-id') || '';
+          if (!eventId) continue;
+
+          if (entry.isIntersecting) {
+            if (!inViewEventlogIdsRef.current.has(eventId)) {
+              inViewEventlogIdsRef.current.add(eventId);
+              changed = true;
+            }
+          } else {
+            if (inViewEventlogIdsRef.current.has(eventId)) {
+              inViewEventlogIdsRef.current.delete(eventId);
+              changed = true;
+            }
+          }
+        }
+        if (changed) setInViewEventlogVersion(v => v + 1);
+      },
+      {
+        root,
+        rootMargin: '1200px 0px',
+        threshold: 0.01,
+      }
+    );
+
+    // 重新 observe 已注册元素
+    for (const el of eventlogObservedElsRef.current.values()) {
+      eventlogObserverRef.current.observe(el);
+    }
+
+    return () => {
+      eventlogObserverRef.current?.disconnect();
+      eventlogObserverRef.current = null;
+      eventlogObserverInitializedRef.current = false;
+    };
+  }, [loadingEvents]);
+
+  const setEventlogObserveRef = useCallback((eventId: string) => {
+    return (el: HTMLDivElement | null) => {
+      const prev = eventlogObservedElsRef.current.get(eventId);
+      if (prev && eventlogObserverRef.current) {
+        eventlogObserverRef.current.unobserve(prev);
+      }
+      if (!el) {
+        eventlogObservedElsRef.current.delete(eventId);
+        return;
+      }
+      eventlogObservedElsRef.current.set(eventId, el);
+      if (eventlogObserverRef.current) {
+        eventlogObserverRef.current.observe(el);
+      }
+    };
+  }, []);
   
   // 使用 ref 存储最新的状态，避免闭包问题
   const dynamicStartDateRef = useRef<Date | null>(null);
@@ -2654,78 +2710,34 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               openEditor(event.id, 'title');
                             }}
                           >
-                            {activatedTitleEditorsRef.current.has(event.id) ? (
-                              <LogSlate
-                                mode="title"
-                                readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'title')}
-                                placeholder="添加标题..."
-                                autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'title'}
-                                value={(() => {
-                                  const colorTitle = typeof event.title === 'object'
-                                    ? event.title.colorTitle
-                                    : null;
-                                  return colorTitle || '';
-                                })()}
-                                onChange={(slateJson) => {
-                                  pendingTitleChanges.current.set(event.id, slateJson);
-                                }}
-                                onEscape={() => {
+                            <LogSlate
+                              mode="title"
+                              readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'title')}
+                              placeholder="添加标题..."
+                              autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'title'}
+                              value={(() => {
+                                const colorTitle = typeof event.title === 'object'
+                                  ? event.title.colorTitle
+                                  : null;
+                                return colorTitle || '';
+                              })()}
+                              onChange={(slateJson) => {
+                                pendingTitleChanges.current.set(event.id, slateJson);
+                              }}
+                              onEscape={() => {
+                                pendingTitleChanges.current.delete(event.id);
+                                closeEditor(event.id);
+                              }}
+                              onBlur={() => {
+                                const pendingValue = pendingTitleChanges.current.get(event.id);
+                                if (pendingValue !== undefined) {
+                                  handleTitleSave(event.id, pendingValue);
                                   pendingTitleChanges.current.delete(event.id);
-                                  closeEditor(event.id);
-                                }}
-                                onBlur={() => {
-                                  const pendingValue = pendingTitleChanges.current.get(event.id);
-                                  if (pendingValue !== undefined) {
-                                    handleTitleSave(event.id, pendingValue);
-                                    pendingTitleChanges.current.delete(event.id);
-                                  }
-                                  closeEditor(event.id);
-                                }}
-                                showToolbar={false}
-                              />
-                            ) : (
-                              activeEditor?.eventId === event.id && activeEditor.mode === 'title' ? (
-                                <LogSlate
-                                  mode="title"
-                                  placeholder="添加标题..."
-                                  autoFocus={true}
-                                  value={(() => {
-                                    const colorTitle = typeof event.title === 'object'
-                                      ? event.title.colorTitle
-                                      : null;
-                                    return colorTitle || '';
-                                  })()}
-                                  onChange={(slateJson) => {
-                                    pendingTitleChanges.current.set(event.id, slateJson);
-                                  }}
-                                  onEscape={() => {
-                                    pendingTitleChanges.current.delete(event.id);
-                                    closeEditor(event.id);
-                                  }}
-                                  onBlur={() => {
-                                    const pendingValue = pendingTitleChanges.current.get(event.id);
-                                    if (pendingValue !== undefined) {
-                                      handleTitleSave(event.id, pendingValue);
-                                      pendingTitleChanges.current.delete(event.id);
-                                    }
-                                    closeEditor(event.id);
-                                  }}
-                                />
-                              ) : (
-                                <div
-                                  className="log-slate-wrapper title-mode timelog-slate-editor"
-                                  data-readonly
-                                >
-                                  <div
-                                    className="log-slate-editable title-editable"
-                                    dangerouslySetInnerHTML={{
-                                      __html:
-                                        getTitlePreviewHtml(event) || makePlaceholderHtml('添加标题...'),
-                                    }}
-                                  />
-                                </div>
-                              )
-                            )}
+                                }
+                                closeEditor(event.id);
+                              }}
+                              showToolbar={false}
+                            />
                           </div>
                       
                       {/* 🆕 同步模式选择器弹✅*/}
@@ -2872,67 +2884,62 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
                     {/* Log Content - 默认只读渲染（使用 LogSlate readOnly 保持样式一致），点击进入唯一编辑器 */}
                     {expandedLogs.has(event.id) && (
-                      <div className="event-log-box">
-                        {activatedEventlogEditorsRef.current.has(event.id) ? (
+                      <div className="event-log-box" ref={setEventlogObserveRef(event.id)} data-eventlog-observe-id={event.id}>
+                        {activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog' ? (
                           <LogSlate
                             mode="eventlog"
-                            readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')}
                             value={getEventLogContent(event)}
                             onChange={(slateJson) => handleLogChange(event.id, slateJson)}
                             onBlur={() => closeEditor(event.id)}
                             onEscape={() => closeEditor(event.id)}
                             placeholder="添加日志..."
                             className="timelog-slate-editor"
-                            showToolbar={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                            enableMention={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                            enableHashtag={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                            showToolbar={true}
+                            enableMention={true}
+                            enableHashtag={true}
                             showPreline={false}
-                            enableTimestamp={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                            enableTimestamp={true}
                             eventId={event.id}
-                            autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
+                            autoFocus={true}
                           />
                         ) : (
-                          <>
-                            {activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog' ? (
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditor(event.id, 'eventlog');
+                            }}
+                            style={{ cursor: 'text' }}
+                          >
+                            {inViewEventlogIdsRef.current.has(event.id) ? (
                               <LogSlate
                                 mode="eventlog"
+                                readOnly={true}
                                 value={getEventLogContent(event)}
-                                onChange={(slateJson) => handleLogChange(event.id, slateJson)}
-                                onBlur={() => closeEditor(event.id)}
-                                onEscape={() => closeEditor(event.id)}
+                                onChange={() => {}}
                                 placeholder="添加日志..."
                                 className="timelog-slate-editor"
-                                showToolbar={true}
-                                enableMention={true}
-                                enableHashtag={true}
+                                showToolbar={false}
+                                enableMention={false}
+                                enableHashtag={false}
                                 showPreline={false}
-                                enableTimestamp={true}
+                                enableTimestamp={false}
                                 eventId={event.id}
-                                autoFocus={true}
                               />
                             ) : (
                               <div
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openEditor(event.id, 'eventlog');
-                                }}
-                                style={{ cursor: 'text' }}
+                                className="log-slate-wrapper eventlog-mode timelog-slate-editor"
+                                data-readonly
                               >
                                 <div
-                                  className="log-slate-wrapper eventlog-mode timelog-slate-editor"
-                                  data-readonly
-                                >
-                                  <div
-                                    className="log-slate-editable eventlog-editable"
-                                    dangerouslySetInnerHTML={{
-                                      __html:
-                                        getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
-                                    }}
-                                  />
-                                </div>
+                                  className="log-slate-editable eventlog-editable"
+                                  dangerouslySetInnerHTML={{
+                                    __html:
+                                      getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
+                                  }}
+                                />
                               </div>
                             )}
-                          </>
+                          </div>
                         )}
                       </div>
                     )}
