@@ -26,7 +26,7 @@ import { createPortal } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
-import { slateNodesToPlainText } from '../utils/slateSerializer';
+import { slateNodesToHtml, slateNodesToPlainText } from '../utils/slateSerializer';
 import type { Event } from '../types';
 import './TimeLog.css';
 
@@ -343,6 +343,71 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       return next;
     });
   }, []);
+
+  const escapeHtml = useCallback((text: string) => {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }, []);
+
+  const slateJsonToHtmlSafe = useCallback((slateJson: string): string => {
+    if (!slateJson || !slateJson.trim()) return '';
+    try {
+      const parsed = JSON.parse(slateJson);
+      if (Array.isArray(parsed)) {
+        return slateNodesToHtml(parsed as any);
+      }
+      return '';
+    } catch {
+      return '';
+    }
+  }, []);
+
+  const makePlaceholderHtml = useCallback((placeholderText: string) => {
+    const safe = escapeHtml(placeholderText);
+    return `<p><span data-slate-placeholder="true">${safe}</span></p>`;
+  }, [escapeHtml]);
+
+  const getTitlePreviewHtml = useCallback((event: Event): string => {
+    const titleObj = typeof event.title === 'object' ? (event.title as any) : null;
+    const colorTitle = titleObj?.colorTitle;
+    if (typeof colorTitle === 'string' && colorTitle.trim()) {
+      const html = slateJsonToHtmlSafe(colorTitle);
+      return html || '';
+    }
+
+    const simpleTitle = titleObj?.simpleTitle;
+    if (typeof simpleTitle === 'string' && simpleTitle.trim()) {
+      return `<p>${escapeHtml(simpleTitle.trim())}</p>`;
+    }
+
+    return '';
+  }, [escapeHtml, slateJsonToHtmlSafe]);
+
+  const getEventLogPreviewHtml = useCallback((event: Event): string => {
+    const log = event.eventlog as any;
+    if (log && typeof log === 'object') {
+      if (typeof log.html === 'string' && log.html.trim()) {
+        // 给用户一个“可点击的末尾空行”，模拟编辑器尾部虚拟节点
+        return `${log.html}\n<p><br/></p>`;
+      }
+      if (typeof log.slateJson === 'string' && log.slateJson.trim()) {
+        const html = slateJsonToHtmlSafe(log.slateJson);
+        return html ? `${html}\n<p><br/></p>` : '';
+      }
+      return '';
+    }
+
+    if (typeof event.eventlog === 'string' && event.eventlog.trim()) {
+      const html = slateJsonToHtmlSafe(event.eventlog);
+      return html ? `${html}\n<p><br/></p>` : '';
+    }
+
+    return '';
+  }, [slateJsonToHtmlSafe]);
 
   const tagRowRef = useRef<HTMLDivElement | null>(null);
   const modalSlateRefs = useRef<Map<string, any>>(new Map());
@@ -2601,19 +2666,18 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 }}
                               />
                             ) : (
-                              <LogSlate
-                                mode="title"
-                                readOnly={true}
-                                placeholder="添加标题..."
-                                value={(() => {
-                                  const colorTitle = typeof event.title === 'object'
-                                    ? event.title.colorTitle
-                                    : null;
-                                  return colorTitle || '';
-                                })()}
-                                onChange={() => {}}
-                                showToolbar={false}
-                              />
+                              <div
+                                className="log-slate-wrapper title-mode timelog-slate-editor"
+                                data-readonly
+                              >
+                                <div
+                                  className="log-slate-editable title-editable"
+                                  dangerouslySetInnerHTML={{
+                                    __html:
+                                      getTitlePreviewHtml(event) || makePlaceholderHtml('添加标题...'),
+                                  }}
+                                />
+                              </div>
                             )}
                           </div>
                       
@@ -2787,20 +2851,18 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                             }}
                             style={{ cursor: 'text' }}
                           >
-                            <LogSlate
-                              mode="eventlog"
-                              readOnly={true}
-                              value={getEventLogContent(event)}
-                              onChange={() => {}}
-                              placeholder="添加日志..."
-                              className="timelog-slate-editor"
-                              showToolbar={false}
-                              enableMention={false}
-                              enableHashtag={false}
-                              showPreline={false}
-                              enableTimestamp={false}
-                              eventId={event.id}
-                            />
+                            <div
+                              className="log-slate-wrapper eventlog-mode timelog-slate-editor"
+                              data-readonly
+                            >
+                              <div
+                                className="log-slate-editable eventlog-editable"
+                                dangerouslySetInnerHTML={{
+                                  __html:
+                                    getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
+                                }}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>

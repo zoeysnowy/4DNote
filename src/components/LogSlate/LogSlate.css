@@ -109,11 +109,45 @@
 }
 
 /* 只读模式样式 */
-.log-slate-wrapper[readonly] .log-slate-editable {
+.log-slate-wrapper[readonly] .log-slate-editable,
+.log-slate-wrapper[data-readonly] .log-slate-editable {
   background-color: transparent;
   cursor: default;
 }
 
-.log-slate-wrapper[readonly] .log-slate-editable:focus {
+.log-slate-wrapper[readonly] .log-slate-editable:focus,
+.log-slate-wrapper[data-readonly] .log-slate-editable:focus {
   background-color: transparent;
+}
+
+/* 兼容 HTML 预览渲染（slateSerializer 输出的 className） */
+.log-slate-editable .slate-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 2px;
+  border-radius: 4px;
+  background-color: #E5E7EB;
+  color: #374151;
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.log-slate-editable .slate-date-mention {
+  display: inline-block;
+  padding: 2px 6px;
+  margin: 0 2px;
+  border-radius: 3px;
+  background-color: #DBEAFE;
+  color: #1E40AF;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.log-slate-editable .timestamp-divider hr {
+  display: none;
+}
+
+.log-slate-editable .timestamp-text {
+  white-space: nowrap;
 }

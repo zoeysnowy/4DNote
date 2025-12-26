@@ -82,6 +82,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   eventId, // 🆕 事件ID
 }) => {
   const editorRef = useRef<Editor | null>(null);
+  const didAutoFocusRef = useRef(false);
   const [showFloatingToolbar, setShowFloatingToolbar] = useState(false);
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [hashtagSearch, setHashtagSearch] = useState<string | null>(null);
@@ -523,7 +524,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       case 'date-mention':
         return <DateMentionElement {...props} />;
       case 'event-mention':
-        return <EventMentionElement {...props} />;
+        return <EventMentionElement {...(props as any)} />;
       default:
         return <div {...props.attributes}>{props.children}</div>;
     }
@@ -610,12 +611,24 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   
   // 自动聚焦
   useEffect(() => {
-    if (autoFocus && editor) {
-      try {
-        ReactEditor.focus(editor);
-      } catch (err) {
-        console.error('[LogSlate] Failed to focus:', err);
-      }
+    if (!autoFocus || !editor) return;
+    if (didAutoFocusRef.current) return;
+    didAutoFocusRef.current = true;
+
+    try {
+      // 下一帧聚焦 + 把光标放到末尾：
+      // - 避免用户进入编辑时“光标在句首”的错觉
+      // - 也给末尾虚拟节点一个更自然的默认输入点
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor as ReactEditor);
+          Transforms.select(editor, Editor.end(editor, []));
+        } catch (err) {
+          console.error('[LogSlate] Failed to focus/select end:', err);
+        }
+      });
+    } catch (err) {
+      console.error('[LogSlate] Failed to schedule focus:', err);
     }
   }, [autoFocus, editor]);
   
