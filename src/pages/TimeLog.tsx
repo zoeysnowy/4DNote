@@ -22,7 +22,7 @@ import EventTabManager from '../components/EventTabManager';
 import { LogTab } from './LogTab';
 import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
 import { supportsMultiWindow, openEventInWindow } from '../utils/electronUtils';
-import { createPortal } from 'react-dom';
+import { createPortal, flushSync } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
@@ -2705,9 +2705,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           {/* 标题始终可编辑，✅PlanSlate 一✅*/}
                           <div
                             className="event-title"
-                            onClick={(e) => {
+                            onMouseDown={(e) => {
+                              // ✅ 同步切换到可编辑，让鼠标点击位置直接落点（避免“切换编辑器”的跳动感）
                               e.stopPropagation();
-                              openEditor(event.id, 'title');
+                              flushSync(() => openEditor(event.id, 'title'));
                             }}
                           >
                             <LogSlate
@@ -2904,9 +2905,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           />
                         ) : (
                           <div
-                            onClick={(e) => {
+                            onMouseDown={(e) => {
                               e.stopPropagation();
-                              openEditor(event.id, 'eventlog');
+                              // ✅ 同步切换，保证点击位置在 Slate 内生效
+                              if (!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')) {
+                                flushSync(() => openEditor(event.id, 'eventlog'));
+                              }
                             }}
                             style={{ cursor: 'text' }}
                           >
@@ -2922,7 +2926,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 enableMention={false}
                                 enableHashtag={false}
                                 showPreline={false}
-                                enableTimestamp={false}
+                                enableTimestamp={true}
                                 eventId={event.id}
                               />
                             ) : (

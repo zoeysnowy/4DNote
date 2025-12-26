@@ -83,6 +83,10 @@ export const LogSlate: React.FC<LogSlateProps> = ({
 }) => {
   const editorRef = useRef<Editor | null>(null);
   const didAutoFocusRef = useRef(false);
+  const isFocusedRef = useRef(false);
+  const insertedTimestampThisFocusRef = useRef(false);
+  const applyingTimestampRef = useRef(false);
+  const lastParagraphPathRef = useRef<string>('');
   const [showFloatingToolbar, setShowFloatingToolbar] = useState(false);
   const [mentionSearch, setMentionSearch] = useState<string | null>(null);
   const [hashtagSearch, setHashtagSearch] = useState<string | null>(null);
@@ -310,44 +314,63 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       pendingValueRef.current = json;
     }
 
-    // ✅ timestamp 规则（对齐 TimeLog 设计）：
+    // ✅ timestamp（对齐你的设计）：
     // - timestamp 基于 paragraph.createdAt 渲染
-    // - 只在“新段落产生”（split_node / 回车换行）时决定是否给新段落补 createdAt
-    // - shouldInsertTimestamp 依赖 "lastEditTimestamp"，所以我们会在真实文本编辑时更新时间（避免一直 true）
-    // - 写入 createdAt 时保持 selection，避免光标回跳
+    // - 触发点：光标进入“新空段落”（鼠标点击或 Enter split_node 产生新段落）
+    // - 规则：只有在 eventlog 失焦超过 5min（按 service 规则）后，才允许创建新的 timestamp
+    // - 防抖：同一次 focus 会话只创建一次 timestamp，避免“每次换行都插”
+    // - 写入 createdAt 必须保留 selection，避免光标回跳
     if (enableTimestamp && eventId && mode === 'eventlog' && timestampServiceRef.current) {
-      // 真实文本编辑：更新时间追踪（不含 split_node），用于 5min 规则
+      // 只要发生了真实文本编辑，就认为“这次会话在编辑中”
       if (isAstChange && (hasTextEdit || hasStructuralEdit)) {
-        timestampServiceRef.current.updateLastEditTime(eventId, new Date());
+        isEditingRef.current = true;
       }
 
-      // 新段落产生：若满足 5min 规则，立即让 timestamp 渲染出来
-      if (hasSplitNode && editor.selection) {
+      // selection 变化或 split_node 后：尝试在“新空段落”上补 createdAt
+      if (editor.selection && !applyingTimestampRef.current) {
         const selectionSnapshot = editor.selection;
         const { anchor } = selectionSnapshot;
+
         try {
-          const [currentNode, currentPath] = Editor.node(editor, anchor.path.slice(0, -1)) as [any, any];
+          const paragraphPath = anchor.path.slice(0, -1);
+          const paragraphPathKey = JSON.stringify(paragraphPath);
+          const movedToDifferentParagraph = paragraphPathKey !== lastParagraphPathRef.current;
+          lastParagraphPathRef.current = paragraphPathKey;
 
-          // 只处理“新段落”的典型形态：空 paragraph 且没有 createdAt
-          if (currentNode?.type === 'paragraph' && !currentNode.createdAt) {
-            const nodeText = Node.string(currentNode);
-            if (nodeText.trim() === '') {
-              const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
-                contextId: eventId,
-                eventId
-              });
+          // 仅在：
+          // - 用户进入了不同段落（跨行移动/点击） 或者
+          // - 刚 split_node（回车生成新段落）
+          // 时才做判断，避免每个 selection 变化都写节点
+          if (movedToDifferentParagraph || hasSplitNode) {
+            const [currentNode, currentPath] = Editor.node(editor, paragraphPath) as [any, any];
 
-              if (shouldInsert) {
-                Editor.withoutNormalizing(editor, () => {
-                  // 直接调用服务，确保 lastEditTimestamp 同步更新
-                  timestampServiceRef.current!.insertBlockLevelTimestamp(editor, currentPath, eventId);
-                  // 保持光标位置，避免 createdAt 写入导致 selection 被重置
-                  try {
-                    Transforms.select(editor, selectionSnapshot);
-                  } catch {
-                    // ignore
-                  }
+            const isEmptyParagraph = currentNode?.type === 'paragraph' && Node.string(currentNode).trim() === '';
+            const hasCreatedAt = !!currentNode?.createdAt;
+
+            if (isEmptyParagraph && !hasCreatedAt) {
+              // 同一次 focus 会话只允许插一次 timestamp
+              if (!insertedTimestampThisFocusRef.current) {
+                const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
+                  contextId: eventId,
+                  eventId
                 });
+
+                if (shouldInsert) {
+                  applyingTimestampRef.current = true;
+                  try {
+                    Editor.withoutNormalizing(editor, () => {
+                      timestampServiceRef.current!.insertBlockLevelTimestamp(editor, currentPath, eventId);
+                      try {
+                        Transforms.select(editor, selectionSnapshot);
+                      } catch {
+                        // ignore
+                      }
+                    });
+                    insertedTimestampThisFocusRef.current = true;
+                  } finally {
+                    applyingTimestampRef.current = false;
+                  }
+                }
               }
             }
           }
@@ -747,6 +770,10 @@ export const LogSlate: React.FC<LogSlateProps> = ({
           placeholder={placeholder}
           readOnly={readOnly}
           className={`log-slate-editable ${mode}-editable`}
+          onFocus={() => {
+            isFocusedRef.current = true;
+            insertedTimestampThisFocusRef.current = false;
+          }}
           onKeyDown={handleKeyDown}
           onBlur={() => {
             console.log('🔍 [LogSlate] onBlur 触发', {
@@ -769,6 +796,13 @@ export const LogSlate: React.FC<LogSlateProps> = ({
             
             // 标记编辑结束
             isEditingRef.current = false;
+
+            // ✅ 对齐规则：以 blur 作为“失焦时间”基准（用于 5min 规则）
+            if (enableTimestamp && eventId && mode === 'eventlog' && timestampServiceRef.current) {
+              timestampServiceRef.current.updateLastEditTime(eventId, new Date());
+            }
+            isFocusedRef.current = false;
+            insertedTimestampThisFocusRef.current = false;
             
             // 调用外部 onBlur
             console.log('📞 [LogSlate] 调用外部 onBlur', { hasExternalBlur: !!onBlur });
