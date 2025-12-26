@@ -925,7 +925,7 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
           
           if (paraMatch) {
             const [node, path] = paraMatch as [any, any];
-            const paraText = Node.string(node).trim();
+            const paraText = SlateNode.string(node).trim();
             
             // 用户输入了内容，为当前 paragraph 添加 createdAt
             if (paraText && !node.createdAt) {
