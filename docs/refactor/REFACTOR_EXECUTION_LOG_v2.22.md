@@ -55,6 +55,7 @@
 |---|---|---|---|---|---|---|
 | 2025-12-26 | Created baseline branch | Establish stable starting point | Low | `git status` clean | f69784a | |
 | 2025-12-27 | TimeLog LogSlate: Enter soft-break + blur cleanup + timestamp virtual node behavior | Fix caret lag/extra blank nodes; align “enter stays in-node” + “virtual node gets timestamp” | Med | Manual: TimeLog enter/newline, blur removes empties, caret not offset | 091d0dd | Key files: `src/components/LogSlate/LogSlate.tsx`, `src/utils/slateSerializer.ts`, `src/services/EventService.ts` |
+| 2025-12-27 | TimeLog: remove placeholder/timestamp overlap | Disable Slate placeholder in TimeLog edit mode; keep timestamp-only paragraphs during blur cleanup | Low | Manual: edit mode no overlap, blur still cleans empties | 06c1bd5 | File: `src/components/LogSlate/LogSlate.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
