@@ -578,8 +578,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     loadEvents();
     
     // 🎧 监听全局事件更新（增量更新）
-    const handleEventsUpdated = (e: Event) => {
-      const detail = (e as CustomEvent).detail;
+    const handleEventsUpdated = (e: globalThis.Event) => {
+      const detail = (e as unknown as globalThis.CustomEvent<any>).detail;
       console.log('🔔 [TimeLog] 收到事件更新通知:', detail);
       
       // 🔒 循环更新防护：跳过来✅TimeLog 自身的本地更✅
@@ -642,10 +642,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       }
     };
     
-    window.addEventListener('eventsUpdated', handleEventsUpdated as EventListener);
+    window.addEventListener('eventsUpdated', handleEventsUpdated);
     
     return () => {
-      window.removeEventListener('eventsUpdated', handleEventsUpdated as EventListener);
+      window.removeEventListener('eventsUpdated', handleEventsUpdated);
     };
   }, []);
 
@@ -899,8 +899,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       if (segment.type === 'events') {
         const date = new Date(segment.dateKey);
         currentMonthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
-      } else {
+      } else if (segment.type === 'compressed') {
         currentMonthKey = `${segment.startDate.getFullYear()}-${segment.startDate.getMonth() + 1}`;
+      } else {
+        currentMonthKey = `${segment.year}-${segment.month}`;
       }
 
       // compressed段：总是插入月份标题（即使与上一个段月份相同✅
@@ -1377,16 +1379,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     // 触发 ModalSlate 插入 timestamp + 预行 + 光标定位
     // 📝 注意: 如果需要展开，等待动画完成（100ms✅
     const delay = wasExpanded ? 0 : 100;
-    const timerId = setTimeout(() => {
+    window.setTimeout(() => {
       const slateRef = modalSlateRefs.current.get(eventId);
       if (slateRef && slateRef.insertTimestampAndFocus) {
         slateRef.insertTimestampAndFocus();
       }
     }, delay);
-    
-    // ✅注意: 此处✅setTimeout 是必需的，用于等待展开动画
-    // 如果组件在动画过程中卸载，应该在 cleanup 中清✅
-    return () => clearTimeout(timerId);
+  };
 
   // 新建事件模态框状态
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -1595,7 +1594,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   }, [loadingEvents, events.length, eventsByDate.size, timelineSegments.length]);
 
-  return (
+  const page = (
     <div className={`timelog-page ${!isPanelVisible ? 'panel-hidden' : ''}`}>
       {/* 左侧内容选取✅- 完全复用 ContentSelectionPanel */}
       <ContentSelectionPanel
@@ -1627,10 +1626,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
               </div>
               {/* 打开的事件tab */}
               {tabManagerEvents.map((event) => {
-                // 获取事件标题（处理对象和字符串两种情况）
-                const titleText = typeof event.title === 'object' && event.title !== null
-                  ? event.title.simpleTitle || event.title.fullTitle || '未命名事件'
-                  : event.title || '未命名事件';
+                // 获取事件标题（确保渲染为 string）
+                const titleText: string =
+                  typeof event.title === 'string'
+                    ? event.title
+                    : event.title?.simpleTitle || event.title?.fullTitle || '未命名事件';
                 
                 return (
                   <div 
@@ -1714,7 +1714,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   
                   if (hasExpandedDateInNext) {
                     // 有展开的日期，将压缩段拆分成：压缩✅ + 展开日期 + 压缩✅
-                    const segments: JSX.Element[] = [];
+                    const segments: React.ReactNode[] = [];
                     let isFirstSegment = true;
                     
                     // 遍历压缩段的所有日期，按展开状态分段渲✅
@@ -1895,7 +1895,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                 
                 if (hasExpandedDate) {
                   // 有展开的日期，将压缩段拆分成：压缩✅ + 展开日期 + 压缩✅
-                  const segments: JSX.Element[] = [];
+                  const segments: React.ReactNode[] = [];
                   
                   const currentDate = new Date(segment.startDate);
                   let compressedStart: Date | null = null;
@@ -2239,7 +2239,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                                 <img src={AttendeeIconSvg} className="right-submenu-icon" alt="attendees" />
                                 <span className="right-submenu-text">添加参与者</span>
                               </div>
-                              <div className="right-submenu-item" onClick={() => handleLocationEdit(event)}>
+                              <div className="right-submenu-item" onClick={() => handleLocationEdit(event.id)}>
                                 <img src={LocationIconSvg} className="right-submenu-icon" alt="location" />
                                 <span className="right-submenu-text">添加地点</span>
                               </div>
@@ -2696,7 +2696,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     }}
                     onSave={async (updatedEvent) => {
                       // 刷新事件列表
-                      const updatedEvents = await EventService.getEventsInRange(
+                      const updatedEvents = await EventService.getEventsByRange(
                         dateRange!.start,
                         dateRange!.end
                       );
@@ -2705,7 +2705,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     onDelete={async (eventId) => {
                       // 删除事件后刷新列表并关闭标签✅
                       await EventService.deleteEvent(eventId);
-                      const updatedEvents = await EventService.getEventsInRange(
+                      const updatedEvents = await EventService.getEventsByRange(
                         dateRange!.start,
                         dateRange!.end
                       );
@@ -2761,9 +2761,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       {/* EventTabManager 已集成到 timelog-main-card 内部 */}
     </div>
   );
-};
 
-}
+  return page;
+};
 
 // 辅助函数：格式化时间
 function formatTime(dateStr: string | Date): string {
