@@ -12,6 +12,21 @@ import { Editor, Transforms, Path, Node } from 'slate';
 import { getSiblingPath, isValidPath, isNodeType } from './nodeOperations';
 
 /**
+ * 插入“软换行”（同一段落内换行，不创建新 paragraph 节点）
+ * - 用于 TimeLog/EventLog 这类“一个段落=一个时间块”的编辑体验
+ */
+export function insertSoftBreak(editor: Editor): boolean {
+  try {
+    if (!editor.selection) return false;
+    Transforms.insertText(editor, '\n');
+    return true;
+  } catch (err) {
+    console.error('[SlateCore.insertSoftBreak] Failed:', err);
+    return false;
+  }
+}
+
+/**
  * 段落移动选项
  */
 export interface ParagraphMoveOptions {

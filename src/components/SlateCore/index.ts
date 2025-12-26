@@ -87,6 +87,7 @@ export {
 export {
   moveParagraphUp,
   moveParagraphDown,
+  insertSoftBreak,
   swapNodes,
   canMoveUp,
   canMoveDown,

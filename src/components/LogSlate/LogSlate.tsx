@@ -22,6 +22,7 @@ import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
 // 导入 SlateCore 格式化操作
 import { applyTextFormat, toggleFormat } from '../SlateCore/operations/formatting';
 import { insertTag, insertEmoji } from '../SlateCore/operations/inlineHelpers';
+import { insertSoftBreak } from '../SlateCore/operations/paragraphOperations';
 
 // 🆕 导入 TimestampService
 import { EventLogTimestampService } from '../SlateCore/services/timestampService';
@@ -730,7 +731,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
     ) {
       event.preventDefault();
       try {
-        Transforms.insertText(editor, '\n');
+        insertSoftBreak(editor);
       } catch {
         // ignore
       }
