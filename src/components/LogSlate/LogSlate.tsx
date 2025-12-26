@@ -180,6 +180,13 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   }
   
   const editor = editorRef.current;
+
+  // TimeLog(eventlog + showPreline=false) 下，Slate 的 placeholder 会使用绝对定位渲染，
+  // 可能与 block-level timestamp 的绝对定位层叠；因此直接禁用。
+  const effectivePlaceholder = useMemo(() => {
+    if (mode === 'eventlog' && showPreline === false) return undefined;
+    return placeholder;
+  }, [mode, showPreline, placeholder]);
   
   // 解析值为 Slate 节点
   const parseValue = useCallback((val: string): Descendant[] => {
@@ -198,14 +205,33 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       // 验证是否是有效的 Slate 节点数组
       if (Array.isArray(parsed) && parsed.length > 0) {
         let nodes = parsed as Descendant[];
-        
-        // 🆕 如果是 eventlog 模式且启用 timestamp，始终添加末尾虚拟节点作为 placeholder
+
+        // 🆕 eventlog + timestamp：仅当最后一个段落“确实有内容”时，追加一个末尾虚拟空段落，
+        // 避免无意义的空行/placeholder 叠加（尤其是 timestamp-only 段落）。
         if (enableTimestamp && mode === 'eventlog') {
-          nodes = [...nodes, {
-            type: 'paragraph',
-            children: [{ text: '' }],
-          } as Descendant];
-          console.log('[LogSlate] 📦 parseValue 添加末尾虚拟节点 placeholder（静态处理）');
+          const last = nodes[nodes.length - 1] as any;
+          const isParagraph = last?.type === 'paragraph';
+          const lastText = isParagraph ? Node.string(last).trim() : '';
+          const lastHasCreatedAt = isParagraph && !!last?.createdAt;
+          const lastHasNonTextChild = (() => {
+            if (!isParagraph) return false;
+            const children = Array.isArray(last.children) ? last.children : [];
+            return children.some((c: any) => c && typeof c === 'object' && typeof c.text !== 'string');
+          })();
+
+          const lastIsVisuallyEmpty = isParagraph && lastText === '' && !lastHasNonTextChild;
+
+          // 只有“最后段落有内容（文本或内联节点）”时才追加空段落；
+          // 若最后段落是 timestamp-only（createdAt + 空文本），不再追加。
+          if (!lastIsVisuallyEmpty && !(lastHasCreatedAt && lastText === '')) {
+            nodes = [
+              ...nodes,
+              {
+                type: 'paragraph',
+                children: [{ text: '' }],
+              } as Descendant,
+            ];
+          }
         }
         
         return nodes;
@@ -241,6 +267,10 @@ export const LogSlate: React.FC<LogSlateProps> = ({
 
       const isEmptyParagraph = (node: any): boolean => {
         if (!node || node.type !== 'paragraph') return false;
+
+        // 有 block-level timestamp 的 paragraph 不能当“空段落”清掉
+        if (node.createdAt && typeof node.createdAt === 'number') return false;
+
         const children = Array.isArray(node.children) ? node.children : [];
         if (children.length === 0) return true;
 
@@ -860,7 +890,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
         <Editable
           renderElement={renderElement}
           renderLeaf={renderLeaf}
-          placeholder={placeholder}
+          placeholder={effectivePlaceholder}
           readOnly={readOnly}
           className={`log-slate-editable ${mode}-editable`}
           onFocus={() => {
