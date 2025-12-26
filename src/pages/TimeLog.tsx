@@ -509,10 +509,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 格式化日期显✅
   function formatDateDisplay(date: Date): string {
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    const month = date.getMonth() + 1;
     const day = date.getDate();
     const weekday = weekdays[date.getDay()];
-    return `${month}✅{day}✅| ${weekday}`;
+    return `${day} | ${weekday}`;
   }
 
   // 初始化加载事件数据
@@ -989,24 +988,26 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
   }, [timelineSegments.length, loadingEvents]);
 
-  // 格式化日期标题（例如✅2✅✅| 周四✅
+  // 格式化日期标题（例如：2 | 周四）
+  // 注意：不要用 new Date('YYYY-MM-DD')，在非 UTC+8 时区可能会发生日期/星期偏移
   const formatDateTitle = (dateKey: string): string => {
-    const date = new Date(dateKey);
-    const month = date.getMonth() + 1;
-    const day = date.getDate();
+    const parts = dateKey.split('-').map(n => Number(n));
+    const [year, month, day] = parts;
+    if (!year || !month || !day) {
+      return dateKey;
+    }
+
+    const date = new Date(year, month - 1, day);
     const weekdays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
     const weekday = weekdays[date.getDay()];
-    
-    // 判断是否是今✅
+
     const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const isToday = date.getTime() === today.getTime();
-    
-    if (isToday) {
-      return `${month}✅{day}✅| ${weekday} (今天)`;
-    }
-    
-    return `${month}✅{day}✅| ${weekday}`;
+    const isToday =
+      year === now.getFullYear() &&
+      month === now.getMonth() + 1 &&
+      day === now.getDate();
+
+    return `${day} | ${weekday}${isToday ? ' (今天)' : ''}`;
   };
 
   // 获取今天的日期key
