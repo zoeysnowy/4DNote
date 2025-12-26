@@ -303,46 +303,35 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       // 🔥 只缓存，不立即调用 onChange（避免触发父组件重新渲染）
       pendingValueRef.current = json;
     }
-    
-    // 🆕 监听光标位置变化：插入光标到空段落时智能添加 timestamp
-    if (enableTimestamp && eventId && mode === 'eventlog' && editor.selection && timestampServiceRef.current) {
+
+    // 🆕 timestamp：只在“内容变化”后给当前段落补 createdAt。
+    // 关键点：不要在纯 selection 变化时写入节点，否则会引起光标/选区不稳定。
+    if (isAstChange && enableTimestamp && eventId && mode === 'eventlog' && editor.selection && timestampServiceRef.current) {
       const { anchor } = editor.selection;
       try {
         const [currentNode, currentPath] = Editor.node(editor, anchor.path.slice(0, -1)) as [any, any];
-        
-        // 如果光标在一个没有 createdAt 的空段落中
+
         if (currentNode.type === 'paragraph' && !currentNode.createdAt) {
           const nodeText = Node.string(currentNode);
-          
-          // 只在段落为空时才考虑添加 timestamp
-          if (nodeText.trim() === '') {
-            // 🆕 使用 timestampService 检查是否需要新 timestamp（距离上次 > 5 分钟）
+
+          // 只有当段落已经有内容（用户开始输入）才创建 timestamp
+          if (nodeText.trim() !== '') {
             const shouldInsert = timestampServiceRef.current.shouldInsertTimestamp({
               contextId: eventId,
               eventId: eventId
             });
-            
+
             if (shouldInsert) {
               const now = Date.now();
               Editor.withoutNormalizing(editor, () => {
-                Transforms.setNodes(
-                  editor,
-                  { createdAt: now } as any,
-                  { at: currentPath }
-                );
+                Transforms.setNodes(editor, { createdAt: now } as any, { at: currentPath });
               });
-              
-              // 🆕 更新最后编辑时间
               timestampServiceRef.current!.updateLastEditTime(eventId, new Date(now));
-              
-              console.log('[LogSlate] 🎯 光标插入空段落，创建新 timestamp (> 5分钟)');
-            } else {
-              console.log('[LogSlate] ⏸️ 光标插入空段落，但距离上次 < 5分钟，不创建 timestamp');
             }
           }
         }
-      } catch (err) {
-        // 忽略路径错误（可能在特殊操作时发生）
+      } catch {
+        // ignore
       }
     }
     
