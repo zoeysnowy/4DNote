@@ -474,16 +474,28 @@ export function computeReparentEffect(
   }
   
   // 4. 计算受影响的子树（需要重新计算 bulletLevel）
+  // ADR-001: 结构真相来自 parentEventId；不要依赖 childEventIds 遍历后代
+  const childrenByParentId = new Map<string, string[]>();
+  for (const event of eventsById.values()) {
+    const parentId = event.parentEventId;
+    if (!parentId) continue;
+    const list = childrenByParentId.get(parentId) || [];
+    list.push(event.id);
+    childrenByParentId.set(parentId, list);
+  }
+
+  const visited = new Set<string>();
   const collectSubtree = (id: string) => {
-    const node = eventsById.get(id);
-    if (!node || !node.childEventIds) return;
-    
-    for (const childId of node.childEventIds) {
+    if (visited.has(id)) return;
+    visited.add(id);
+
+    const childIds = childrenByParentId.get(id) || [];
+    for (const childId of childIds) {
       affectedSubtree.push(childId);
       collectSubtree(childId);
     }
   };
-  
+
   collectSubtree(nodeId);
   
   return {

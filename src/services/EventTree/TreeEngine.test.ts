@@ -239,6 +239,28 @@ describe('EventTree Engine - Core Functions', () => {
       // 受影响的父节点
       expect(result.affectedParents).toEqual(expect.arrayContaining(['parent1', 'parent2']));
     });
+
+    it('ADR-001: affectedSubtree 应该基于 parentEventId 收集（即使 childEventIds 漂移/缺失）', () => {
+      const events = new Map<string, Event>([
+        // root.childEventIds 故意为空
+        ['root', createTestEvent('root', undefined, 0, [])],
+        // child1 作为 root 的孩子，但 child1.childEventIds 也为空
+        ['child1', createTestEvent('child1', 'root', 0, [])],
+        // grandchild 仅通过 parentEventId 关联到 child1
+        ['grandchild', createTestEvent('grandchild', 'child1', 0, [])],
+        ['newParent', createTestEvent('newParent', undefined, 1, [])],
+      ]);
+
+      const result = computeReparentEffect(events, {
+        nodeId: 'child1',
+        oldParentId: 'root',
+        newParentId: 'newParent',
+        newPosition: 0,
+      });
+
+      expect(result.affectedSubtree).toContain('child1');
+      expect(result.affectedSubtree).toContain('grandchild');
+    });
   });
 });
 
