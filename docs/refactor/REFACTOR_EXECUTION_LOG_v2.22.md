@@ -65,6 +65,7 @@
 | 2025-12-28 | EventTree: ADR-001 reparent subtree fix | Ensure `computeReparentEffect` collects affected subtree via `parentEventId` (not stale `childEventIds`) | Low | `vitest run src/services/EventTree/TreeEngine.test.ts` | 3a34601 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
 | 2025-12-28 | EventTree: migrate consumers to ADR-001 | Align EventService tree helpers + EventTree UI components to build edges/subtrees from `parentEventId` (avoid stale `childEventIds` + reduce N+1) | Med | `vitest run src/services/EventTree/TreeEngine.test.ts` (sanity) | c309982 | Files: `src/services/EventService.ts`, `src/components/EventTree/*` |
 | 2025-12-28 | Plan Snapshot: DFS sorting via EventTreeAPI | Snapshot mode sorting must follow ADR-001 (structure from `parentEventId`), avoid traversing `childEventIds` directly | Low | Manual smoke: Snapshot dateRange renders, order stable | (local) | File: `src/components/PlanManager.tsx` |
+| 2025-12-28 | EventRelationSummary: ADR-001 + remove N+1 | Derive siblings/children via EventTreeAPI (parent truth) and load all events once (avoid N+1 `getEventById`) | Low | Typecheck: no TS errors in file | (local) | File: `src/components/EventTree/EventRelationSummary.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
@@ -128,7 +129,7 @@ Goal: eliminate code paths that *derive structure* (DFS/BFS/subtree/children) fr
 - `src/components/PlanManager.tsx` (Snapshot mode sorting): must not traverse `childEventIds` for DFS; should use `EventTreeAPI.toDFSList()` on the snapshot event set.
 
 ### Medium priority (correctness + perf)
-- `src/components/EventTree/EventRelationSummary.tsx`: loads siblings/children by iterating `childEventIds` + N queries; should use `EventTreeAPI.getDirectChildren()` over `getAllEvents()` (or a cached in-memory set) to avoid drift and N+1.
+- (done) `src/components/EventTree/EventRelationSummary.tsx`: migrated to `EventTreeAPI.buildTree()` + one-shot `getAllEvents()`.
 
 ### Low priority (UI-only / diagnostics)
 - `src/components/EventEditModal/EventEditModalV2.tsx`, `src/pages/LogTab.tsx`: mostly reads `childEventIds` for debug output / display. Keep for now, but avoid using as truth for structure.
