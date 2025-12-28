@@ -60,6 +60,7 @@
 | 2025-12-27 | ModalSlate: fix Node.string runtime error | Use SlateNode.string (avoid DOM Node collision) | Low | Manual: no console error on typing | 0933c74 | File: `src/components/ModalSlate/ModalSlate.tsx` |
 | 2025-12-28 | TimeLog: Slate mounting window ±2 days | Reduce Slate instance count by only mounting for active sticky date ±2 days + active editor; out-of-window uses HTML renderer | Low | Manual: scroll TimeLog confirms smooth editing in window, no lag from unmounted Slates | 8173d20 | File: `src/pages/TimeLog.tsx` |
 | 2025-12-28 | PlanSlate: remove double state + no remount | Make Slate editor.children the single source of truth; remove React value mirror and `editorKey` forced remount; external sync uses Transforms replace | Med | Manual: Plan indent/delete + refresh/page switch stable | 7656b5b | File: `src/components/PlanSlate/PlanSlate.tsx` |
+| 2025-12-28 | Plan: persist refresh order via `position` | Fix refresh reorder by (1) recomputing per-parent sibling `position` from current editor order before saving and (2) treating `position`/EventTree fields as change triggers | Med | Manual: reorder/indent then refresh => order matches input | ea4c8fd | Files: `src/components/PlanManager.tsx`, `src/utils/planManagerHelpers.ts` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
