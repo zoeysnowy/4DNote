@@ -115,7 +115,6 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       
       // 🔥 EventTree 字段（用于 serialization 读取）
       parentEventId: item.parentEventId,
-      childEventIds: item.childEventIds,
       
       // 🔥 Position 和 BulletLevel（用于排序和层级显示）
       bulletLevel: item.bulletLevel,
@@ -474,7 +473,7 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
       const metadata = node.metadata || {};
       
       // 🔍 DEBUG: 检查 EventTree 字段
-      if (metadata.parentEventId || metadata.childEventIds) {
+      if (metadata.parentEventId) {
         // console.log('[Serialization] 🔍 Reading EventTree from metadata:', {
         //   baseId: baseId.slice(-8),
         //   parentEventId: metadata.parentEventId ? metadata.parentEventId.slice(-8) : metadata.parentEventId,
@@ -503,38 +502,7 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         }
       }
       
-      // 🔥 [FIX] childEventIds 清理（移除空数组和 placeholder）
-      // 🆕 v2.17: UUID迁移完成，所有ID都是真实的UUID格式
-      // 🆕 v2.20.0: 过滤掉 __placeholder__（占位符不应该出现在父子关系中）
-      if (metadata.childEventIds && Array.isArray(metadata.childEventIds)) {
-        const originalChildren = metadata.childEventIds;
-        
-        // 过滤掉 placeholder 和空字符串
-        const filteredChildren = metadata.childEventIds.filter(id => 
-          id && 
-          id !== '__placeholder__' && 
-          id.startsWith('event_')
-        );
-        
-        // 调试：如果过滤掉了 placeholder，记录日志
-        if (filteredChildren.length !== originalChildren.length) {
-          console.log('[Serialization] 🗑️ Filtered placeholders from childEventIds:', {
-            eventId: baseId.slice(-8),
-            before: originalChildren,
-            after: filteredChildren,
-            filtered: originalChildren.filter((id: string) => 
-              !filteredChildren.includes(id)
-            )
-          });
-        }
-        
-        // 移除空数组
-        if (filteredChildren.length === 0) {
-          metadata.childEventIds = undefined;
-        } else {
-          metadata.childEventIds = filteredChildren;
-        }
-      }
+      // childEventIds 已废弃并移除：结构真相来自 parentEventId
       
       items.set(baseId, {
         id: baseId,
@@ -566,7 +534,6 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         
         // 🔥 EventTree 字段 - 从 metadata 读取（Tab 键更新的）
         parentEventId: metadata.parentEventId,
-        childEventIds: metadata.childEventIds,
         
         // 🔥 Position 和 BulletLevel - 从 metadata 读取
         bulletLevel: metadata.bulletLevel ?? 0,

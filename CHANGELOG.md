@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **EventService 审阅与重构审计文档** (2025-12-29):
+  - 新增审阅文档：`docs/audits/EVENTSERVICE_REVIEW_AND_REFACTOR_2025-12-28.md`
+  - 聚焦 `normalizeEvent/normalizeEventLog` 一致性、签名系统分叉风险、CompleteMeta V2 闭环缺口
+  - 明确本地 ID 策略（本地 `event.id`=数据库 eventID；Outlook/远端 ID 走 `externalId`），并给出最小可实施 Checklist（meta.id/meta.signature 回填与同步侧不覆盖本地 ID）
+  - 解释并定位 TimeCalendar 新建事件“空 eventlog → 空段落 JSON”的根因（`jsonToSlateNodes('[]')` 默认返回空段落），并给出存储语义/编辑器语义拆分建议
+
 ### Fixed
 - **Block-Level Timestamp Outlook 同步修复** (2025-12-03):
   - 🐛 修复添加 calendarIds 同步到 Outlook 后，Block-Level Timestamp 全部崩溃的问题

@@ -70,7 +70,6 @@ export function buildEventTree(
     const node: EventNode = {
       id: event.id,
       parentEventId: event.parentEventId,
-      childEventIds: event.childEventIds || [],
       position: event.position,
       createdAt: event.createdAt,
       _fullEvent: 'title' in event ? (event as Event) : undefined,

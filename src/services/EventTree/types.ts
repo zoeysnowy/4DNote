@@ -17,7 +17,6 @@ import { Event } from '../../types';
 export interface EventNode {
   id: string;
   parentEventId?: string;
-  childEventIds?: string[];
   position?: number;
   createdAt?: string;
   
