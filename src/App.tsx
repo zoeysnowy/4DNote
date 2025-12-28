@@ -506,16 +506,20 @@ function App() {
       // 从 EventService 读取单个事件（自动规范化 title）
       const existingEvent = await EventService.getEventById(eventIdOrParentId);
       
-      // 检测条件：isTimer=true + 无 parentEventId + 有 childEventIds（说明已完成至少一次计时）
-      if (existingEvent && 
-          existingEvent.isTimer === true && 
-          !existingEvent.parentEventId && 
-          existingEvent.childEventIds && 
-          existingEvent.childEventIds.length > 0) {
+      // 检测条件：isTimer=true + 无 parentEventId + 已存在子事件（说明已完成至少一次计时）
+      // ADR-001: 结构真相来自 parentEventId；不要依赖 existingEvent.childEventIds
+      const existingTimerChildren = (existingEvent && existingEvent.isTimer === true && !existingEvent.parentEventId)
+        ? await EventService.getChildEvents(existingEvent.id)
+        : [];
+
+      if (existingEvent &&
+          existingEvent.isTimer === true &&
+          !existingEvent.parentEventId &&
+          existingTimerChildren.length > 0) {
         
         AppLogger.log('🔄 [Timer] 检测到独立 Timer 二次计时，自动升级为父子结构', {
           timerId: existingEvent.id,
-          childEventsCount: existingEvent.childEventIds.length
+          childEventsCount: existingTimerChildren.length
         });
         
         // Step 1: 创建父事件（继承原 Timer 的所有元数据）
@@ -949,56 +953,24 @@ function App() {
       if (result.success) {
         AppLogger.log('💾 [Timer Stop] Event saved via EventService:', timerEventId);
         
-        // 🆕 Issue #12: 更新父事件的 childEventIds
+        // 🆕 Issue #12: best-effort 维护 parent.childEventIds（legacy ordering hint）
+        // ADR-001: 正确性依赖 child.parentEventId；childEventIds 仅作为提示/兼容字段
         if (globalTimer.parentEventId) {
-          const parentEvent = await EventService.getEventById(globalTimer.parentEventId);
-          console.log('📝 [Timer Stop] 准备更新父事件 childEventIds:', {
-            parentEventId: globalTimer.parentEventId,
-            parentEventFound: !!parentEvent,
-            currentChildEventIds: parentEvent?.childEventIds,
-            timerEventId,
-            hasParentEventId: !!globalTimer.parentEventId,
-            globalTimer
-          });
-          if (parentEvent) {
-            // 🔧 避免重复添加：检查 timerEventId 是否已存在
-            const currentChildEventIds = parentEvent.childEventIds || [];
-            if (currentChildEventIds.includes(timerEventId)) {
-              console.log('⚠️ [Timer Stop] timerEventId 已存在于 childEventIds，跳过添加:', timerEventId);
-            } else {
-              const updatedChildEventIds = [...currentChildEventIds, timerEventId];
-              console.log('📝 [Timer Stop] 调用 EventService.updateEvent 前:', {
-                parentId: globalTimer.parentEventId,
-                oldChildEventIds: parentEvent.childEventIds,
-                newChildEventIds: updatedChildEventIds,
-                updatePayload: {
-                  childEventIds: updatedChildEventIds,
+          try {
+            const parentId = globalTimer.parentEventId;
+            const parentEvent = await EventService.getEventById(parentId);
+            if (parentEvent) {
+              const legacyChildIds = Array.isArray(parentEvent.childEventIds) ? parentEvent.childEventIds : [];
+              if (!legacyChildIds.includes(timerEventId)) {
+                await EventService.updateEvent(parentId, {
+                  childEventIds: [...legacyChildIds, timerEventId],
                   updatedAt: formatTimeForStorage(new Date())
-                }
-              });
-            
-              const updateResult = await EventService.updateEvent(globalTimer.parentEventId, {
-                childEventIds: updatedChildEventIds,
-                updatedAt: formatTimeForStorage(new Date())
-              } as Partial<Event>);
-              
-              console.log('📝 [Timer Stop] EventService.updateEvent 返回:', updateResult);
-              
-              // 验证更新是否成功
-              const verifyParent = await EventService.getEventById(globalTimer.parentEventId);
-              console.log('✅ [Timer Stop] 验证父事件 childEventIds:', {
-                parentId: globalTimer.parentEventId,
-                childEventIds: verifyParent?.childEventIds,
-                updateSuccessful: updateResult.success,
-                expectedCount: updatedChildEventIds.length,
-                actualCount: verifyParent?.childEventIds?.length || 0
-              });
+                } as Partial<Event>);
+              }
             }
-          } else {
-            console.error('❌ [Timer Stop] 找不到父事件:', globalTimer.parentEventId);
+          } catch (error) {
+            console.warn('⚠️ [Timer Stop] best-effort 更新 parent.childEventIds 失败（不影响结构正确性）:', error);
           }
-        } else {
-          console.log('⚠️ [Timer Stop] 没有 parentEventId，跳过 childEventIds 更新');
         }
         
         // ✅ 不需要手动 setAllEvents，storage 监听器会自动更新
