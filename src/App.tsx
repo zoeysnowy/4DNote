@@ -486,7 +486,7 @@ function App() {
    * 3. STOP: 计算最终时长，更新事件状态为 'pending' 以触发同步
    * 
    * 🆕 独立 Timer 二次计时自动升级机制：
-   * - 检测独立 Timer 事件（isTimer=true + 无 parentEventId + 有 timerLogs）
+  * - 检测独立 Timer 事件（isTimer=true + 无 parentEventId + 已存在子事件/历史计时段）
    * - 自动创建父事件，继承所有元数据
    * - 将原 Timer 转为子事件
    * - 为父事件启动新 Timer
@@ -533,7 +533,8 @@ function App() {
           source: 'local',
           isTimer: false,           // ✅ 不再是 Timer
           isTimeCalendar: true,     // 标记为 TimeCalendar 创建
-          childEventIds: [existingEvent.id], // 将原 Timer 作为第一个子事件
+          // ADR-001: 结构真相来自 child.parentEventId；此字段仅作为 legacy 顺序提示/兼容
+          childEventIds: [existingEvent.id],
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'pending' as const,
