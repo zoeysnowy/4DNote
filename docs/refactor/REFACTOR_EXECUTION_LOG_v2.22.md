@@ -62,11 +62,12 @@
 | 2025-12-28 | PlanSlate: remove double state + no remount | Make Slate editor.children the single source of truth; remove React value mirror and `editorKey` forced remount; external sync uses Transforms replace | Med | Manual: Plan indent/delete + refresh/page switch stable | 7656b5b | File: `src/components/PlanSlate/PlanSlate.tsx` |
 | 2025-12-28 | Plan: persist refresh order via `position` | Fix refresh reorder by (1) recomputing per-parent sibling `position` from current editor order before saving and (2) treating `position`/EventTree fields as change triggers | Med | Manual: reorder/indent then refresh => order matches input | ea4c8fd | Files: `src/components/PlanManager.tsx`, `src/utils/planManagerHelpers.ts` |
 | 2025-12-28 | EventTree: ADR-001 parent truth via `parentEventId` | Prevent tree structure drift by deriving hierarchy from `parentEventId` and using `childEventIds` only as ordering hint (position-first) | Low | `npx vitest run src/services/EventTree/TreeEngine.test.ts` | aa74135 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
+| 2025-12-28 | EventTree: ADR-001 reparent subtree fix | Ensure `computeReparentEffect` collects affected subtree via `parentEventId` (not stale `childEventIds`) | Low | `vitest run src/services/EventTree/TreeEngine.test.ts` | 3a34601 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
 - Decision: tree rebuild derives structure from `parentEventId`; `childEventIds` used only as ordering hint.
-- Status: implemented on this baseline (`aa74135`).
+- Status: implemented on this baseline (`aa74135`, follow-up `3a34601`).
 
 ### ADR-002: Remove PlanSlate double state
 - Decision: avoid `value/useState` mirroring Slate internal state; avoid `editorKey` remount.
