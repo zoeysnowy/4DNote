@@ -423,6 +423,91 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const allEventsRef = useRef<Event[]>([]);
   const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // 性能优化 Phase 2：根据 sticky 日期标题，决定“当前日期段±2天”挂载哪些 Slate（减少同时存在的 Slate 数量）
+  const [activeStickyDateKey, setActiveStickyDateKey] = useState<string | null>(null);
+  const activeStickyDateKeyRef = useRef<string | null>(null);
+
+  const isDateKeyWithinDays = useCallback((dateKey: string, centerKey: string, days: number) => {
+    const parse = (key: string): [number, number, number] | null => {
+      const parts = key.split('-');
+      if (parts.length !== 3) return null;
+      const year = Number(parts[0]);
+      const month = Number(parts[1]);
+      const day = Number(parts[2]);
+      if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+      if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+      return [year, month, day];
+    };
+
+    const a = parse(dateKey);
+    const b = parse(centerKey);
+    if (!a || !b) return false;
+
+    const utcA = Date.UTC(a[0], a[1] - 1, a[2]);
+    const utcB = Date.UTC(b[0], b[1] - 1, b[2]);
+    const diffDays = Math.abs(utcA - utcB) / (24 * 60 * 60 * 1000);
+    return diffDays <= days;
+  }, []);
+
+  const updateActiveStickyDateKey = useCallback(() => {
+    const container = timelineContainerRef.current;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const headers = Array.from(
+      container.querySelectorAll<HTMLElement>('.timeline-date-header[data-date-key]')
+    );
+    if (headers.length === 0) return;
+
+    let bestKey: string | null = null;
+    let bestDelta = -Infinity;
+
+    for (const header of headers) {
+      const key = header.getAttribute('data-date-key');
+      if (!key) continue;
+      const delta = header.getBoundingClientRect().top - containerRect.top;
+      // sticky 时 header.top 约等于容器 top；选择“最接近 top 且不在其下方”的一个
+      if (delta <= 1 && delta > bestDelta) {
+        bestDelta = delta;
+        bestKey = key;
+      }
+    }
+
+    // 如果尚未有任何 header 到达 sticky 区域，选第一个
+    if (!bestKey) {
+      bestKey = headers[0].getAttribute('data-date-key');
+    }
+
+    if (bestKey && bestKey !== activeStickyDateKeyRef.current) {
+      activeStickyDateKeyRef.current = bestKey;
+      setActiveStickyDateKey(bestKey);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (loadingEvents) return;
+    const container = timelineContainerRef.current;
+    if (!container) return;
+
+    let rafId: number | null = null;
+    const onScroll = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        updateActiveStickyDateKey();
+      });
+    };
+
+    container.addEventListener('scroll', onScroll, { passive: true });
+    // 初始同步一次
+    window.requestAnimationFrame(() => updateActiveStickyDateKey());
+
+    return () => {
+      container.removeEventListener('scroll', onScroll);
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
+    };
+  }, [loadingEvents, updateActiveStickyDateKey]);
+
   // IntersectionObserver：root 使用 TimeLog 的滚动容器，提前预加载一屏（减少“进入可视区才切换”的视觉差）
   useEffect(() => {
     if (eventlogObserverInitializedRef.current) return;
@@ -2323,6 +2408,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                     {/* 日期标题 - 使用sticky定位，自动实现条件置✅*/}
                     <div 
                       className="timeline-date-header"
+                      data-date-key={dateKey}
                       ref={isToday ? todayEventRef : null}
                     >
                       <h2 className="timeline-date-title">{formatDateTitle(dateKey)}</h2>
@@ -2763,34 +2849,56 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                               flushSync(() => openEditor(event.id, 'title'));
                             }}
                           >
-                            <LogSlate
-                              mode="title"
-                              readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'title')}
-                              placeholder="添加标题..."
-                              autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'title'}
-                              value={(() => {
+                            {(() => {
+                              const isActiveTitle = activeEditor?.eventId === event.id && activeEditor.mode === 'title';
+                              const shouldMountTitleSlate = isActiveTitle || (activeStickyDateKey
+                                ? isDateKeyWithinDays(dateKey, activeStickyDateKey, 2)
+                                : false);
+                              const titleValue = (() => {
                                 const colorTitle = typeof event.title === 'object'
                                   ? event.title.colorTitle
                                   : null;
                                 return colorTitle || '';
-                              })()}
-                              onChange={(slateJson) => {
-                                pendingTitleChanges.current.set(event.id, slateJson);
-                              }}
-                              onEscape={() => {
-                                pendingTitleChanges.current.delete(event.id);
-                                closeEditor(event.id);
-                              }}
-                              onBlur={() => {
-                                const pendingValue = pendingTitleChanges.current.get(event.id);
-                                if (pendingValue !== undefined) {
-                                  handleTitleSave(event.id, pendingValue);
-                                  pendingTitleChanges.current.delete(event.id);
-                                }
-                                closeEditor(event.id);
-                              }}
-                              showToolbar={false}
-                            />
+                              })();
+
+                              if (!shouldMountTitleSlate) {
+                                const html = getTitlePreviewHtml(event);
+                                return (
+                                  <div className="log-slate-wrapper title-mode" data-readonly>
+                                    <div
+                                      className="log-slate-editable"
+                                      dangerouslySetInnerHTML={{ __html: html || '<p><br/></p>' }}
+                                    />
+                                  </div>
+                                );
+                              }
+
+                              return (
+                                <LogSlate
+                                  mode="title"
+                                  readOnly={!isActiveTitle}
+                                  placeholder="添加标题..."
+                                  autoFocus={isActiveTitle}
+                                  value={titleValue}
+                                  onChange={(slateJson) => {
+                                    pendingTitleChanges.current.set(event.id, slateJson);
+                                  }}
+                                  onEscape={() => {
+                                    pendingTitleChanges.current.delete(event.id);
+                                    closeEditor(event.id);
+                                  }}
+                                  onBlur={() => {
+                                    const pendingValue = pendingTitleChanges.current.get(event.id);
+                                    if (pendingValue !== undefined) {
+                                      handleTitleSave(event.id, pendingValue);
+                                      pendingTitleChanges.current.delete(event.id);
+                                    }
+                                    closeEditor(event.id);
+                                  }}
+                                  showToolbar={false}
+                                />
+                              );
+                            })()}
                           </div>
                       
                       {/* 🆕 同步模式选择器弹✅*/}
@@ -2948,46 +3056,57 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           }}
                           style={{ cursor: 'text' }}
                         >
-                          {inViewEventlogIdsRef.current.has(event.id) ? (
-                            <LogSlate
-                              mode="eventlog"
-                              value={getEventLogContent(event)}
-                              onChange={(slateJson) => handleLogChange(event.id, slateJson)}
-                              onBlur={() => {
-                                if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
-                                  closeEditor(event.id);
-                                }
-                              }}
-                              onEscape={() => {
-                                if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
-                                  closeEditor(event.id);
-                                }
-                              }}
-                              readOnly={!(activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog')}
-                              placeholder="添加日志..."
-                              className="timelog-slate-editor"
-                              showToolbar={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                              enableMention={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                              enableHashtag={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                              showPreline={false}
-                              enableTimestamp={true}
-                              eventId={event.id}
-                              autoFocus={activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog'}
-                            />
-                          ) : (
-                            <div
-                              className="log-slate-wrapper eventlog-mode timelog-slate-editor"
-                              data-readonly
-                            >
-                              <div
-                                className="log-slate-editable eventlog-editable"
-                                dangerouslySetInnerHTML={{
-                                  __html:
-                                    getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
+                          {(() => {
+                            const isActiveEventlog = activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog';
+                            const shouldMountEventlogSlate = isActiveEventlog || (activeStickyDateKey
+                              ? isDateKeyWithinDays(dateKey, activeStickyDateKey, 2)
+                              : inViewEventlogIdsRef.current.has(event.id));
+
+                            if (!shouldMountEventlogSlate) {
+                              return (
+                                <div
+                                  className="log-slate-wrapper eventlog-mode timelog-slate-editor"
+                                  data-readonly
+                                >
+                                  <div
+                                    className="log-slate-editable eventlog-editable"
+                                    dangerouslySetInnerHTML={{
+                                      __html:
+                                        getEventLogPreviewHtml(event) || makePlaceholderHtml('添加日志...'),
+                                    }}
+                                  />
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <LogSlate
+                                mode="eventlog"
+                                value={getEventLogContent(event)}
+                                onChange={(slateJson) => handleLogChange(event.id, slateJson)}
+                                onBlur={() => {
+                                  if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
+                                    closeEditor(event.id);
+                                  }
                                 }}
+                                onEscape={() => {
+                                  if (activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog') {
+                                    closeEditor(event.id);
+                                  }
+                                }}
+                                readOnly={!isActiveEventlog}
+                                placeholder="添加日志..."
+                                className="timelog-slate-editor"
+                                showToolbar={isActiveEventlog}
+                                enableMention={isActiveEventlog}
+                                enableHashtag={isActiveEventlog}
+                                showPreline={false}
+                                enableTimestamp={true}
+                                eventId={event.id}
+                                autoFocus={isActiveEventlog}
                               />
-                            </div>
-                          )}
+                            );
+                          })()}
                         </div>
                       </div>
                     )}
