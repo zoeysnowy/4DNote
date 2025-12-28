@@ -63,6 +63,7 @@
 | 2025-12-28 | Plan: persist refresh order via `position` | Fix refresh reorder by (1) recomputing per-parent sibling `position` from current editor order before saving and (2) treating `position`/EventTree fields as change triggers | Med | Manual: reorder/indent then refresh => order matches input | ea4c8fd | Files: `src/components/PlanManager.tsx`, `src/utils/planManagerHelpers.ts` |
 | 2025-12-28 | EventTree: ADR-001 parent truth via `parentEventId` | Prevent tree structure drift by deriving hierarchy from `parentEventId` and using `childEventIds` only as ordering hint (position-first) | Low | `npx vitest run src/services/EventTree/TreeEngine.test.ts` | aa74135 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
 | 2025-12-28 | EventTree: ADR-001 reparent subtree fix | Ensure `computeReparentEffect` collects affected subtree via `parentEventId` (not stale `childEventIds`) | Low | `vitest run src/services/EventTree/TreeEngine.test.ts` | 3a34601 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
+| 2025-12-28 | EventTree: migrate consumers to ADR-001 | Align EventService tree helpers + EventTree UI components to build edges/subtrees from `parentEventId` (avoid stale `childEventIds` + reduce N+1) | Med | `vitest run src/services/EventTree/TreeEngine.test.ts` (sanity) | c309982 | Files: `src/services/EventService.ts`, `src/components/EventTree/*` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
