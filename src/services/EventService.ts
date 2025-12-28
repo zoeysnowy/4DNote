@@ -5728,29 +5728,19 @@ export class EventService {
    * ✅ [EventTreeAPI] 使用 TreeAPI.getDirectChildren 统一树逻辑
    */
   static async getChildEvents(parentId: string): Promise<Event[]> {
-    const parent = await this.getEventById(parentId);
-    if (!parent?.childEventIds || parent.childEventIds.length === 0) return [];
-    
-    // ✅ [OPTIMIZATION] 批量查询所有子事件，然后使用 TreeAPI 排序
+    // ADR-001: 结构真相来自 parentEventId；不要用 parent.childEventIds 是否为空来短路返回
     try {
-      const result = await storageManager.queryEvents({
-        filters: { eventIds: parent.childEventIds },
-        limit: 1000 // 足够大的限制
-      });
-      
-      // ✅ 使用 EventTreeAPI 保证排序和验证
       const allEvents = await this.getAllEvents();
       const sortedChildren = EventTreeAPI.getDirectChildren(parentId, allEvents);
-      
-      eventLogger.log('⚡️ [getChildEvents] TreeAPI query completed:', {
+
+      eventLogger.log('⚡️ [getChildEvents] TreeAPI completed:', {
         parentId: parentId.slice(-8),
         childCount: sortedChildren.length,
-        expected: parent.childEventIds.length
       });
-      
+
       return sortedChildren;
     } catch (error) {
-      eventLogger.error('❌ [getChildEvents] Query failed:', error);
+      eventLogger.error('❌ [getChildEvents] Failed:', error);
       return [];
     }
   }
@@ -5813,33 +5803,9 @@ export class EventService {
    * 递归获取整个事件树（广度优先遍历）
    */
   static async getEventTree(rootId: string): Promise<Event[]> {
-    const result: Event[] = [];
-    const visited = new Set<string>();
-    const queue = [rootId];
-    
-    while (queue.length > 0) {
-      const currentId = queue.shift()!;
-      
-      // 避免循环引用
-      if (visited.has(currentId)) {
-        eventLogger.warn('⚠️ [EventService] 检测到循环引用:', currentId);
-        continue;
-      }
-      visited.add(currentId);
-      
-      const event = await this.getEventById(currentId);
-      
-      if (event) {
-        result.push(event);
-        
-        // 添加子事件到队列
-        if (event.childEventIds) {
-          queue.push(...event.childEventIds);
-        }
-      }
-    }
-    
-    return result;
+    // ADR-001: 结构真相来自 parentEventId；使用 EventTreeAPI 统一获取完整子树
+    const allEvents = await this.getAllEvents();
+    return EventTreeAPI.getSubtree(rootId, allEvents);
   }
 
   /**
@@ -5865,33 +5831,40 @@ export class EventService {
     }
     
     // 3. 构建TreeNode结构（纯内存操作）
+    // ADR-001: 用 EventTreeAPI.buildTree 得到 childrenMap（基于 parentEventId）再构建结构
     const eventsById = new Map(subtree.map(e => [e.id, e]));
-    
+    const tree = EventTreeAPI.buildTree(subtree, {
+      validateStructure: false,
+      computeBulletLevels: false,
+      sortSiblings: true,
+    });
+
+    const visiting = new Set<string>();
     const buildNode = (id: string): EventTreeNode => {
       const event = eventsById.get(id);
-      if (!event) {
-        throw new Error(`Event not found: ${id}`);
+      if (!event) throw new Error(`Event not found: ${id}`);
+
+      if (visiting.has(id)) {
+        // 防御：避免异常数据导致无限递归
+        return { ...event, children: [] } as any;
       }
-      
+      visiting.add(id);
+
+      const childIds = tree.childrenMap.get(id) || [];
       const children: EventTreeNode[] = [];
-      if (event.childEventIds && event.childEventIds.length > 0) {
-        for (const childId of event.childEventIds) {
-          if (eventsById.has(childId)) {
-            try {
-              children.push(buildNode(childId));
-            } catch (error) {
-              eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
-            }
-          }
+      for (const childId of childIds) {
+        if (!eventsById.has(childId)) continue;
+        try {
+          children.push(buildNode(childId));
+        } catch (error) {
+          eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
         }
       }
-      
-      return {
-        ...event,
-        children
-      };
+
+      visiting.delete(id);
+      return { ...event, children } as any;
     };
-    
+
     return buildNode(rootId);
   }
 

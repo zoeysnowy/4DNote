@@ -76,20 +76,20 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
   // 构建边数据（父子关系）
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
-    
+
+    // ADR-001: 结构真相来自 parentEventId
+    const visibleIds = new Set(filteredEvents.map(e => e.id));
     filteredEvents.forEach(event => {
-      // 为每个子事件创建一条边
-      event.childEventIds?.forEach(childId => {
-        // 检查子事件是否在过滤后的事件列表中
-        if (filteredEvents.some(e => e.id === childId)) {
-          edges.push({
-            id: `${event.id}-${childId}`,
-            source: event.id,
-            target: childId,
-            type: 'smoothstep',
-            animated: false,
-          });
-        }
+      const parentId = event.parentEventId;
+      if (!parentId) return;
+      if (!visibleIds.has(parentId)) return;
+
+      edges.push({
+        id: `${parentId}-${event.id}`,
+        source: parentId,
+        target: event.id,
+        type: 'smoothstep',
+        animated: false,
       });
     });
     

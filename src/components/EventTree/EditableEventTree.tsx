@@ -21,6 +21,7 @@ import { withHistory } from 'slate-history';
 import { ChevronRight, ChevronDown, Circle, Link as LinkIcon } from 'lucide-react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
+import { EventTreeAPI } from '../../services/EventTree';
 import { LinkedCard } from './LinkedCard';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
@@ -188,86 +189,61 @@ export const EditableEventTree: React.FC<EditableEventTreeProps> = ({
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 构建树形结构（递归加载所有层级）
-  const buildTree = useCallback(async (event: Event, depth: number = 0): Promise<TreeNode> => {
-    console.log(`📊 [EventTree] 构建节点 (深度${depth}):`, {
-      id: event.id.slice(-8),
-      title: event.title?.simpleTitle,
-      childEventIds: event.childEventIds,
-      childCount: event.childEventIds?.length || 0,
-      hasChildEventIds: !!event.childEventIds,
-      isArrayType: Array.isArray(event.childEventIds)
-    });
+  // 构建树形结构（ADR-001：基于 parentEventId 结构真相；避免 childEventIds 漂移 + 避免 N+1 查询）
+  const buildTree = useCallback((rootEventId: string, events: Event[]): TreeNode | null => {
+    const visibleEvents = events.filter(e => EventService.shouldShowInEventTree(e));
+    const subtree = EventTreeAPI.getSubtree(rootEventId, visibleEvents);
+    if (subtree.length === 0) return null;
 
-    const children: TreeNode[] = [];
-    
-    if (event.childEventIds && event.childEventIds.length > 0) {
-      console.log(`🔄 [EventTree] 开始加载 ${event.childEventIds.length} 个子事件 (深度${depth})`);
-      
-      for (const childId of event.childEventIds) {
-        console.log(`  ↳ [EventTree] 加载子事件 (深度${depth + 1}):`, childId.slice(-8));
-        
-        const child = await EventService.getEventById(childId);
-        if (child && EventService.shouldShowInEventTree(child)) {
-          console.log(`  ✅ [EventTree] 子事件有效，递归加载 (深度${depth + 1}):`, {
-            id: childId.slice(-8),
-            title: child.title?.simpleTitle,
-            hasOwnChildren: !!child.childEventIds,
-            ownChildCount: child.childEventIds?.length || 0
-          });
-          
-          // 🔥 递归加载子事件的子事件（三级、四级等）
-          const childNode = await buildTree(child, depth + 1);
-          children.push(childNode);
-        } else if (child) {
-          console.log(`⏭️ [EventTree] 跳过系统事件 (深度${depth + 1}):`, child.id.slice(-8));
-        } else {
-          console.warn(`⚠️ [EventTree] 子事件不存在 (深度${depth + 1}):`, childId.slice(-8));
-        }
+    const tree = EventTreeAPI.buildTree(subtree, {
+      validateStructure: false,
+      computeBulletLevels: false,
+      sortSiblings: true,
+    });
+    const eventsById = new Map(subtree.map(e => [e.id, e]));
+
+    const visiting = new Set<string>();
+    const buildNode = (id: string): TreeNode => {
+      const event = eventsById.get(id);
+      if (!event) {
+        // fallback: should not happen within subtree
+        return { event: { id } as any, children: [], isOpen: true };
       }
-    } else {
-      console.log(`📭 [EventTree] 无子事件 (深度${depth}):`, {
-        id: event.id.slice(-8),
-        childEventIds: event.childEventIds
-      });
-    }
 
-    console.log(`✅ [EventTree] 节点完成 (深度${depth}):`, {
-      id: event.id,
-      title: event.title?.simpleTitle,
-      loadedChildren: children.length
-    });
+      if (visiting.has(id)) {
+        return { event, children: [], isOpen: true };
+      }
+      visiting.add(id);
 
-    return {
-      event,
-      children,
-      isOpen: true, // 默认展开
+      const childIds = tree.childrenMap.get(id) || [];
+      const children = childIds
+        .filter(childId => eventsById.has(childId))
+        .map(childId => buildNode(childId));
+
+      visiting.delete(id);
+      return { event, children, isOpen: true };
     };
+
+    return buildNode(rootEventId);
   }, []);
 
   // 加载事件树
   const loadEventTree = useCallback(async () => {
     try {
       console.log('🌲 [EventTree] 开始加载事件树，根事件:', rootEventId);
-      
-      const rootEvent = await EventService.getEventById(rootEventId);
-      if (!rootEvent) {
-        console.error('❌ [EventTree] 根事件不存在:', rootEventId);
+
+      const allEvents = await EventService.getAllEvents();
+      const tree = buildTree(rootEventId, allEvents);
+      if (!tree) {
+        console.error('❌ [EventTree] 根事件不存在或无可见子树:', rootEventId);
         setIsLoading(false);
         return;
       }
 
-      console.log('✅ [EventTree] 根事件加载成功:', {
-        id: rootEvent.id,
-        title: rootEvent.title?.simpleTitle,
-        directChildren: rootEvent.childEventIds?.length || 0
-      });
-
-      const tree = await buildTree(rootEvent);
       const totalNodes = countTreeNodes(tree);
       
       console.log('🎉 [EventTree] 事件树构建完成:', {
-        rootId: rootEvent.id,
+        rootId: rootEventId,
         totalNodes,
         structure: JSON.stringify(tree, (key, value) => {
           if (key === 'event') return { id: value.id, title: value.title?.simpleTitle };
