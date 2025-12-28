@@ -78,18 +78,23 @@ export function buildEventTree(
     nodesById.set(node.id, node);
   }
   
-  // Step 2: 识别顶层节点和子节点映射
+  // Step 2: 识别顶层节点 + 构建子节点映射
+  // ADR-001: 结构真相来自 parentEventId；childEventIds 只作为排序提示
   const rootIds: string[] = [];
-  
+
   for (const node of nodesById.values()) {
-    if (!node.parentEventId) {
+    const parentId = node.parentEventId;
+
+    // 顶层节点：无 parent 或 parent 不存在（孤儿节点会在 validate 阶段报告）
+    if (!parentId || !nodesById.has(parentId)) {
       rootIds.push(node.id);
+      continue;
     }
-    
-    // 构建子节点映射（用于快速查询）
-    if (node.childEventIds && node.childEventIds.length > 0) {
-      childrenMap.set(node.id, [...node.childEventIds]);
-    }
+
+    // parentEventId -> childrenMap
+    const list = childrenMap.get(parentId) || [];
+    list.push(node.id);
+    childrenMap.set(parentId, list);
   }
   
   // Step 3: 排序兄弟节点
@@ -99,10 +104,37 @@ export function buildEventTree(
     
     // 子节点排序
     for (const [parentId, childIds] of childrenMap.entries()) {
+      const parentNode = nodesById.get(parentId);
+
+      // childEventIds 作为排序提示（只在 position 缺失时参与排序）
+      const hintIndex = new Map<string, number>();
+      if (parentNode?.childEventIds && parentNode.childEventIds.length > 0) {
+        parentNode.childEventIds.forEach((id, index) => hintIndex.set(id, index));
+      }
+
       childIds.sort((a, b) => {
         const nodeA = nodesById.get(a);
         const nodeB = nodesById.get(b);
-        return nodeA && nodeB ? compareSiblings(nodeA, nodeB) : 0;
+        if (!nodeA || !nodeB) return 0;
+
+        // position 优先
+        if (nodeA.position !== undefined && nodeB.position !== undefined) {
+          return nodeA.position - nodeB.position;
+        }
+        if (nodeA.position !== undefined) return -1;
+        if (nodeB.position !== undefined) return 1;
+
+        // 仅当 position 缺失时，才使用 childEventIds 的顺序提示
+        const hintA = hintIndex.get(a);
+        const hintB = hintIndex.get(b);
+        if (hintA !== undefined && hintB !== undefined) {
+          return hintA - hintB;
+        }
+        if (hintA !== undefined) return -1;
+        if (hintB !== undefined) return 1;
+
+        // fallback：createdAt / id
+        return compareSiblings(nodeA, nodeB);
       });
     }
   }
