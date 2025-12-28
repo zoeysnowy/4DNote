@@ -81,6 +81,7 @@ import data from '@emoji-mart/data';
 
 import { TagService } from '../../services/TagService';
 import { EventService } from '../../services/EventService';
+import { EventTreeAPI } from '../../services/EventTree';
 import { EventHub } from '../../services/EventHub';
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
@@ -463,7 +464,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       allDay: false,
       location: '',
       attendees: [],
-      eventlog: [],  // 🔧 Slate JSON 对象（空 Descendant 数组）
+      eventlog: '[]', // ✅ Slate JSON 字符串（空数组）
       description: '',
       // 🔧 日历同步配置（单一数据结构）
       calendarIds: [],
@@ -622,6 +623,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       loadEvents();
     }
   }, [isOpen, showEventTree, allEvents.length]);
+
+  // 🌲 EditModal EventTree: 以“当前事件所属 Level0 根节点”为 root，显示整棵子树
+  const eventTreeRootId = React.useMemo(() => {
+    if (!formData?.id) return '';
+    if (!allEvents || allEvents.length === 0) return formData.id;
+    const root = EventTreeAPI.getRootEvent(formData.id, allEvents as any);
+    return root?.id || formData.id;
+  }, [formData.id, allEvents]);
   
   // 🆕 三层保存架构状态
   // ✅ Layer 2: 静默自动保存（保护断网/断电数据）
@@ -1025,7 +1034,28 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       
       // 🔧 Step 0b: 准备 eventlog（Slate JSON 字符串）
       // ✅ 简化：formData.eventlog 已通过 ModalSlate blur-to-save 更新，直接使用
-      const currentEventlogJson = JSON.stringify(formData.eventlog || []);
+      let currentEventlogJson: string;
+      if (typeof (formData as any).eventlog === 'string') {
+        const raw = ((formData as any).eventlog as string).trim();
+
+        // 兼容历史/异常：如果是二次 stringify 的 JSON 字符串（"[...]"），先解一层
+        if (raw.startsWith('"') && raw.endsWith('"')) {
+          try {
+            const unwrapped = JSON.parse(raw);
+            if (typeof unwrapped === 'string') {
+              currentEventlogJson = unwrapped.trim() || '[]';
+            } else {
+              currentEventlogJson = raw || '[]';
+            }
+          } catch {
+            currentEventlogJson = raw || '[]';
+          }
+        } else {
+          currentEventlogJson = raw || '[]';
+        }
+      } else {
+        currentEventlogJson = JSON.stringify((formData as any).eventlog || []);
+      }
       
       // 🔧 Step 1: 确定最终标题
       // formData.title 是 Slate JSON 字符串（colorTitle - 不含标签元素，只有文本和格式）
@@ -3830,8 +3860,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     })() && (
                       <div style={{ marginBottom: '16px', marginTop: '0' }}>
                         <EventTreeViewer
-                          rootEventId={formData.id}
+                          rootEventId={eventTreeRootId || formData.id}
                           events={allEvents}
+                          highlightEventId={formData.id}
                           onEventClick={(clickedEvent) => {
                             setFormData(clickedEvent as any);
                             setShowEventTree(false);

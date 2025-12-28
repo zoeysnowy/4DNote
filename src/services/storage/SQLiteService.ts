@@ -717,6 +717,13 @@ export class SQLiteService {
   async createEvent(event: StorageEvent): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    const locationText =
+      typeof (event as any).location === 'string'
+        ? (event as any).location
+        : (event as any).location && typeof (event as any).location === 'object' && 'displayName' in (event as any).location
+          ? (event as any).location.displayName
+          : null;
+
     const stmt = this.db.prepare(`
       INSERT INTO events (
         id, full_title, color_title, simple_title,
@@ -738,7 +745,7 @@ export class SQLiteService {
       event.endTime || null,
       event.isAllDay ? 1 : 0,
       event.description || null,
-      event.location || null,
+      locationText,
       event.emoji || null,
       event.color || null,
       event.isCompleted ? 1 : 0,
@@ -822,6 +829,11 @@ export class SQLiteService {
           values.push(value.colorTitle || null);
         }
         return;
+      }
+
+      // Handle location object (LocationObject) -> TEXT
+      if (key === 'location' && value && typeof value === 'object' && (value as any).displayName) {
+        value = (value as any).displayName;
       }
       
       const columnName = fieldMapping[key] || this.camelToSnake(key);
@@ -1100,6 +1112,13 @@ export class SQLiteService {
     try {
       for (const event of events) {
         try {
+          const locationText =
+            typeof (event as any).location === 'string'
+              ? (event as any).location
+              : (event as any).location && typeof (event as any).location === 'object' && 'displayName' in (event as any).location
+                ? (event as any).location.displayName
+                : null;
+
           await insertStmt.run(
             event.id,
             (typeof event.title === 'string' ? event.title : event.title?.fullTitle) || null,
@@ -1109,7 +1128,7 @@ export class SQLiteService {
             event.endTime || null,
             event.isAllDay ? 1 : 0,
             event.description || null,
-            event.location || null,
+            locationText,
             event.emoji || null,
             event.color || null,
             event.isCompleted ? 1 : 0,

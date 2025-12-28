@@ -15,6 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 解释并定位 TimeCalendar 新建事件“空 eventlog → 空段落 JSON”的根因（`jsonToSlateNodes('[]')` 默认返回空段落），并给出存储语义/编辑器语义拆分建议
 
 ### Fixed
+- **EventEditModal 新建事件：eventlog 乱码 & location 保存失败修复** (2025-12-29):
+  - 修复 eventlog 被二次 `JSON.stringify` 导致的“带引号 JSON 乱码”（保存时区分 string/array，并兼容历史二次 stringify 数据）
+  - 修复填写 location 后事件写入失败导致“事件消失”（SQLite 写入边界将 location 统一序列化为 TEXT：优先取 `displayName`）
+  - Files:
+    - `src/components/EventEditModal/EventEditModalV2.tsx`
+    - `src/services/storage/SQLiteService.ts`
+
 - **Block-Level Timestamp Outlook 同步修复** (2025-12-03):
   - 🐛 修复添加 calendarIds 同步到 Outlook 后，Block-Level Timestamp 全部崩溃的问题
   - **根因**: 
