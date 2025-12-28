@@ -1069,6 +1069,50 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     // 🔧 过滤掉 ghost events（Snapshot 模式的虚拟事件，不应该保存）
     const realItems = updatedItems.filter(item => !(item as any)._isDeleted);
 
+    // ✅ Fix outline reparenting:
+    // When users reorder lines, Slate may preserve old metadata.parentEventId for the following
+    // deeper nodes. In Plan outline semantics, parent is derived from the nearest previous
+    // node with a lower bulletLevel. We recompute parentEventId from (bulletLevel + visual order)
+    // only when the current edit payload contains *all* existing items (avoid corrupting structure
+    // under filtered views).
+    const existingIds = items.map(i => i.id).filter(Boolean);
+    const updatedIdSet = new Set(realItems.map((i: any) => i?.id).filter(Boolean));
+    const hasAllExistingItemsInPayload = existingIds.every(id => updatedIdSet.has(id));
+
+    const realItemsWithDerivedParents = hasAllExistingItemsInPayload
+      ? (() => {
+          const lastIdByLevel = new Map<number, string>();
+          return realItems.map((u: any) => {
+            const levelRaw = (u as any).bulletLevel ?? (u as any).level ?? 0;
+            const level = Number.isFinite(levelRaw) ? Math.max(0, Math.floor(levelRaw)) : 0;
+
+            let derivedParentId: string | undefined = undefined;
+            if (level > 0) {
+              for (let k = level - 1; k >= 0; k--) {
+                const candidate = lastIdByLevel.get(k);
+                if (candidate) {
+                  derivedParentId = candidate;
+                  break;
+                }
+              }
+            }
+
+            // Update stack AFTER deriving (so the node doesn't become its own ancestor)
+            if (u?.id) lastIdByLevel.set(level, String(u.id));
+            // Clear deeper levels because this node becomes the latest at its level
+            for (const key of Array.from(lastIdByLevel.keys())) {
+              if (key > level) lastIdByLevel.delete(key);
+            }
+
+            const currentParentId = (u as any).parentEventId ? String((u as any).parentEventId) : undefined;
+            const nextParentId = derivedParentId;
+            if (currentParentId === nextParentId) return u;
+            if (!currentParentId && !nextParentId) return u;
+            return { ...u, parentEventId: nextParentId };
+          });
+        })()
+      : realItems;
+
     // ✅ Persist ordering: derive sibling positions from the editor's current visual order.
     // We only recompute a parent's sibling positions when ALL existing siblings of that parent
     // are present in the current edit payload (avoids corrupting order under filtered views).
@@ -1083,7 +1127,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
 
     const updatedIdsByParent = new Map<string, string[]>();
-    for (const u of realItems) {
+    for (const u of realItemsWithDerivedParents) {
       if (!u?.id) continue;
       const key = parentKeyOf((u as any).parentEventId);
       if (!updatedIdsByParent.has(key)) updatedIdsByParent.set(key, []);
@@ -1109,7 +1153,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
 
     const counters = new Map<string, number>();
-    const realItemsWithPositions = realItems.map((u: any) => {
+    const realItemsWithPositions = realItemsWithDerivedParents.map((u: any) => {
       const key = parentKeyOf(u?.parentEventId);
       if (!canRecomputeParent.get(key)) return u;
 
@@ -1142,7 +1186,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     // ===== 阶段 1: 跨行删除检测 =====
     const currentItemIds = items.map(i => i.id);
-    const updatedItemIds = realItems.map((i: any) => i.id);
+    const updatedItemIds = realItemsWithDerivedParents.map((i: any) => i.id);
     const crossDeletedIds = currentItemIds.filter(id => !updatedItemIds.includes(id));
     
     console.log('[executeBatchUpdate] 🗑️ 跨行删除检测:', {
