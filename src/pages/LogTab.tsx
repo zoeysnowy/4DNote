@@ -821,7 +821,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         childEventId: event.id,
         parentEventId: event.parentEventId,
         found: !!parent,
-        parentChildrenCount: parent?.childEventIds?.length || 0,
         refreshCounter  // 🔧 添加日志验证刷新
       });
       setParentEvent(prev => {
@@ -2516,8 +2515,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               <div className="info-meta-content">
                 <span style={{ fontSize: '14px', color: '#6b7280' }}>
                   {formData.parentEventId ? '有父事件' : 
-                   (formData.childEventIds && formData.childEventIds.length > 0) 
-                     ? `${formData.childEventIds.length} 个子事件` 
+                   (childEvents.length > 0)
+                     ? `${childEvents.length} 个子事件`
                      : '独立事件'}
                 </span>
               </div>

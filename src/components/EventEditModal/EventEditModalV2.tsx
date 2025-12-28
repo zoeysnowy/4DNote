@@ -784,7 +784,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         childEventId: event.id,
         parentEventId: event.parentEventId,
         found: !!parent,
-        parentChildrenCount: parent?.childEventIds?.length || 0,
         refreshCounter  // 🔧 添加日志验证刷新
       });
       setParentEvent(prev => {

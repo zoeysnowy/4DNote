@@ -67,6 +67,7 @@
 | 2025-12-28 | Plan Snapshot: DFS sorting via EventTreeAPI | Snapshot mode sorting must follow ADR-001 (structure from `parentEventId`), avoid traversing `childEventIds` directly | Low | Manual smoke: Snapshot dateRange renders, order stable | (local) | File: `src/components/PlanManager.tsx` |
 | 2025-12-28 | EventRelationSummary: ADR-001 + remove N+1 | Derive siblings/children via EventTreeAPI (parent truth) and load all events once (avoid N+1 `getEventById`) | Low | Typecheck: no TS errors in file | (local) | File: `src/components/EventTree/EventRelationSummary.tsx` |
 | 2025-12-28 | EventTree UI: stop using childEventIds | CustomEventNode progress uses direct children derived from EventTreeAPI (ADR-001) instead of `event.childEventIds` | Low | Typecheck: no TS errors in files | (local) | Files: `src/components/EventTree/EventTreeCanvas.tsx`, `src/components/EventTree/CustomEventNode.tsx` |
+| 2025-12-28 | LogTab/EventEditModal: reduce childEventIds reads | Prefer ADR-001-derived `childEvents` for display/logging; avoid `.childEventIds.length` as truth | Low | Manual smoke: Notetree label shows child count | (local) | Files: `src/pages/LogTab.tsx`, `src/components/EventEditModal/EventEditModalV2.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
@@ -133,7 +134,7 @@ Goal: eliminate code paths that *derive structure* (DFS/BFS/subtree/children) fr
 - (done) `src/components/EventTree/EventRelationSummary.tsx`: migrated to `EventTreeAPI.buildTree()` + one-shot `getAllEvents()`.
 
 ### Low priority (UI-only / diagnostics)
-- `src/components/EventEditModal/EventEditModalV2.tsx`, `src/pages/LogTab.tsx`: mostly reads `childEventIds` for debug output / display. Keep for now, but avoid using as truth for structure.
+- `src/components/EventEditModal/EventEditModalV2.tsx`, `src/pages/LogTab.tsx`: still carries legacy `childEventIds` fields in formData for compatibility, but avoid using it as structure truth in UI/logic.
 - (done) `src/components/EventTree/CustomEventNode.tsx`: UI progress no longer uses `childEventIds`.
 
 ## Rollback Playbook
