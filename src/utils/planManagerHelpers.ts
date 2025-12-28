@@ -124,6 +124,10 @@ export function detectChanges(updatedItem: any, existingItem: any): boolean {
     existingItem.content !== updatedItem.content ||
     existingItem.description !== updatedItem.description ||
     existingItem.eventlog !== updatedItem.eventlog ||
-    JSON.stringify(existingItem.tags) !== JSON.stringify(updatedItem.tags)
+    JSON.stringify(existingItem.tags) !== JSON.stringify(updatedItem.tags) ||
+    // ✅ Persist ordering and tree structure changes even when content is unchanged
+    (existingItem.parentEventId || undefined) !== (updatedItem.parentEventId || undefined) ||
+    JSON.stringify(existingItem.childEventIds || []) !== JSON.stringify(updatedItem.childEventIds || []) ||
+    (existingItem.position ?? undefined) !== (updatedItem.position ?? undefined)
   );
 }

@@ -1068,6 +1068,58 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     // 🔧 过滤掉 ghost events（Snapshot 模式的虚拟事件，不应该保存）
     const realItems = updatedItems.filter(item => !(item as any)._isDeleted);
+
+    // ✅ Persist ordering: derive sibling positions from the editor's current visual order.
+    // We only recompute a parent's sibling positions when ALL existing siblings of that parent
+    // are present in the current edit payload (avoids corrupting order under filtered views).
+    const parentKeyOf = (parentEventId: any) => (parentEventId ? String(parentEventId) : '__root__');
+
+    const existingIdsByParent = new Map<string, Set<string>>();
+    for (const e of items) {
+      if (!e?.id) continue;
+      const key = parentKeyOf((e as any).parentEventId);
+      if (!existingIdsByParent.has(key)) existingIdsByParent.set(key, new Set());
+      existingIdsByParent.get(key)!.add(e.id);
+    }
+
+    const updatedIdsByParent = new Map<string, string[]>();
+    for (const u of realItems) {
+      if (!u?.id) continue;
+      const key = parentKeyOf((u as any).parentEventId);
+      if (!updatedIdsByParent.has(key)) updatedIdsByParent.set(key, []);
+      updatedIdsByParent.get(key)!.push(u.id);
+    }
+
+    const canRecomputeParent = new Map<string, boolean>();
+    for (const [key, existingSet] of existingIdsByParent.entries()) {
+      const updatedArr = updatedIdsByParent.get(key);
+      if (!updatedArr) {
+        canRecomputeParent.set(key, false);
+        continue;
+      }
+      const updatedSet = new Set(updatedArr);
+      const allExistingPresent = Array.from(existingSet).every(id => updatedSet.has(id));
+      canRecomputeParent.set(key, allExistingPresent);
+    }
+    for (const key of updatedIdsByParent.keys()) {
+      if (!canRecomputeParent.has(key)) {
+        // Parent group only exists in updated payload (e.g., newly created siblings)
+        canRecomputeParent.set(key, true);
+      }
+    }
+
+    const counters = new Map<string, number>();
+    const realItemsWithPositions = realItems.map((u: any) => {
+      const key = parentKeyOf(u?.parentEventId);
+      if (!canRecomputeParent.get(key)) return u;
+
+      const nextPos = counters.get(key) ?? 0;
+      counters.set(key, nextPos + 1);
+
+      // Avoid churn if already correct
+      if ((u as any).position === nextPos) return u;
+      return { ...u, position: nextPos };
+    });
     
     if (realItems.length < updatedItems.length) {
       console.log('[executeBatchUpdate] 🔧 过滤掉 ghost events:', {
@@ -1112,7 +1164,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     }
     
     // ===== 阶段 2: 内容处理（更新、空白删除） =====
-    realItems.forEach((updatedItem: any) => {
+    realItemsWithPositions.forEach((updatedItem: any) => {
       const existingItem = itemsMap[updatedItem.id];
       
       // 🔧 v1.5: 直接使用 updatedItem（包含完整字段，无需合并）
