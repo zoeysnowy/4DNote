@@ -640,6 +640,10 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   // 创建编辑器实例
   const editor = useMemo(() => withCustom(withHistory(withReact(createEditor() as CustomEditor))), []);
+
+  // ✅ ADR-002: 单一真相源是 Slate editor.children。
+  // 仅保留 lastValueRef 用于 debug/diff（不参与渲染，不触发重挂载）。
+  const lastValueRef = useRef<EventLineNode[]>([]);
   
   // 🆕 v2.3: 暴露编辑器实例到全局（供 DateMentionElement 使用）
   useEffect(() => {
@@ -796,17 +800,15 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     return result;
   }, [itemsHash]); // 使用itemsHash代替items直接依赖
   
-  // 初始化内容
-  const [value, setValue] = useState<EventLineNode[]>(() => {
-    console.log('%c[🎯 useState 初始化] 使用 enhancedValue', 'background: #4CAF50; color: white; padding: 2px 6px;', {
-      enhancedValueLength: enhancedValue.length,
-      hasPlaceholder: enhancedValue.some(n => n.eventId === '__placeholder__')
-    });
-    return enhancedValue;
-  });
-  
-  // 🆕 生成编辑器 key，用于强制重新渲染
-  const [editorKey, setEditorKey] = useState(0);
+  // Slate 组件只接受 initialValue（首次挂载生效）。后续外部变化通过 Transforms 更新 editor.children。
+  const initialValueRef = useRef<Descendant[] | null>(null);
+  if (!initialValueRef.current) {
+    initialValueRef.current = enhancedValue as unknown as Descendant[];
+    lastValueRef.current = enhancedValue;
+  }
+
+  // 便捷别名：当前节点总是从 editor.children 读取（单一真相源）
+  const value = editor.children as unknown as EventLineNode[];
   
   // 🆕 v1.8: 移除 shouldShowPlaceholder，改为在 renderLinePrefix 中渲染
   
@@ -876,7 +878,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     console.log('%c[🔍 enhancedValue useEffect 触发]', 'background: #E91E63; color: white; padding: 2px 6px;', {
       isInitialized: isInitializedRef.current,
       enhancedValueLength: enhancedValue.length,
-      valueLength: value.length
+      valueLength: (editor.children as any[])?.length ?? 0
     });
     
     // 🔥 首次初始化：标记为已初始化（value 已在 useState 时设置）
@@ -887,10 +889,16 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       });
       isInitializedRef.current = true;
       
-      // 🔧 如果 enhancedValue 有内容但 value 为空，同步一次
-      if (enhancedValue.length > 0 && value.length === 0) {
-        console.log('%c[⚠️ 修正] value 为空，使用 enhancedValue', 'background: #FF9800; color: white;');
-        setValue(enhancedValue);
+      // 🔧 如果 enhancedValue 有内容但 editor.children 为空，同步一次
+      if (enhancedValue.length > 0 && (editor.children as any[]).length === 0) {
+        console.log('%c[⚠️ 修正] editor.children 为空，使用 enhancedValue', 'background: #FF9800; color: white;');
+        skipNextOnChangeRef.current = true;
+        Editor.withoutNormalizing(editor, () => {
+          editor.children.splice(0, editor.children.length);
+          editor.children.push(...(enhancedValue as unknown as Descendant[]));
+          editor.onChange();
+        });
+        lastValueRef.current = enhancedValue;
       }
       return; // ✅ 首次初始化完成，直接返回，不再同步
     }
@@ -918,8 +926,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // 🔧 安全检查：确保 enhancedValue 不为空，且与当前 value 不同
       if (enhancedValue.length > 0) {
         // 🔍 对比 enhancedValue 和 value 是否真的不同
-        const isDifferent = enhancedValue.length !== value.length || 
-          !enhancedValue.every((node, i) => node.eventId === value[i]?.eventId);
+        const currentNodes = editor.children as unknown as EventLineNode[];
+        const isDifferent = enhancedValue.length !== currentNodes.length || 
+          !enhancedValue.every((node, i) => node.eventId === currentNodes[i]?.eventId);
         
         if (!isDifferent) {
           console.log('%c[⏭️ 同步跳过] enhancedValue 与 value 相同，无需更新', 'background: #2196F3; color: white; padding: 2px 6px;');
@@ -933,13 +942,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           // 删除所有旧内容
           editor.children.splice(0, editor.children.length);
           // 插入新内容
-          editor.children.push(...enhancedValue);
+          editor.children.push(...(enhancedValue as unknown as Descendant[]));
           // 触发编辑器更新
           editor.onChange();
         });
-        
-        // 同时更新 React state（保持一致性）
-        setValue(enhancedValue);
+
+        lastValueRef.current = enhancedValue;
         
         console.log('%c[✅ 同步完成] Transforms.replace 已调用', 'background: #4CAF50; color: white; padding: 2px 6px;', {
           newLength: enhancedValue.length,
@@ -1204,12 +1212,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         editorChildrenCount: editor.children.length
       });
       skipNextOnChangeRef.current = true;
-      setValue([...editor.children] as unknown as EventLineNode[]);
+      lastValueRef.current = [...editor.children] as unknown as EventLineNode[];
     };
     
     window.addEventListener('eventsUpdated', handleEventUpdated);
     return () => window.removeEventListener('eventsUpdated', handleEventUpdated);
-  }, [items, value, editor, enhancedValue]);
+  }, [items, editor, enhancedValue]);
   
   // ==================== 内容变化处理 ====================
   
@@ -1297,24 +1305,24 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       return;
     }
     
-    // 使用增强的调试工具记录变化
-    logValueChange(value, newValue as unknown as EventLineNode[]);
+    // 使用增强的调试工具记录变化（prev 快照来自 lastValueRef）
+    logValueChange(lastValueRef.current, newValue as unknown as EventLineNode[]);
     
     // 🔥 立即更新 UI（Slate 内部状态）
     // 🚨 DIAGNOSIS: 检测 setValue 被调用时的异常
     const newValueAsNodes = newValue as unknown as EventLineNode[];
     const hasRealContent = newValueAsNodes.some(node => node.eventId !== '__placeholder__');
     
-    if (!hasRealContent && value.some(node => node.eventId !== '__placeholder__')) {
+    if (!hasRealContent && lastValueRef.current.some(node => node.eventId !== '__placeholder__')) {
       console.error('🔴 [诊断] setValue 即将清空编辑器！', {
-        当前value有内容: value.filter(n => n.eventId !== '__placeholder__').length,
+        当前value有内容: lastValueRef.current.filter(n => n.eventId !== '__placeholder__').length,
         新value只有placeholder: !hasRealContent,
         newValue数量: newValueAsNodes.length,
         调用栈: new Error().stack?.split('\n').slice(0, 10)
       });
     }
     
-    setValue(newValueAsNodes);
+    lastValueRef.current = newValueAsNodes;
     
     // 🆕 检测@提及触发
     if (editor.selection && Range.isCollapsed(editor.selection)) {
@@ -1697,8 +1705,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           
           // 🔥 设置标志位，跳过 onChange
           skipNextOnChangeRef.current = true;
-          setValue(newNodes);
-          setEditorKey(prev => prev + 1);
+          Editor.withoutNormalizing(editor, () => {
+            editor.children.splice(0, editor.children.length);
+            editor.children.push(...(newNodes as unknown as Descendant[]));
+            editor.onChange();
+          });
+          lastValueRef.current = newNodes;
         },
         
         getEditor: () => editor,
@@ -3994,14 +4006,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       >
         {/* 🔧 v1.8: 移除绝对定位的 placeholder，改用最后一行的 renderLinePrefix */}
         
-        {/* 🔧 始终渲染编辑器（至少有 placeholder） */}
-        {value.length > 0 ? (
-          <Slate 
-            key={editorKey} 
-            editor={editor} 
-            initialValue={value as unknown as Descendant[]} 
-            onChange={handleEditorChange}
-          >
+        {/* 🔧 始终渲染编辑器（至少有 placeholder）；后续外部更新通过 Transforms 直接更新 editor.children */}
+        <Slate 
+          editor={editor} 
+          initialValue={(initialValueRef.current || (enhancedValue as unknown as Descendant[])) as Descendant[]} 
+          onChange={handleEditorChange}
+        >
             <Editable
               renderElement={renderElement}
               renderLeaf={renderLeaf}
@@ -4058,12 +4068,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                 />
               </div>
             )}
-          </Slate>
-        ) : (
-          <div style={{ padding: '8px 16px', color: '#9ca3af' }}>
-            加载中...
-          </div>
-        )}
+        </Slate>
       </div>
     </SlateErrorBoundary>
   );

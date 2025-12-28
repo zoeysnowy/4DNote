@@ -59,6 +59,7 @@
 | 2025-12-27 | ModalSlate: Enter soft-break (EventEditModal) | Keep Enter as in-paragraph newline; Ctrl/Meta+Enter creates new paragraph; unify via SlateCore | Med | Manual: EditModal Enter no new node; Ctrl+Enter new block | 63a5a95 | Files: `src/components/ModalSlate/ModalSlate.tsx`, `src/components/SlateCore/operations/paragraphOperations.ts` |
 | 2025-12-27 | ModalSlate: fix Node.string runtime error | Use SlateNode.string (avoid DOM Node collision) | Low | Manual: no console error on typing | 0933c74 | File: `src/components/ModalSlate/ModalSlate.tsx` |
 | 2025-12-28 | TimeLog: Slate mounting window ±2 days | Reduce Slate instance count by only mounting for active sticky date ±2 days + active editor; out-of-window uses HTML renderer | Low | Manual: scroll TimeLog confirms smooth editing in window, no lag from unmounted Slates | 8173d20 | File: `src/pages/TimeLog.tsx` |
+| 2025-12-28 | PlanSlate: remove double state + no remount | Make Slate editor.children the single source of truth; remove React value mirror and `editorKey` forced remount; external sync uses Transforms replace | Med | Manual: Plan indent/delete + refresh/page switch stable | (pending) | File: `src/components/PlanSlate/PlanSlate.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
@@ -67,7 +68,7 @@
 
 ### ADR-002: Remove PlanSlate double state
 - Decision: avoid `value/useState` mirroring Slate internal state; avoid `editorKey` remount.
-- Status: pending.
+- Status: implemented (v2.22 baseline).
 
 ## Rollback Playbook
 - Revert single commit: `git revert <sha>`.
