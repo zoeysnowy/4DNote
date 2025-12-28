@@ -22,6 +22,7 @@ import './EventTree.css';
 export interface EventNodeData {
   event: Event;                  // 主事件数据
   linkedEvents: Event[];         // 双向链接的事件（linkedEventIds + backlinks）
+  childEvents: Event[];          // 直接子事件（ADR-001: 来自 parentEventId 推导的 childrenMap）
   onEventClick?: (event: Event) => void;  // 点击事件回调
   onCheckboxChange?: (event: Event, isCompleted: boolean) => void;  // Checkbox 回调
 }
@@ -137,16 +138,21 @@ export const CustomEventNode: React.FC<NodeProps<EventNodeData>> = ({ data }) =>
           </p>
         )}
 
-        {/* 进度条（Task 事件显示） */}
-        {data.event.isTask && data.event.childEventIds && data.event.childEventIds.length > 0 && (
+        {/* 进度条（Task 事件显示）：基于直接子任务完成度 */}
+        {data.event.isTask && data.childEvents.length > 0 && data.childEvents.some(e => e.isTask) && (
           <div className="event-node-progress">
             <div className="event-node-progress-bar">
               <div 
                 className="event-node-progress-fill"
-                style={{ width: `${(data.event.childEventIds.filter(id => {
-                  const child = data.linkedEvents.find(e => e.id === id);
-                  return child?.isCompleted;
-                }).length / data.event.childEventIds.length) * 100}%` }}
+                style={{
+                  width: `${(() => {
+                    const childTasks = data.childEvents.filter(e => e.isTask);
+                    const total = childTasks.length;
+                    if (total === 0) return 0;
+                    const done = childTasks.filter(e => e.isCompleted).length;
+                    return (done / total) * 100;
+                  })()}%`,
+                }}
               />
             </div>
           </div>

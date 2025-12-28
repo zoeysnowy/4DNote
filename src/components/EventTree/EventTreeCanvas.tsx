@@ -27,6 +27,7 @@ import 'reactflow/dist/style.css';
 import { Event } from '../../types';
 import { CustomEventNode, EventNodeData } from './CustomEventNode';
 import { EventService } from '../../services/EventService';
+import { EventTreeAPI } from '../../services/EventTree';
 import './EventTree.css';
 
 interface EventTreeCanvasProps {
@@ -54,10 +55,22 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
 
   // 构建节点数据
   const initialNodes: Node<EventNodeData>[] = useMemo(() => {
+    const eventsById = new Map(filteredEvents.map(e => [e.id!, e]));
+    const tree = EventTreeAPI.buildTree(filteredEvents, {
+      validateStructure: false,
+      computeBulletLevels: false,
+      sortSiblings: true,
+    });
+
     return filteredEvents.map((event, index) => {
       // 获取双向链接的事件（outgoing + incoming）
       // 注意：getLinkedEvents 是异步的，这里使用空数组，实际应该在组件 mount 时异步加载
       const linkedEvents: Event[] = [];
+
+      const childIds = tree.childrenMap.get(event.id!) || [];
+      const childEvents = childIds
+        .map(id => eventsById.get(id))
+        .filter((e): e is Event => !!e);
 
       return {
         id: event.id,
@@ -66,6 +79,7 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
         data: {
           event,
           linkedEvents,
+          childEvents,
           onEventClick,
           onCheckboxChange,
         },
