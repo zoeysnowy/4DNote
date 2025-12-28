@@ -64,6 +64,7 @@
 | 2025-12-28 | EventTree: ADR-001 parent truth via `parentEventId` | Prevent tree structure drift by deriving hierarchy from `parentEventId` and using `childEventIds` only as ordering hint (position-first) | Low | `npx vitest run src/services/EventTree/TreeEngine.test.ts` | aa74135 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
 | 2025-12-28 | EventTree: ADR-001 reparent subtree fix | Ensure `computeReparentEffect` collects affected subtree via `parentEventId` (not stale `childEventIds`) | Low | `vitest run src/services/EventTree/TreeEngine.test.ts` | 3a34601 | Files: `src/services/EventTree/TreeEngine.ts`, `src/services/EventTree/TreeEngine.test.ts` |
 | 2025-12-28 | EventTree: migrate consumers to ADR-001 | Align EventService tree helpers + EventTree UI components to build edges/subtrees from `parentEventId` (avoid stale `childEventIds` + reduce N+1) | Med | `vitest run src/services/EventTree/TreeEngine.test.ts` (sanity) | c309982 | Files: `src/services/EventService.ts`, `src/components/EventTree/*` |
+| 2025-12-28 | Plan Snapshot: DFS sorting via EventTreeAPI | Snapshot mode sorting must follow ADR-001 (structure from `parentEventId`), avoid traversing `childEventIds` directly | Low | Manual smoke: Snapshot dateRange renders, order stable | (local) | File: `src/components/PlanManager.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
@@ -73,6 +74,64 @@
 ### ADR-002: Remove PlanSlate double state
 - Decision: avoid `value/useState` mirroring Slate internal state; avoid `editorKey` remount.
 - Status: implemented (v2.22 baseline).
+
+### ADR-003 (Proposed): Persistent PlanIndex / PlanStore (long-term, for large event volumes)
+- Context: Plan/TimeLog/Snapshot flows frequently need “by date” views. Current approach often starts from `getAllEvents()` then filters + rebuilds bulletLevel/tree order in-memory; cold start cost grows with event count.
+- Related PRD: `docs/PRD/SNAPSHOT_STATUS_VISUALIZATION_PRD.md` (Snapshot mode depends on a `dateRange` and uses EventHistory queries to compute “existing at start + created in range + ghost deletions”).
+
+#### Definition: "by date plan" (aligned to Snapshot PRD intent)
+- For day D, the Plan page is effectively comparing:
+  - **Start snapshot**: state at end-of-day (or start-of-day) of D-1
+  - **End snapshot**: state at end-of-day of D
+- Snapshot UI needs both: the "end state list" and the “diff/status lines” from EventHistory between the two timestamps.
+
+#### Proposed storage: PlanIndex table (SQLite / IndexedDB)
+- Key: `dateKey` (e.g. `YYYY-MM-DD`) or a `snapshotId` (timestamp boundary)
+- Value (minimal): ordered `eventId[]` + per-event `parentEventId` + per-event `position` (optional) + `updatedAt`/`version`
+- Optional extras: precomputed `bulletLevel`, `rootIds`, and a compact children map (derived from parent ids) for fast render.
+
+#### Update strategy (incremental)
+- Source of change: EventHistory append-only stream.
+- On new history ops, update only impacted dates and impacted subtree ranges (using `parentEventId` mapping).
+- Keep an internal `lastIndexedHistoryId`/`lastIndexedTime` checkpoint.
+
+#### Conflict resolution (must be explicit)
+- Rule (recommended): **Event fields are truth; PlanIndex is a cache**.
+  - On read: validate PlanIndex entries against current Event states (`updatedAt`/history watermark). If mismatch, rebuild that date index.
+  - On write: Plan editing persists to Events (and EventHistory). PlanIndex consumes the history stream to converge.
+- Rationale: avoids “two sources of truth”; PlanIndex becomes an accelerant, not a second domain model.
+
+#### Migration / consistency notes
+- Backfill: build PlanIndex for recent N days first; lazy-build older dates on demand.
+- Repair: a `rebuildPlanIndex(dateKey)` admin/dev command for recovery.
+- ADR-001 interaction: PlanIndex stores structure snapshot derived from `parentEventId` (never from `childEventIds`).
+
+### ADR-004 (Proposed): EventGraphAPI for bidirectional links (separate from EventTree)
+- Context: Tree relations (parent/child) and graph relations (linked/backlinks) have different invariants.
+- Decision: keep tree logic in `EventTreeAPI`; add a dedicated graph layer to own link invariants.
+
+#### Minimal interface (MVP)
+- `addLink(aId, bId, { bidirectional: true })` → updates `linkedEventIds`/`backlinks` consistently
+- `removeLink(aId, bId, { bidirectional: true })`
+- `rebuildBacklinks(allEvents)` → one-time repair tool (derive backlinks from linkedEventIds)
+- `getLinkedEvents(eventId, allEvents)` → returns neighbors (compatible with existing `EventService.getLinkedEvents` behavior)
+
+#### Rules
+- No mixing with tree structure: graph edges do not imply parent/child.
+- Deduplicate + self-link guard.
+- Backlinks are derived/maintained, not edited directly (optional strict mode).
+
+## Audit: Remaining structural reads of `childEventIds` (needs migration to ADR-001)
+Goal: eliminate code paths that *derive structure* (DFS/BFS/subtree/children) from `childEventIds`.
+
+### High priority (correctness)
+- `src/components/PlanManager.tsx` (Snapshot mode sorting): must not traverse `childEventIds` for DFS; should use `EventTreeAPI.toDFSList()` on the snapshot event set.
+
+### Medium priority (correctness + perf)
+- `src/components/EventTree/EventRelationSummary.tsx`: loads siblings/children by iterating `childEventIds` + N queries; should use `EventTreeAPI.getDirectChildren()` over `getAllEvents()` (or a cached in-memory set) to avoid drift and N+1.
+
+### Low priority (UI-only / diagnostics)
+- `src/components/EventEditModal/EventEditModalV2.tsx`, `src/pages/LogTab.tsx`: mostly reads `childEventIds` for debug output / display. Keep for now, but avoid using as truth for structure.
 
 ## Rollback Playbook
 - Revert single commit: `git revert <sha>`.

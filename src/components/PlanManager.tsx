@@ -1827,67 +1827,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         ...event,
         bulletLevel: bulletLevels.get(event.id!) || 0
       })) as Event[];
-      
-      // 3️⃣ 按照层级结构排序（深度优先遍历，与正常模式一致）
-      const sortedEvents: Event[] = [];
-      const eventMap = new Map(eventsWithLevels.map(e => [e.id!, e]));
-      const visited = new Set<string>();
-      
-      // 递归添加事件及其子事件
-      const addEventWithChildren = (event: Event) => {
-        if (visited.has(event.id!)) return;
-        
-        visited.add(event.id!);
-        sortedEvents.push(event);
-        
-        // 按 position 排序子事件（fallback 到 createdAt）
-        const children = (event.childEventIds || [])
-          .map(childId => eventMap.get(childId))
-          .filter((child): child is Event => !!child)
-          .sort((a, b) => {
-            if (a.position !== undefined && b.position !== undefined) {
-              return a.position - b.position;
-            }
-            if (a.position !== undefined) return -1;
-            if (b.position !== undefined) return 1;
-            const timeA = new Date(a.createdAt || 0).getTime();
-            const timeB = new Date(b.createdAt || 0).getTime();
-            return timeA - timeB;
-          });
-        
-        children.forEach(child => addEventWithChildren(child));
-      };
-      
-      // 4️⃣ 找出所有顶层事件，按 position 排序（fallback 到 createdAt）
-      const topLevelEvents = eventsWithLevels
-        .filter(e => {
-          if (!e.parentEventId) return true;
-          const parent = eventMap.get(e.parentEventId);
-          return !parent; // 父事件不存在，当作顶层处理
-        })
-        .sort((a, b) => {
-          if (a.position !== undefined && b.position !== undefined) {
-            return a.position - b.position;
-          }
-          if (a.position !== undefined) return -1;
-          if (b.position !== undefined) return 1;
-          const timeA = new Date(a.createdAt || 0).getTime();
-          const timeB = new Date(b.createdAt || 0).getTime();
-          return timeA - timeB;
-        });
-      
-      // 5️⃣ 深度优先遍历所有顶层事件
-      topLevelEvents.forEach(event => addEventWithChildren(event));
-      
-      // 6️⃣ 添加任何遗漏的事件（孤立事件）
-      eventsWithLevels.forEach(event => {
-        if (!visited.has(event.id!)) {
-          console.warn('[PlanManager] ⚠️ Snapshot 发现孤立事件:', event.id?.slice(-8), event.title);
-          sortedEvents.push(event);
-        }
-      });
-      
-      result = sortedEvents;
+
+      // 3️⃣ 按照层级结构排序（DFS，与正常模式一致）
+      // ADR-001: 结构真相来自 parentEventId；避免直接用 childEventIds 遍历
+      result = EventTreeAPI.toDFSList(eventsWithLevels);
       console.log('[PlanManager] ✅ Snapshot 排序完成:', result.length, '个事件');
     } else {
       // 🔥 正常模式：直接使用 allItems（即 filteredItems）
