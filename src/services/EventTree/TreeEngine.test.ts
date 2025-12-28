@@ -139,20 +139,20 @@ describe('EventTree Engine - Core Functions', () => {
       expect(tree.bulletLevels.get('child2')).toBe(1);
     });
 
-    it('ADR-001: childEventIds 仅作为排序提示（position 缺失时生效）', () => {
+    it('v2.22: sibling order should not depend on childEventIds (fallback to createdAt/id)', () => {
       const events: Event[] = [
-        // root 给出提示顺序: child2 在 child1 前
+        // root.childEventIds 提示顺序被忽略
         createTestEvent('root', undefined, 0, ['child2', 'child1']),
-        // 两个 child 都没有 position
-        createTestEvent('child1', 'root', undefined, []),
-        createTestEvent('child2', 'root', undefined, []),
+        // 两个 child 都没有 position，用 createdAt 排序
+        { ...createTestEvent('child1', 'root', undefined, []), createdAt: '2024-01-01' },
+        { ...createTestEvent('child2', 'root', undefined, []), createdAt: '2024-01-02' },
       ];
 
-      const tree = buildEventTree(events, {
+      const tree = buildEventTree(events as Event[], {
         sortSiblings: true,
       });
 
-      expect(tree.childrenMap.get('root')).toEqual(['child2', 'child1']);
+      expect(tree.childrenMap.get('root')).toEqual(['child1', 'child2']);
     });
     
     it('应该在没有 position 时按 createdAt 排序', () => {
@@ -220,24 +220,20 @@ describe('EventTree Engine - Core Functions', () => {
         newPosition: 0,
       });
       
-      // 应该更新 3 个节点
-      expect(result.nodesToUpdate).toHaveLength(3);
+      // v2.22: 仅更新节点本身的 parentEventId/position
+      expect(result.nodesToUpdate).toHaveLength(1);
       
       // child1 本身
       const child1Update = result.nodesToUpdate.find(u => u.eventId === 'child1');
       expect(child1Update?.updates.parentEventId).toBe('parent2');
       expect(child1Update?.updates.position).toBe(0);
       
-      // parent1 移除 child1
-      const parent1Update = result.nodesToUpdate.find(u => u.eventId === 'parent1');
-      expect(parent1Update?.updates.childEventIds).toEqual([]);
-      
-      // parent2 添加 child1
-      const parent2Update = result.nodesToUpdate.find(u => u.eventId === 'parent2');
-      expect(parent2Update?.updates.childEventIds).toContain('child1');
-      
-      // 受影响的父节点
-      expect(result.affectedParents).toEqual(expect.arrayContaining(['parent1', 'parent2']));
+      // 不再维护 parent.childEventIds
+      expect(result.nodesToUpdate.find(u => u.eventId === 'parent1')).toBeUndefined();
+      expect(result.nodesToUpdate.find(u => u.eventId === 'parent2')).toBeUndefined();
+
+      // affectedParents 不再包含父节点
+      expect(result.affectedParents).toEqual([]);
     });
 
     it('ADR-001: affectedSubtree 应该基于 parentEventId 收集（即使 childEventIds 漂移/缺失）', () => {

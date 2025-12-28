@@ -79,7 +79,7 @@ export function buildEventTree(
   }
   
   // Step 2: 识别顶层节点 + 构建子节点映射
-  // ADR-001: 结构真相来自 parentEventId；childEventIds 只作为排序提示
+  // ADR-001: 结构真相来自 parentEventId
   const rootIds: string[] = [];
 
   for (const node of nodesById.values()) {
@@ -104,14 +104,6 @@ export function buildEventTree(
     
     // 子节点排序
     for (const [parentId, childIds] of childrenMap.entries()) {
-      const parentNode = nodesById.get(parentId);
-
-      // childEventIds 作为排序提示（只在 position 缺失时参与排序）
-      const hintIndex = new Map<string, number>();
-      if (parentNode?.childEventIds && parentNode.childEventIds.length > 0) {
-        parentNode.childEventIds.forEach((id, index) => hintIndex.set(id, index));
-      }
-
       childIds.sort((a, b) => {
         const nodeA = nodesById.get(a);
         const nodeB = nodesById.get(b);
@@ -123,15 +115,6 @@ export function buildEventTree(
         }
         if (nodeA.position !== undefined) return -1;
         if (nodeB.position !== undefined) return 1;
-
-        // 仅当 position 缺失时，才使用 childEventIds 的顺序提示
-        const hintA = hintIndex.get(a);
-        const hintB = hintIndex.get(b);
-        if (hintA !== undefined && hintB !== undefined) {
-          return hintA - hintB;
-        }
-        if (hintA !== undefined) return -1;
-        if (hintB !== undefined) return 1;
 
         // fallback：createdAt / id
         return compareSiblings(nodeA, nodeB);
@@ -145,7 +128,6 @@ export function buildEventTree(
   if (validateStructure) {
     errors.push(...detectCycles(nodesById));
     errors.push(...detectOrphans(nodesById, childrenMap));
-    errors.push(...detectInvalidParents(nodesById));
   }
   
   // Step 5: 计算 bulletLevel
@@ -353,32 +335,6 @@ function detectOrphans(
 }
 
 /**
- * 检测无效父节点引用
- * 
- * childEventIds 中包含不存在的子节点
- */
-function detectInvalidParents(nodesById: Map<string, EventNode>): TreeValidationError[] {
-  const errors: TreeValidationError[] = [];
-  
-  for (const node of nodesById.values()) {
-    if (node.childEventIds && node.childEventIds.length > 0) {
-      for (const childId of node.childEventIds) {
-        if (!nodesById.has(childId)) {
-          errors.push({
-            type: 'invalid-parent',
-            nodeId: node.id,
-            message: `Child not found: ${childId}`,
-            details: { childId },
-          });
-        }
-      }
-    }
-  }
-  
-  return errors;
-}
-
-/**
  * 重新计算某个 parent 下的兄弟节点顺序
  * 
  * 用于 Tab/Shift+Tab 后调整 position
@@ -443,37 +399,9 @@ export function computeReparentEffect(
       position: newPosition,
     },
   });
+  // ADR-001/v2.22+: 废弃自动维护 parent.childEventIds（不写、不保证一致性）。
   
-  // 2. 从旧父节点的 childEventIds 移除
-  if (oldParentId) {
-    const oldParent = eventsById.get(oldParentId);
-    if (oldParent && oldParent.childEventIds) {
-      const newChildIds = oldParent.childEventIds.filter(id => id !== nodeId);
-      nodesToUpdate.push({
-        eventId: oldParentId,
-        updates: { childEventIds: newChildIds },
-      });
-      affectedParents.push(oldParentId);
-    }
-  }
-  
-  // 3. 添加到新父节点的 childEventIds
-  if (newParentId) {
-    const newParent = eventsById.get(newParentId);
-    if (newParent) {
-      const newChildIds = [...(newParent.childEventIds || [])];
-      if (!newChildIds.includes(nodeId)) {
-        newChildIds.push(nodeId);
-      }
-      nodesToUpdate.push({
-        eventId: newParentId,
-        updates: { childEventIds: newChildIds },
-      });
-      affectedParents.push(newParentId);
-    }
-  }
-  
-  // 4. 计算受影响的子树（需要重新计算 bulletLevel）
+  // 2. 计算受影响的子树（需要重新计算 bulletLevel）
   // ADR-001: 结构真相来自 parentEventId；不要依赖 childEventIds 遍历后代
   const childrenByParentId = new Map<string, string[]>();
   for (const event of eventsById.values()) {

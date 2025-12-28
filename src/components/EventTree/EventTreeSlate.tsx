@@ -36,7 +36,7 @@ export interface TreeNodeElement {
   level: number;           // 缩进层级 (0, 1, 2, ...)
   isOpen: boolean;         // 是否展开子节点
   parentEventId?: string;  // 父事件 ID
-  childEventIds?: string[]; // 子事件 ID 列表
+  childCount?: number;     // 直接子节点数量（由 parentEventId 派生）
   linkedEventIds?: string[]; // 双向链接 ID 列表
   children: Descendant[];  // Slate 文本内容
 }
@@ -176,7 +176,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
         level,
         isOpen: true,
         parentEventId,
-        childEventIds: event.childEventIds || [],
+        childCount: (tree.childrenMap.get(event.id) || []).length,
         linkedEventIds: event.linkedEventIds || [],
         children: [{ text: titleText }],
       });
@@ -332,7 +332,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
 
     if ((element as any).type === 'tree-node') {
       const treeNode = element as unknown as TreeNodeElement;
-      const hasChildren = treeNode.childEventIds && treeNode.childEventIds.length > 0;
+      const hasChildren = (treeNode.childCount || 0) > 0;
       const isCollapsed = collapsedNodes.has(treeNode.nodeId);
 
       // 加载链接的事件

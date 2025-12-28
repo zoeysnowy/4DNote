@@ -706,9 +706,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       }
       
       // 2.2 子事件（bulletLevel 需要重新计算）
-      if (updatedEvent.childEventIds?.length) {
-        updatedEvent.childEventIds.forEach(id => affectedEventIds.add(id));
-      }
+      // ADR-001/v2.22+: childEventIds 不再维护；使用 parentEventId 派生直接子节点
+      const directChildren = await EventService.getChildEvents(eventId);
+      directChildren.forEach(child => affectedEventIds.add(child.id));
       
       console.log('[PlanManager] 📊 Affected events:', {
         count: affectedEventIds.size,

@@ -582,7 +582,8 @@ class UnifiedSearchIndex {
     }
     
     // 3. 关联事件数量
-    const linkedCount = (event.linkedEventIds?.length || 0) + (event.childEventIds?.length || 0);
+    // v2.22+: childEventIds 不再维护；不要把它作为统计/权重来源
+    const linkedCount = (event.linkedEventIds?.length || 0);
     if (linkedCount > 0) {
       parts.push(`🔗 ${linkedCount}`);
     }

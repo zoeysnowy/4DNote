@@ -33,6 +33,12 @@ export default defineConfig({
     tsconfigPaths(),
     ignoreBetterSqlite3(),
   ],
+  test: {
+    // Exclude vendored upstream tests under tui.calendar (some use Jest globals / missing deps)
+    exclude: [
+      'src/lib/tui.calendar/**',
+    ],
+  },
   server: {
     port: 3000,
     open: true,

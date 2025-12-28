@@ -127,6 +127,9 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   // 🆕 v2.19: 重要笔记状态
   const [noteEvents, setNoteEvents] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
+
+  // v2.22+: childEventIds 不再维护；直接子节点数量由 parentEventId 派生
+  const [noteChildCountById, setNoteChildCountById] = useState<Map<string, number>>(new Map());
   
   // 🆕 v2.20: 收藏事件树的展开状态
   const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
@@ -147,6 +150,14 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
         const allEvents = await EventService.getAllEvents();
         const notes = allEvents.filter(e => e.isNote === true);
         setNoteEvents(notes);
+
+        const counts = new Map<string, number>();
+        for (const e of allEvents) {
+          const parentId = (e as any).parentEventId;
+          if (!parentId) continue;
+          counts.set(parentId, (counts.get(parentId) || 0) + 1);
+        }
+        setNoteChildCountById(counts);
       } catch (error) {
         console.error('❌ [ContentPanel] 加载重要笔记失败:', error);
       } finally {
@@ -788,7 +799,7 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
           ) : (
             <div className="note-list">
               {noteEvents.map(event => {
-                const hasChildren = event.childEventIds && event.childEventIds.length > 0;
+                const hasChildren = (noteChildCountById.get(event.id) || 0) > 0;
                 const isExpanded = expandedEventIds.has(event.id);
                 
                 return (

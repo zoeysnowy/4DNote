@@ -100,7 +100,7 @@ export interface ReparentUpdateResult {
     updates: Partial<Event>;
   }>;
   
-  // 受影响的父节点（需要更新 childEventIds）
+  // 受影响的父节点（用于 UI 刷新/重排；v2.22+ 不再维护 childEventIds）
   affectedParents: string[];
   
   // 需要重新计算 bulletLevel 的节点范围

@@ -830,36 +830,8 @@ export class EventService {
         });
       }
       
-      // 🆕 自动维护父子事件双向关联
-      if (finalEvent.parentEventId) {
-        const parentEvent = await this.getEventById(finalEvent.parentEventId);
-        
-        if (parentEvent) {
-          // 初始化 childEventIds 数组
-          const childIds = parentEvent.childEventIds || [];
-          
-          // 添加子事件 ID（避免重复）
-          if (!childIds.includes(finalEvent.id)) {
-            await this.updateEvent(parentEvent.id, {
-              childEventIds: [...childIds, finalEvent.id]
-            }, true); // skipSync=true 避免递归同步
-            
-            eventLogger.log('🔗 [EventService] 已关联子事件到父事件:', {
-              parentId: parentEvent.id,
-              parentTitle: parentEvent.title?.simpleTitle,
-              childId: finalEvent.id,
-              childTitle: finalEvent.title?.simpleTitle,
-              childType: this.getEventType(finalEvent),
-              totalChildren: childIds.length + 1
-            });
-          }
-        } else {
-          eventLogger.warn('⚠️ [EventService] 父事件不存在:', {
-            parentId: finalEvent.parentEventId,
-            childId: finalEvent.id
-          });
-        }
-      }
+      // ADR-001: 结构真相来自 child.parentEventId。
+      // v2.22+: 废弃自动维护 parent.childEventIds（不写、不保证一致性）。
       
       // 🆕 v2.16: 记录到事件历史 (跳过池化占位事件)
       if (!(finalEvent as any)._isPlaceholder) {
@@ -1352,82 +1324,17 @@ export class EventService {
         });
       }
 
-      // 🆕 检测 parentEventId 变化，同步更新双向关联
-      // 🔧 修复：即使 parentEventId 没有变化，也要确保父事件的 childEventIds 包含当前事件
-      if (filteredUpdates.parentEventId !== undefined) {
-        const parentHasChanged = filteredUpdates.parentEventId !== originalEvent.parentEventId;
-        
-        if (parentHasChanged) {
-          eventLogger.log('🔗 [EventService] Detected parentEventId change, syncing bi-directional links');
-        
-          // 从旧父事件移除
-          if (originalEvent.parentEventId) {
-            const oldParent = await this.getEventById(originalEvent.parentEventId);
-            if (oldParent && oldParent.childEventIds) {
-              await this.updateEvent(
-                oldParent.id,
-                {
-                  childEventIds: oldParent.childEventIds.filter(cid => cid !== eventId)
-                },
-                true // skipSync
-              );
-              
-              eventLogger.log('🔗 [EventService] 已从旧父事件移除子事件:', {
-                oldParentId: originalEvent.parentEventId,
-                childId: eventId,
-                remainingChildren: oldParent.childEventIds.length - 1
-              });
-            }
-          }
-        }
-        
-        // 🔧 无论是否变化，都要确保父事件的 childEventIds 包含当前事件
-        if (filteredUpdates.parentEventId) {
-          const newParent = await this.getEventById(filteredUpdates.parentEventId);
-          if (newParent) {
-            const childIds = newParent.childEventIds || [];
-            
-            if (!childIds.includes(eventId)) {
-              await this.updateEvent(
-                newParent.id,
-                {
-                  childEventIds: [...childIds, eventId]
-                },
-                true // skipSync
-              );
-              
-              eventLogger.log('🔗 [EventService] 已添加子事件到新父事件:', {
-                newParentId: filteredUpdates.parentEventId,
-                childId: eventId,
-                totalChildren: childIds.length + 1,
-                reason: parentHasChanged ? 'parentEventId changed' : 'ensuring consistency'
-              });
-            } else {
-              eventLogger.log('✅ [EventService] 父事件已包含子事件，跳过:', {
-                parentId: filteredUpdates.parentEventId.slice(-8),
-                childId: eventId.slice(-8)
-              });
-            }
-          } else {
-            // 🔧 [FIX] 父事件可能正在创建中（批量保存未完成），保留 parentEventId
-            // 只有当父事件ID明显无效时才清除（如临时ID）
-            if (filteredUpdates.parentEventId.startsWith('line-')) {
-              eventLogger.warn('⚠️ [EventService] 父事件ID是临时ID，清除 parentEventId:', {
-                childId: eventId.slice(-8),
-                invalidParentId: filteredUpdates.parentEventId,
-                action: 'clearing parentEventId'
-              });
-              delete filteredUpdates.parentEventId;
-              delete updatedEvent.parentEventId;
-            } else {
-              // 真实ID但暂时找不到，可能正在创建中，保留它
-              eventLogger.warn('⚠️ [EventService] 父事件暂时不存在（可能正在创建），保留 parentEventId:', {
-                childId: eventId.slice(-8),
-                parentId: filteredUpdates.parentEventId.slice(-8),
-                action: 'keeping parentEventId for future consistency'
-              });
-            }
-          }
+      // ADR-001: 废弃自动维护 parent.childEventIds（不写、不保证一致性）。
+      // 仍保留 parentEventId 的输入校验：如果明显是临时ID（line-*），则清除，避免写入无效结构真相。
+      if (filteredUpdates.parentEventId !== undefined && filteredUpdates.parentEventId) {
+        if (filteredUpdates.parentEventId.startsWith('line-')) {
+          eventLogger.warn('⚠️ [EventService] 父事件ID是临时ID，清除 parentEventId:', {
+            childId: eventId.slice(-8),
+            invalidParentId: filteredUpdates.parentEventId,
+            action: 'clearing parentEventId'
+          });
+          delete filteredUpdates.parentEventId;
+          delete updatedEvent.parentEventId;
         }
       }
 

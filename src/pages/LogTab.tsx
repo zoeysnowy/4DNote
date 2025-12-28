@@ -3783,7 +3783,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* 关联区域 - 智能摘要 */}
                     {(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
+                      const hasChildren = childCount > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3796,6 +3797,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                         '步骤4_formData.childEventIds类型': typeof formData.childEventIds,
                         '步骤5_formData.childEventIds是数组吗': Array.isArray(formData.childEventIds),
                         '步骤6_formData.childEventIds长度': formData.childEventIds?.length,
+                        '步骤6b_派生childCount(parentEventId)': childCount,
                         '步骤7_hasChildren判断结果': hasChildren,
                         '步骤8_linkedEventIds': formData.linkedEventIds,
                         '步骤9_backlinks': formData.backlinks,
@@ -3844,7 +3846,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                             if (formData.parentEventId) {
                               parts.push('上级：1个');
                             }
-                            const childCount = formData.childEventIds?.length || 0;
+                            const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
                             if (childCount > 0) {
                               // TODO: 统计任务完成情况
                               parts.push(`下级：${childCount}个`);
@@ -3880,7 +3882,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* EventTree 展开区域 */}
                     {showEventTree && (() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3902,7 +3904,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* 🔧 开发调试：始终显示关联区域（方便测试） */}
                     {!(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       return hasParent || hasChildren || hasLinked || hasBacklinks;
