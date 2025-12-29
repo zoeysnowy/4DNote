@@ -1,8 +1,8 @@
 # EventEditModal v2 产品需求文档 (PRD)
 
-> **版本**: v2.17.5  
+> **版本**: v2.17.6  
 > **创建时间**: 2025-11-06  
-> **最后更新**: 2025-12-15  
+> **最后更新**: 2025-12-29  
 > **Figma 设计稿**: [EventEditModal v2 设计稿](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=201-630&m=dev)  
 > **基于**: EventEditModal v1 + Figma 设计稿  
 > **依赖模块**: EventHub, TimeHub, SlateEditor, HeadlessFloatingToolbar, Timer Module, EventTree  
@@ -14,7 +14,17 @@
 > - [SLATE_DEVELOPMENT_GUIDE.md](../SLATE_DEVELOPMENT_GUIDE.md)
 > - [EVENTTREE_MODULE_PRD.md](./EVENTTREE_MODULE_PRD.md)
 
-> **🔥 v2.17.5 最新更新** (2025-12-15):
+> **🔥 v2.17.6 最新更新** (2025-12-29):
+> - ✅ **保存语义与代码实现对齐**:
+>   - Modal 层不再有“5 秒自动保存持久化”（该机制已移除，避免与编辑器节流/blur flush 冲突导致重复保存）
+>   - 当前保存语义：编辑器内部 `2s debounce + blur 立即 flush` 仅更新 `formData`；点击“保存”按钮才统一持久化（EventHub → EventService）
+>   - 点击遮罩/关闭行为视为取消（不保证保存）；“取消”按钮显式丢弃更改
+> - ✅ **入口现状补充**:
+>   - TimeCalendar：先创建事件（EventHub.createEvent），再打开 Modal
+>   - TimeLog：存在新建/编辑两处入口（新建入口必须满足“先创建再打开”的 eventId-only 契约）
+>   - LogTab：当前为复制式实现（非组件复用），存在维护分叉风险
+>
+> **🔥 v2.17.5 历史更新** (2025-12-15):
 > - ✅ **智能 syncStatus 判断 - 支持纯本地事件**: 新建事件默认 `local-only`，用户添加标签/日历后自动切换为 `pending`
 >   - **默认本地**: 新建事件 syncStatus 默认为 `'local-only'`，不会触发日历同步
 >   - **智能升级**: 用户添加标签或选择日历时，自动升级为 `'pending'`，启动同步流程
@@ -47,7 +57,7 @@
 > - ✅ **数据流与保存机制完整总结**: 新增专门章节详细说明字段初始化、更新机制和保存架构
 >   - **FormData 初始化**: 详细说明编辑已有事件和创建新事件的数据来源和处理逻辑
 >   - **字段更新机制**: 8个核心字段的完整更新流程（title/tags/time/location/attendees/eventlog/sync/isTask）
->   - **三层保存架构**: blur-to-save、5秒自动保存、Modal关闭保存的完整实现和设计理念
+>   - **保存架构（后续已调整）**: 以“编辑器 debounce/blur flush 更新 formData + 保存按钮统一持久化”为主（不再依赖 5 秒自动保存或‘关闭即保存’）
 >   - **数据接口**: EventHub → EventService → StorageManager 完整数据流图和分层架构说明
 >   - **字段验证总结**: 13个字段的UI组件、更新逻辑、保存路径和验证状态
 >   - **已修复问题**: UnifiedDateTimePicker useTimeHub修复、syncMode立即保存、ContactService自动提取
@@ -9675,93 +9685,39 @@ if (!hasCompleteTime && finalIsTask !== true) {
 ---
 
 ### 3. 三层保存架构
+ 
+EventEditModal v2 的“保存语义”在演进过程中发生过调整。
 
-EventEditModal v2 采用**三层保存机制**，平衡用户体验和数据一致性：
+#### 当前实现：双层保存语义（替代旧三层方案）
+
+核心目标：避免“编辑器节流/blur flush”与“自动持久化”互相叠加，导致重复写入/状态抖动。
 
 ```typescript
 /**
- * ==================== 三层保存架构 ====================
- * 
- * Layer 1: blur-to-save（字段级，立即保存）
- *   - 触发时机：TitleSlate/TagPicker/ModalSlate blur
- *   - 保存粒度：单个字段
- *   - 适用场景：频繁编辑的字段（标题、标签、日志）
- *   - 实现：onBlur 回调 → EventHub.updateFields()
- * 
- * Layer 2: 5秒自动保存（debounced）
- *   - 触发时机：formData 变化后 5 秒无新操作
- *   - 保存粒度：所有变更字段
- *   - 适用场景：防止用户忘记保存
- *   - 实现：useEffect + setTimeout
- * 
- * Layer 3: Modal 关闭时全量保存
- *   - 触发时机：点击"保存"按钮或 Modal 关闭
- *   - 保存粒度：整个 Event 对象
- *   - 适用场景：确保所有变更持久化
- *   - 实现：handleSave() → EventHub.createEvent/updateFields()
- * 
- * 说明：
- * - Layer 1 和 Layer 2 是增量优化，不影响数据一致性
- * - Layer 3 是最终保证，确保用户数据不丢失
- * - syncMode 变化采用"立即保存"策略，避免远程覆盖
+ * ==================== 当前保存语义（双层） ====================
+ *
+ * Layer A: 编辑过程只更新本地 formData
+ *   - TitleSlate / ModalSlate 内部使用 debounce + blur flush
+ *   - 回调到 EventEditModalV2 后，仅 setFormData / 写入 titleRef
+ *   - 不保证持久化（避免频繁写库与冲突）
+ *
+ * Layer B: 显式保存按钮统一持久化
+ *   - 用户点击“保存”按钮时，handleSave() 统一组装完整 Event
+ *   - 持久化路径：EventHub.createEvent / EventHub.updateFields → EventService
+ *
+ * 取消/关闭：视为丢弃
+ *   - 点击遮罩/关闭/取消均不保证保存；下次打开从持久化层重载
+ *
+ * 例外：syncMode 等关键同步字段可能“立即持久化”
+ *   - 例如 syncMode 修改会立即 EventHub.updateFields
+ *   - 目的：避免 UI 与 DB 不一致、以及远端同步用旧值覆盖
  */
 ```
 
-#### Layer 1: blur-to-save（字段级）
+#### 历史方案（已移除）：三层保存架构
 
-**实现位置**: `EventEditModalV2.tsx` L679
+旧文档曾描述 Layer 2 “5 秒自动保存持久化”、Layer 3 “关闭即保存”。该方案已移除/不再作为当前实现依据。
 
-```typescript
-// TitleSlate onBlur
-const handleTitleBlur = async () => {
-  if (titleRef.current !== formData.title) {
-    await EventHub.updateFields(event.id, {
-      title: titleRef.current
-    }, {
-      source: 'EventEditModalV2-TitleBlur'
-    });
-  }
-};
-
-// ModalSlate onBlur
-const handleEventlogBlur = async () => {
-  await EventHub.updateFields(event.id, {
-    eventlog: formData.eventlog
-  }, {
-    source: 'EventEditModalV2-EventlogBlur'
-  });
-};
-```
-
-**优势**:
-- ✅ 用户感知不到保存操作（无 loading 状态）
-- ✅ 防止编辑器失焦导致内容丢失
-- ✅ 单字段更新，性能最优
-
----
-
-#### Layer 2: 5秒自动保存（debounced）
-
-**实现位置**: `EventEditModalV2.tsx` L690-710
-
-```typescript
-useEffect(() => {
-  if (!event?.id) return;
-  
-  const timer = setTimeout(async () => {
-    console.log('💾 [EventEditModalV2] 5秒自动保存触发');
-    
-    // 收集所有变更字段
-    const changes: Partial<Event> = {};
-    if (formData.title !== event.title) changes.title = formData.title;
-    if (formData.tags !== event.tags) changes.tags = formData.tags;
-    if (formData.location !== event.location) changes.location = formData.location;
-    // ... 其他字段比对
-    
-    if (Object.keys(changes).length > 0) {
-      await EventHub.updateFields(event.id, changes, {
-        source: 'EventEditModalV2-AutoSave'
-      });
       console.log('✅ [EventEditModalV2] 自动保存完成:', changes);
     }
   }, 5000);

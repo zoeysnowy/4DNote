@@ -1787,6 +1787,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 新建事件模态框状态
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newEventTemplate, setNewEventTemplate] = useState<Event | null>(null);
+  const [newlyCreatedEventId, setNewlyCreatedEventId] = useState<string | null>(null);
   
   // 编辑事件模态框状态
   const [editModalOpen, setEditModalOpen] = useState(false);
@@ -1794,7 +1795,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
   // 处理 TimeGap 点击创建事件
   // 处理创建事件（打开 EventEditModal✅
-  const handleCreateEvent = (startTime: Date) => {
+  const handleCreateEvent = async (startTime: Date) => {
+    const createdAt = formatTimeForStorage(startTime);
     const newEvent: Event = {
       id: generateEventId(),
       title: {
@@ -1804,13 +1806,27 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       },
       startTime: formatTimeForStorage(startTime),
       endTime: formatTimeForStorage(new Date(startTime.getTime() + 30 * 60000)), // 默认30分钟
+      location: '',
+      description: '',
       tags: [],
       isAllDay: false,
-      createdAt: formatTimeForStorage(new Date()),
-      updatedAt: formatTimeForStorage(new Date()),
+      // TimeGap 选择的是“事件发生时间”，这里将 createdAt 对齐到选择的 startTime，避免显示/排序混乱
+      createdAt,
+      updatedAt: createdAt,
+      syncStatus: 'local-only',
+      fourDNoteSource: true,
     };
-    setNewEventTemplate(newEvent);
-    setCreateModalOpen(true);
+
+    try {
+      // ✅ EventEditModalV2 只接收 eventId 并自行加载：新建事件必须先落库/进入 EventHub
+      await EventHub.createEvent(newEvent);
+      setNewlyCreatedEventId(newEvent.id);
+      setNewEventTemplate(newEvent);
+      setCreateModalOpen(true);
+    } catch (error) {
+      console.error('✅[TimeLog] Failed to create event before opening modal:', error);
+      alert('创建事件失败：无法写入数据库');
+    }
   };
 
   // 处理创建笔记（纯 eventlog 的日记）
@@ -1946,12 +1962,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   const handleCreateSave = async (savedEvent: Event) => {
-    // 使用 EventHub 创建（带循环更新防护✅
-    await EventHub.createEvent(savedEvent);
+    // 兼容：如果已在打开前创建（推荐路径），这里走 update；否则走 create
+    const existing = await EventService.getEventById(savedEvent.id);
+
+    if (existing) {
+      await EventHub.updateFields(savedEvent.id, savedEvent, {
+        source: 'TimeLog-createSave'
+      });
+    } else {
+      await EventHub.createEvent(savedEvent);
+    }
     
     // 关闭模态框
     setCreateModalOpen(false);
     setNewEventTemplate(null);
+    setNewlyCreatedEventId(null);
   };
 
   const handleEditEvent = (event: Event) => {
@@ -3197,9 +3222,18 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       <EventEditModalV2
         eventId={newEventTemplate?.id || null}
         isOpen={createModalOpen}
-        onClose={() => {
+        onClose={async () => {
+          // 取消/关闭视为丢弃：删除刚刚创建的空事件，避免污染列表
+          if (newlyCreatedEventId) {
+            try {
+              await EventService.deleteEvent(newlyCreatedEventId);
+            } catch (error) {
+              console.error('✅[TimeLog] Failed to delete newly created event on cancel:', error);
+            }
+          }
           setCreateModalOpen(false);
           setNewEventTemplate(null);
+          setNewlyCreatedEventId(null);
         }}
         onSave={handleCreateSave}
         hierarchicalTags={hierarchicalTags}

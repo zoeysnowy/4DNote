@@ -35,57 +35,21 @@ export const TimeGap: React.FC<TimeGapProps> = ({
   // 特殊情况：如果没有前后边界（例如今天的完整时间轴），总是渲染
   const isOpenEnded = !prevEventEndTime || !nextEventStartTime;
 
-  // 计算建议的开始时间
-  const calculateSuggestedTime = useCallback((percentage: number): Date => {
-    if (!prevEventEndTime && !nextEventStartTime) {
-      // 开放式时间轴（例如今天没有事件）：使用当前时间
-      return new Date();
-    } else if (!prevEventEndTime && nextEventStartTime) {
-      // 只有后续事件：反推 30 分钟
-      const defaultDuration = 30;
-      return new Date(nextEventStartTime.getTime() - defaultDuration * 60000);
-    } else if (prevEventEndTime && !nextEventStartTime) {
-      // 只有前一事件：从结束时间开始
-      return new Date(prevEventEndTime);
-    } else if (prevEventEndTime && nextEventStartTime) {
-      // 有明确的时间间隙
-      if (percentage < 0.5) {
-        // 点击上半部分：从前一事件结束时开始
-        return new Date(prevEventEndTime);
-      } else {
-        // 点击下半部分：反推 30 分钟（或事件默认时长）
-        const defaultDuration = Math.min(30, gapDuration / 2);
-        return new Date(nextEventStartTime.getTime() - defaultDuration * 60000);
-      }
-    }
-    return new Date();
-  }, [prevEventEndTime, nextEventStartTime, gapDuration]);
+  const snapDateToMinutes = useCallback((date: Date, minutes: number): Date => {
+    const intervalMs = minutes * 60 * 1000;
+    const snappedMs = Math.round(date.getTime() / intervalMs) * intervalMs;
+    return new Date(snappedMs);
+  }, []);
+
+  const clampDate = useCallback((date: Date, minDate: Date, maxDate: Date): Date => {
+    const clampedMs = Math.min(Math.max(date.getTime(), minDate.getTime()), maxDate.getTime());
+    return new Date(clampedMs);
+  }, []);
 
   // 背景点击不处理（让按钮处理点击）
   const handleSmartClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     // 不处理点击，让用户通过按钮操作
   }, []);
-
-  // 处理创建笔记
-  const handleCreateNote = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    const suggestedStart = calculateSuggestedTime(hoverY || 0.5);
-    onCreateNote?.(suggestedStart);
-  }, [hoverY, calculateSuggestedTime, onCreateNote]);
-
-  // 处理创建事件
-  const handleCreateEvent = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    const suggestedStart = calculateSuggestedTime(hoverY || 0.5);
-    onCreateEvent(suggestedStart);
-  }, [hoverY, calculateSuggestedTime, onCreateEvent]);
-
-  // 处理上传附件
-  const handleUploadAttachment = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    const suggestedStart = calculateSuggestedTime(hoverY || 0.5);
-    onUploadAttachment?.(suggestedStart);
-  }, [hoverY, calculateSuggestedTime, onUploadAttachment]);
 
   // 鼠标移动时计算时间百分比
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
@@ -98,41 +62,79 @@ export const TimeGap: React.FC<TimeGapProps> = ({
     setHoverY(percentage);
   }, [isHovered, isInMenu]);
 
-  // 计算鼠标位置对应的时间
+  // 计算鼠标位置对应的时间（15 分钟吸附）
   const calculateHoverTime = useCallback(() => {
     if (hoverY === null) return null;
+
+    const snapMinutes = 15;
     
     if (!prevEventEndTime && !nextEventStartTime) {
       // 开放式时间轴（今天还没有事件）：从 00:00 到 23:59 根据鼠标位置计算
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const dayDuration = 24 * 60; // 一天的分钟数
-      const timeOffset = dayDuration * hoverY * 60000;
-      return new Date(today.getTime() + timeOffset);
+      const rawTime = new Date(today.getTime() + dayDuration * hoverY * 60000);
+      const endOfDay = new Date(today);
+      endOfDay.setHours(23, 59, 59, 999);
+      return clampDate(snapDateToMinutes(rawTime, snapMinutes), today, endOfDay);
     } else if (!prevEventEndTime && nextEventStartTime) {
       // 只有后续事件：从今天 00:00 到下一个事件的时间范围
       const today = new Date(nextEventStartTime);
       today.setHours(0, 0, 0, 0);
       const gapFromMidnight = (nextEventStartTime.getTime() - today.getTime()) / 60000;
-      const timeOffset = gapFromMidnight * hoverY * 60000;
-      return new Date(today.getTime() + timeOffset);
+      const rawTime = new Date(today.getTime() + gapFromMidnight * hoverY * 60000);
+      return clampDate(snapDateToMinutes(rawTime, snapMinutes), today, nextEventStartTime);
     } else if (prevEventEndTime && !nextEventStartTime) {
       // 只有前一事件：从前一事件结束到今天 23:59
       const endOfDay = new Date(prevEventEndTime);
       endOfDay.setHours(23, 59, 59, 999);
       const gapToMidnight = (endOfDay.getTime() - prevEventEndTime.getTime()) / 60000;
-      const timeOffset = gapToMidnight * hoverY * 60000;
-      return new Date(prevEventEndTime.getTime() + timeOffset);
+      const rawTime = new Date(prevEventEndTime.getTime() + gapToMidnight * hoverY * 60000);
+      return clampDate(snapDateToMinutes(rawTime, snapMinutes), prevEventEndTime, endOfDay);
     } else if (prevEventEndTime && nextEventStartTime) {
       // 有明确的时间间隙：从前一事件结束到下一事件开始
-      const timeOffset = gapDuration * hoverY * 60000;
-      return new Date(prevEventEndTime.getTime() + timeOffset);
+      const rawTime = new Date(prevEventEndTime.getTime() + gapDuration * hoverY * 60000);
+      return clampDate(snapDateToMinutes(rawTime, snapMinutes), prevEventEndTime, nextEventStartTime);
     }
     
     return new Date();
-  }, [hoverY, gapDuration, prevEventEndTime, nextEventStartTime]);
+  }, [hoverY, gapDuration, prevEventEndTime, nextEventStartTime, clampDate, snapDateToMinutes]);
 
   const hoverTime = calculateHoverTime();
+
+  const getSuggestedStartTime = useCallback((): Date => {
+    if (hoverTime) return hoverTime;
+
+    const snapMinutes = 15;
+    if (prevEventEndTime) {
+      return snapDateToMinutes(new Date(prevEventEndTime), snapMinutes);
+    }
+    if (nextEventStartTime) {
+      return snapDateToMinutes(new Date(nextEventStartTime.getTime() - 30 * 60000), snapMinutes);
+    }
+    return snapDateToMinutes(new Date(), snapMinutes);
+  }, [hoverTime, prevEventEndTime, nextEventStartTime, snapDateToMinutes]);
+
+  // 处理创建笔记
+  const handleCreateNote = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const suggestedStart = getSuggestedStartTime();
+    onCreateNote?.(suggestedStart);
+  }, [getSuggestedStartTime, onCreateNote]);
+
+  // 处理创建事件
+  const handleCreateEvent = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const suggestedStart = getSuggestedStartTime();
+    onCreateEvent(suggestedStart);
+  }, [getSuggestedStartTime, onCreateEvent]);
+
+  // 处理上传附件
+  const handleUploadAttachment = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    const suggestedStart = getSuggestedStartTime();
+    onUploadAttachment?.(suggestedStart);
+  }, [getSuggestedStartTime, onUploadAttachment]);
 
   // 格式化时间间隔显示
   const formatGapDuration = (minutes: number): string => {
