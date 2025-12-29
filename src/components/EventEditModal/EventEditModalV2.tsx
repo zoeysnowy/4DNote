@@ -85,7 +85,7 @@ import { EventTreeAPI } from '../../services/EventTree';
 import { EventHub } from '../../services/EventHub';
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact, EventTitle } from '../../types';
+import { Event, Contact, EventTitle, SyncStatusType } from '../../types';
 import { HierarchicalTagPicker } from '../HierarchicalTagPicker/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { AttendeeDisplay } from '../common/AttendeeDisplay';
@@ -132,42 +132,8 @@ import linkColorIcon from '../../assets/icons/link_color.svg';
 import backIcon from '../../assets/icons/back.svg';
 import remarkableLogo from '../../assets/icons/LOGO.svg';
 
-interface MockEvent {
-  id: string;
-  title: string;
-  tags: string[];
-  isTask: boolean;
-  isTimer: boolean;
-  parentEventId: string | null;
-  // 🔗 EventTree 关系字段
-  childEventIds?: string[];
-  linkedEventIds?: string[];
-  backlinks?: string[];
-  startTime: string | null; // ISO 8601 string
-  endTime: string | null;   // ISO 8601 string
-  allDay: boolean;
-  location?: string;
-  organizer?: Contact;
-  attendees?: Contact[];
-  eventlog?: any; // Slate JSON (Descendant[] array or string)
-  description?: string; // HTML export for Outlook sync
-  // 🔧 日历同步配置 (单一数据结构)
-  calendarIds?: string[];
-  syncMode?: string;
-  subEventConfig?: {
-    calendarIds?: string[];
-    syncMode?: string;
-  };
-  // 🆕 父子事件日历同步配置
-  planSyncConfig?: {
-    mode: 'receive-only' | 'send-only' | 'send-only-private' | 'bidirectional' | 'bidirectional-private';
-    targetCalendars: string[];
-  };
-  actualSyncConfig?: {
-    mode: 'send-only' | 'send-only-private' | 'bidirectional' | 'bidirectional-private';
-    targetCalendars: string[];
-  } | null;
-}
+import type { MockEvent } from './types';
+import { useEventEditDraft } from './hooks/useEventEditDraft';
 
 interface EventEditModalV2Props {
   eventId: string | null; // 🔧 重构：只传 eventId，Modal 自己从 EventHub 获取数据
@@ -359,232 +325,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     };
   }, []);
 
-  const [formData, setFormData] = useState<MockEvent>(() => {
-    if (event) {
-      console.log('🔍🔍🔍 [formData 初始化] event.title 完整对象:', event.title);
-      console.log('🔍🔍🔍 [formData 初始化] typeof event.title:', typeof event.title);
-      
-      // ✨ 使用 fullTitle (Slate JSON) 作为标题数据源，支持富文本格式
-      let titleText = '';
-      if (event.title) {
-        if (typeof event.title === 'string') {
-          // 旧数据：纯文本，转换为 Slate JSON
-          console.log('🔄 [formData 初始化] 纯文本标题，转换为 JSON:', event.title);
-          titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
-        } else {
-          // 🔧 只读取 colorTitle（Slate JSON 格式，可编辑）
-          console.log('📦 [formData 初始化] event.title.colorTitle:', event.title.colorTitle);
-          titleText = event.title.colorTitle || '';
-        }
-      }
-      console.log('✅ [formData 初始化] 最终 titleText:', titleText);
-      
-      // 🔧 直接从 event prop 读取 EventTree 数据（避免异步问题）
-      const childEventIds = (event as any).childEventIds || [];
-      const linkedEventIds = (event as any).linkedEventIds || [];
-      const backlinks = (event as any).backlinks || [];
-      
-      console.log('🔍🔍🔍 [formData 初始化] EventTree 数据来源分析:', {
-        eventId: event.id,
-        '步骤1_event.childEventIds': (event as any).childEventIds,
-        '步骤2_event.linkedEventIds': (event as any).linkedEventIds,
-        '步骤3_event.backlinks': (event as any).backlinks,
-        '步骤4_最终childEventIds': childEventIds,
-        '步骤5_最终linkedEventIds': linkedEventIds,
-        '步骤6_最终backlinks': backlinks,
-      });
-      
-      return {
-        id: event.id,
-        title: titleText,
-        tags: event.tags || [],
-        isTask: event.isTask || false,
-        isTimer: event.isTimer || false,
-        parentEventId: event.parentEventId || null,
-        childEventIds,
-        linkedEventIds,
-        backlinks,
-        startTime: event.startTime || null,
-        endTime: event.endTime || null,
-        allDay: event.isAllDay || false,
-        location: getLocationDisplayText(event.location) || '',
-        organizer: event.organizer,
-        attendees: event.attendees || [],
-        eventlog: typeof event.eventlog === 'string' ? event.eventlog : (event.eventlog?.slateJson || '[]'),
-        description: event.description || '',
-        // 🔧 日历同步配置（单一数据结构）
-        calendarIds: event.calendarIds || [],
-        // ✅ syncMode 根据事件来源设置默认值
-        syncMode: (() => {
-          const originalSyncMode = event.syncMode;
-          const finalSyncMode = event.syncMode || (() => {
-            const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
-            const defaultMode = isLocalEvent ? 'bidirectional-private' : 'receive-only';
-            console.log('🎬 [formData 初始化] 事件来源检测（降级逻辑）:', {
-              eventId: event.id,
-              fourDNoteSource: event.fourDNoteSource,
-              source: event.source,
-              isLocalEvent,
-              eventSyncMode: event.syncMode,
-              计算得到的defaultMode: defaultMode
-            });
-            return defaultMode;
-          })();
-          
-          // 🔥 关键日志：打印原始值和最终值
-          console.log('🔍 [formData.syncMode 初始化]:', {
-            eventId: event.id,
-            'event.syncMode (原始)': originalSyncMode,
-            'formData.syncMode (最终)': finalSyncMode,
-            不一致: originalSyncMode !== finalSyncMode
-          });
-          
-          return finalSyncMode;
-        })(),
-        subEventConfig: event.subEventConfig || { 
-          calendarIds: [], 
-          syncMode: 'bidirectional-private' // ✅ 子事件默认也是 bidirectional-private
-        },
-      };
-    }
-    // 新建事件时的默认值
-    console.log('🆕 [formData 初始化] 新建事件，使用默认值');
-    return {
-      id: generateEventId(),
-      title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
-      tags: [],
-      isTask: false,
-      isTimer: false,
-      parentEventId: null,
-      childEventIds: [],
-      linkedEventIds: [],
-      backlinks: [],
-      startTime: null,
-      endTime: null,
-      allDay: false,
-      location: '',
-      attendees: [],
-      eventlog: '[]', // ✅ Slate JSON 字符串（空数组）
-      description: '',
-      // 🔧 日历同步配置（单一数据结构）
-      calendarIds: [],
-      syncMode: 'bidirectional-private', // ✅ 新建事件默认为本地事件
-      subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
-    };
+  const { formData, setFormData, titleRef, initialSnapshotRef, isAutoSavingRef } = useEventEditDraft({
+    event,
+    eventId,
+    isOpen,
+    initialStartTime,
+    initialEndTime,
+    initialIsAllDay,
+    getLocationDisplayText,
+    generateEventId,
   });
-
-  // 🔧 当 Modal 打开且没有 event 时，重置 formData 为空表单
-  // 🐛 [BUG FIX] 区分"创建新事件"和"加载中的已有事件"
-  // - 创建新事件：!event && !eventId（既没有event对象，也没有eventId）
-  // - 加载中：!event && eventId（有eventId但event还在异步加载）
-  React.useEffect(() => {
-    // ✅ 只在创建新事件时重置（!event && !eventId）
-    // ❌ 不在加载中触发（!event && eventId），避免清空 eventlog
-    if (isOpen && !event && !eventId) {
-      console.log('🆕 [formData重置] 创建新事件，初始化空表单');
-      setFormData({
-        id: generateEventId(), // 生成新ID
-        title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
-        tags: [],
-        isTask: false,
-        isTimer: false,
-        parentEventId: null,
-        childEventIds: [],
-        linkedEventIds: [],
-        backlinks: [],
-        startTime: initialStartTime || null, // 🆕 使用初始时间
-        endTime: initialEndTime || null, // 🆕 使用初始时间
-        allDay: initialIsAllDay || false, // 🆕 使用初始全天标志
-        location: '',
-        attendees: [],
-        eventlog: '[]', // ✅ 新事件：空 Slate JSON
-        description: '',
-        calendarIds: [],
-        syncMode: 'bidirectional-private',
-        subEventConfig: { calendarIds: [], syncMode: 'bidirectional-private' },
-      });
-      // 同时重置 titleRef
-      titleRef.current = JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]);
-    }
-  }, [isOpen, event, eventId, initialStartTime, initialEndTime, initialIsAllDay]);
-
-  // 🔧 当从 EventHub 加载的 event 变化时重新初始化 formData
-  React.useEffect(() => {
-    if (!event) return;
-    
-    console.log('🔍 [formData初始化] event.title 结构:', {
-      'event.title类型': typeof event.title,
-      'event.title': event.title,
-      'event.title.colorTitle': typeof event.title === 'object' ? event.title.colorTitle : undefined,
-      'event.title.simpleTitle': typeof event.title === 'object' ? event.title.simpleTitle : undefined,
-    });
-    
-    let titleText = '';
-    if (event.title) {
-      if (typeof event.title === 'string') {
-        // 旧数据：纯文本，转换为 Slate JSON
-        titleText = JSON.stringify([{ type: 'paragraph', children: [{ text: event.title }] }]);
-      } else {
-        // 🔧 只读取 colorTitle（Slate JSON 格式，TitleSlate 可直接使用）
-        // EventService.normalizeTitle 应该已经从 fullTitle/simpleTitle 生成了 colorTitle
-        titleText = event.title.colorTitle || '';
-      }
-    }
-    
-    console.log('🔍 [formData初始化] 提取的 titleText:', titleText?.substring(0, 100));
-    
-    // 🔧 同步 titleRef（避免事件切换后 titleRef 与 formData 不一致）
-    titleRef.current = titleText;
-    
-    const childEventIds = (event as any).childEventIds || [];
-    const linkedEventIds = (event as any).linkedEventIds || [];
-    const backlinks = (event as any).backlinks || [];
-    
-    setFormData({
-      id: event.id,
-      title: titleText,
-      tags: event.tags || [],
-      isTask: event.isTask || false,
-      isTimer: event.isTimer || false,
-      parentEventId: event.parentEventId || null,
-      childEventIds,
-      linkedEventIds,
-      backlinks,
-      startTime: event.startTime || null,
-      endTime: event.endTime || null,
-      allDay: event.isAllDay || false,
-      location: getLocationDisplayText(event.location) || '',
-      organizer: event.organizer,
-      attendees: event.attendees || [],
-      eventlog: typeof event.eventlog === 'string' ? event.eventlog : (event.eventlog?.slateJson || '[]'),
-      description: event.description || '',
-      calendarIds: event.calendarIds || [],
-      syncMode: event.syncMode || (() => {
-        const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
-        return isLocalEvent ? 'bidirectional-private' : 'receive-only';
-      })(),
-      subEventConfig: event.subEventConfig || { 
-        calendarIds: [], 
-        syncMode: 'bidirectional-private'
-      },
-    });
-    
-    // 🐛 [DEBUG] 输出 eventlog 初始化日志
-    console.log('🔍 [EventEditModal] formData 初始化 eventlog:', {
-      eventId: event?.id?.substring(0, 20),
-      eventlogType: typeof event?.eventlog,
-      eventlogLength: typeof event?.eventlog === 'string' ? event.eventlog.length : event?.eventlog?.slateJson?.length,
-      eventlogPreview: typeof event?.eventlog === 'string' 
-        ? event.eventlog.substring(0, 100) 
-        : event?.eventlog?.slateJson?.substring(0, 100)
-    });
-  }, [
-    event?.id, 
-    // 🔧 使用序列化的 eventlog 作为依赖，避免对象引用导致的无限循环
-    typeof event?.eventlog === 'string' 
-      ? event.eventlog 
-      : event?.eventlog?.slateJson
-  ]); // 监听 event ID 和 eventlog 变化（eventlog 加载完成后会触发）
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -632,38 +382,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     return root?.id || formData.id;
   }, [formData.id, allEvents]);
   
-  // 🆕 三层保存架构状态
-  // ✅ Layer 2: 静默自动保存（保护断网/断电数据）
-  // 注意：不显示"已保存"提示，避免干扰用户
-  const initialSnapshotRef = React.useRef<MockEvent | null>(null);
-  const isAutoSavingRef = React.useRef<boolean>(false); // 🔧 标记是否正在 auto-save
-  const titleRef = React.useRef<string>(formData.title); // 🔧 缓存 title，避免 blur-to-save 时 setFormData 导致 re-render
-  
-  // 🔧 同步 titleRef 与 formData.title（只在事件切换时，即 formData.id 变化）
-  // 🔥 关键：不监听 formData.title，避免其他字段更新时误触发同步
-  // 原因：handleTitleChange 只更新 titleRef（不含 emoji），如果 formData.title 变化就同步回来，
-  //       会导致 titleRef 被 formData 覆盖，下次保存时 emoji 丢失
-  React.useEffect(() => {
-    titleRef.current = formData.title;
-    console.log('🔄 [titleRef] 同步 titleRef.current =', formData.title?.substring(0, 50));
-  }, [formData.id]); // 只监听事件 ID 变化（事件切换时）
-  
-  // 🆕 Layer 3: 捕获初始快照（用于取消回滚）
-  React.useEffect(() => {
-    if (isOpen && formData && !initialSnapshotRef.current) {
-      initialSnapshotRef.current = JSON.parse(JSON.stringify(formData));
-      console.log('📸 [EventEditModalV2] Initial snapshot captured:', {
-        eventId: formData.id,
-        syncMode: formData.syncMode,
-        calendarIds: formData.calendarIds
-      });
-    }
-    
-    if (!isOpen) {
-      // Modal 关闭时清理快照
-      initialSnapshotRef.current = null;
-    }
-  }, [isOpen, formData.id]);
+  // titleRef/initialSnapshotRef/isAutoSavingRef 已在 useEventEditDraft 内统一管理
   
   // 🔧 [已删除] Layer 2 静默自动保存机制 - 与 blur-to-save 冲突，导致重复保存
   // 现在采用双层保存架构：
@@ -1177,7 +896,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // - Timer 运行中：强制 'local-only'
       // - 有标签或日历映射：'pending'（需要同步）
       // - 否则：保留原始状态或默认 'local-only'
-      let finalSyncStatus: SyncStatus;
+      let finalSyncStatus: SyncStatusType;
       
       if (isRunningTimer) {
         finalSyncStatus = 'local-only';
@@ -2093,7 +1812,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
               if (index === 0 && child.text) {
                 // 移除开头的 emoji（使用完整的 emoji 正则，包括代理对）
                 // 匹配所有 emoji：基础 emoji、扩展 emoji、符号、修饰符等
-                const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{1F1E6}-\u{1F1FF}])+\s*/u;
+                // TS target=ES5: avoid Unicode code-point escapes/`u` flag.
+                // This matches a run of surrogate-pair emojis and common symbol emojis at the start.
+                const emojiRegex = /^(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])+\s*/;
                 const textWithoutEmoji = child.text.replace(emojiRegex, '');
                 return {
                   ...child,
@@ -3862,7 +3583,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                         <EventTreeViewer
                           rootEventId={eventTreeRootId || formData.id}
                           events={allEvents}
-                          highlightEventId={formData.id}
                           onEventClick={(clickedEvent) => {
                             setFormData(clickedEvent as any);
                             setShowEventTree(false);

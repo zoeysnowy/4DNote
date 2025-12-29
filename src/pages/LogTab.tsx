@@ -95,6 +95,7 @@ import { CalendarPicker } from '../features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../utils/calendarUtils';
+import { getLocationDisplayText } from '../utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../components/ModalSlate';
 import { TitleSlate } from '../components/ModalSlate/TitleSlate';
@@ -398,7 +399,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         startTime: event.startTime || null,
         endTime: event.endTime || null,
         allDay: event.isAllDay || false,
-        location: event.location || '',
+        location: getLocationDisplayText(event.location) || '',
         organizer: event.organizer,
         attendees: event.attendees || [],
         eventlog: (() => {
@@ -585,7 +586,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       startTime: event.startTime || null,
       endTime: event.endTime || null,
       allDay: event.isAllDay || false,
-      location: event.location || '',
+      location: getLocationDisplayText(event.location) || '',
       organizer: event.organizer,
       attendees: event.attendees || [],
       eventlog: (() => {
@@ -2039,7 +2040,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               if (index === 0 && child.text) {
                 // 移除开头的 emoji（使用完整的 emoji 正则，包括代理对）
                 // 匹配所有 emoji：基础 emoji、扩展 emoji、符号、修饰符等
-                const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{1F1E6}-\u{1F1FF}])+\s*/u;
+                // TS target=ES5: avoid Unicode code-point escapes/`u` flag.
+                const emojiRegex = /^(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])+\s*/;
                 const textWithoutEmoji = child.text.replace(emojiRegex, '');
                 return {
                   ...child,

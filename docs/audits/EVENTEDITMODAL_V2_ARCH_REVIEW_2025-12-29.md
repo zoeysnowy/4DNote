@@ -68,6 +68,41 @@
   - 同一文件承担：编辑器集成、EventTree、父子事件同步配置、Timer 交互、同步模式 UI、标签映射日历、AI 图片提取等。
   - 结果：调试日志/状态机分支非常厚，回归风险高。
 
+#### 建议：按“副作用边界”拆分（不改变 UX 的前提下）
+
+核心原则：
+
+- **先拆 hooks（副作用/持久化/加载/脏态），后拆 UI 组件（左右面板/底部按钮）**。
+- **EventTree/父子事件同步正在演进时，优先把 Modal 内对它们的“推导逻辑”收敛为消费接口**，避免两边同时大改。
+
+可落地的最小路线（按优先级/可行性排序）：
+
+1) **P0：抽离 Draft 与持久化边界（不碰 EventTree Engine）**
+   - `useEventEditDraft(eventId)`：
+     - 负责 formData 初始化/重置、dirty 标记、titleRef 同步、以及“编辑过程只更新本地 draft”语义收敛。
+   - `useEventEditPersistence(eventId, draft)`：
+     - 负责 handleSave/handleCancel/handleDelete 的 EventHub/EventService 调用与错误处理。
+     - 明确：哪些字段允许“即时持久化”（如 syncMode），其余只在保存按钮持久化。
+   - 目标：把“状态 + 副作用”从组件主体剥离，使主体更接近纯渲染。
+
+2) **P1：按 UI 区域拆纯组件（不改变功能，只搬 JSX）**
+   - `EventOverviewPanel`（左侧）：只接收 `draft` + `onFieldChange`，不直接触达 Service。
+   - `EventLogPanel`（右侧）：只接收 `eventlogDraft` + `onEventlogChange`，不直接触达 Service。
+   - `EventFooterActions`：只接收 `onCancel/onSave/isDirty/isSaving`。
+   - 目标：减少单文件改动冲击面，降低回归范围。
+
+3) **P1：LogTab 去复制化（等 core 抽出来后再做）**
+   - 抽出 `EventEditCore`（无 Modal 壳）：
+     - 渲染左右结构 + 复用 hooks；由 Modal/Tab 容器决定打开/关闭与外层布局。
+   - 目标：把“双维护点”变成“单核多壳”。
+
+4) **P2：EventTree 面板改为“只消费 Engine API”（依赖进度评估）**
+   - 若另一条线已统一到 EventTree Engine API/数据库索引：
+     - Modal 侧不再维护 `childrenMap/backlinks/linked` 推导；只调用 Engine 的 query（例如 `getRootEventId/getTreeSnapshot/getRelationsSummary`）。
+   - 若 Engine API 尚未稳定：
+     - 保留现有 UI，但先隔离为 `useEventTreePanel` hook + `EventTreePanel` 组件，后续替换实现。
+   - 目标：让 EventTree 变成可替换依赖，而不是 Modal 内的“深耦合逻辑”。
+
 ### 4.3 Modularity（组件化）
 
 - **P0：LogTab 复制式复用**

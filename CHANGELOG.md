@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Files:
     - `src/pages/TimeLog.tsx`
 
+- **EventEditModalV2：按副作用边界抽离 Draft Hook（无 UX 变化）** (2025-12-29):
+  - 把 formData 初始化/重置、titleRef、initialSnapshot/isAutoSaving 等 refs 统一抽离到 hook，降低单文件过载
+  - 修复/收敛若干类型边界：syncStatus 类型、ES5 target 下 emoji 正则兼容、LogTab location 归一化
+  - Files:
+    - `src/components/EventEditModal/EventEditModalV2.tsx`
+    - `src/components/EventEditModal/hooks/useEventEditDraft.ts`
+    - `src/components/EventEditModal/types.ts`
+    - `src/pages/LogTab.tsx`
+
 - **EventEditModal 新建事件：eventlog 乱码 & location 保存失败修复** (2025-12-29):
   - 修复 eventlog 被二次 `JSON.stringify` 导致的“带引号 JSON 乱码”（保存时区分 string/array，并兼容历史二次 stringify 数据）
   - 修复填写 location 后事件写入失败导致“事件消失”（SQLite 写入边界将 location 统一序列化为 TEXT：优先取 `displayName`）
