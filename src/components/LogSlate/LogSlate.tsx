@@ -558,6 +558,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
                   color: '#999',
                   opacity: 0.7,
                   userSelect: 'none',
+                  fontVariantNumeric: 'tabular-nums',
                   whiteSpace: 'nowrap'
                 }}
               >
@@ -633,7 +634,8 @@ export const LogSlate: React.FC<LogSlateProps> = ({
                   fontSize: '12px',
                   color: '#999',
                   userSelect: 'none',
-                  opacity: 0.7
+                  opacity: 0.7,
+                  fontVariantNumeric: 'tabular-nums'
                 }}
               >
                 {formatDateTime(new Date(para.createdAt))}
@@ -769,26 +771,60 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   
   // 自动聚焦
   useEffect(() => {
-    if (!autoFocus || !editor) return;
+    if (!editor) return;
+    // 允许多次进入编辑态时重复 autoFocus（例如通过菜单打开/关闭同一行标题）
+    if (!autoFocus) {
+      didAutoFocusRef.current = false;
+      return;
+    }
     if (didAutoFocusRef.current) return;
     didAutoFocusRef.current = true;
+
+    const attemptFocusAndSelect = (retries: number) => {
+      requestAnimationFrame(() => {
+        try {
+          ReactEditor.focus(editor as ReactEditor);
+        } catch (err) {
+          console.error('[LogSlate] Failed to focus:', err);
+        }
+
+        try {
+          // 极端情况下（快速切换/卸载-挂载边界）可能出现空文档：先补一个段落，再选区
+          if (editor.children.length === 0) {
+            Transforms.insertNodes(
+              editor,
+              {
+                type: 'paragraph',
+                children: [{ text: '' }],
+              } as any,
+              { at: [0] }
+            );
+          }
+
+          // autoFocus 是“显式进入编辑态”的信号：强制把光标放到末尾，
+          // 避免 editor.selection 处于陈旧/无效状态导致“placeholder 消失但无光标”。
+          Transforms.select(editor, Editor.end(editor, []));
+        } catch (err) {
+          try {
+            // 兜底：末尾选区失败时尝试选到开头
+            Transforms.select(editor, Editor.start(editor, []));
+          } catch (err2) {
+            console.error('[LogSlate] Failed to select:', err, err2);
+          }
+        }
+
+        if (!editor.selection && retries > 0) {
+          attemptFocusAndSelect(retries - 1);
+        }
+      });
+    };
 
     try {
       // 下一帧聚焦 + 把光标放到末尾：
       // - 避免用户进入编辑时“光标在句首”的错觉
       // - 也给末尾虚拟节点一个更自然的默认输入点
-      requestAnimationFrame(() => {
-        try {
-          ReactEditor.focus(editor as ReactEditor);
-          // 只在没有 selection 的情况下把光标放到末尾；
-          // 避免用户点击定位后被我们“抢回去”。
-          if (!editor.selection) {
-            Transforms.select(editor, Editor.end(editor, []));
-          }
-        } catch (err) {
-          console.error('[LogSlate] Failed to focus/select end:', err);
-        }
-      });
+      // - 额外重试一次，避免渲染/DOM 时序导致的选区丢失
+      attemptFocusAndSelect(1);
     } catch (err) {
       console.error('[LogSlate] Failed to schedule focus:', err);
     }

@@ -27,6 +27,7 @@ import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUI
 import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
 import { slateNodesToHtml, slateNodesToPlainText } from '../utils/slateSerializer';
+import { resolveDisplayTitle } from '../utils/TitleResolver';
 import type { Event } from '../types';
 import './TimeLog.css';
 
@@ -86,7 +87,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const [tagServiceVersion, setTagServiceVersion] = useState(0);
   const [expandedLogs, setExpandedLogs] = useState<Set<string>>(new Set()); // 默认全部折叠
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set()); // 展开的压缩日期
-  const [editingTitleId, setEditingTitleId] = useState<string | null>(null);
+  // 标题编辑由 activeEditor 统一驱动（避免“设置了 editingTitleId 但 UI 未渲染”的断链）
   const [editingTitle, setEditingTitle] = useState('');
   const [editingTagsId, setEditingTagsId] = useState<string | null>(null);
   const [editingAttendeesId, setEditingAttendeesId] = useState<string | null>(null);
@@ -103,6 +104,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const eventlogObserverRef = useRef<IntersectionObserver | null>(null);
   const eventlogObservedElsRef = useRef<Map<string, Element>>(new Map());
   const eventlogObserverInitializedRef = useRef(false);
+
+  // ✅ 进一步限制同时存在的 Slate 实例数量（避免长列表下内存/CPU 飙升）
+  const MAX_MOUNTED_EVENTLOG_SLATES = 12;
+  const mountedEventlogSlateIdsRef = useRef<string[]>([]);
+  const mountedEventlogSlateSetRef = useRef<Set<string>>(new Set());
+  const [mountedEventlogSlateVersion, setMountedEventlogSlateVersion] = useState(0);
   
   // Right菜单延迟隐藏的timer
   const rightMenuHideTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -283,6 +290,34 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 性能优化 Phase 1：只挂载一个 Slate 编辑器（默认展开阅读走只读）
   const [activeEditor, setActiveEditor] = useState<null | { eventId: string; mode: 'title' | 'eventlog' }>(null);
 
+  // 根据「当前激活 + 可视范围」维护一个 capped 的 mounted 集合
+  useEffect(() => {
+    const activeEventlogId = activeEditor?.mode === 'eventlog' ? activeEditor.eventId : null;
+    const inView = Array.from(inViewEventlogIdsRef.current.values());
+    const prev = mountedEventlogSlateIdsRef.current;
+
+    const wanted = [activeEventlogId, ...inView, ...prev].filter(Boolean) as string[];
+    const next: string[] = [];
+    const seen = new Set<string>();
+
+    for (const id of wanted) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      next.push(id);
+      if (next.length >= MAX_MOUNTED_EVENTLOG_SLATES) break;
+    }
+
+    const changed =
+      next.length !== prev.length ||
+      next.some((id, idx) => id !== prev[idx]);
+
+    if (changed) {
+      mountedEventlogSlateIdsRef.current = next;
+      mountedEventlogSlateSetRef.current = new Set(next);
+      setMountedEventlogSlateVersion(v => v + 1);
+    }
+  }, [inViewEventlogVersion, activeEditor?.eventId, activeEditor?.mode]);
+
   const extractPlainTextFromSlateJson = useCallback((slateJson: string): string => {
     if (!slateJson) return '';
     try {
@@ -335,6 +370,15 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   }, [extractPlainTextFromSlateJson]);
 
   const openEditor = useCallback((eventId: string, mode: 'title' | 'eventlog') => {
+    // 交互触发：优先把该 eventlog 加入 mounted（避免首次点击时从预览态切换产生闪动）
+    if (mode === 'eventlog') {
+      const prev = mountedEventlogSlateIdsRef.current;
+      const next = [eventId, ...prev.filter(id => id !== eventId)].slice(0, MAX_MOUNTED_EVENTLOG_SLATES);
+      mountedEventlogSlateIdsRef.current = next;
+      mountedEventlogSlateSetRef.current = new Set(next);
+      setMountedEventlogSlateVersion(v => v + 1);
+    }
+
     setActiveEditor({ eventId, mode });
   }, []);
 
@@ -378,6 +422,48 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     return `<p><span data-slate-placeholder="true">${safe}</span></p>`;
   }, [escapeHtml]);
 
+  const formatEventlogTimestamp = useCallback((ts: number): string => {
+    const date = new Date(ts);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const yyyy = date.getFullYear();
+    const mm = pad2(date.getMonth() + 1);
+    const dd = pad2(date.getDate());
+    const hh = pad2(date.getHours());
+    const mi = pad2(date.getMinutes());
+    const ss = pad2(date.getSeconds());
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  }, []);
+
+  // 预览 HTML：尽量保持与 LogSlate 的 timestamp 视觉结构一致，避免“进入可视区时才出现 timestamp”导致抖动
+  const slateJsonToHtmlPreviewWithTimestamps = useCallback((slateJson: string): string => {
+    if (!slateJson || !slateJson.trim()) return '';
+    try {
+      const parsed = JSON.parse(slateJson);
+      if (!Array.isArray(parsed)) return '';
+
+      const blocks: string[] = [];
+      for (const node of parsed as any[]) {
+        const nodeHtml = slateNodesToHtml([node] as any);
+        if (node?.type === 'paragraph' && typeof node.createdAt === 'number') {
+          const tsText = formatEventlogTimestamp(node.createdAt);
+          blocks.push(
+            `<div style="position:relative;padding-top:28px;">` +
+              `<div contenteditable="false" style="position:absolute;left:0;top:8px;font-size:12px;color:#999;opacity:0.7;user-select:none;white-space:nowrap;font-variant-numeric:tabular-nums;">${escapeHtml(tsText)}</div>` +
+              `${nodeHtml}` +
+            `</div>`
+          );
+        } else {
+          blocks.push(nodeHtml);
+        }
+      }
+
+      // 给用户一个“可点击的末尾空行”，模拟编辑器尾部虚拟节点
+      return `${blocks.join('')}\n<p><br/></p>`;
+    } catch {
+      return '';
+    }
+  }, [escapeHtml, formatEventlogTimestamp]);
+
   const getTitlePreviewHtml = useCallback((event: Event): string => {
     const titleObj = typeof event.title === 'object' ? (event.title as any) : null;
     const colorTitle = titleObj?.colorTitle;
@@ -397,24 +483,27 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   const getEventLogPreviewHtml = useCallback((event: Event): string => {
     const log = event.eventlog as any;
     if (log && typeof log === 'object') {
-      if (typeof log.html === 'string' && log.html.trim()) {
-        // 给用户一个“可点击的末尾空行”，模拟编辑器尾部虚拟节点
-        return `${log.html}\n<p><br/></p>`;
-      }
       if (typeof log.slateJson === 'string' && log.slateJson.trim()) {
-        const html = slateJsonToHtmlSafe(log.slateJson);
-        return html ? `${html}\n<p><br/></p>` : '';
+        return slateJsonToHtmlPreviewWithTimestamps(log.slateJson) || '';
+      }
+      if (typeof log.html === 'string' && log.html.trim()) {
+        // 没有 slateJson 元数据时，只能退化为原 HTML
+        return `${log.html}\n<p><br/></p>`;
       }
       return '';
     }
 
     if (typeof event.eventlog === 'string' && event.eventlog.trim()) {
-      const html = slateJsonToHtmlSafe(event.eventlog);
-      return html ? `${html}\n<p><br/></p>` : '';
+      const html = slateJsonToHtmlPreviewWithTimestamps(event.eventlog);
+      if (html) return html;
+
+      // 兼容：如果不是 Slate JSON（例如纯文本/未知），保留原逻辑
+      const fallback = slateJsonToHtmlSafe(event.eventlog);
+      return fallback ? `${fallback}\n<p><br/></p>` : '';
     }
 
     return '';
-  }, [slateJsonToHtmlSafe]);
+  }, [slateJsonToHtmlPreviewWithTimestamps, slateJsonToHtmlSafe]);
 
   const tagRowRef = useRef<HTMLDivElement | null>(null);
   const modalSlateRefs = useRef<Map<string, any>>(new Map());
@@ -2048,11 +2137,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
               </div>
               {/* 打开的事件tab */}
               {tabManagerEvents.map((event) => {
-                // 获取事件标题（确保渲染为 string）
-                const titleText: string =
-                  typeof event.title === 'string'
-                    ? event.title
-                    : event.title?.simpleTitle || event.title?.fullTitle || '未命名事件';
+                const titleText = resolveDisplayTitle(event, {
+                  getTagLabel: (tagId: string) => {
+                    const tag = TagService.getTagById(tagId);
+                    if (!tag) return undefined;
+                    return tag.emoji ? `${tag.emoji} ${tag.name}` : tag.name;
+                  },
+                });
                 
                 return (
                   <div 
@@ -2646,7 +2737,15 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         <Tippy
                           content={
                             <div className="right-submenu">
-                              <div className="right-submenu-item" onClick={() => setEditingTitleId(event.id)}>
+                              <div
+                                className="right-submenu-item"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  // 空标题时也需要挂载 TitleSlate，才能看到 placeholder 并聚焦输入
+                                  flushSync(() => openEditor(event.id, 'title'));
+                                }}
+                              >
                                 <img src={TitleEditIconSvg} className="right-submenu-icon" alt="title-edit" />
                                 <span className="right-submenu-text">添加标题</span>
                               </div>
@@ -2838,6 +2937,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   >
                     {/* Title & Source */}
                     {(() => {
+                      const isActiveTitle = activeEditor?.eventId === event.id && activeEditor.mode === 'title';
                       const titleObj = typeof event.title === 'object' ? event.title : null;
                       
                       // 检查实际内容是否为✅
@@ -2853,8 +2953,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           hasTitle = false;
                         }
                       }
-                      
-                      if (!hasTitle) return null; // 空标题时不渲染标题行
+
+                      // 空标题通常不渲染；但如果用户显式进入 title 编辑态，需要渲染 TitleSlate 以显示 placeholder
+                      if (!hasTitle && !isActiveTitle) return null;
                       
                       return (
                         <div 
@@ -2869,13 +2970,17 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                           <div
                             className="event-title"
                             onMouseDown={(e) => {
-                              // ✅ 同步切换到可编辑，让鼠标点击位置直接落点（避免“切换编辑器”的跳动感）
-                              e.stopPropagation();
-                              flushSync(() => openEditor(event.id, 'title'));
+                              const isActiveTitle = activeEditor?.eventId === event.id && activeEditor.mode === 'title';
+
+                              // ✅ 仅在“未激活”时拦截并切换到可编辑。
+                              // 🔥 若已激活，必须让 Slate 自己处理 mouseDown，否则光标无法落点。
+                              if (!isActiveTitle) {
+                                e.stopPropagation();
+                                flushSync(() => openEditor(event.id, 'title'));
+                              }
                             }}
                           >
                             {(() => {
-                              const isActiveTitle = activeEditor?.eventId === event.id && activeEditor.mode === 'title';
                               const shouldMountTitleSlate = isActiveTitle || (activeStickyDateKey
                                 ? isDateKeyWithinDays(dateKey, activeStickyDateKey, 2)
                                 : false);
@@ -3083,9 +3188,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         >
                           {(() => {
                             const isActiveEventlog = activeEditor?.eventId === event.id && activeEditor.mode === 'eventlog';
-                            const shouldMountEventlogSlate = isActiveEventlog || (activeStickyDateKey
-                              ? isDateKeyWithinDays(dateKey, activeStickyDateKey, 2)
-                              : inViewEventlogIdsRef.current.has(event.id));
+
+                            // ✅ 只在有限集合中挂载 LogSlate（readOnly 仍然有 Slate 开销）
+                            // 使用 void 引用，避免 noUnusedLocals 报错，并确保变更会触发重新计算
+                            void mountedEventlogSlateVersion;
+                            const shouldMountEventlogSlate =
+                              isActiveEventlog || mountedEventlogSlateSetRef.current.has(event.id);
 
                             if (!shouldMountEventlogSlate) {
                               return (

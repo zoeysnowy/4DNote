@@ -2,7 +2,7 @@
 
 > **版本**: v2.7
 > **创建时间**: 2024-01-XX  
-> **最后更新**: 2025-12-19
+> **最后更新**: 2025-12-30
 > **Figma 设计稿**: [TimeLog 页面设计](https://www.figma.com/design/T0WLjzvZMqEnpX79ILhSNQ/ReMarkable-0.1?node-id=333-1178&m=dev)  
 > **依赖模块**: EventService, PlanSlateEditor, TimeHub, EventHub  
 > **关联文档**:
@@ -13,6 +13,11 @@
 ---
 
 ## 🔄 v2.7 更新日志 (2025-12-19)
+
+### TimeLog EventLog：稳定性 + 性能上限（2025-12-30）
+
+- 解决滚动/切换时 timestamp 抖动：预览态与 LogSlate 共享同款 timestamp 盒模型，并使用 `tabular-nums`
+- 控制长列表开销：限制同时挂载的 EventLog Slate 数量（默认 `MAX_MOUNTED_EVENTLOG_SLATES = 12`），超出部分退化为预览
 
 ### 统一Right按钮幽灵菜单系统 🎯
 
@@ -1335,7 +1340,7 @@ const timestampDisplay = hasBlockTimestamp
 if (hasBlockTimestamp) {
   return (
     <div style={{ paddingTop: '28px' }}>
-      <div style={{ color: '#999', opacity: 0.7, fontSize: '11px' }}>
+      <div style={{ color: '#999', opacity: 0.7, fontSize: '11px', fontVariantNumeric: 'tabular-nums' }}>
         {timestampDisplay}
       </div>
       <p>{children}</p>
@@ -1343,6 +1348,8 @@ if (hasBlockTimestamp) {
   );
 }
 ```
+
+> 说明：TimeLog 的预览态（非 Slate 挂载）也会尽量使用同款 timestamp 盒模型与 `tabular-nums`，以避免滚动/切换时出现抖动。
 
 ---
 
@@ -4629,6 +4636,25 @@ const filteredEventsByTags = useMemo(() => {
 - **展开时直接嵌入 ModalSlate 编辑器**，用户可直接编辑
 - 收起时隐藏 eventlog 内容，只显示 Event 元信息
 - **TimeLog 是最舒适的写日志区域**，无需跳转到 EventEditModal
+
+#### 性能与稳定性（2025-12-30 更新）
+
+为同时满足：
+- **timestamp 视觉不抖动**（滚动/切换展开时布局稳定）
+- **长列表性能可控**（避免页面同时挂载过多 Slate 实例）
+
+TimeLog 采用「有限挂载 + 预览一致化」策略：
+
+1) **限制同时挂载的 EventLog Slate 数量**
+- 默认上限：`MAX_MOUNTED_EVENTLOG_SLATES = 12`
+- 维护一个 capped/LRU 的 mounted 集合：优先保留“当前 active + 可视区（含预加载 margin）”的 eventlog
+- 超出上限时，最旧的 eventlog editor 会退化为预览渲染（不销毁数据，仅卸载 Slate）
+
+2) **预览态与编辑态保持同款 timestamp 外壳（避免布局跳变）**
+- 预览 HTML 由 Slate JSON 派生（优先），并为每个带 `paragraph.createdAt` 的段落注入与 LogSlate 一致的 timestamp DOM 结构（`paddingTop: 28px` + 顶部 absolute 时间文本）
+- timestamp 数字使用 `tabular-nums`，减少字宽变化带来的“跳动感”
+
+> 设计原则：无论是 LogSlate 还是预览，都尽量保持相同的段落盒模型与时间戳占位，这样即使在滚动中发生“挂载/退化”，用户也不会看到 timestamp 行位置忽上忽下。
 
 **状态管理：**
 ```typescript

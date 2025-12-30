@@ -637,8 +637,10 @@
   color: #1F2937;
   margin-right: 0;
   position: relative;
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex: 1;
+  min-width: 0;
   /* 🔧 修复空标题导致的DOM塌陷 */
   min-height: 24px;
   max-height: 48px; /* 防止标题过高 */
