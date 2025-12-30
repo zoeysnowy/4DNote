@@ -342,6 +342,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [showEventTree, setShowEventTree] = useState(false);
+  const [eventTreeContext, setEventTreeContext] = useState<{
+    eventId: string;
+    rootEventId: string;
+    rootEvent: any | null;
+    subtreeCount: number;
+    directChildCount: number;
+  } | null>(null);
   const [showSourceCalendarPicker, setShowSourceCalendarPicker] = useState(false);
   const [showSyncCalendarPicker, setShowSyncCalendarPicker] = useState(false);
   const [showSourceSyncModePicker, setShowSourceSyncModePicker] = useState(false);
@@ -374,13 +381,39 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
   }, [isOpen, showEventTree, allEvents.length]);
 
+  // 🌳 EventTree Context（无需全量 allEvents）
+  // 用于 Level0 / 懒加载场景：即使 allEvents 尚未加载，也能判断是否有下级/根节点
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (!formData?.id) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const ctx = await EventService.getEventTreeContext(formData.id);
+        if (cancelled) return;
+        setEventTreeContext(ctx as any);
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('[EventEditModalV2] Failed to load EventTreeContext:', err);
+        setEventTreeContext(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, formData?.id]);
+
   // 🌲 EditModal EventTree: 以“当前事件所属 Level0 根节点”为 root，显示整棵子树
   const eventTreeRootId = React.useMemo(() => {
     if (!formData?.id) return '';
+    // 优先使用 stats-backed context（无需等待 allEvents 全量加载）
+    if (eventTreeContext?.rootEventId) return eventTreeContext.rootEventId;
     if (!allEvents || allEvents.length === 0) return formData.id;
     const root = EventTreeAPI.getRootEvent(formData.id, allEvents as any);
     return root?.id || formData.id;
-  }, [formData.id, allEvents]);
+  }, [formData.id, allEvents, eventTreeContext?.rootEventId]);
   
   // titleRef/initialSnapshotRef/isAutoSavingRef 已在 useEventEditDraft 内统一管理
   
@@ -3473,7 +3506,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* 关联区域 - 智能摘要 */}
                     {(() => {
                       const hasParent = formData.parentEventId;
-                      const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
+                      const childCount =
+                        (eventTreeContext?.directChildCount ??
+                          allEvents.filter(e => (e as any).parentEventId === formData.id).length) ||
+                        0;
                       const hasChildren = childCount > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
@@ -3536,7 +3572,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                             if (formData.parentEventId) {
                               parts.push('上级：1个');
                             }
-                            const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
+                            const childCount =
+                              (eventTreeContext?.directChildCount ??
+                                allEvents.filter(e => (e as any).parentEventId === formData.id).length) ||
+                              0;
                             if (childCount > 0) {
                               // TODO: 统计任务完成情况
                               parts.push(`下级：${childCount}个`);
@@ -3572,7 +3611,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* EventTree 展开区域 */}
                     {showEventTree && (() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
+                      const hasChildren =
+                        (eventTreeContext?.directChildCount ??
+                          (allEvents.some(e => (e as any).parentEventId === formData.id) ? 1 : 0)) > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3594,7 +3635,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* 🔧 开发调试：始终显示关联区域（方便测试） */}
                     {!(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
+                      const hasChildren =
+                        (eventTreeContext?.directChildCount ??
+                          (allEvents.some(e => (e as any).parentEventId === formData.id) ? 1 : 0)) > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       return hasParent || hasChildren || hasLinked || hasBacklinks;

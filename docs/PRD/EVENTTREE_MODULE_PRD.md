@@ -1,223 +1,201 @@
-# 🌳 EventTree 模块 PRD
+---
 
-**版本**: v1.1  
-**创建日期**: 2025-12-02  
-**最后更新**: 2025-12-11  
-**维护者**: GitHub Copilot  
-**状态**: ✅ 生产环境
+# 🌳 EventTree 模块 PRD（ADR-001 对齐版）
+
+版本: v2.0（文档重写）  
+创建日期: 2025-12-02  
+最后更新: 2025-12-30  
+维护者: GitHub Copilot  
+状态: ✅ 生产环境（以 ADR-001 为准）
 
 ---
 
-## 📊 版本历史
+## 0. 背景与目标
 
-### v1.1 (2025-12-11) - 层级显示最佳实践 + 常见问题修复指南 ✅
+EventTree 负责事件的“树结构关系”和“关联关系”展示/编辑，为 EditModal 的事件树、以及未来的全量事件索引/Library 资源管理器提供基础能力。
 
-**新增章节**:
-- 🆕 **层级显示常见问题**: 记录 PlanManager v2.17 层级显示修复案例
-- 🆕 **position vs DFS 排序**: 解释为什么 position 字段不适用于树结构
-- 🆕 **最佳实践指南**: 如何正确处理已排序的树结构数据
+本 PRD **以 ADR-001 为最高约束**：
 
-**修复文档**:
-- 详细的问题诊断流程
-- 根本原因分析方法
-- 数据流验证检查清单
-
-**相关报告**:
-- `docs/EVENTTREE_HIERARCHY_FIX_REPORT.md`: 完整的修复报告
-- `docs/PRD/PLANMANAGER_MODULE_PRD.md` v2.17: computeEditorItems 修复
-
-### v1.0 (2025-12-02) - 统一 childEventIds 设计 ✅
-
-**核心设计**:
-- 🌳 统一字段管理所有子事件（childEventIds）
-- 🔗 刚性骨架（父子关系）vs 柔性血管（双向链接）
-- 🎨 Canvas 渲染 + EditableEventTree 编辑器
-- ⚡ EventService 自动维护父子关系
+- 结构真相（Source of Truth）: `parentEventId`
+- `childEventIds` **不是**真相，且因为无法长期正确维护，已作为 legacy 机制移除/不再依赖
+- 统计/索引（Derived Index）: `event_stats`（可重建），用于全量树上下文、快速计数、root 缓存等
 
 ---
 
-## 📊 模块概述
+## 1. 数据模型（ADR-001）
 
-EventTree 是 ReMarkable 的核心模块，负责管理事件之间的层级关系（父子关系）和柔性关联（双向链接），提供可视化的事件树结构展示。
+### 1.1 Event（树结构字段）
 
-### 核心能力
-
-- 🌳 **层级管理**: 父子事件关系（刚性骨架）
-- 🔗 **双向链接**: 事件间柔性关联（Bidirectional Links）
-- 🎨 **可视化渲染**: Canvas 画布动态绘制事件树
-- ⚡ **自动维护**: 父子关系自动同步
-- 🎯 **类型区分**: Timer、TimeLog、外部同步事件等
-
----
-
-## 🏗️ 架构设计
-
-### 1. 数据结构
-
-#### 统一字段设计（v2.16+）
-
-```typescript
+```ts
 export interface Event {
-  // ===== 层级关系（刚性骨架）=====
-  parentEventId?: string;      // 父事件 ID
-  childEventIds?: string[];    // 所有子事件 ID（统一字段）
-  
-  // ===== 双向链接（柔性血管）=====
-  linkedEventIds?: string[];   // 正向链接（我链接的事件）
-  backlinks?: string[];        // 反向链接（链接我的事件）
-  
-  // ===== 事件类型标记 =====
-  isTimer?: boolean;           // Timer 计时记录
-  isTimeLog?: boolean;         // 时间日志
-  isOutsideApp?: boolean;      // 外部应用同步
-  isPlan?: boolean;            // 用户计划事件
-  isTask?: boolean;            // 任务类型
-  
-  // ===== 其他核心字段 =====
   id: string;
-  title: string | EventLog;
-  start_time?: string;
-  end_time?: string;
-  created_at: string;
-  updated_at: string;
-  deleted_at?: string;
+  title: any;
+
+  // ✅ ADR-001: 树结构唯一真相
+  parentEventId?: string | null;
+
+  // ✅ 柔性关联（双向链接）
+  linkedEventIds?: string[];
+  backlinks?: string[];
+
+  // 其他字段省略
 }
 ```
 
-#### 设计原则
+### 1.2 EventStats（派生索引，可重建）
 
-**单一字段管理所有子事件** (Single Field Design)
-- ✅ **统一存储**: `childEventIds` 存储所有类型的子事件
-- ✅ **类型标记**: 通过 `isTimer`, `isTimeLog` 等布尔字段区分类型
-- ✅ **避免碎片化**: 不再使用 `timerLogs`, `userSubTaskIds` 等分散字段
+`event_stats` 是轻量索引层，允许重建，不要求 100% 实时完美，但必须可自洽且可修复。
 
-**刚性骨架 vs 柔性血管** (Vessels as Stacks)
-- 🦴 **刚性骨架**: 父子关系（`parentEventId` ↔ `childEventIds`）
-  - 占据画布空间
-  - 用 line + link 标记显示
-  - 严格的层级结构
-  
-- 🔗 **柔性血管**: 双向链接（`linkedEventIds` ↔ `backlinks`）
-  - 不占画布空间
-  - 堆叠在主节点背后
-  - Hover 展开显示
-  - 柔性引用关系
+```ts
+export interface EventStats {
+  id: string;
+
+  // ✅ 与 Event 同步的派生字段（用于索引/计数/快速爬链）
+  parentEventId?: string | null;
+  rootEventId?: string;
+
+  // 其它统计字段（如 tags 等）
+  tags: string[];
+}
+```
+
+索引要求（IndexedDB）:
+
+- `event_stats.parentEventId`（children 查询）
+- `event_stats.rootEventId`（subtree 计数）
 
 ---
 
-### 2. 核心组件
+## 2. 树构建与排序
 
-#### 2.1 EventTree Canvas 渲染
+### 2.1 构树原则
 
-**文件**: `src/components/EventTree/EventTreeCanvas.tsx`
+- 任何树遍历、子树展示、层级计算，都必须从 `parentEventId` 推导（`parent -> childrenMap`）
+- 不依赖 `childEventIds`
 
-**功能**:
-- Canvas 画布渲染事件节点和连接线
-- 动态布局算法（递归计算坐标）
-- 鼠标交互（拖拽、缩放、Hover）
-- 性能优化（虚拟滚动、节点剪裁）
+核心实现位置:
 
-#### 2.2 EventRelationSummary
+- `src/services/EventTree`（TreeEngine / EventTreeAPI）
+- UI 侧: `src/components/EventTree/EventTreeSlate.tsx` 使用 `EventTreeAPI.getSubtree(rootId, allEvents)` + `buildTree()`
 
-**文件**: `src/components/EventTree/EventRelationSummary.tsx`
+### 2.2 兄弟排序原则
 
-**功能**:
-- 显示事件的关系摘要（父节点、子节点、链接数量）
-- 支持快速导航到关联事件
-- 预览关联事件的基本信息
+- 同一个 parent 下的 siblings，使用 `position`（或项目约定的排序字段）稳定排序
+- UI 展示顺序应与“视觉顺序”一致，必要时在保存前对同父节点重排 `position`
 
-#### 2.3 EditableEventTree (v2.18+)
+---
 
-**文件**: `src/components/EventTree/EditableEventTree.tsx` (344 lines)
+## 3. Stats-backed Tree Context（全量树上下文）
 
-**功能**:
-- ✅ **树形结构编辑器**: 递归渲染事件树，支持无限层级
-- ✅ **每节点独立 Slate 编辑器**: 每个节点 title 可独立编辑
-- ✅ **L 型连接线**: CSS 绝对定位实现树形连接线
-- ✅ **折叠/展开**: ChevronDown/Right 图标控制子节点显示
-- ✅ **Link 按钮悬浮**: 右对齐 Link 按钮，Tippy.js 定位链接堆叠卡片
-- ✅ **递归加载**: `buildTree()` 递归加载所有 `childEventIds`
-- ✅ **实时更新**: Slate onChange 防抖 500ms 保存到数据库
-- ✅ **LinkedCard 堆叠**: 纵向堆叠展示双向链接，Tippy 定位避免模态框裁剪
+### 3.1 需求
 
-**核心代码**:
-```typescript
-const TreeNodeItem: React.FC<TreeNodeProps> = ({ node, depth }) => {
-  // 1. 独立 Slate 编辑器
-  const [editor] = useState(() => withReact(createEditor()));
-  
-  // 2. 防抖保存
-  const handleChange = useMemo(() => 
-    debounce(async (value: Descendant[]) => {
-      const newTitle = serialize(value);
-      await EventService.updateEvent(node.event.id, {
-        title: { fullTitle: newTitle }
-      });
-    }, 500),
-    [node.event.id]
-  );
-  
-  // 3. 递归渲染子节点
-  return (
-    <div className="tree-node">
-      <div className="tree-line" />
-      <div className="tree-connector" />
-      
-      <div className="tree-content">
-        <button onClick={toggleOpen}>
-          {hasChildren ? <ChevronDown /> : <Circle />}
-        </button>
-        
-        <Slate editor={editor} initialValue={slateValue} onChange={handleChange}>
-          <Editable placeholder="输入标题..." />
-        </Slate>
-        
-        <div className="link-button-container">
-          <LinkButton eventId={node.event.id} />
-        </div>
-      </div>
-      
-      {isOpen && children.map(child => (
-        <TreeNodeItem key={child.event.id} node={child} depth={depth + 1} />
-      ))}
-    </div>
-  );
-};
+任意事件 `eventId` 都应能在 **不扫描全表** 的前提下得到：
+
+- `rootEventId`（Level0 根节点）
+- `subtreeCount`（该 root 下总节点数，含 root 自身）
+- `directChildCount`（当前节点的直接子节点数）
+- `rootEvent`（根事件对象，可为空）
+
+### 3.2 对外 API
+
+`src/services/EventService.ts`
+
+```ts
+EventService.getEventTreeContext(eventId)
+// => { rootEventId, subtreeCount, directChildCount, rootEvent }
 ```
 
-**递归加载逻辑**:
-```typescript
-const buildTree = async (event: Event, depth: number = 0): Promise<TreeNode> => {
-  const children: TreeNode[] = [];
-  
-  if (event.childEventIds && event.childEventIds.length > 0) {
-    for (const childId of event.childEventIds) {
-      const child = await EventService.getEventById(childId);
-      if (child && EventService.shouldShowInEventTree(child)) {
-        // 🔥 递归加载子事件的子事件
-        const childNode = await buildTree(child, depth + 1);
-        children.push(childNode);
-      }
-    }
-  }
-  
-  return { event, children, isOpen: true };
-};
-```
+实现要求:
 
-**Link 按钮与 LinkedCard (v2.18.1)**:
-```tsx
-{/* Tippy.js 定位 LinkedCard 堆叠 */}
-{linkedEvents.length > 0 && (
-  <Tippy
-    content={
-      <div className="linked-cards-stack">
-        {linkedEvents.map((linkedEvent, index) => (
-          <LinkedCard
-            key={linkedEvent.id}
-            event={linkedEvent}
-            index={index}
-            isHovered={true}
+- 优先使用 `event_stats.rootEventId`（缓存）
+- 缺失时沿 `parentEventId` 上溯计算，并回写 `event_stats.rootEventId`（path compression）
+- `directChildCount` 通过 `event_stats.parentEventId` 索引计数
+- `subtreeCount` 通过 `event_stats.rootEventId` 索引计数
+
+### 3.3 写入/同步（create/update）
+
+在 `createEvent/updateEvent` 路径：
+
+- 同步写 `event_stats.parentEventId`
+- 同步写 `event_stats.rootEventId`
+  - 新建事件：root =（parent 的 root）或自身
+  - reparent（parent 改变）：可能引发整棵子树 root 变化
+
+### 3.4 Reparent：子树 rootEventId 传播（BFS）
+
+当某节点 `X` 的 `rootEventId` 因 reparent 发生变化时，需要将 `X` 的所有后代的 `rootEventId` 更新为新 root。
+
+约束:
+
+- **禁止**扫描全表事件
+- 只能使用 `event_stats.parentEventId` 索引逐层查 children（BFS）
+- 批量 upsert 写回 `event_stats`（bulkPut）
+- 必须有 cycle 防护（visited set）
+
+实现位置:
+
+- `src/services/eventTreeStats.ts`:
+  - `updateSubtreeRootEventIdUsingStatsIndex(subtreeRootId, newRootEventId)`
+
+---
+
+## 4. UI 集成（EditModal / EventTree）
+
+### 4.1 EditModal：Level0 也必须能打开 EventTree
+
+问题根因（历史）:
+
+- 关联区/树展开按钮的渲染 gate 依赖 `allEvents`（懒加载），导致 Level0 根节点在 `allEvents` 未加载时判断不到“有下级”，从而按钮不出现。
+
+解决方案:
+
+- 使用 `EventService.getEventTreeContext(eventId)` 的 `directChildCount/rootEventId` 做 gate 与 rootId 推导
+- `allEvents` 仍然可以在用户真正展开 EventTree 时再加载（避免打开 modal 失焦）
+
+相关文件:
+
+- `src/components/EventEditModal/EventEditModalV2.tsx`
+
+### 4.2 EventTreeViewer / EventTreeSlate
+
+目前主展示以 `EventTreeSlate` 为准：
+
+- `EventTreeViewer` 会将上层已加载的 `events` 快照传给 `EventTreeSlate`，避免组件内部重复 `getAllEvents()` 造成的视图不一致
+- `EventTreeSlate` 在未收到 `events` 时，才会自行通过 `EventService.getAllEvents()` 拉全量事件，再用 `EventTreeAPI` 基于 `parentEventId` 构子树
+
+（未来如要进一步优化，可将 UI 侧全量加载替换为分页/按需子树加载，但不在本 PRD 范围）
+
+---
+
+## 5. 测试策略
+
+Vitest 单测覆盖重点：
+
+- `getEventTreeContext` 在 stats 已存在时直接返回正确 root/count
+- stats 缺失时能沿 parent 链计算 root 并回写（path compression）
+- reparent 引发的子树 root 更新：使用 stats index BFS，且 cycle 不会死循环
+
+建议测试位置:
+
+- `src/services/__tests__/EventService.eventTreeContext.test.ts`
+
+---
+
+## 6. 非目标（Out of Scope）
+
+- 不新增新的页面/复杂 UI
+- 不引入新的“自动维护 childEventIds”机制
+- 不在此 PRD 里规定 Library 的最终 UI 形态（只提供所需的 tree context 指标）
+
+---
+
+## 7. 关键约束总结（必须遵守）
+
+- `parentEventId` 是唯一树结构真相
+- `event_stats` 是派生索引，可重建，不能反向成为真相
+- reparent 子树 root 传播必须 BFS + stats 索引，不扫全表
+- UI gate 不能依赖 `allEvents` 的预加载来决定“是否显示 EventTree”
+
             onClick={() => onEventClick?.(linkedEvent)}
           />
         ))}

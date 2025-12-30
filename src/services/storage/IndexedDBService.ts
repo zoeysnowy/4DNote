@@ -1,20 +1,20 @@
-/**
- * IndexedDBService - IndexedDB 存储服务
+﻿/**
+ * IndexedDBService - IndexedDB 瀛樺偍鏈嶅姟
  * 
- * 职责：
- * - 管理 IndexedDB 数据库（近期 30 天热数据）
- * - 提供 CRUD 接口
- * - 支持索引查询和范围查询
+ * 鑱岃矗锛?
+ * - 绠＄悊 IndexedDB 鏁版嵁搴擄紙杩戞湡 30 澶╃儹鏁版嵁锛?
+ * - 鎻愪緵 CRUD 鎺ュ彛
+ * - 鏀寔绱㈠紩鏌ヨ鍜岃寖鍥存煡璇?
  * 
  * Object Stores:
- * - accounts: 邮箱账号信息
- * - calendars: 日历信息
- * - events: 事件数据
- * - contacts: 联系人
- * - tags: 标签
- * - attachments: 附件元数据
- * - syncQueue: 同步队列
- * - metadata: 元数据
+ * - accounts: 閭璐﹀彿淇℃伅
+ * - calendars: 鏃ュ巻淇℃伅
+ * - events: 浜嬩欢鏁版嵁
+ * - contacts: 鑱旂郴浜?
+ * - tags: 鏍囩
+ * - attachments: 闄勪欢鍏冩暟鎹?
+ * - syncQueue: 鍚屾闃熷垪
+ * - metadata: 鍏冩暟鎹?
  * 
  * @version 1.0.0
  * @date 2025-12-01
@@ -38,21 +38,21 @@ import type {
 import { formatTimeForStorage } from '../../utils/timeUtils';
 
 const DB_NAME = '4DNoteDB';
-const DB_VERSION = 3; // v3: Added event_stats store for performance
+const DB_VERSION = 4; // v4: event_stats adds parentEventId/rootEventId indexes for tree context
 
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
   private initPromise: Promise<void> | null = null;
   
-  // 🚀 性能优化：查询缓存（避免重复查询同一时间范围）
+  // 馃殌 鎬ц兘浼樺寲锛氭煡璇㈢紦瀛橈紙閬垮厤閲嶅鏌ヨ鍚屼竴鏃堕棿鑼冨洿锛?
   private queryCache: Map<string, { data: any[]; timestamp: number }> = new Map();
-  private CACHE_TTL = 60000; // 60秒缓存（页面切换通常在1分钟内返回）
+  private CACHE_TTL = 60000; // 60绉掔紦瀛橈紙椤甸潰鍒囨崲閫氬父鍦?鍒嗛挓鍐呰繑鍥烇級
   
-  // 🔒 查询锁：防止并发重复查询（解决 React StrictMode 双重渲染问题）
+  // 馃敀 鏌ヨ閿侊細闃叉骞跺彂閲嶅鏌ヨ锛堣В鍐?React StrictMode 鍙岄噸娓叉煋闂锛?
   private pendingQueries: Map<string, Promise<QueryResult<StorageEvent>>> = new Map();
 
   /**
-   * 初始化数据库
+   * 鍒濆鍖栨暟鎹簱
    */
   async initialize(): Promise<void> {
     if (this.initPromise) {
@@ -60,22 +60,22 @@ export class IndexedDBService {
     }
 
     this.initPromise = new Promise((resolve, reject) => {
-      console.log('[IndexedDBService] 🔄 Opening database:', DB_NAME, 'version:', DB_VERSION);
+      console.log('[IndexedDBService] 馃攧 Opening database:', DB_NAME, 'version:', DB_VERSION);
       
-      // 🆕 添加超时机制（10秒）
+      // 馃啎 娣诲姞瓒呮椂鏈哄埗锛?0绉掞級
       const timeout = setTimeout(() => {
-        console.error('[IndexedDBService] ❌ Initialization timeout (10s)');
+        console.error('[IndexedDBService] 鉂?Initialization timeout (10s)');
         this.initPromise = null;
         reject(new Error('IndexedDB initialization timeout'));
       }, 10000);
       
       const request = indexedDB.open(DB_NAME, DB_VERSION);
-      console.log('[IndexedDBService] 🔍 Open request created:', request);
+      console.log('[IndexedDBService] 馃攳 Open request created:', request);
 
       request.onerror = () => {
         clearTimeout(timeout);
         const error = request.error;
-        console.error('[IndexedDBService] ❌ Failed to open database:', error);
+        console.error('[IndexedDBService] 鉂?Failed to open database:', error);
         this.initPromise = null;
         reject(error);
       };
@@ -83,12 +83,12 @@ export class IndexedDBService {
       request.onsuccess = () => {
         clearTimeout(timeout);
         this.db = request.result;
-        console.log('[IndexedDBService] ✅ Database opened successfully');
+        console.log('[IndexedDBService] 鉁?Database opened successfully');
         resolve();
       };
 
       request.onupgradeneeded = (event) => {
-        console.log('[IndexedDBService] 🔄 onupgradeneeded triggered');
+        console.log('[IndexedDBService] 馃攧 onupgradeneeded triggered');
         const db = (event.target as IDBOpenDBRequest).result;
         console.log('[IndexedDBService] Upgrading database schema...');
         console.log('[IndexedDBService] Current object stores:', Array.from(db.objectStoreNames));
@@ -134,7 +134,7 @@ export class IndexedDBService {
         // 5. Tags Store
         if (!db.objectStoreNames.contains('tags')) {
           const tagsStore = db.createObjectStore('tags', { keyPath: 'id' });
-          tagsStore.createIndex('name', 'name', { unique: false }); // 🔧 允许同名标签（不同层级）
+          tagsStore.createIndex('name', 'name', { unique: false }); // 馃敡 鍏佽鍚屽悕鏍囩锛堜笉鍚屽眰绾э級
           tagsStore.createIndex('parentId', 'parentId', { unique: false });
           console.log('[IndexedDBService] Created tags store');
         }
@@ -171,9 +171,7 @@ export class IndexedDBService {
           historyStore.createIndex('timestamp', 'timestamp', { unique: false });
           historyStore.createIndex('source', 'source', { unique: false });
           console.log('[IndexedDBService] Created event_history store');
-        }
-
-        // 10. Event Stats Store (v3) - 轻量级统计数据
+        }        // 10. Event Stats Store (v4) - lightweight derived index
         if (!db.objectStoreNames.contains('event_stats')) {
           const statsStore = db.createObjectStore('event_stats', { keyPath: 'id' });
           statsStore.createIndex('startTime', 'startTime', { unique: false });
@@ -181,14 +179,28 @@ export class IndexedDBService {
           statsStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
           statsStore.createIndex('calendarIds', 'calendarIds', { unique: false, multiEntry: true });
           statsStore.createIndex('source', 'source', { unique: false });
+          statsStore.createIndex('parentEventId', 'parentEventId', { unique: false });
+          statsStore.createIndex('rootEventId', 'rootEventId', { unique: false });
           console.log('[IndexedDBService] Created event_stats store');
+        } else {
+          // Ensure new indexes exist after upgrading DB_VERSION
+          const tx = (event.target as IDBOpenDBRequest).transaction;
+          if (tx) {
+            const statsStore = tx.objectStore('event_stats');
+            if (!statsStore.indexNames.contains('parentEventId')) {
+              statsStore.createIndex('parentEventId', 'parentEventId', { unique: false });
+            }
+            if (!statsStore.indexNames.contains('rootEventId')) {
+              statsStore.createIndex('rootEventId', 'rootEventId', { unique: false });
+            }
+          }
         }
 
       request.onblocked = () => {
-        console.warn('[IndexedDBService] ⚠️ Database upgrade blocked - please close other tabs');
-        // 不 reject，等待用户关闭其他标签页
+        console.warn('[IndexedDBService] 鈿狅笍 Database upgrade blocked - please close other tabs');
+        // 涓?reject锛岀瓑寰呯敤鎴峰叧闂叾浠栨爣绛鹃〉
       };
-        console.log('[IndexedDBService] ✅ Schema upgrade complete');
+        console.log('[IndexedDBService] 鉁?Schema upgrade complete');
       };
     });
 
@@ -196,7 +208,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 通用查询方法
+   * 閫氱敤鏌ヨ鏂规硶
    */
   private async query<T>(
     storeName: string,
@@ -222,7 +234,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 通用获取单个项方法
+   * 閫氱敤鑾峰彇鍗曚釜椤规柟娉?
    */
   private async get<T>(storeName: string, key: string): Promise<T | null> {
     await this.initialize();
@@ -243,7 +255,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 通用写入方法
+   * 閫氱敤鍐欏叆鏂规硶
    */
   private async put<T>(storeName: string, item: T): Promise<void> {
     await this.initialize();
@@ -264,7 +276,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 通用删除方法
+   * 閫氱敤鍒犻櫎鏂规硶
    */
   private async delete(storeName: string, key: string): Promise<void> {
     await this.initialize();
@@ -335,7 +347,7 @@ export class IndexedDBService {
   }
 
   async queryEvents(options: QueryOptions): Promise<QueryResult<StorageEvent>> {
-    // 🚀 辅助函数：将 Date 转为 TimeSpec 格式字符串（用于缓存键）
+    // 馃殌 杈呭姪鍑芥暟锛氬皢 Date 杞负 TimeSpec 鏍煎紡瀛楃涓诧紙鐢ㄤ簬缂撳瓨閿級
     const formatKey = (date: Date) => {
       const y = date.getFullYear();
       const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -346,23 +358,23 @@ export class IndexedDBService {
       return `${y}-${m}-${d} ${h}:${min}:${s}`;
     };
 
-    // 🚀 缓存检查和查询锁
+    // 馃殌 缂撳瓨妫€鏌ュ拰鏌ヨ閿?
     if (options.startDate || options.endDate) {
       const cacheKey = `${options.startDate ? formatKey(options.startDate) : 'null'}_${options.endDate ? formatKey(options.endDate) : 'null'}`;
       
-      // 🔒 检查是否有正在进行的查询（防止并发重复）
+      // 馃敀 妫€鏌ユ槸鍚︽湁姝ｅ湪杩涜鐨勬煡璇紙闃叉骞跺彂閲嶅锛?
       const pendingQuery = this.pendingQueries.get(cacheKey);
       if (pendingQuery) {
-        console.log(`[IndexedDB] 🔒 Query already in progress, waiting... key="${cacheKey}"`);
+        console.log(`[IndexedDB] 馃敀 Query already in progress, waiting... key="${cacheKey}"`);
         return pendingQuery;
       }
       
-      // 检查缓存
+      // 妫€鏌ョ紦瀛?
       const cached = this.queryCache.get(cacheKey);
-      console.log(`[IndexedDB] 🔍 Cache lookup: key="${cacheKey}", found=${!!cached}, age=${cached ? (performance.now() - cached.timestamp).toFixed(0) : 'N/A'}ms, TTL=${this.CACHE_TTL}ms`);
+      console.log(`[IndexedDB] 馃攳 Cache lookup: key="${cacheKey}", found=${!!cached}, age=${cached ? (performance.now() - cached.timestamp).toFixed(0) : 'N/A'}ms, TTL=${this.CACHE_TTL}ms`);
       
       if (cached && (performance.now() - cached.timestamp) < this.CACHE_TTL) {
-        console.log(`[IndexedDB] ⚡ Cache hit: ${cached.data.length} events (saved ${(performance.now() - cached.timestamp).toFixed(0)}ms ago)`);
+        console.log(`[IndexedDB] 鈿?Cache hit: ${cached.data.length} events (saved ${(performance.now() - cached.timestamp).toFixed(0)}ms ago)`);
         return {
           items: cached.data,
           total: cached.data.length,
@@ -371,7 +383,7 @@ export class IndexedDBService {
         };
       }
       
-      // 🔒 创建查询 Promise 并加锁
+      // 馃敀 鍒涘缓鏌ヨ Promise 骞跺姞閿?
       const queryPromise = this.executeQuery(options, formatKey, cacheKey);
       this.pendingQueries.set(cacheKey, queryPromise);
       
@@ -379,16 +391,16 @@ export class IndexedDBService {
         const result = await queryPromise;
         return result;
       } finally {
-        // 查询完成后释放锁
+        // 鏌ヨ瀹屾垚鍚庨噴鏀鹃攣
         this.pendingQueries.delete(cacheKey);
       }
     }
     
-    // 无时间范围的查询直接执行（不需要锁）
+    // 鏃犳椂闂磋寖鍥寸殑鏌ヨ鐩存帴鎵ц锛堜笉闇€瑕侀攣锛?
     return this.executeQuery(options, formatKey, null);
   }
 
-  // 🚀 实际执行查询的内部方法
+  // 馃殌 瀹為檯鎵ц鏌ヨ鐨勫唴閮ㄦ柟娉?
   private async executeQuery(
     options: QueryOptions, 
     formatKey: (date: Date) => string,
@@ -397,17 +409,17 @@ export class IndexedDBService {
     const perfStart = performance.now();
     let events: StorageEvent[];
 
-    // 🚀 优化：优先使用索引查询
+    // 馃殌 浼樺寲锛氫紭鍏堜娇鐢ㄧ储寮曟煡璇?
     if (options.startDate || options.endDate) {
-      // 使用 startTime 索引查询时间范围
+      // 浣跨敤 startTime 绱㈠紩鏌ヨ鏃堕棿鑼冨洿
       const initStart = performance.now();
       await this.initialize();
       const initDuration = performance.now() - initStart;
       
       const queryStart = performance.now();
       
-      // 🔧 [FIX] 构建时间范围查询 - 支持 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
-      // TimeSpec 格式按字符串排序也是正确的时间顺序
+      // 馃敡 [FIX] 鏋勫缓鏃堕棿鑼冨洿鏌ヨ - 鏀寔 TimeSpec 鏍煎紡 (YYYY-MM-DD HH:mm:ss)
+      // TimeSpec 鏍煎紡鎸夊瓧绗︿覆鎺掑簭涔熸槸姝ｇ‘鐨勬椂闂撮『搴?
       const formatForIndex = (date: Date) => {
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -426,61 +438,61 @@ export class IndexedDBService {
         ? IDBKeyRange.upperBound(formatForIndex(options.endDate))
         : null;
       
-      // 🚀 [PERFORMANCE FIX] 使用 getAll() 替代游标遍历（快 5-10 倍）
-      // getAll() 会在 C++ 层批量读取，比 JS 层的 cursor.continue() 快得多
+      // 馃殌 [PERFORMANCE FIX] 浣跨敤 getAll() 鏇夸唬娓告爣閬嶅巻锛堝揩 5-10 鍊嶏級
+      // getAll() 浼氬湪 C++ 灞傛壒閲忚鍙栵紝姣?JS 灞傜殑 cursor.continue() 蹇緱澶?
       const allEvents = await this.query<StorageEvent>('events', 'startTime', range || undefined);
       
-      // 🔧 过滤软删除的事件（内存中过滤很快）
+      // 馃敡 杩囨护杞垹闄ょ殑浜嬩欢锛堝唴瀛樹腑杩囨护寰堝揩锛?
       events = allEvents.filter(event => !event.deletedAt);
       
       const queryDuration = performance.now() - queryStart;
       
-      // 🚀 缓存查询结果
+      // 馃殌 缂撳瓨鏌ヨ缁撴灉
       if (cacheKey) {
         this.queryCache.set(cacheKey, { data: events, timestamp: performance.now() });
-        console.log(`[IndexedDB] 💾 Cache saved: key="${cacheKey}", ${events.length} events, total cached queries: ${this.queryCache.size}`);
+        console.log(`[IndexedDB] 馃捑 Cache saved: key="${cacheKey}", ${events.length} events, total cached queries: ${this.queryCache.size}`);
         
-        // 清理过期缓存（最多保留10条）
+        // 娓呯悊杩囨湡缂撳瓨锛堟渶澶氫繚鐣?0鏉★級
         if (this.queryCache.size > 10) {
           const oldestKey = Array.from(this.queryCache.keys())[0];
           this.queryCache.delete(oldestKey);
         }
       }
       
-      // 🔍 总是显示查询时间（用于性能调试）
-      console.log(`[IndexedDB] ⚡ Index query took ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms) → ${events.length} events`);
+      // 馃攳 鎬绘槸鏄剧ず鏌ヨ鏃堕棿锛堢敤浜庢€ц兘璋冭瘯锛?
+      console.log(`[IndexedDB] 鈿?Index query took ${queryDuration.toFixed(1)}ms (init: ${initDuration.toFixed(1)}ms) 鈫?${events.length} events`);
     } else {
-      // 🚀 [PERFORMANCE FIX] 无时间范围过滤，使用 getAll() 全表读取
-      // getAll() 比游标遍历快 5-10 倍（批量读取 vs 逐个读取）
+      // 馃殌 [PERFORMANCE FIX] 鏃犳椂闂磋寖鍥磋繃婊わ紝浣跨敤 getAll() 鍏ㄨ〃璇诲彇
+      // getAll() 姣旀父鏍囬亶鍘嗗揩 5-10 鍊嶏紙鎵归噺璇诲彇 vs 閫愪釜璇诲彇锛?
       const queryStart = performance.now();
       await this.initialize();
       const allEvents = await this.query<StorageEvent>('events');
       
-      // 🔧 过滤软删除的事件
+      // 馃敡 杩囨护杞垹闄ょ殑浜嬩欢
       events = allEvents.filter(event => !event.deletedAt);
       
       const queryDuration = performance.now() - queryStart;
-      // ✨ 只记录慢查询（>200ms）以减少噪音
+      // 鉁?鍙褰曟參鏌ヨ锛?200ms锛変互鍑忓皯鍣煶
       if (queryDuration > 200) {
-        console.log(`[IndexedDB] ⚡ Slow query took ${queryDuration.toFixed(1)}ms → ${events.length} events`);
+        console.log(`[IndexedDB] 鈿?Slow query took ${queryDuration.toFixed(1)}ms 鈫?${events.length} events`);
       }
     }
 
-    // 筛选：事件 ID 列表（精确匹配）
+    // 绛涢€夛細浜嬩欢 ID 鍒楄〃锛堢簿纭尮閰嶏級
     if (options.filters?.eventIds && options.filters.eventIds.length > 0) {
       events = events.filter(event => 
         options.filters!.eventIds!.includes(event.id)
       );
     }
 
-    // 筛选：账号
+    // 绛涢€夛細璐﹀彿
     if (options.accountIds && options.accountIds.length > 0) {
       events = events.filter(event => 
         event.sourceAccountId && options.accountIds!.includes(event.sourceAccountId)
       );
     }
 
-    // 排序
+    // 鎺掑簭
     if (options.orderBy) {
       const direction = options.orderDirection === 'desc' ? -1 : 1;
       events.sort((a, b) => {
@@ -492,7 +504,7 @@ export class IndexedDBService {
       });
     }
 
-    // 分页
+    // 鍒嗛〉
     const total = events.length;
     const offset = options.offset || 0;
     const limit = options.limit || 50;
@@ -506,7 +518,7 @@ export class IndexedDBService {
   }
 
   async createEvent(event: StorageEvent): Promise<void> {
-    this.clearQueryCache(); // 清除缓存
+    this.clearQueryCache(); // 娓呴櫎缂撳瓨
     return this.put('events', event);
   }
 
@@ -515,7 +527,7 @@ export class IndexedDBService {
     if (!existingEvent) {
       throw new Error(`Event not found: ${id}`);
     }
-    // 🔧 [TIMESPEC] 使用 formatTimeForStorage 确保 TimeSpec 格式
+    // 馃敡 [TIMESPEC] 浣跨敤 formatTimeForStorage 纭繚 TimeSpec 鏍煎紡
     const formatTimeForStorage = (date: Date): string => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -526,12 +538,12 @@ export class IndexedDBService {
       return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
     };
     const updatedEvent = { ...existingEvent, ...updates, updatedAt: formatTimeForStorage(new Date()) };
-    this.clearQueryCache(); // 清除缓存
+    this.clearQueryCache(); // 娓呴櫎缂撳瓨
     return this.put('events', updatedEvent);
   }
 
   async deleteEvent(id: string): Promise<void> {
-    this.clearQueryCache(); // 清除缓存
+    this.clearQueryCache(); // 娓呴櫎缂撳瓨
     return this.delete('events', id);
   }
 
@@ -580,11 +592,11 @@ export class IndexedDBService {
   }
 
   /**
-   * 🔒 批量更新事件（事务性）- Phase 3优化
+   * 馃敀 鎵归噺鏇存柊浜嬩欢锛堜簨鍔℃€э級- Phase 3浼樺寲
    * 
-   * 使用单个IndexedDB事务处理所有更新，提供原子性保证
+   * 浣跨敤鍗曚釜IndexedDB浜嬪姟澶勭悊鎵€鏈夋洿鏂帮紝鎻愪緵鍘熷瓙鎬т繚璇?
    * 
-   * @param events - 完整的事件对象数组
+   * @param events - 瀹屾暣鐨勪簨浠跺璞℃暟缁?
    */
   async batchUpdateEvents(events: StorageEvent[]): Promise<void> {
     await this.initialize();
@@ -595,7 +607,7 @@ export class IndexedDBService {
         return;
       }
 
-      console.log('[IndexedDB] 🔒 Starting batch update transaction:', {
+      console.log('[IndexedDB] 馃敀 Starting batch update transaction:', {
         count: events.length,
         eventIds: events.map(e => e.id.slice(-8)).join(', ')
       });
@@ -603,29 +615,29 @@ export class IndexedDBService {
       const transaction = this.db.transaction('events', 'readwrite');
       const store = transaction.objectStore('events');
 
-      // 在单个事务中更新所有事件
+      // 鍦ㄥ崟涓簨鍔′腑鏇存柊鎵€鏈変簨浠?
       for (const event of events) {
         store.put(event);
       }
 
       transaction.oncomplete = () => {
-        console.log('[IndexedDB] ✅ Batch update transaction completed');
+        console.log('[IndexedDB] 鉁?Batch update transaction completed');
         resolve();
       };
       
       transaction.onerror = () => {
-        console.error('[IndexedDB] ❌ Batch update transaction failed:', transaction.error);
+        console.error('[IndexedDB] 鉂?Batch update transaction failed:', transaction.error);
         reject(transaction.error);
       };
       
       transaction.onabort = () => {
-        console.error('[IndexedDB] ❌ Batch update transaction aborted');
+        console.error('[IndexedDB] 鉂?Batch update transaction aborted');
         reject(new Error('Transaction aborted'));
       };
     });
   }
 
-  // ==================== 其他 Stores ====================
+  // ==================== 鍏朵粬 Stores ====================
 
   // Tags
   async getAllTags(): Promise<Tag[]> {
@@ -655,7 +667,7 @@ export class IndexedDBService {
 
       request.onsuccess = () => {
         const tags = request.result as Tag[];
-        // 过滤已删除的标签
+        // 杩囨护宸插垹闄ょ殑鏍囩
         resolve(tags.filter(t => !t.deletedAt));
       };
 
@@ -678,10 +690,10 @@ export class IndexedDBService {
     return this.delete('tags', id);
   }
 
-  // ==================== Contact 操作 ====================
+  // ==================== Contact 鎿嶄綔 ====================
 
   /**
-   * 查询联系人
+   * 鏌ヨ鑱旂郴浜?
    */
   async queryContacts(options: QueryOptions = {}): Promise<QueryResult<Contact>> {
     await this.initialize();
@@ -699,10 +711,10 @@ export class IndexedDBService {
       request.onsuccess = () => {
         let contacts = request.result as Contact[];
 
-        // 过滤已删除的联系人
+        // 杩囨护宸插垹闄ょ殑鑱旂郴浜?
         contacts = contacts.filter(c => !c.deletedAt);
 
-        // 应用过滤条件
+        // 搴旂敤杩囨护鏉′欢
         if (options.filters) {
           const { contactIds, emails, sources, searchText } = options.filters;
 
@@ -728,12 +740,12 @@ export class IndexedDBService {
           }
         }
 
-        // 排序
+        // 鎺掑簭
         contacts.sort((a, b) =>
           new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
 
-        // 分页
+        // 鍒嗛〉
         const offset = options.offset || 0;
         const limit = options.limit || 1000;
         const paginatedContacts = contacts.slice(offset, offset + limit);
@@ -750,43 +762,43 @@ export class IndexedDBService {
   }
 
   /**
-   * 创建联系人
+   * 鍒涘缓鑱旂郴浜?
    */
   async createContact(contact: Contact): Promise<void> {
     return this.put('contacts', contact);
   }
 
   /**
-   * 更新联系人
+   * 鏇存柊鑱旂郴浜?
    */
   async updateContact(contact: Contact): Promise<void> {
     return this.put('contacts', contact);
   }
 
   /**
-   * 删除联系人（通过 ID）
+   * 鍒犻櫎鑱旂郴浜猴紙閫氳繃 ID锛?
    */
   async deleteContact(id: string): Promise<void> {
     return this.delete('contacts', id);
   }
 
   /**
-   * 获取所有联系人（旧接口，兼容性保留）
+   * 鑾峰彇鎵€鏈夎仈绯讳汉锛堟棫鎺ュ彛锛屽吋瀹规€т繚鐣欙級
    */
   async getAllContacts(): Promise<Contact[]> {
     return this.query<Contact>('contacts');
   }
 
-  // ==================== 缓存管理 ====================
+  // ==================== 缂撳瓨绠＄悊 ====================
   
   /**
-   * 清除查询缓存（数据更新时调用）
+   * 娓呴櫎鏌ヨ缂撳瓨锛堟暟鎹洿鏂版椂璋冪敤锛?
    */
   clearQueryCache(): void {
     this.queryCache.clear();
   }
 
-  // ==================== SyncQueue 操作 ====================
+  // ==================== SyncQueue 鎿嶄綔 ====================
   
   // SyncQueue
   async getSyncQueue(): Promise<SyncQueueItem[]> {
@@ -817,7 +829,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 获取存储使用情况
+   * 鑾峰彇瀛樺偍浣跨敤鎯呭喌
    */
   async getStorageEstimate(): Promise<{ usage: number; quota: number }> {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
@@ -831,7 +843,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 获取存储统计信息
+   * 鑾峰彇瀛樺偍缁熻淇℃伅
    */
   async getStorageStats(): Promise<Partial<StorageStats>> {
     await this.initialize();
@@ -865,7 +877,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 统计 Store 中的记录数
+   * 缁熻 Store 涓殑璁板綍鏁?
    */
   private async count(storeName: string): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -882,7 +894,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 清空所有数据（危险操作！）
+   * 娓呯┖鎵€鏈夋暟鎹紙鍗遍櫓鎿嶄綔锛侊級
    */
   async clearAll(): Promise<void> {
     await this.initialize();
@@ -908,7 +920,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 关闭数据库
+   * 鍏抽棴鏁版嵁搴?
    */
   close(): void {
     if (this.db) {
@@ -922,7 +934,7 @@ export class IndexedDBService {
   // ==================== Event History Methods ====================
 
   /**
-   * 创建事件历史记录（如果已存在则报错）
+   * 鍒涘缓浜嬩欢鍘嗗彶璁板綍锛堝鏋滃凡瀛樺湪鍒欐姤閿欙級
    */
   async createEventHistory(log: {
     id: string;
@@ -953,7 +965,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 创建或更新事件历史记录（幂等操作，用于迁移）
+   * 鍒涘缓鎴栨洿鏂颁簨浠跺巻鍙茶褰曪紙骞傜瓑鎿嶄綔锛岀敤浜庤縼绉伙級
    */
   async createOrUpdateEventHistory(log: {
     id: string;
@@ -973,7 +985,7 @@ export class IndexedDBService {
       const transaction = this.db!.transaction(['event_history'], 'readwrite');
       const store = transaction.objectStore('event_history');
       
-      // 使用 put（而非 add）：如果主键存在则更新，不存在则创建
+      // 浣跨敤 put锛堣€岄潪 add锛夛細濡傛灉涓婚敭瀛樺湪鍒欐洿鏂帮紝涓嶅瓨鍦ㄥ垯鍒涘缓
       const request = store.put({
         ...log,
         createdAt: formatTimeForStorage(new Date())
@@ -985,7 +997,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 查询事件历史记录
+   * 鏌ヨ浜嬩欢鍘嗗彶璁板綍
    */
   async queryEventHistory(options: {
     eventIds?: string[];
@@ -1004,19 +1016,19 @@ export class IndexedDBService {
       
       let request: IDBRequest;
 
-      // 如果有 eventIds 过滤，使用索引
+      // 濡傛灉鏈?eventIds 杩囨护锛屼娇鐢ㄧ储寮?
       if (options.eventIds && options.eventIds.length === 1) {
         const index = store.index('eventId');
         request = index.getAll(options.eventIds[0]);
       } else {
-        // 否则获取所有记录
+        // 鍚﹀垯鑾峰彇鎵€鏈夎褰?
         request = store.getAll();
       }
 
       request.onsuccess = () => {
         let results = request.result || [];
 
-        // 应用过滤条件
+        // 搴旂敤杩囨护鏉′欢
         if (options.eventIds && options.eventIds.length > 1) {
           const eventIdSet = new Set(options.eventIds);
           results = results.filter(log => eventIdSet.has(log.eventId));
@@ -1039,10 +1051,10 @@ export class IndexedDBService {
           results = results.filter(log => log.source === options.source);
         }
 
-        // 按时间倒序排序
+        // 鎸夋椂闂村€掑簭鎺掑簭
         results.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
 
-        // 分页
+        // 鍒嗛〉
         const offset = options.offset || 0;
         const limit = options.limit || 1000;
         results = results.slice(offset, offset + limit);
@@ -1055,7 +1067,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 删除单条历史记录
+   * 鍒犻櫎鍗曟潯鍘嗗彶璁板綍
    */
   async deleteEventHistory(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -1071,7 +1083,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 删除旧的历史记录
+   * 鍒犻櫎鏃х殑鍘嗗彶璁板綍
    */
   async cleanupEventHistory(olderThan: string): Promise<number> {
     if (!this.db) throw new Error('Database not initialized');
@@ -1101,7 +1113,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 获取历史统计信息
+   * 鑾峰彇鍘嗗彶缁熻淇℃伅
    */
   async getEventHistoryStats(): Promise<{
     total: number;
@@ -1124,10 +1136,10 @@ export class IndexedDBService {
         let newestTimestamp: string | null = null;
 
         logs.forEach(log => {
-          // 按操作类型统计
+          // 鎸夋搷浣滅被鍨嬬粺璁?
           byOperation[log.operation] = (byOperation[log.operation] || 0) + 1;
 
-          // 更新时间范围
+          // 鏇存柊鏃堕棿鑼冨洿
           if (!oldestTimestamp || log.timestamp < oldestTimestamp) {
             oldestTimestamp = log.timestamp;
           }
@@ -1149,30 +1161,30 @@ export class IndexedDBService {
   }
 
   /**
-   * 重置数据库（删除并重建）
+   * 閲嶇疆鏁版嵁搴擄紙鍒犻櫎骞堕噸寤猴級
    */
   async resetDatabase(): Promise<void> {
     console.log('[IndexedDBService] Resetting database...');
     
-    // 关闭现有连接
+    // 鍏抽棴鐜版湁杩炴帴
     this.close();
 
-    // 删除数据库
+    // 鍒犻櫎鏁版嵁搴?
     return new Promise((resolve, reject) => {
       const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
       
       deleteRequest.onsuccess = () => {
-        console.log('[IndexedDBService] ✅ Database deleted successfully');
+        console.log('[IndexedDBService] 鉁?Database deleted successfully');
         resolve();
       };
       
       deleteRequest.onerror = () => {
-        console.error('[IndexedDBService] ❌ Failed to delete database:', deleteRequest.error);
+        console.error('[IndexedDBService] 鉂?Failed to delete database:', deleteRequest.error);
         reject(deleteRequest.error);
       };
       
       deleteRequest.onblocked = () => {
-        console.warn('[IndexedDBService] ⚠️  Database deletion blocked (close all tabs)');
+        console.warn('[IndexedDBService] 鈿狅笍  Database deletion blocked (close all tabs)');
       };
     });
   }
@@ -1180,7 +1192,124 @@ export class IndexedDBService {
   // ==================== EventStats CRUD ====================
 
   /**
-   * 创建 EventStats
+   * 获取单条 EventStats
+   */
+  async getEventStats(id: string): Promise<EventStats | null> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readonly');
+      const store = transaction.objectStore('event_stats');
+      const request = store.get(id);
+
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 按 parentEventId 查询子节点 stats（仅直接子节点）
+   */
+  async getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readonly');
+      const store = transaction.objectStore('event_stats');
+      const index = store.index('parentEventId');
+      const request = index.getAll(IDBKeyRange.only(parentEventId));
+
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 统计某事件的直接子节点数量（基于 parentEventId 索引）
+   */
+  async countEventStatsByParentEventId(parentEventId: string): Promise<number> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readonly');
+      const store = transaction.objectStore('event_stats');
+      const index = store.index('parentEventId');
+      const request = index.count(IDBKeyRange.only(parentEventId));
+
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 统计某 rootEventId 下的子树节点总数（包含 root 本身，基于 rootEventId 索引）
+   */
+  async countEventStatsByRootEventId(rootEventId: string): Promise<number> {
+    await this.initialize();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction('event_stats', 'readonly');
+      const store = transaction.objectStore('event_stats');
+      const index = store.index('rootEventId');
+      const request = index.count(IDBKeyRange.only(rootEventId));
+
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * 批量 upsert EventStats（用于 reparent 后子树 rootEventId 传播）
+   */
+  async bulkPutEventStats(statsList: EventStats[]): Promise<void> {
+    await this.initialize();
+
+    const BATCH_SIZE = 200;
+    for (let i = 0; i < statsList.length; i += BATCH_SIZE) {
+      const batch = statsList.slice(i, i + BATCH_SIZE);
+
+      await new Promise<void>((resolve, reject) => {
+        if (!this.db) {
+          reject(new Error('Database not initialized'));
+          return;
+        }
+
+        const transaction = this.db.transaction('event_stats', 'readwrite');
+        const store = transaction.objectStore('event_stats');
+
+        for (const stats of batch) {
+          store.put(stats);
+        }
+
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(new Error('Transaction aborted'));
+      });
+    }
+  }
+
+  /**
+   * 鍒涘缓 EventStats
    */
   async createEventStats(stats: EventStats): Promise<void> {
     await this.initialize();
@@ -1193,7 +1322,7 @@ export class IndexedDBService {
 
       const transaction = this.db.transaction('event_stats', 'readwrite');
       const store = transaction.objectStore('event_stats');
-      const request = store.put(stats); // 使用 put 允许覆盖（用于补全缺失的 stats）
+      const request = store.put(stats); // 浣跨敤 put 鍏佽瑕嗙洊锛堢敤浜庤ˉ鍏ㄧ己澶辩殑 stats锛?
 
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
@@ -1201,16 +1330,16 @@ export class IndexedDBService {
   }
 
   /**
-   * 批量创建 EventStats（分批写入，避免事务超时）
+   * 鎵归噺鍒涘缓 EventStats锛堝垎鎵瑰啓鍏ワ紝閬垮厤浜嬪姟瓒呮椂锛?
    */
   async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
     await this.initialize();
     
-    const BATCH_SIZE = 100; // 每批 100 条，避免事务超时
+    const BATCH_SIZE = 100; // 姣忔壒 100 鏉★紝閬垮厤浜嬪姟瓒呮椂
     let totalSuccess = 0;
     let totalErrors = 0;
 
-    // 分批处理
+    // 鍒嗘壒澶勭悊
     for (let i = 0; i < statsList.length; i += BATCH_SIZE) {
       const batch = statsList.slice(i, i + BATCH_SIZE);
       
@@ -1254,11 +1383,11 @@ export class IndexedDBService {
       });
     }
 
-    console.log(`[IndexedDB] 📊 Bulk insert completed: ${totalSuccess} success, ${totalErrors} errors (${statsList.length} total)`);
+    console.log(`[IndexedDB] 馃搳 Bulk insert completed: ${totalSuccess} success, ${totalErrors} errors (${statsList.length} total)`);
   }
 
   /**
-   * 更新 EventStats
+   * 鏇存柊 EventStats
    */
   async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
     await this.initialize();
@@ -1276,7 +1405,7 @@ export class IndexedDBService {
       getRequest.onsuccess = () => {
         const existing = getRequest.result;
         if (!existing) {
-          // 🔧 如果 EventStats 不存在，从 events 表提取并创建
+          // 馃敡 濡傛灉 EventStats 涓嶅瓨鍦紝浠?events 琛ㄦ彁鍙栧苟鍒涘缓
           console.warn(`[IndexedDB] EventStats not found, creating from event: ${id}`);
           
           const eventsStore = transaction.objectStore('events');
@@ -1289,7 +1418,7 @@ export class IndexedDBService {
               return;
             }
             
-            // 创建新的 EventStats 记录
+            // 鍒涘缓鏂扮殑 EventStats 璁板綍
             const newStats: EventStats = {
               id: event.id,
               tags: event.tags || [],
@@ -1298,7 +1427,7 @@ export class IndexedDBService {
               endTime: event.endTime,
               source: event.source,
               updatedAt: event.updatedAt,
-              ...updates // 应用更新
+              ...updates // 搴旂敤鏇存柊
             };
             
             const putRequest = store.put(newStats);
@@ -1322,7 +1451,7 @@ export class IndexedDBService {
   }
 
   /**
-   * 删除 EventStats
+   * 鍒犻櫎 EventStats
    */
   async deleteEventStats(id: string): Promise<void> {
     await this.initialize();
@@ -1337,21 +1466,21 @@ export class IndexedDBService {
       const store = transaction.objectStore('event_stats');
       const request = store.delete(id);
 
-      // 🔧 delete 操作即使记录不存在也会成功，无需额外容错
+      // 馃敡 delete 鎿嶄綔鍗充娇璁板綍涓嶅瓨鍦ㄤ篃浼氭垚鍔燂紝鏃犻渶棰濆瀹归敊
       request.onsuccess = () => resolve();
       request.onerror = () => reject(request.error);
     });
   }
 
   /**
-   * 按日期范围查询 EventStats
+   * 鎸夋棩鏈熻寖鍥存煡璇?EventStats
    */
   async queryEventStats(options: QueryOptions): Promise<QueryResult<EventStats>> {
     await this.initialize();
     
     const perfStart = performance.now();
     
-    // 🔧 日期格式化（TimeSpec 标准格式：YYYY-MM-DD HH:mm:ss）
+    // 馃敡 鏃ユ湡鏍煎紡鍖栵紙TimeSpec 鏍囧噯鏍煎紡锛歒YYY-MM-DD HH:mm:ss锛?
     const formatDate = (date: Date): string => {
       const year = date.getFullYear();
       const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1386,9 +1515,9 @@ export class IndexedDBService {
         const results = request.result || [];
         const duration = performance.now() - perfStart;
         
-        // 只在慢查询（>50ms）或有结果时输出日志，避免刷屏
+        // 鍙湪鎱㈡煡璇紙>50ms锛夋垨鏈夌粨鏋滄椂杈撳嚭鏃ュ織锛岄伩鍏嶅埛灞?
         if (duration > 50 || results.length > 0) {
-          console.log(`[IndexedDB] ⚡ EventStats query: ${duration.toFixed(1)}ms → ${results.length} records`);
+          console.log(`[IndexedDB] 鈿?EventStats query: ${duration.toFixed(1)}ms 鈫?${results.length} records`);
         }
         
         resolve({
@@ -1403,8 +1532,8 @@ export class IndexedDBService {
   }
 
   /**
-   * 🚀 [MIGRATION] 从 events 表提取 EventStats（仅读取必要字段）
-   * 避免反序列化完整 Event 对象（eventlog、title 等大字段）
+   * 馃殌 [MIGRATION] 浠?events 琛ㄦ彁鍙?EventStats锛堜粎璇诲彇蹇呰瀛楁锛?
+   * 閬垮厤鍙嶅簭鍒楀寲瀹屾暣 Event 瀵硅薄锛坋ventlog銆乼itle 绛夊ぇ瀛楁锛?
    */
   async extractEventStatsFromEvents(): Promise<EventStats[]> {
     await this.initialize();
@@ -1426,7 +1555,7 @@ export class IndexedDBService {
         if (cursor) {
           const event = cursor.value;
           
-          // 只提取 EventStats 需要的字段（跳过 eventlog、title 等大对象）
+          // 鍙彁鍙?EventStats 闇€瑕佺殑瀛楁锛堣烦杩?eventlog銆乼itle 绛夊ぇ瀵硅薄锛?
           statsList.push({
             id: event.id,
             tags: event.tags || [],
@@ -1439,8 +1568,8 @@ export class IndexedDBService {
           
           cursor.continue();
         } else {
-          // 遍历完成
-          console.log(`[IndexedDB] 📊 Extracted ${statsList.length} EventStats records`);
+          // 閬嶅巻瀹屾垚
+          console.log(`[IndexedDB] 馃搳 Extracted ${statsList.length} EventStats records`);
           resolve(statsList);
         }
       };
@@ -1452,5 +1581,8 @@ export class IndexedDBService {
   // ==================== End EventStats CRUD ====================
 }
 
-// 导出单例实例
+// 瀵煎嚭鍗曚緥瀹炰緥
 export const indexedDBService = new IndexedDBService();
+
+
+

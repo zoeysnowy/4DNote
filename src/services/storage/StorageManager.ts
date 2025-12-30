@@ -1496,6 +1496,46 @@ export class StorageManager {
   }
 
   /**
+   * 获取单条 EventStats
+   */
+  async getEventStats(id: string): Promise<EventStats | null> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.getEventStats(id);
+  }
+
+  /**
+   * 获取某事件的直接子节点 stats（基于 parentEventId 索引）
+   */
+  async getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.getEventStatsByParentEventId(parentEventId);
+  }
+
+  /**
+   * 统计直接子节点数量
+   */
+  async countEventStatsByParentEventId(parentEventId: string): Promise<number> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.countEventStatsByParentEventId(parentEventId);
+  }
+
+  /**
+   * 统计子树节点总数（按 rootEventId 聚合）
+   */
+  async countEventStatsByRootEventId(rootEventId: string): Promise<number> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.countEventStatsByRootEventId(rootEventId);
+  }
+
+  /**
+   * 批量 upsert EventStats
+   */
+  async bulkPutEventStats(statsList: EventStats[]): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.bulkPutEventStats(statsList);
+  }
+
+  /**
    * 删除统计记录
    */
   async deleteEventStats(id: string): Promise<void> {

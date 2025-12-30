@@ -32,6 +32,7 @@ export const EventTreeViewer: React.FC<EventTreeViewerProps> = ({
       <div className="tree-content">
         <EventTreeSlate
           rootEventId={rootEventId}
+          events={events}
           onEventClick={onEventClick}
         />
       </div>

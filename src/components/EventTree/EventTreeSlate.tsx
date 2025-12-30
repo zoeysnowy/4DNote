@@ -19,9 +19,11 @@ import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 
 import { EventService } from '../../services/EventService';
+import { TagService } from '../../services/TagService';
 import { Event } from '../../types';
 import { EventTreeAPI } from '../../services/EventTree';
 import { LinkedCard } from './LinkedCard';
+import { resolveDisplayTitle } from '../../utils/TitleResolver';
 import './EventTree.css';
 
 // ==================== 类型定义 ====================
@@ -127,11 +129,14 @@ const withTreeNodes = (editor: Editor) => {
 
 export interface EventTreeSlateProps {
   rootEventId: string;
+  /** Optional snapshot of events from caller; if provided, avoids internal getAllEvents() */
+  events?: Event[];
   onEventClick?: (event: Event) => void;
 }
 
 export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
   rootEventId,
+  events,
   onEventClick,
 }) => {
   const [editor] = useState(() => withTreeNodes(withReact(withHistory(createEditor()))));
@@ -145,7 +150,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
    * ADR-001: 使用 EventTreeAPI 基于 parentEventId 构建树（避免依赖 childEventIds 漂移 + 避免 N+1 查询）
    */
   const buildTreeValue = useCallback(async (): Promise<TreeNodeElement[]> => {
-    const allEvents = await EventService.getAllEvents();
+    const allEvents = events ?? (await EventService.getAllEvents());
     const subtree = EventTreeAPI.getSubtree(rootEventId, allEvents);
     if (subtree.length === 0) return [];
 
@@ -165,9 +170,13 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
       const event = tree.nodesById.get(eventId)?._fullEvent;
       if (!event) return;
 
-      const titleText = typeof event.title === 'string'
-        ? event.title
-        : event.title?.simpleTitle || event.title?.fullTitle || '无标题';
+      const titleText = resolveDisplayTitle(event, {
+        getTagLabel: (tagId: string) => {
+          const tag = TagService.getTagById(tagId);
+          if (!tag) return undefined;
+          return tag.emoji ? `${tag.emoji} ${tag.name}` : tag.name;
+        },
+      });
 
       nodes.push({
         type: 'tree-node',
@@ -189,7 +198,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
 
     dfs(rootEventId, 0, undefined);
     return nodes;
-  }, [rootEventId]);
+  }, [rootEventId, events]);
 
   /**
    * 初始化加载树

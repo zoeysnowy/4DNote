@@ -1,4 +1,4 @@
-/**
+﻿/**
  * EventService - 统一的事件管理服�?
  * 
  * 职责�?
@@ -3286,9 +3286,19 @@ export class EventService {
     let isVirtualTime = false;
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
+
+    const hasNoExplicitTime =
+      (event.startTime == null || event.startTime === '') &&
+      (event.endTime == null || event.endTime === '');
+
+    const isPlanLike = (event as any).isPlan === true || (event as any).isPlan === 1 || (event as any).isPlan === 'true';
+    const isTaskLike = (event as any).isTask === true || (event as any).isTask === 1 || (event as any).isTask === 'true';
+    const isTypeTaskLike = event.type === 'todo' || event.type === 'task';
+    const isCheckTypeTaskLike = typeof (event as any).checkType === 'string' && (event as any).checkType !== 'none';
+    const isPlanOrTaskLike = isPlanLike || isTaskLike || isTypeTaskLike || isCheckTypeTaskLike;
     
     // 检测 note 事件：没有真实时间的事件
-    if (!event.startTime && !event.endTime) {
+    if (hasNoExplicitTime && !!event.eventlog && !isPlanOrTaskLike) {
       const createdDate = new Date(finalCreatedAt);
       syncStartTime = formatTimeForStorage(createdDate);
       syncEndTime = null;  // ⚠️ endTime 保持为空，虚拟时间仅在同步时添加
@@ -3301,7 +3311,8 @@ export class EventService {
         startTime: syncStartTime,
         endTime: syncEndTime,
         isVirtualTime: true,
-        reason: '无原始时间'
+        guardVersion: 'plan-skip-2025-12-28',
+        reason: '无原始时间 + 非Plan/Task Note'
       });
     }
     
@@ -6835,3 +6846,67 @@ export class EventService {
 if (typeof window !== 'undefined') {
   (window as any).EventService = EventService;
 }
+// __TERMINAL_PATCH_MARKER__
+
+
+export type EventTreeContext = {
+  rootEventId: string;
+  rootEvent: any | null;
+  subtreeCount: number;
+  directChildCount: number;
+};
+
+// Fallback implementation (truth = parentEventId). This is intentionally rebuildable and does not rely on childEventIds.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+(EventService as any).getEventTreeContext = async function getEventTreeContext(eventId: string): Promise<EventTreeContext> {
+  const allEvents = await EventService.getAllEvents();
+  const byId = new Map(allEvents.map((e: any) => [e.id, e]));
+  const target = byId.get(eventId) || null;
+
+  // Root: walk parentEventId chain.
+  let rootId = eventId;
+  const seen = new Set<string>();
+  while (true) {
+    if (seen.has(rootId)) break;
+    seen.add(rootId);
+    const e = byId.get(rootId);
+    const parentId = (e as any)?.parentEventId ?? null;
+    if (!parentId) break;
+    if (!byId.has(parentId)) {
+      // Parent missing: treat current as root.
+      break;
+    }
+    rootId = parentId;
+  }
+
+  const childrenMap = new Map<string, any[]>();
+  for (const e of allEvents as any[]) {
+    const p = (e as any)?.parentEventId ?? null;
+    if (!p) continue;
+    const arr = childrenMap.get(p);
+    if (arr) arr.push(e);
+    else childrenMap.set(p, [e]);
+  }
+
+  const directChildCount = (childrenMap.get(eventId) || []).length;
+
+  // Subtree size for the whole tree rooted at rootId.
+  let subtreeCount = 0;
+  const queue: string[] = [rootId];
+  const visited = new Set<string>();
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (visited.has(id)) continue;
+    visited.add(id);
+    if (byId.has(id)) subtreeCount += 1;
+    const kids = childrenMap.get(id) || [];
+    for (const k of kids) queue.push(k.id);
+  }
+
+  return {
+    rootEventId: rootId,
+    rootEvent: byId.get(rootId) || null,
+    subtreeCount,
+    directChildCount,
+  };
+};
