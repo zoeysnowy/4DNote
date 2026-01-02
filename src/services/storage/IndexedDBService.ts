@@ -35,7 +35,7 @@ import type {
   EventStats
 } from './types';
 
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
 
 const DB_NAME = '4DNoteDB';
 const DB_VERSION = 4; // v4: event_stats adds parentEventId/rootEventId indexes for tree context
@@ -527,17 +527,10 @@ export class IndexedDBService {
     if (!existingEvent) {
       throw new Error(`Event not found: ${id}`);
     }
-    // 馃敡 [TIMESPEC] 浣跨敤 formatTimeForStorage 纭繚 TimeSpec 鏍煎紡
-    const formatTimeForStorage = (date: Date): string => {
-      const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      const seconds = String(date.getSeconds()).padStart(2, '0');
-      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    };
-    const updatedEvent = { ...existingEvent, ...updates, updatedAt: formatTimeForStorage(new Date()) };
+    // Contract: Storage must not overwrite business fields (especially updatedAt).
+    // updatedAt should be decided by the application layer; if caller doesn't pass it,
+    // we keep the existing value.
+    const updatedEvent = { ...existingEvent, ...updates };
     this.clearQueryCache(); // 娓呴櫎缂撳瓨
     return this.put('events', updatedEvent);
   }
@@ -709,7 +702,12 @@ export class IndexedDBService {
       const request = store.getAll();
 
       request.onsuccess = () => {
-        let contacts = request.result as Contact[];
+        type StoredContact = Contact & {
+          deletedAt?: string | null;
+          source?: string | null;
+        };
+
+        let contacts = request.result as StoredContact[];
 
         // 杩囨护宸插垹闄ょ殑鑱旂郴浜?
         contacts = contacts.filter(c => !c.deletedAt);
@@ -741,9 +739,11 @@ export class IndexedDBService {
         }
 
         // 鎺掑簭
-        contacts.sort((a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
+        contacts.sort((a, b) => {
+          const aTime = parseLocalTimeStringOrNull(a.updatedAt)?.getTime() ?? 0;
+          const bTime = parseLocalTimeStringOrNull(b.updatedAt)?.getTime() ?? 0;
+          return bTime - aTime;
+        });
 
         // 鍒嗛〉
         const offset = options.offset || 0;
@@ -1040,11 +1040,11 @@ export class IndexedDBService {
         }
 
         if (options.startTime) {
-          results = results.filter(log => log.timestamp >= options.startTime!);
+          results = results.filter(log => log.timestamp >= options.startTime);
         }
 
         if (options.endTime) {
-          results = results.filter(log => log.timestamp <= options.endTime!);
+          results = results.filter(log => log.timestamp <= options.endTime);
         }
 
         if (options.source) {

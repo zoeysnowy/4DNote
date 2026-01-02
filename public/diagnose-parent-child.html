@@ -55,6 +55,17 @@
     let brokenRefs = [];
     let allEvents = [];
 
+    function buildParentToChildrenMap(events) {
+      const map = new Map();
+      events.forEach(e => {
+        if (!e.parentEventId) return;
+        const arr = map.get(e.parentEventId) || [];
+        arr.push(e);
+        map.set(e.parentEventId, arr);
+      });
+      return map;
+    }
+
     function log(msg, type = 'info') {
       const output = document.getElementById('output');
       const colors = {
@@ -99,21 +110,21 @@
           log(`  L${level}: ${byLevel[level].length} 个事件`, 'info');
         });
 
-        // 检查根事件的 childEventIds
+        // 检查根事件（ADR-001：以 parentEventId 为结构真相）
         log(`\n🔗 根事件检查`, 'info');
         const roots = uuidEvents.filter(e => !e.parentEventId);
         log(`根事件: ${roots.length} 个`, 'info');
 
+        const parentToChildren = buildParentToChildrenMap(uuidEvents);
+
         roots.forEach((root, idx) => {
+          const derivedDirectChildren = parentToChildren.get(root.id) || [];
           log(`\n📌 根事件 ${idx + 1}: ${root.title?.simpleTitle}`, 'info');
           log(`  ID: ${root.id}`, 'info');
           log(`  bulletLevel: ${root.bulletLevel}`, 'info');
-          log(`  childEventIds: ${root.childEventIds?.length || 0} 个`, 
-              root.childEventIds?.length > 0 ? 'success' : 'warning');
-
-          if (!root.childEventIds || root.childEventIds.length === 0) {
-            log(`  ⚠️ 根事件没有 childEventIds，可能是数据问题！`, 'warning');
-          }
+          log(`  直接子节点（由 parentEventId 派生）: ${derivedDirectChildren.length} 个`,
+              derivedDirectChildren.length > 0 ? 'success' : 'warning');
+          log(`  childEventIds(legacy): ${root.childEventIds?.length || 0} 个（不维护/不依赖）`, 'info');
         });
 
         // 检查父子关系完整性
@@ -122,7 +133,7 @@
         
         const children = uuidEvents.filter(e => e.parentEventId);
         log(`子事件: ${children.length} 个 (包含所有层级的后代)`, 'info');
-        log(`注意: childEventIds 只记录直接子节点，不包含递归后代`, 'info');
+        log(`注意: ADR-001 以 parentEventId 为结构真相；childEventIds 为 legacy 字段，不作为正确性校验依据`, 'info');
 
         children.forEach(child => {
           const parent = allEvents.find(e => e.id === child.parentEventId);
@@ -134,46 +145,33 @@
               childTitle: child.title?.simpleTitle,
               missingParentId: child.parentEventId
             });
-          } else if (!parent.childEventIds || !parent.childEventIds.includes(child.id)) {
-            brokenRefs.push({
-              type: 'missing-child-ref',
-              childId: child.id,
-              childTitle: child.title?.simpleTitle,
-              parentId: parent.id,
-              parentTitle: parent.title?.simpleTitle
-            });
           }
         });
 
         if (brokenRefs.length > 0) {
           log(`\n⚠️ 发现 ${brokenRefs.length} 个断裂的父子关系：`, 'error');
           brokenRefs.forEach((ref, idx) => {
-            if (ref.type === 'missing-parent') {
-              log(`  ${idx + 1}. 子事件 ${ref.childTitle}`, 'error');
-              log(`     → 父事件不存在: ${ref.missingParentId.slice(-8)}`, 'error');
-            } else {
-              log(`  ${idx + 1}. 子事件 ${ref.childTitle}`, 'warning');
-              log(`     → 父事件 ${ref.parentTitle} 的 childEventIds 中缺少此子事件`, 'warning');
-            }
+            log(`  ${idx + 1}. 子事件 ${ref.childTitle}`, 'error');
+            log(`     → 父事件不存在: ${ref.missingParentId.slice(-8)}`, 'error');
           });
-          document.getElementById('fixBtn').disabled = false;
+          document.getElementById('fixBtn').disabled = true;
         } else {
-          log(`\n✅ 所有父子关系完整 (每个子事件都在其父事件的 childEventIds 中)`, 'success');
+          log(`\n✅ 所有 parentEventId 引用均有对应父事件`, 'success');
           
           // 显示层级树示例
           if (roots.length > 0) {
             log(`\n🌲 层级树示例 (第1个根事件):`, 'info');
             const root = roots[0];
             const directL1 = uuidEvents.filter(e => e.parentEventId === root.id);
-            log(`  L0: ${root.title?.simpleTitle} (${root.childEventIds?.length || 0} 个直接子节点)`, 'info');
+            log(`  L0: ${root.title?.simpleTitle} (${directL1.length} 个直接子节点)`, 'info');
             
             directL1.slice(0, 2).forEach(l1 => {
               const directL2 = uuidEvents.filter(e => e.parentEventId === l1.id);
-              log(`    ├─ L1: ${l1.title?.simpleTitle} (${l1.childEventIds?.length || 0} 个直接子节点)`, 'info');
+              log(`    ├─ L1: ${l1.title?.simpleTitle} (${directL2.length} 个直接子节点)`, 'info');
               
               directL2.slice(0, 2).forEach(l2 => {
                 const directL3 = uuidEvents.filter(e => e.parentEventId === l2.id);
-                log(`    │  ├─ L2: ${l2.title?.simpleTitle} (${l2.childEventIds?.length || 0} 个直接子节点)`, 'info');
+                log(`    │  ├─ L2: ${l2.title?.simpleTitle} (${directL3.length} 个直接子节点)`, 'info');
                 
                 if (directL3.length > 0) {
                   log(`    │  │  └─ L3: ${directL3[0].title?.simpleTitle} ...`, 'info');
@@ -223,42 +221,7 @@
     };
 
     window.fixBrokenRefs = async function() {
-      if (brokenRefs.length === 0) {
-        log('没有需要修复的问题', 'info');
-        return;
-      }
-
-      if (!confirm(`确认修复 ${brokenRefs.length} 个断裂的父子关系？`)) {
-        return;
-      }
-
-      log(`\n🔧 开始修复...`, 'info');
-      let fixed = 0;
-
-      for (const ref of brokenRefs) {
-        if (ref.type === 'missing-child-ref') {
-          try {
-            const parent = allEvents.find(e => e.id === ref.parentId);
-            if (parent) {
-              const childIds = parent.childEventIds || [];
-              if (!childIds.includes(ref.childId)) {
-                await EventService.updateEvent(parent.id, {
-                  childEventIds: [...childIds, ref.childId]
-                }, true); // skipSync=true
-                
-                fixed++;
-                log(`  ✅ 已修复: ${ref.parentTitle} → ${ref.childTitle}`, 'success');
-              }
-            }
-          } catch (err) {
-            log(`  ❌ 修复失败: ${ref.childTitle} - ${err.message}`, 'error');
-          }
-        }
-      }
-
-      log(`\n✅ 修复完成：${fixed}/${brokenRefs.length}`, 'success');
-      log(`请点击 "开始诊断" 重新验证`, 'info');
-      document.getElementById('fixBtn').disabled = true;
+      log('⚠️ ADR-001: 不再提供基于 childEventIds 的自动修复。请根据 parentEventId 修复缺失父节点或数据导入问题。', 'warning');
     };
   </script>
 </body>

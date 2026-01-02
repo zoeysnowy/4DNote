@@ -9,6 +9,8 @@
  * @version 1.0
  */
 
+import { parseLocalTimeStringOrNull } from './timeUtils';
+
 export interface TimeDiffResult {
   /** 是否有差异 */
   hasDiff: boolean;
@@ -40,8 +42,23 @@ export function calculateTimeDiff(
   originalTime: string | Date,
   currentTime: string | Date
 ): TimeDiffResult {
-  const original = typeof originalTime === 'string' ? new Date(originalTime) : originalTime;
-  const current = typeof currentTime === 'string' ? new Date(currentTime) : currentTime;
+  const original = typeof originalTime === 'string'
+    ? (parseLocalTimeStringOrNull(originalTime) ?? new Date(originalTime))
+    : originalTime;
+  const current = typeof currentTime === 'string'
+    ? (parseLocalTimeStringOrNull(currentTime) ?? new Date(currentTime))
+    : currentTime;
+
+  if (Number.isNaN(original.getTime()) || Number.isNaN(current.getTime())) {
+    return {
+      hasDiff: false,
+      description: '时间未变化',
+      direction: 'same',
+      diffMs: 0,
+      value: 0,
+      unit: '分钟',
+    };
+  }
   
   const diffMs = current.getTime() - original.getTime();
   

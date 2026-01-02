@@ -103,7 +103,7 @@ import { HeadlessFloatingToolbar } from '../FloatingToolbar/HeadlessFloatingTool
 import { useFloatingToolbar } from '../FloatingToolbar/useFloatingToolbar';
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../PlanSlate/serialization';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
 import { EventRelationSummary } from '../EventTree/EventRelationSummary';
 import { EventTreeViewer } from '../EventTree/EventTreeViewer';
 import { extractImagesFromHTML, extractedImagesToBlobs } from '../../utils/htmlImageExtractor';
@@ -265,7 +265,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
    * ==================== formData 初始化 ====================
    * 
    * 数据来源：
-   * 1. 编辑已有事件：props.event（来自 EventService.getAllEvents()）
+  * 1. 编辑已有事件：props.event（来自上层“订阅视图/按需读取”，例如 getEventById 或快照视图）
    * 2. 创建新事件：TimeCalendar 传入的临时对象（带 local-${timestamp} ID）
    * 
    * 字段说明：
@@ -287,8 +287,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // 🏷️ 可用标签列表（订阅 TagService 更新）
   const [availableTags, setAvailableTags] = useState(() => TagService.getTags());
   
-  // 🌲 EventTree: 加载所有事件用于树状图
-  const [allEvents, setAllEvents] = useState<any[]>([]);
+  // 🌲 EventTree: 仅用于 EventTreeViewer 的“视图快照”（不是领域真相）
+  // 只在用户展开 EventTree 面板时加载/增量同步。
+  const [eventTreeEvents, setEventTreeEvents] = useState<any[]>([]);
 
   // 🔍 [已删除] State变化追踪器 - 导致频繁 re-render，仅在开发时需要可手动启用
   
@@ -357,29 +358,80 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const [tagPickerPosition, setTagPickerPosition] = useState({ top: 0, left: 0, width: 0 });
   const [currentTime, setCurrentTime] = useState<number>(Date.now());
 
-  // 🔥 延迟加载 allEvents - 只在用户打开 EventTree 时才加载，避免打开Modal时就触发re-render导致失焦
+  // 🔥 仅在用户展开 EventTree 时加载 + 增量同步（避免 Modal 打开即全量加载）
   React.useEffect(() => {
-    console.log('🔄 [useEffect] loadEvents 触发', { showEventTree, allEventsLength: allEvents.length });
+    if (!isOpen) return;
+    if (!showEventTree) return;
+
+    let cancelled = false;
+    console.log('🔄 [useEffect] EventTreeViewer snapshot init');
+
     const loadEvents = async () => {
-      const events = await EventService.getAllEvents();
-      setAllEvents(prev => {
-        // 比较ID数组避免循环
-        const prevIds = prev.map(e => e.id).sort().join(',');
-        const newIds = events.map((e: any) => e.id).sort().join(',');
-        if (prevIds === newIds) {
-          console.log('⏭️ [useEffect] loadEvents 跳过更新(ID相同)');
-          return prev;
-        }
-        console.log('✅ [useEffect] loadEvents 更新', { prevCount: prev.length, newCount: events.length });
-        return events;
-      });
+      try {
+        const events = await EventService.getAllEvents();
+        if (cancelled) return;
+        setEventTreeEvents(prev => {
+          const prevIds = prev.map(e => e.id).sort().join(',');
+          const newIds = (events as any[]).map(e => e.id).sort().join(',');
+          if (prevIds === newIds) return prev;
+          return events as any[];
+        });
+      } catch (err) {
+        if (cancelled) return;
+        console.warn('[EventEditModalV2] Failed to load EventTreeViewer events snapshot:', err);
+        setEventTreeEvents([]);
+      }
     };
-    
-    // 🔥 只在打开EventTree时才加载（延迟加载，避免打开Modal时就加载导致失焦）
-    if (isOpen && showEventTree && allEvents.length === 0) {
-      loadEvents();
-    }
-  }, [isOpen, showEventTree, allEvents.length]);
+
+    const handleEventsUpdated = (evt: any) => {
+      const detail = evt?.detail || {};
+      const updatedEvent = detail?.event;
+      const deleted = !!detail?.deleted;
+      const updatedEventId = detail?.eventId;
+
+      if (deleted && updatedEventId) {
+        setEventTreeEvents(prev => prev.filter(e => e?.id !== updatedEventId));
+        return;
+      }
+
+      if (updatedEvent && updatedEvent.id) {
+        setEventTreeEvents(prev => {
+          const index = prev.findIndex(e => e?.id === updatedEvent.id);
+          if (index >= 0) {
+            const next = prev.slice();
+            next[index] = updatedEvent;
+            return next;
+          }
+          return [...prev, updatedEvent];
+        });
+        return;
+      }
+
+      // 降级：只有 eventId 时，尝试补拉单条更新
+      if (updatedEventId) {
+        EventService.getEventById(updatedEventId).then(fetched => {
+          if (cancelled) return;
+          if (!fetched) return;
+          setEventTreeEvents(prev => {
+            const index = prev.findIndex(e => e?.id === fetched.id);
+            if (index >= 0) {
+              const next = prev.slice();
+              next[index] = fetched as any;
+              return next;
+            }
+            return [...prev, fetched as any];
+          });
+        });
+      }
+    };
+
+    loadEvents();
+    window.addEventListener('eventsUpdated', handleEventsUpdated);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('eventsUpdated', handleEventsUpdated);
+    };
+  }, [isOpen, showEventTree]);
 
   // 🌳 EventTree Context（无需全量 allEvents）
   // 用于 Level0 / 懒加载场景：即使 allEvents 尚未加载，也能判断是否有下级/根节点
@@ -408,12 +460,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // 🌲 EditModal EventTree: 以“当前事件所属 Level0 根节点”为 root，显示整棵子树
   const eventTreeRootId = React.useMemo(() => {
     if (!formData?.id) return '';
-    // 优先使用 stats-backed context（无需等待 allEvents 全量加载）
-    if (eventTreeContext?.rootEventId) return eventTreeContext.rootEventId;
-    if (!allEvents || allEvents.length === 0) return formData.id;
-    const root = EventTreeAPI.getRootEvent(formData.id, allEvents as any);
-    return root?.id || formData.id;
-  }, [formData.id, allEvents, eventTreeContext?.rootEventId]);
+    // 优先使用 stats-backed context（无需等待 EventTreeViewer 的全量快照）
+    return eventTreeContext?.rootEventId || formData.id;
+  }, [formData.id, eventTreeContext?.rootEventId]);
   
   // titleRef/initialSnapshotRef/isAutoSavingRef 已在 useEventEditDraft 内统一管理
   
@@ -424,9 +473,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   
   // 🔧 使用 useMemo 缓存 EventTree 数据，避免频繁序列化
   const eventTreeData = React.useMemo(() => {
-    if (!event) return { childEventIds: [], linkedEventIds: [], backlinks: [] };
+    if (!event) return { linkedEventIds: [], backlinks: [] };
     return {
-      childEventIds: (event as any).childEventIds || [],
       linkedEventIds: (event as any).linkedEventIds || [],
       backlinks: (event as any).backlinks || [],
     };
@@ -855,42 +903,26 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       let endTimeForStorage = formData.endTime;
       
       if (formData.startTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
-        try {
-          // ✅ 先尝试解析为 Date 对象（支持多种格式）
-          const startDate = parseLocalTimeString(formData.startTime);
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const startDate = parseLocalTimeStringOrNull(formData.startTime);
+        if (startDate) {
           startTimeForStorage = formatTimeForStorage(startDate);
           console.log('✅ [EventEditModalV2] startTime 转换成功:', startTimeForStorage);
-        } catch (parseError) {
-          // 降级：尝试用 new Date 解析
-          const startDate = new Date(formData.startTime);
-          if (!isNaN(startDate.getTime())) {
-            startTimeForStorage = formatTimeForStorage(startDate);
-            console.log('✅ [EventEditModalV2] startTime 转换成功(降级):', startTimeForStorage);
-          } else {
-            console.warn('[EventEditModalV2] 无法解析 startTime，保持原值:', formData.startTime);
-          }
+        } else {
+          console.warn('[EventEditModalV2] 无法解析 startTime，保持原值:', formData.startTime);
         }
       } else {
         console.warn('⚠️ [EventEditModalV2] formData.startTime 为空，跳过时间格式化');
       }
       
       if (formData.endTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
-        try {
-          // ✅ 先尝试解析为 Date 对象（支持多种格式）
-          const endDate = parseLocalTimeString(formData.endTime);
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const endDate = parseLocalTimeStringOrNull(formData.endTime);
+        if (endDate) {
           endTimeForStorage = formatTimeForStorage(endDate);
           console.log('✅ [EventEditModalV2] endTime 转换成功:', endTimeForStorage);
-        } catch (parseError) {
-          // 降级：尝试用 new Date 解析
-          const endDate = new Date(formData.endTime);
-          if (!isNaN(endDate.getTime())) {
-            endTimeForStorage = formatTimeForStorage(endDate);
-            console.log('✅ [EventEditModalV2] endTime 转换成功(降级):', endTimeForStorage);
-          } else {
-            console.warn('[EventEditModalV2] 无法解析 endTime，保持原值:', formData.endTime);
-          }
+        } else {
+          console.warn('[EventEditModalV2] 无法解析 endTime，保持原值:', formData.endTime);
         }
       } else {
         console.warn('⚠️ [EventEditModalV2] formData.endTime 为空，跳过时间格式化');
@@ -1071,8 +1103,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // 🔧 Step 9: 判断是创建还是更新
       // 检查 EventService（持久化层）而不是 EventHub 缓存
       // 原因：EventHub 可能缓存了 TimeCalendar 传入的临时对象
-      const allEvents = await EventService.getAllEvents();
-      const existingEvent = allEvents.find((e: Event) => e.id === eventId);
+      const existingEvent = await EventService.getEventById(eventId);
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
       const isSystemChild = !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp);
@@ -1940,10 +1971,25 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
    * 格式化时间显示
    */
   const formatTimeDisplay = (startTime: string | null, endTime: string | null) => {
-    if (!startTime) return null;
-    
-    const start = new Date(startTime);
-    const end = endTime ? new Date(endTime) : null;
+    const primaryTime = startTime || endTime;
+    if (!primaryTime) return null;
+
+    let start: Date;
+    let end: Date | null = null;
+
+    try {
+      start = parseLocalTimeString(primaryTime);
+    } catch {
+      return null;
+    }
+
+    if (startTime && endTime) {
+      try {
+        end = parseLocalTimeString(endTime);
+      } catch {
+        end = null;
+      }
+    }
     
     // 格式化日期和星期
     const dateStr = start.toLocaleDateString('zh-CN', { 
@@ -2005,8 +2051,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
    */
   const calculateTimerDuration = (timerEvent: Event): number => {
     if (!timerEvent.startTime || !timerEvent.endTime) return 0;
-    const start = new Date(timerEvent.startTime).getTime();
-    const end = new Date(timerEvent.endTime).getTime();
+    let start: number;
+    let end: number;
+    try {
+      start = parseLocalTimeString(timerEvent.startTime).getTime();
+      end = parseLocalTimeString(timerEvent.endTime).getTime();
+    } catch {
+      return 0;
+    }
     return end - start;
   };
 
@@ -2038,8 +2090,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
    * 检查两个时间是否跨天
    */
   const isCrossingDay = (startTime: string, endTime: string): boolean => {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
+    const start = parseLocalTimeStringOrNull(startTime);
+    const end = parseLocalTimeStringOrNull(endTime);
+    if (!start || !end) return false;
     return start.getDate() !== end.getDate() || start.getMonth() !== end.getMonth() || start.getFullYear() !== end.getFullYear();
   };
 
@@ -2665,10 +2718,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                               // 直接使用 EventService 创建事件（不会关闭 Modal）
                               // 注意：根据 PRD，即使没有标题、没有标签也可以计时
                               
-                              // 🔧 转换 title 格式：formData.title 是字符串，Event.title 需要对象
-                              const titleObj = typeof formData.title === 'string' 
-                                ? { simpleTitle: formData.title }
-                                : formData.title;
+                              // ✅ 关键：不要把 Slate JSON 字符串塞进 simpleTitle。
+                              // 让 EventService.normalizeEvent/normalizeTitle 统一识别与派生。
+                              const titleObj = formData.title as any;
                               
                               console.log('🔧 [Timer Start Button] 准备保存事件:', {
                                 'formData.title': formData.title,
@@ -3169,8 +3221,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                         {childEvents.map((timerEvent) => {
                           if (!timerEvent.startTime || !timerEvent.endTime) return null;
                           
-                          const start = new Date(timerEvent.startTime);
-                          const end = new Date(timerEvent.endTime);
+                          const start = parseLocalTimeStringOrNull(timerEvent.startTime);
+                          const end = parseLocalTimeStringOrNull(timerEvent.endTime);
+                          if (!start || !end) return null;
                           const isCrossDay = isCrossingDay(timerEvent.startTime, timerEvent.endTime);
                           
                           // 格式化日期和星期
@@ -3506,10 +3559,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* 关联区域 - 智能摘要 */}
                     {(() => {
                       const hasParent = formData.parentEventId;
-                      const childCount =
-                        (eventTreeContext?.directChildCount ??
-                          allEvents.filter(e => (e as any).parentEventId === formData.id).length) ||
-                        0;
+                      const childCount = eventTreeContext?.directChildCount ?? 0;
                       const hasChildren = childCount > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
@@ -3519,11 +3569,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                       console.log('🔍🔍🔍 [关联信息检查] formData 当前状态:', {
                         '步骤1_formData完整对象': formData,
                         '步骤2_formData.id': formData.id,
-                        '步骤3_formData.childEventIds': formData.childEventIds,
-                        '步骤4_formData.childEventIds类型': typeof formData.childEventIds,
-                        '步骤5_formData.childEventIds是数组吗': Array.isArray(formData.childEventIds),
-                        '步骤6_formData.childEventIds长度': formData.childEventIds?.length,
-                        '步骤6b_派生childCount(parentEventId)': childCount,
+                        '步骤3_派生childCount(parentEventId)': childCount,
                         '步骤7_hasChildren判断结果': hasChildren,
                         '步骤8_linkedEventIds': formData.linkedEventIds,
                         '步骤9_backlinks': formData.backlinks,
@@ -3572,10 +3618,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                             if (formData.parentEventId) {
                               parts.push('上级：1个');
                             }
-                            const childCount =
-                              (eventTreeContext?.directChildCount ??
-                                allEvents.filter(e => (e as any).parentEventId === formData.id).length) ||
-                              0;
+                            const childCount = eventTreeContext?.directChildCount ?? 0;
                             if (childCount > 0) {
                               // TODO: 统计任务完成情况
                               parts.push(`下级：${childCount}个`);
@@ -3611,9 +3654,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* EventTree 展开区域 */}
                     {showEventTree && (() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren =
-                        (eventTreeContext?.directChildCount ??
-                          (allEvents.some(e => (e as any).parentEventId === formData.id) ? 1 : 0)) > 0;
+                      const hasChildren = (eventTreeContext?.directChildCount ?? 0) > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3623,7 +3664,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                       <div style={{ marginBottom: '16px', marginTop: '0' }}>
                         <EventTreeViewer
                           rootEventId={eventTreeRootId || formData.id}
-                          events={allEvents}
+                          events={eventTreeEvents}
                           onEventClick={(clickedEvent) => {
                             setFormData(clickedEvent as any);
                             setShowEventTree(false);
@@ -3635,9 +3676,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                     {/* 🔧 开发调试：始终显示关联区域（方便测试） */}
                     {!(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren =
-                        (eventTreeContext?.directChildCount ??
-                          (allEvents.some(e => (e as any).parentEventId === formData.id) ? 1 : 0)) > 0;
+                      const hasChildren = (eventTreeContext?.directChildCount ?? 0) > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       return hasParent || hasChildren || hasLinked || hasBacklinks;

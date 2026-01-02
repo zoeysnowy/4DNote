@@ -193,39 +193,17 @@ L0 根事件 (id: root)
 
 ---
 
-### 4️⃣ EventService - 双向关联维护
+### 4️⃣ EventService - 父子关系（ADR-001：parentEventId 真相）
 
 **位置**: `src/services/EventService.ts` L602-630
 
-**创建事件时自动关联**:
-```typescript
-// 🆕 自动维护父子事件双向关联
-if (finalEvent.parentEventId) {
-  const parentEvent = await this.getEventById(finalEvent.parentEventId);
-  
-  if (parentEvent) {
-    const childIds = parentEvent.childEventIds || [];
-    
-    // 添加子事件 ID（避免重复）
-    if (!childIds.includes(finalEvent.id)) {
-      await this.updateEvent(parentEvent.id, {
-        childEventIds: [...childIds, finalEvent.id]  // 🔑 更新父事件
-      }, true);
-      
-      eventLogger.log('🔗 已关联子事件到父事件:', {
-        parentId: parentEvent.id,
-        childId: finalEvent.id,
-        totalChildren: childIds.length + 1
-      });
-    }
-  }
-}
-```
+**说明**:
+- 创建子事件时，只需写入 `parentEventId`
+- 子列表通过 `parentEventId` 派生/查询获得；不维护/不依赖 `childEventIds`
 
 **验证结果**:
-- ✅ 创建带 `parentEventId` 的子事件时，自动更新父事件的 `childEventIds`
-- ✅ UUID格式ID正确用于双向关联
-- ✅ 避免重复添加子事件
+- ✅ 创建带 `parentEventId` 的子事件时，父子结构可恢复（以 parentEventId 为准）
+- ✅ UUID 格式 ID 在父子关系中正确使用
 
 ---
 
@@ -265,8 +243,8 @@ const childEvent = {
 ✅ bulletLevel: 1 (持久化正确)
 ✅ position: 1 (持久化正确)
 
-✅ 父事件的双向关联:
-✅ childEventIds包含子事件 (双向关联正确)
+✅ 结构派生验证:
+✅ 通过查询 `parentEventId` 可得到父事件的子列表
 ```
 
 **运行测试**: 刷新测试页面，点击 **"7️⃣ 测试层级结构字段"**
@@ -280,7 +258,7 @@ const childEvent = {
 | 字段 | 类型 | UUID迁移影响 | 说明 |
 |------|------|-------------|------|
 | `parentEventId` | `string` | ✅ 无影响 | 仍然存储父事件ID，只是格式从nanoid变为UUID |
-| `childEventIds` | `string[]` | ✅ 无影响 | 仍然存储子事件ID数组，UUID格式 |
+| `childEventIds` | `string[]` | ✅ 无影响 | legacy 字段（若存在则保留，但不作为结构真相） |
 | `bulletLevel` | `number` | ✅ 无影响 | 数值字段，与ID格式无关 |
 | `position` | `number` | ✅ 无影响 | 数值字段，与ID格式无关 |
 
@@ -321,11 +299,10 @@ const childEvent = {
 ### PlanSlate Shift+Tab
 - ✅ `parentEventId` 可设为 `null`
 - ✅ `position` 正确计算
-- ✅ 双向关联正确更新
+- ✅ 父子结构可恢复（以 parentEventId 为准）
 
-### EventService 双向关联
-- ✅ 自动更新父事件的 `childEventIds`
-- ✅ 避免重复关联
+### EventService 父子关系（ADR-001）
+- ✅ 持久化 parentEventId
 - ✅ UUID ID 正确存储
 
 ---
@@ -337,10 +314,10 @@ const childEvent = {
 1. ✅ **字段保留**: `EventService.normalizeEvent()` 通过 `...event` 展开保留所有字段
 2. ✅ **Tab缩进**: 正确设置 `parentEventId` 和 `bulletLevel` 到 `metadata`
 3. ✅ **UUID兼容**: 层级字段与ID格式无关，UUID迁移无影响
-4. ✅ **双向关联**: 父子事件的 `childEventIds` 自动维护
-5. ✅ **持久化**: 所有字段正确保存到数据库
+4. ✅ **父子关系（ADR-001）**: 以 `parentEventId` 为结构真相（不维护/不依赖 `childEventIds`）
+5. ✅ **持久化**: 相关字段正确保存到数据库
 
-**UUID迁移不会破坏任何层级结构逻辑，所有字段正常工作！** 🎉
+**UUID 迁移不会破坏层级结构逻辑（以 parentEventId 为准）。** 🎉
 
 ---
 

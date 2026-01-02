@@ -233,8 +233,8 @@ const handleBeforeUpdateEvent = async (updateInfo: any) => {
   const updatedCalendarEvent = { ...calendarEvent, ...changes };
   const updatedEvent = convertFromCalendarEvent(updatedCalendarEvent, originalEvent);
   
-  // 3. 保存到 localStorage
-  localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(updatedEvents));
+  // 3. 持久化（以 EventService/StorageManager 为准）
+  await EventService.updateEvent(updatedEvent.id, updatedEvent as any, true);
   setEvents(updatedEvents);
   
   // 4. 触发同步
@@ -680,7 +680,7 @@ const loadEvents = useCallback(async () => {
 ```
 
 **架构变化**:
-- ❌ **废弃**: 直接从 `localStorage.getItem(STORAGE_KEYS.EVENTS)` 读取
+- ❌ **废弃**: 直接从“localStorage 事件缓存”读取
 - ✅ **新架构**: 通过 `EventService.getAllEvents()` → `StorageManager.queryEvents()` → `IndexedDB/SQLite`
 - ✅ **异步调用**: `loadEvents` 改为 `async` 函数，使用 `await` 获取数据
 - ✅ **数据验证**: 由 EventService 和 StorageManager 自动处理（过滤已删除事件、规范化字段）
@@ -1625,7 +1625,7 @@ const getRunningTimerEventId = (eventsToSearch: Event[]) => {
 
 | 功能点 | 旧实现 | 新实现 | 状态 |
 |-------|-------|-------|------|
-| 初始化加载 | `localStorage.getItem(STORAGE_KEYS.EVENTS)` | `await EventService.getAllEvents()` | ✅ 已修复 |
+| 初始化加载 | 直接从“localStorage 事件缓存”读取 | `await EventService.getAllEvents()` | ✅ 已修复 |
 | 增量更新 | `EventService.getEventById()` (同步) | `await EventService.getEventById()` | ✅ 已修复 |
 | 点击事件 | `EventService.getEventById()` (同步) | `await EventService.getEventById()` | ✅ 已修复 |
 | 拖拽更新 | `EventService.getEventById()` (同步) | `await EventService.getEventById()` | ✅ 已修复 |

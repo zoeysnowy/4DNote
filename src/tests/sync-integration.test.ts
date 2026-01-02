@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { Event } from '../../../types';
+import { describe, it, expect } from 'vitest';
 
 // 测试用的事件数据
 const testEvent: Event = {
@@ -103,15 +104,14 @@ export const validateSyncIntegration = () => {
   };
 };
 
-// 自动运行测试
-if (typeof window !== 'undefined') {
-  // 浏览器环境
-  console.log('浏览器环境中的同步集成测试');
-  validateSyncIntegration();
-} else {
-  // Node.js 环境  
-  console.log('Node.js 环境中的同步集成测试');
-  validateSyncIntegration();
-}
+describe('Sync integration (config smoke)', () => {
+  it('has a coherent sync config shape', () => {
+    const result = validateSyncIntegration();
+    expect(result.hasValidPlanSync).toBe(true);
+    expect(result.hasValidActualSync).toBe(true);
+    // Private mode is part of the sample.
+    expect(result.supportsPrivateMode).toBe(true);
+  });
+});
 
 export { testEvent };

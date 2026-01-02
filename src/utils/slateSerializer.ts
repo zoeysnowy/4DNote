@@ -13,7 +13,7 @@
 
 import { Descendant, Text as SlateText } from 'slate';
 import type { EventLog } from '../types';
-import { formatTimeForStorage } from './timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from './timeUtils';
 
 // ==================== EventLog 转换 ====================
 
@@ -212,7 +212,7 @@ function nodeToMarkdown(node: any): string {
     // Markdown 格式
     if (node.bold) text = `**${text}**`;
     if (node.italic) text = `*${text}*`;
-    if (node.code) text = `` `${text}` ``;
+    if (node.code) text = `\`${text}\``;
     if (node.strikethrough) text = `~~${text}~~`;
     
     return text;
@@ -344,8 +344,20 @@ export function extractTimestamps(nodes: Descendant[]): string[] {
   function traverse(node: any) {
     // 🆕 优先: 从 paragraph.createdAt 提取
     if (node.type === 'paragraph' && node.createdAt) {
-      const timestamp = formatTimeForStorage(new Date(node.createdAt));
-      timestamps.push(timestamp);
+      if (typeof node.createdAt === 'number') {
+        timestamps.push(formatTimeForStorage(new Date(Number(node.createdAt))));
+      } else if (typeof node.createdAt === 'string') {
+        const parsed = parseLocalTimeStringOrNull(node.createdAt);
+        if (parsed) {
+          timestamps.push(formatTimeForStorage(parsed));
+        } else {
+          // 兼容外部格式（例如 ISO）：避免 new Date(string)
+          const ms = Date.parse(node.createdAt);
+          if (!Number.isNaN(ms)) {
+            timestamps.push(formatTimeForStorage(new Date(ms)));
+          }
+        }
+      }
     }
     // 🔄 向后兼容: timestamp-divider 节点
     else if (node.type === 'timestamp-divider' && node.timestamp) {

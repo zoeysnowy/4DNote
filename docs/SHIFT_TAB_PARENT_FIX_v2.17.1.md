@@ -474,7 +474,7 @@ const findParentEventLineAtLevel = ...
 
 ### 数据完整性
 - [x] parentEventId 正确更新为祖父事件 ID
-- [x] childEventIds 双向关系正确维护（EventService 自动同步）
+- [x] ADR-001：以 parentEventId 为结构真相；不要求/不依赖 childEventIds 双向维护（legacy-only）
 - [x] position 字段根据新同级兄弟节点正确计算
 - [x] bulletLevel 视觉层级与数据层级一致
 

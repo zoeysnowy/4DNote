@@ -8,13 +8,7 @@
 
 import React from 'react';
 import { RenderElementProps } from 'slate-react';
-
-export interface EventMentionNode {
-  type: 'event-mention';
-  eventId: string;
-  eventTitle: string;
-  children: [{ text: string }];
-}
+import type { EventMentionNode } from '../types';
 
 interface EventMentionElementProps extends RenderElementProps {
   element: EventMentionNode;

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import './ContentSelectionPanel.css';
 import { CalendarService } from '../services/CalendarService';
 import type { Calendar, CalendarGroup } from '../types/calendar';
+import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
 
 // 导入本地 SVG 图标
 import SearchIconSvg from '../assets/icons/Search.svg';
@@ -128,7 +129,7 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   const [noteEvents, setNoteEvents] = useState<any[]>([]);
   const [loadingNotes, setLoadingNotes] = useState(false);
 
-  // v2.22+: childEventIds 不再维护；直接子节点数量由 parentEventId 派生
+  // v2.22+: 直接子节点数量由 parentEventId 派生
   const [noteChildCountById, setNoteChildCountById] = useState<Map<string, number>>(new Map());
   
   // 🆕 v2.20: 收藏事件树的展开状态
@@ -139,20 +140,21 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
   const [selectedCalendarIds, setSelectedCalendarIds] = useState<Set<string>>(new Set());
   const [hiddenCalendarIds, setHiddenCalendarIds] = useState<Set<string>>(new Set());
 
+  // Epic 2 (Master Plan v2.22): subscription-backed snapshot view
+  const { events: allEventsSnapshot } = useEventHubSnapshot({ enabled: isPanelVisible });
+
   // 🆕 v2.19: 加载重要笔记
   React.useEffect(() => {
-    const loadNoteEvents = async () => {
+    const loadNoteEvents = () => {
       if (!isEventSectionExpanded) return;
       
       setLoadingNotes(true);
       try {
-        const { EventService } = await import('../services/EventService');
-        const allEvents = await EventService.getAllEvents();
-        const notes = allEvents.filter(e => e.isNote === true);
+        const notes = allEventsSnapshot.filter(e => (e as any).isNote === true);
         setNoteEvents(notes);
 
         const counts = new Map<string, number>();
-        for (const e of allEvents) {
+        for (const e of allEventsSnapshot) {
           const parentId = (e as any).parentEventId;
           if (!parentId) continue;
           counts.set(parentId, (counts.get(parentId) || 0) + 1);
@@ -166,7 +168,7 @@ const ContentSelectionPanel: React.FC<ContentSelectionPanelProps> = ({
     };
 
     loadNoteEvents();
-  }, [isEventSectionExpanded]);
+  }, [isEventSectionExpanded, allEventsSnapshot]);
 
   // 🆕 v2.21: 计算日历分组结构
   const calendarStructure = useMemo(() => {

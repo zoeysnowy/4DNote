@@ -8,6 +8,7 @@
  */
 
 import { StorageManager } from '../services/storage/StorageManager';
+import { formatTimeForStorage } from '../utils/timeUtils';
 
 export async function testIndexedDBFix() {
   console.log('\n🧪 ============================================');
@@ -55,10 +56,10 @@ export async function testIndexedDBFix() {
       id: 'test-' + Date.now(),
       title: { simpleTitle: '测试事件 - IndexedDB 修复验证', fullTitle: undefined, colorTitle: undefined },
       description: '这是一个测试事件，用于验证 IndexedDB 清理后的双写功能',
-      startTime: new Date().toISOString().replace('T', ' ').split('.')[0],
+      startTime: formatTimeForStorage(new Date()),
       tags: ['test', 'indexeddb-fix'],
-      createdAt: new Date().toISOString().replace('T', ' ').split('.')[0],
-      updatedAt: new Date().toISOString().replace('T', ' ').split('.')[0]
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     try {

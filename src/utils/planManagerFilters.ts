@@ -9,6 +9,8 @@
 
 import { Event } from '../types';
 import { EventService } from '../services/EventService';
+import { resolveCalendarDateRange } from './TimeResolver';
+import { parseLocalTimeStringOrNull } from './timeUtils';
 
 /**
  * 检查事件是否应该显示在PlanManager中
@@ -43,23 +45,26 @@ export function shouldShowInPlanManager(
     }
 
     // 排除过期事件（超过7天未完成）
-    if (event.dueDate) {
-      const dueDate = new Date(event.dueDate);
-      const now = new Date();
-      const daysDiff = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
+    // 说明：Event 结构中使用 dueDateTime 作为截止时间字段
+    if (event.dueDateTime) {
+      const dueDate = parseLocalTimeStringOrNull(event.dueDateTime);
+      if (dueDate) {
+        const now = new Date();
+        const daysDiff = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
 
-      if (daysDiff > 7 && !event.isCompleted) {
-        return false;
+        if (daysDiff > 7 && !event.isCompleted) {
+          return false;
+        }
       }
     }
   } else if (options.mode === 'snapshot' && options.dateRange) {
     // Snapshot模式：按日期范围过滤
-    if (!event.startTime && !event.endTime && !event.dueDate) {
-      return false; // 没有时间的事件不显示
+    try {
+      const { start } = resolveCalendarDateRange(event);
+      return start >= options.dateRange.start && start <= options.dateRange.end;
+    } catch {
+      return false;
     }
-
-    const eventDate = new Date(event.startTime || event.dueDate || event.endTime!);
-    return eventDate >= options.dateRange.start && eventDate <= options.dateRange.end;
   }
 
   return true;
@@ -81,20 +86,31 @@ export function filterPlanEvents(
 export function isEmptyEvent(event: Event): boolean {
   // 检查title
   let hasRealTitle = false;
-  if (typeof event.title === 'object' && event.title?.fullTitle) {
+  const title = event.title;
+  const fullTitle = title?.fullTitle;
+  if (fullTitle) {
     try {
-      const titleSlate = JSON.parse(event.title.fullTitle);
+      const titleSlate = JSON.parse(fullTitle);
       hasRealTitle = titleSlate.some((para: any) => {
         const children = para.children || [];
         return children.some((child: any) => child.text && child.text.trim() !== '');
       });
-    } catch (e) {
-      hasRealTitle = !!event.title.fullTitle.trim();
+    } catch {
+      hasRealTitle = fullTitle.trim() !== '';
     }
-  } else if (typeof event.title === 'string') {
-    hasRealTitle = !!event.title.trim();
-  } else if (event.title?.simpleTitle || event.title?.colorTitle) {
-    hasRealTitle = !!(event.title.simpleTitle?.trim() || event.title.colorTitle?.trim());
+  } else if (title?.simpleTitle && title.simpleTitle.trim() !== '') {
+    hasRealTitle = true;
+  } else if (title?.colorTitle) {
+    // colorTitle 是 Slate JSON 格式（简化）——尽量解析出真实文本
+    try {
+      const titleSlate = JSON.parse(title.colorTitle);
+      hasRealTitle = titleSlate.some((para: any) => {
+        const children = para.children || [];
+        return children.some((child: any) => child.text && child.text.trim() !== '');
+      });
+    } catch {
+      hasRealTitle = title.colorTitle.trim() !== '';
+    }
   }
 
   // 检查eventlog

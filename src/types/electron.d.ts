@@ -129,6 +129,24 @@ export interface ElectronAPI {
   
   // 通用 IPC invoke（支持 AI 代理等新功能）
   invoke: (channel: string, ...args: any[]) => Promise<any>;
+
+  // SQLite IPC wrapper (better-sqlite3 in main process)
+  sqlite?: {
+    available: boolean;
+    createDatabase: (path: string, options?: any) => Promise<{ success: boolean; dbId?: string; error?: string }>;
+    deleteDatabase: (path: string) => Promise<{ success: boolean; error?: string }>;
+    exec: (dbId: string, sql: string) => Promise<void>;
+    pragma: (dbId: string, pragma: string) => Promise<any>;
+    close: (dbId: string) => void;
+    prepare: (dbId: string, sql: string) => Promise<string>;
+    run: (stmtId: string, params: any[]) => Promise<{ changes: number; lastInsertRowid: number }>;
+    get: (stmtId: string, params: any[]) => Promise<any>;
+    all: (stmtId: string, params: any[]) => Promise<any[]>;
+    clearAllDatabases?: () => Promise<any>;
+  };
+
+  // DesktopCalendarWidget drag lifecycle
+  widgetDragEnd?: () => Promise<void>;
 }
 
 export interface ElectronConstants {
@@ -141,8 +159,8 @@ export interface ElectronConstants {
 
 declare global {
   interface Window {
-    electronAPI: ElectronAPI;
-    electronConstants: ElectronConstants;
+    electronAPI?: ElectronAPI;
+    electronConstants?: ElectronConstants;
     // 简化访问（兼容性）
     electron?: ElectronAPI;
   }

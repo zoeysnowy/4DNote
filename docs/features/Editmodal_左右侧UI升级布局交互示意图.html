@@ -1,0 +1,509 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","https:":"https://esm.sh/https:?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { Layout, Sidebar, FileText, ChevronLeft, ChevronRight, Calendar, Users, Clock, MapPin, X, Maximize2, MoreHorizontal } from 'lucide-react';
+import { Card, CardContent } from "https://esm.sh/shadcdn?external=react,react-dom";
+import { Button } from "https://esm.sh/shadcdn?external=react,react-dom";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "https://esm.sh/shadcdn?external=react,react-dom";
+import { Badge } from "https://esm.sh/shadcdn?external=react,react-dom";
+
+function LayoutDemo() {
+  // 控制左侧边栏显示状态
+  const [showLeft, setShowLeft] = useState(true);
+  
+  // 控制方案3的属性面板展开状态
+  const [expandProps, setExpandProps] = useState(true);
+
+  return (
+    <div className="p-4 bg-slate-50 min-h-screen font-sans">
+      <div className="max-w-4xl mx-auto mb-6">
+        <h2 className="text-2xl font-bold text-slate-800 mb-2">侧边栏隐藏交互方案</h2>
+        <p className="text-slate-600">请选择下方 Tab 查看不同的 UI 结构重构思路</p>
+      </div>
+
+      <Tabs defaultValue="scheme1" className="max-w-4xl mx-auto">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="scheme1">方案一：通栏标题 (推荐)</TabsTrigger>
+          <TabsTrigger value="scheme2">方案二：侧栏折叠条</TabsTrigger>
+          <TabsTrigger value="scheme3">方案三：顶部属性流</TabsTrigger>
+        </TabsList>
+
+        {/* ================= 方案一：通栏标题 ================= */}
+        <TabsContent value="scheme1">
+          <Card className="border-slate-200 shadow-xl overflow-hidden h-[600px] flex flex-col">
+            <div className="bg-white border-b border-slate-100 p-3 flex items-center justify-between z-10">
+              {/* 关键点：标题移到了最顶部，不再属于左侧 */}
+              <div className="flex items-center gap-3">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={() => setShowLeft(!showLeft)}
+                  className="text-slate-500 hover:bg-slate-100"
+                  title={showLeft ? "隐藏侧边栏" : "展开侧边栏"}
+                >
+                  <Layout size={20} />
+                </Button>
+                <div className="w-8 h-8 bg-orange-100 rounded flex items-center justify-center text-orange-500">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-slate-800 text-sm">事件标题：项目复盘会议</h3>
+                  <div className="flex gap-2 text-xs text-slate-400 mt-0.5">
+                    <span className="text-green-600">#工作</span>
+                    <span>#重点客户</span>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                 <Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal size={16}/></Button>
+                 <Button variant="ghost" size="icon" className="h-8 w-8"><X size={16}/></Button>
+              </div>
+            </div>
+
+            <div className="flex flex-1 overflow-hidden relative">
+              {/* 左侧边栏 */}
+              <div 
+                className={`transition-all duration-300 ease-in-out border-r border-slate-100 bg-slate-50/50 flex flex-col
+                  ${showLeft ? 'w-[320px] opacity-100' : 'w-0 opacity-0 overflow-hidden'}
+                `}
+              >
+                <div className="p-6 space-y-6 min-w-[320px]">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h4 className="font-bold text-sm text-slate-900">计划安排</h4>
+                      <Badge variant="outline" className="text-xs font-normal text-slate-400">每周</Badge>
+                    </div>
+                    
+                    <div className="space-y-3 text-sm text-slate-600">
+                      <div className="flex items-center gap-2">
+                        <Users size={14} className="text-slate-400"/>
+                        <span>添加参与人...</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Calendar size={14} className="text-slate-400"/>
+                        <span>2025-12-24 (周三) 23:30</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin size={14} className="text-slate-400"/>
+                        <span>添加地点...</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-slate-200">
+                     <h4 className="font-bold text-sm text-slate-900 mb-4">实际进展</h4>
+                     <div className="h-20 border-2 border-dashed border-slate-200 rounded-lg flex items-center justify-center text-slate-400 text-sm">
+                        计时记录区域
+                     </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* 右侧编辑区 */}
+              <div className="flex-1 bg-white p-8 overflow-y-auto">
+                 {!showLeft && (
+                   <div className="mb-6 p-2 bg-blue-50 text-blue-600 text-xs rounded border border-blue-100 flex items-center gap-2 animate-in fade-in slide-in-from-top-2">
+                      <Clock size={12} /> 
+                      <span>专注模式开启：侧边栏已隐藏，点击顶部图标恢复。</span>
+                   </div>
+                 )}
+                 <div className="prose prose-slate max-w-none">
+                    <p className="text-slate-400 italic">在此处输入笔记内容...</p>
+                    <p>现在的笔记编辑区域可以自动撑满剩余空间。</p>
+                    <p>当左侧隐藏时，我依然能在顶栏清晰地看到标题，不会迷失上下文。</p>
+                 </div>
+              </div>
+            </div>
+          </Card>
+          <div className="mt-4 text-sm text-slate-500 text-center">
+            👆 点击左上角的 <Layout size={14} className="inline"/> 图标体验交互
+          </div>
+        </TabsContent>
+
+        {/* ================= 方案二：侧栏折叠条 ================= */}
+        <TabsContent value="scheme2">
+           <Card className="border-slate-200 shadow-xl overflow-hidden h-[600px] flex">
+             {/* 左侧边栏 - 可变为窄条 */}
+             <div 
+                className={`transition-all duration-300 ease-in-out border-r border-slate-100 bg-slate-50 flex flex-col relative
+                  ${showLeft ? 'w-[320px]' : 'w-[60px]'}
+                `}
+              >
+                {/* 切换按钮 - 放在分割线上或内部 */}
+                <Button 
+                   variant="secondary"
+                   size="icon"
+                   className="absolute -right-3 top-6 z-20 h-6 w-6 rounded-full shadow border border-slate-200 bg-white hover:bg-slate-100"
+                   onClick={() => setShowLeft(!showLeft)}
+                >
+                   {showLeft ? <ChevronLeft size={12}/> : <ChevronRight size={12}/>}
+                </Button>
+
+                {/* 完整内容状态 */}
+                <div className={`p-6 space-y-6 ${showLeft ? 'opacity-100' : 'opacity-0 hidden'} transition-opacity`}>
+                   <div className="flex flex-col items-center mb-6">
+                      <div className="w-16 h-16 bg-orange-100 rounded-xl flex items-center justify-center text-orange-500 mb-3">
+                        <FileText size={32} />
+                      </div>
+                      <h3 className="font-bold text-slate-800 text-center">事件标题</h3>
+                   </div>
+                   <div className="space-y-4">
+                      <h4 className="font-bold text-xs uppercase text-slate-400 tracking-wider">Schedule</h4>
+                      <div className="text-sm text-slate-600">2025-12-24 23:30</div>
+                   </div>
+                </div>
+
+                {/* 折叠后的窄条状态 */}
+                <div className={`flex flex-col items-center pt-6 space-y-4 ${!showLeft ? 'opacity-100' : 'opacity-0 hidden'} transition-opacity`}>
+                   <div className="w-8 h-8 bg-orange-100 rounded flex items-center justify-center text-orange-500" title="事件标题">
+                      <FileText size={16} />
+                   </div>
+                   <div className="h-px w-8 bg-slate-200"></div>
+                   <div className="flex flex-col gap-4 text-slate-400">
+                      <Calendar size={18} />
+                      <Clock size={18} />
+                      <Users size={18} />
+                   </div>
+                </div>
+             </div>
+
+             {/* 右侧 */}
+             <div className="flex-1 bg-white p-8 overflow-y-auto">
+                {/* 如果左侧折叠，可以在顶部补充一个Mini Title */}
+                {!showLeft && (
+                   <div className="mb-8 pb-4 border-b border-slate-100">
+                      <h2 className="text-xl font-bold text-slate-800">事件标题：项目复盘会议</h2>
+                   </div>
+                )}
+                <div className="prose prose-slate max-w-none">
+                    <p className="text-slate-400 italic">点击分割线上的小按钮折叠...</p>
+                    <p>这种方案类似于 VS Code。左侧不会完全消失，而是变成一个工具条。</p>
+                    <p>优点：依然保留了对“这是个Event”的感知（通过图标）。</p>
+                 </div>
+             </div>
+           </Card>
+           <div className="mt-4 text-sm text-slate-500 text-center">
+            👆 点击分割线上的圆型按钮体验交互
+          </div>
+        </TabsContent>
+
+        {/* ================= 方案三：顶部属性流 ================= */}
+        <TabsContent value="scheme3">
+           <Card className="border-slate-200 shadow-xl overflow-hidden h-[600px] flex flex-col bg-white">
+              {/* 顶部 Header：始终存在 */}
+              <div className="p-8 pb-4">
+                 <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center text-orange-500 mt-1">
+                       <FileText size={24} />
+                    </div>
+                    <div className="flex-1">
+                       <input 
+                          type="text" 
+                          className="text-3xl font-bold text-slate-800 w-full border-none focus:outline-none focus:ring-0 placeholder:text-slate-300" 
+                          defaultValue="事件标题：项目复盘会议"
+                        />
+                       <div className="flex gap-2 mt-2">
+                          <Badge variant="secondary" className="bg-green-50 text-green-700 hover:bg-green-100">#工作</Badge>
+                       </div>
+                    </div>
+                 </div>
+              </div>
+
+              {/* 可折叠的属性区域 (原左侧栏内容) */}
+              <div className="px-8 mb-4">
+                 <div className="bg-slate-50 rounded-lg border border-slate-100 overflow-hidden transition-all duration-300">
+                    <div 
+                      className="flex items-center justify-between p-3 cursor-pointer hover:bg-slate-100"
+                      onClick={() => setExpandProps(!expandProps)}
+                    >
+                       <div className="flex items-center gap-2 text-sm text-slate-600">
+                          <Calendar size={14} className="text-slate-400"/>
+                          <span className="font-medium">2025-12-24 (周三)</span>
+                          {!expandProps && <span className="text-slate-400 ml-2 text-xs">...以及其他3项属性</span>}
+                       </div>
+                       <Button variant="ghost" size="sm" className="h-6 w-6 p-0">
+                          {expandProps ? <ChevronLeft className="rotate-90" size={14}/> : <ChevronRight className="rotate-90" size={14}/>}
+                       </Button>
+                    </div>
+
+                    {/* 展开的详情内容 */}
+                    {expandProps && (
+                       <div className="px-3 pb-3 pt-0 grid grid-cols-2 gap-4 animate-in slide-in-from-top-1">
+                          <div className="space-y-2">
+                             <div className="text-xs font-bold text-slate-400 uppercase">时间 & 地点</div>
+                             <div className="text-sm text-slate-700 flex items-center gap-2">
+                                <Clock size={14} /> 23:30 - 00:30
+                             </div>
+                             <div className="text-sm text-slate-700 flex items-center gap-2">
+                                <MapPin size={14} /> 腾讯会议
+                             </div>
+                          </div>
+                          <div className="space-y-2">
+                             <div className="text-xs font-bold text-slate-400 uppercase">进展</div>
+                             <div className="text-sm text-slate-700 flex items-center gap-2">
+                                <span className="w-2 h-2 rounded-full bg-red-400"></span> 
+                                倒计时: 2h 30m
+                             </div>
+                          </div>
+                       </div>
+                    )}
+                 </div>
+              </div>
+
+              <div className="flex-1 px-8 overflow-y-auto">
+                 <div className="prose prose-slate max-w-none pt-4 border-t border-slate-100">
+                    <p>这是 <strong>Notion 风格</strong> 的解决方案。</p>
+                    <p>彻底取消了左右分栏，将“Event 属性”变成了文档头部的一个可折叠 Block。</p>
+                    <p>当你只想写笔记时，点击上方箭头收起属性块，即可获得沉浸式体验。</p>
+                    <p>主要优势：UI 更简洁，移动端适配更容易。</p>
+                 </div>
+              </div>
+           </Card>
+           <div className="mt-4 text-sm text-slate-500 text-center">
+            👆 点击灰色属性块右侧的箭头体验折叠
+          </div>
+        </TabsContent>
+
+      </Tabs>
+    </div>
+  );
+}
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <LayoutDemo />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>

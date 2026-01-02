@@ -8,8 +8,7 @@
  * 4. 自动清理过期历史记录
  * 
  * ⚠️ 存储架构变更（2025-12-06）：
- * - 历史记录已从 localStorage 迁移到 SQLite (IndexedDB)
- * - localStorage 仅用作 SQLite 不可用时的降级方案
+ * - 历史记录已迁移到 SQLite (IndexedDB)
  * - 自动清理机制防止存储溢出
  */
 
@@ -21,16 +20,13 @@ import {
   HistoryQueryOptions,
   HistoryStatistics
 } from '../types/eventHistory';
-import { STORAGE_KEYS } from '../constants/storage';
 import { logger } from '../utils/logger';
 import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
 import { StorageManager } from './storage/StorageManager';
 import { SignatureUtils } from '../utils/signatureUtils';
+import { resolveCheckState } from '../utils/TimeResolver';
 
 const historyLogger = logger.module('EventHistory');
-
-// 历史记录存储键（降级方案 - 仅用于迁移）
-const HISTORY_STORAGE_KEY = '4dnote_event_history';
 
 // 默认保留历史记录的天数（🆕 30天 - Block-Level 优化）
 const DEFAULT_RETENTION_DAYS = 30;
@@ -131,10 +127,7 @@ export class EventHistoryService {
   static async initialize(sm: StorageManager): Promise<void> {
     storageManager = sm;
     historyLogger.log('✅ EventHistoryService 已初始化');
-    
-    // 迁移 localStorage 数据到 SQLite（仅执行一次）
-    await this.migrateFromLocalStorage();
-    
+
     // 🆕 [v2.18.2] 启动定期清理任务
     this.startPeriodicCleanup();
     
@@ -152,58 +145,6 @@ export class EventHistoryService {
         historyLogger.error('❌ 初始清理失败:', error);
       }
     });
-  }
-
-  /**
-   * 迁移 localStorage 历史记录到 SQLite (IndexedDB)
-   */
-  private static async migrateFromLocalStorage(): Promise<void> {
-    try {
-      const localData = localStorage.getItem(HISTORY_STORAGE_KEY);
-      if (!localData) {
-        historyLogger.log('✅ 无需迁移（localStorage 无数据）');
-        return;
-      }
-
-      const logs: EventChangeLog[] = JSON.parse(localData);
-      if (logs.length === 0) {
-        historyLogger.log('✅ 无需迁移（localStorage 数据为空）');
-        localStorage.removeItem(HISTORY_STORAGE_KEY);
-        return;
-      }
-
-      historyLogger.log(`🔄 开始迁移 ${logs.length} 条历史记录到 SQLite (IndexedDB)...`);
-      
-      let migratedCount = 0;
-      for (const log of logs) {
-        try {
-          // 使用幂等方法，避免重复插入导致主键冲突
-          await storageManager!.createOrUpdateEventHistory({
-            id: log.id,
-            eventId: log.eventId,
-            operation: log.operation,
-            timestamp: log.timestamp,
-            source: log.source,
-            before: log.before,
-            after: log.after,
-            changes: log.changes,
-            userId: log.userId,
-            metadata: log.metadata
-          });
-          migratedCount++;
-        } catch (error) {
-          historyLogger.error('❌ 迁移单条记录失败:', log.id, error);
-        }
-      }
-
-      historyLogger.log(`✅ 迁移完成: ${migratedCount}/${logs.length} 条`);
-      
-      // 直接清除旧数据（已迁移到 SQLite，无需备份到 localStorage）
-      localStorage.removeItem(HISTORY_STORAGE_KEY);
-      historyLogger.log('✅ 已清除 localStorage 旧数据（已迁移到 SQLite）');
-    } catch (error) {
-      historyLogger.error('❌ 迁移失败:', error);
-    }
   }
 
   /**
@@ -450,9 +391,12 @@ export class EventHistoryService {
     const allLogs = await this.queryHistory({});
     
     // 🔧 步骤1：从当前存在的事件开始
-    const EventService = (window as any).EventService;
-    const allCurrentEvents = EventService ? await EventService.getAllEvents() : [];
-    const existingEvents = new Set<string>(allCurrentEvents.map((e: any) => e.id));
+    // NOTE: Do not rely on window.EventService (often undefined after refresh).
+    // Use StorageManager as the canonical source to avoid circular deps.
+    const sm = await getStorageManager();
+    const currentEventsResult = sm ? await sm.queryEvents({ limit: 100000 }) : { items: [] as any[] };
+    const allCurrentEvents = (currentEventsResult as any).items || [];
+    const existingEvents = new Set<string>(allCurrentEvents.filter((e: any) => e && !e.deletedAt).map((e: any) => e.id));
     
     console.log('[EventHistoryService] 📊 getExistingEventsAtTime 步骤1:', {
       timestamp,
@@ -556,9 +500,67 @@ export class EventHistoryService {
       )
     );
     
-    // missed: 过期未完成的事件（这个需要结合当前时间和事件的 endTime 判断）
-    // TODO: 实现 missed 逻辑
+    // missed: 过期未完成的事件（派生，不落盘）
+    // 规则（与 TimeCalendar/TimeResolver 对齐）：
+    // - 仅对 task-like（isTask）且存在 planned endTime 的事件判断
+    // - 判断时间取 min(现在, rangeEnd)
+    // - endTime 落在该 range 内，且 endTime <= evalTime，且当前未完成 => missed
     const missed: EventChangeLog[] = [];
+    try {
+      const sm = await getStorageManager();
+      if (sm) {
+        const rangeStartDate = parseLocalTimeString(startTime);
+        const rangeEndDate = parseLocalTimeString(endTime);
+        const now = new Date();
+        const evalTime = new Date(Math.min(now.getTime(), rangeEndDate.getTime()));
+
+        const result = await sm.queryEvents({ limit: 10000 });
+        const activeEvents = result.items.filter((e: any) => !e.deletedAt);
+
+        activeEvents.forEach((event: any) => {
+          if (!event?.id) return;
+          if (!event.isTask) return;
+          if (!event.endTime) return;
+
+          const plannedEnd = parseLocalTimeString(event.endTime);
+          if (plannedEnd < rangeStartDate || plannedEnd > rangeEndDate) return;
+          if (plannedEnd > evalTime) return;
+
+          const { isChecked } = resolveCheckState(event);
+          if (isChecked) return;
+
+          missed.push({
+            id: this.generateLogId(),
+            eventId: event.id,
+            operation: 'update',
+            timestamp: formatTimeForStorage(evalTime),
+            source: 'derived',
+            after: {
+              id: event.id,
+              title: event.title,
+              isTask: event.isTask,
+              endTime: event.endTime,
+            },
+            changes: [
+              {
+                field: 'missed',
+                oldValue: false,
+                newValue: true,
+                displayName: 'Missed (derived)'
+              }
+            ],
+            metadata: {
+              derived: true,
+              kind: 'missed',
+              plannedEndTime: event.endTime,
+              evaluatedAt: formatTimeForStorage(evalTime)
+            }
+          });
+        });
+      }
+    } catch (error) {
+      historyLogger.warn('⚠️ missed 派生计算失败（降级为空）:', error);
+    }
     
     console.log('[EventHistoryService] 📊 getEventOperationsSummary:', {
       timeRange: `${startTime} ~ ${endTime}`,
@@ -774,7 +776,6 @@ export class EventHistoryService {
         before: log.before,
         after: log.after,
         changes: log.changes,
-        userId: log.userId,
         metadata: log.metadata
       });
     } catch (error) {
@@ -921,8 +922,8 @@ export class EventHistoryService {
       return {
         total: stats.total || 0,
         bySource,
-        oldestRecord: stats.dateRange?.earliest || '',
-        newestRecord: stats.dateRange?.latest || '',
+        oldestRecord: stats.oldestTimestamp || '',
+        newestRecord: stats.newestTimestamp || '',
         recommendCleanup: (stats.total || 0) > MAX_HISTORY_COUNT * 0.8,
         estimatedCleanupCount: backfillCount + oldCount
       };

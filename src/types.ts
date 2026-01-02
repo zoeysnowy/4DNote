@@ -121,10 +121,18 @@ export interface Attachment {
   type: AttachmentType;      // 附件类型（新增）
   filename: string;
   size: number;              // 文件大小（字节）
+  // 兼容字段：部分 UI/旧逻辑仍使用 fileSize
+  fileSize?: number;
   mimeType: string;          // MIME 类型
   localPath?: string;        // 本地路径（Electron userData/attachments/）
+  // 兼容字段：部分 UI/旧逻辑使用 fullPath
+  fullPath?: string;
   cloudUrl?: string;         // 云端 URL（OneDrive）
   thumbnailPath?: string;    // 缩略图路径（图片/视频）
+
+  // 兼容字段：UI 展示用标题/扩展信息
+  caption?: string;
+  metadata?: Record<string, any>;
   
   // 状态
   status: 'local-only' | 'synced' | 'pending-upload' | 'cloud-only' | 'upload-failed';
@@ -207,6 +215,9 @@ export interface EventLog {
   slateJson: string;            // Slate JSON 格式（主数据源，用户编辑）
   html?: string;                // HTML 格式（渲染用，Outlook 同步）
   plainText?: string;           // 纯文本（搜索优化，性能缓存）
+  wordCount?: number;           // 字数（性能缓存）
+  characterCount?: number;      // 字符数（性能缓存）
+  lastEditedAt?: string;        // 最后编辑时间（性能缓存/同步辅助）
   attachments?: Attachment[];   // 附件列表
   qrCodes?: QRCodeInfo[];       // 二维码列表（AI 提取）⭐ 新增
   versions?: EventLogVersion[]; // 版本历史（最多 50 个）
@@ -468,7 +479,6 @@ export interface Event {
   
   // 🆕 Issue #12: EventTree 父子事件关联（刚性骨架）
   parentEventId?: string;      // 父事件 ID（所有类型子事件都用此字段）
-  childEventIds?: string[];    // 子事件 ID 列表（包括 Timer、用户子任务、外部同步事件等）
   
   // 🆕 v2.16: 事件在同级中的显示位置（用于 Shift+Alt+↑/↓ 移动后保持顺序）
   position?: number;           // 同级事件的排序权重（数字越小越靠前，默认按 createdAt 排序）

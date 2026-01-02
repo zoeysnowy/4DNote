@@ -10,15 +10,16 @@
 import React, { useState, useEffect } from 'react';
 import { AttachmentViewContainer } from '../components/AttachmentViewContainer';
 import { attachmentService } from '../services/AttachmentService';
-import { Attachment, AttachmentViewMode, Event } from '../types';
+import { Attachment, AttachmentType, AttachmentViewMode, Event } from '../types';
 
 // ============================================================================
 // 示例 1: 基础集成 - 事件详情页中的附件展示
 // ============================================================================
 
 export const EventDetailWithAttachments: React.FC<{ event: Event }> = ({ event }) => {
+  const eventLog = typeof event.eventlog === 'string' ? undefined : event.eventlog;
   const [attachments, setAttachments] = useState<Attachment[]>(
-    event.eventlog.attachments || []
+    eventLog?.attachments || []
   );
 
   // 处理附件删除
@@ -50,10 +51,8 @@ export const EventDetailWithAttachments: React.FC<{ event: Event }> = ({ event }
         status: 'completed' as const,
       };
 
-      // 调用服务更新
-      await attachmentService.updateAttachment(attachmentId, {
-        transcriptData: updatedTranscriptData,
-      });
+      // NOTE: AttachmentService 目前不提供 updateAttachment；
+      // 如需持久化 transcriptData，应通过 EventService 写回 eventlog.attachments。
 
       // 更新本地状态
       setAttachments((prev) =>
@@ -73,8 +72,8 @@ export const EventDetailWithAttachments: React.FC<{ event: Event }> = ({ event }
     <div className="event-detail-page">
       {/* 事件基本信息 */}
       <div className="event-header">
-        <h1>{event.title}</h1>
-        <p>{event.eventlog.description}</p>
+        <h1>{event.title?.simpleTitle || ''}</h1>
+        <p>{event.description || eventLog?.plainText || ''}</p>
       </div>
 
       {/* 附件系统 */}
@@ -96,7 +95,8 @@ export const EventDetailWithAttachments: React.FC<{ event: Event }> = ({ event }
 // ============================================================================
 
 export const SmartAttachmentView: React.FC<{ event: Event }> = ({ event }) => {
-  const attachments = event.eventlog.attachments || [];
+  const eventLog = typeof event.eventlog === 'string' ? undefined : event.eventlog;
+  const attachments = eventLog?.attachments || [];
 
   // 根据附件类型智能选择初始模式
   const getInitialMode = (): AttachmentViewMode => {
@@ -105,13 +105,13 @@ export const SmartAttachmentView: React.FC<{ event: Event }> = ({ event }) => {
     const types = attachments.map((a) => a.type);
     
     // 优先级：图片 > 视频 > 音频 > 文档
-    if (types.includes('image')) return AttachmentViewMode.GALLERY;
-    if (types.includes('video')) return AttachmentViewMode.VIDEO_STREAM;
-    if (types.includes('audio')) return AttachmentViewMode.AUDIO_STREAM;
-    if (types.includes('voice-recording')) return AttachmentViewMode.TRANSCRIPT;
-    if (types.includes('document')) return AttachmentViewMode.DOCUMENT_LIB;
-    if (types.includes('sub-event')) return AttachmentViewMode.TREE_NAV;
-    if (types.includes('web-clip')) return AttachmentViewMode.BOOKMARK;
+    if (types.includes(AttachmentType.IMAGE)) return AttachmentViewMode.GALLERY;
+    if (types.includes(AttachmentType.VIDEO)) return AttachmentViewMode.VIDEO_STREAM;
+    if (types.includes(AttachmentType.AUDIO)) return AttachmentViewMode.AUDIO_STREAM;
+    if (types.includes(AttachmentType.VOICE_RECORDING)) return AttachmentViewMode.TRANSCRIPT;
+    if (types.includes(AttachmentType.DOCUMENT)) return AttachmentViewMode.DOCUMENT_LIB;
+    if (types.includes(AttachmentType.SUB_EVENT)) return AttachmentViewMode.TREE_NAV;
+    if (types.includes(AttachmentType.WEB_CLIP)) return AttachmentViewMode.BOOKMARK;
 
     return AttachmentViewMode.EDITOR;
   };
@@ -141,7 +141,7 @@ export const AttachmentManagementPage: React.FC<{ eventId: string }> = ({ eventI
   useEffect(() => {
     const loadAttachments = async () => {
       try {
-        const list = await attachmentService.getAttachmentsByEvent(eventId);
+        const list = await attachmentService.getEventAttachments(eventId);
         setAttachments(list);
       } catch (error) {
         console.error('加载附件失败:', error);
@@ -158,14 +158,14 @@ export const AttachmentManagementPage: React.FC<{ eventId: string }> = ({ eventI
     setIsUploading(true);
     try {
       // 批量上传（5个并发）
-      const results = await attachmentService.batchUpload(eventId, Array.from(files));
-      
+      const result = await attachmentService.uploadMultiple(Array.from(files), { eventId });
+
       // 更新附件列表
-      setAttachments((prev) => [...prev, ...results.filter(r => r.success).map(r => r.attachment!)]);
-      
+      setAttachments((prev) => [...prev, ...result.succeeded]);
+
       // 显示结果
-      const successCount = results.filter(r => r.success).length;
-      alert(`成功上传 ${successCount} 个文件`);
+      const failedCount = result.failed.length;
+      alert(`成功上传 ${result.succeeded.length} 个文件${failedCount ? `，失败 ${failedCount} 个` : ''}`);
     } catch (error) {
       console.error('上传失败:', error);
       alert('上传失败，请重试');
@@ -205,10 +205,11 @@ export const AttachmentManagementPage: React.FC<{ eventId: string }> = ({ eventI
 // ============================================================================
 
 export const ReadOnlyAttachmentView: React.FC<{ event: Event }> = ({ event }) => {
+  const eventLog = typeof event.eventlog === 'string' ? undefined : event.eventlog;
   return (
     <AttachmentViewContainer
       eventId={event.id}
-      attachments={event.eventlog.attachments || []}
+      attachments={eventLog?.attachments || []}
       initialMode={AttachmentViewMode.GALLERY}
       // 不传 onAttachmentDelete，组件会隐藏删除按钮
       onAttachmentClick={(attachment, index) => {
@@ -225,6 +226,7 @@ export const ReadOnlyAttachmentView: React.FC<{ event: Event }> = ({ event }) =>
 
 export const EventEditorWithAttachments: React.FC<{ event: Event }> = ({ event }) => {
   const [showAttachments, setShowAttachments] = useState(false);
+  const eventLog = typeof event.eventlog === 'string' ? undefined : event.eventlog;
 
   return (
     <div className="event-editor-container">
@@ -238,7 +240,7 @@ export const EventEditorWithAttachments: React.FC<{ event: Event }> = ({ event }
         className="toggle-attachments-btn"
         onClick={() => setShowAttachments(!showAttachments)}
       >
-        📎 {showAttachments ? '隐藏' : '显示'}附件 ({event.eventlog.attachments?.length || 0})
+        📎 {showAttachments ? '隐藏' : '显示'}附件 ({eventLog?.attachments?.length || 0})
       </button>
 
       {/* 附件面板（可折叠） */}
@@ -246,7 +248,7 @@ export const EventEditorWithAttachments: React.FC<{ event: Event }> = ({ event }
         <div className="attachments-panel">
           <AttachmentViewContainer
             eventId={event.id}
-            attachments={event.eventlog.attachments || []}
+            attachments={eventLog?.attachments || []}
             initialMode={AttachmentViewMode.GALLERY}
             onAttachmentDelete={async (id) => {
               await attachmentService.deleteAttachment(id);
@@ -264,6 +266,7 @@ export const EventEditorWithAttachments: React.FC<{ event: Event }> = ({ event }
 // ============================================================================
 
 export const EventTreeWithNavigation: React.FC<{ event: Event }> = ({ event }) => {
+  const eventLog = typeof event.eventlog === 'string' ? undefined : event.eventlog;
   const navigate = (targetEventId: string) => {
     // 跳转逻辑（React Router 或自定义路由）
     window.location.href = `/event/${targetEventId}`;
@@ -273,7 +276,7 @@ export const EventTreeWithNavigation: React.FC<{ event: Event }> = ({ event }) =
   return (
     <AttachmentViewContainer
       eventId={event.id}
-      attachments={event.eventlog.attachments || []}
+      attachments={eventLog?.attachments || []}
       initialMode={AttachmentViewMode.TREE_NAV}
       onNavigate={navigate}  // 处理子事件跳转
     />

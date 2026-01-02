@@ -1,16 +1,35 @@
-// @ts-nocheck
-// 🚧 临时禁用类型检查：正在重构为异步架构
+// Sync manager (type-checked). Avoid legacy localStorage compatibility.
 import { STORAGE_KEYS } from '../constants/storage';
+import { StorageManager } from './storage/StorageManager';
 import { logger } from '../utils/logger';
 import { EventService } from './EventService';
-import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
+import { CalendarService } from './CalendarService';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../utils/timeUtils';
+import { resolveCalendarDateRange } from '../utils/TimeResolver';
+import { resolveSyncTitle } from '../utils/TitleResolver';
 import { SignatureUtils } from '../utils/signatureUtils';
 import { storageManager } from './storage/StorageManager';
 import { SyncStatus } from './storage/types';
 import type { SyncQueueItem } from './storage/types';
 import { determineSyncTarget } from '../utils/syncRouter';
+import { cleanupOutlookHtml } from './eventlogProcessing/outlookHtmlCleanup';
+import type { Event as AppEvent, EventTitle, EventLog } from '../types';
 
 const syncLogger = logger.module('Sync');
+
+function stripSurrogatePairs(text: string): string {
+  // Avoid ES6 unicode-regexp flags to stay compatible with current TS target.
+  return text.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '').trim();
+}
+
+type CanonicalSyncMode = 'local-only' | 'bidirectional' | 'push-only';
+function normalizeSyncMode(mode: unknown): CanonicalSyncMode {
+  if (mode === 'local-only' || mode === 'push-only' || mode === 'bidirectional') {
+    return mode;
+  }
+  // Legacy values like 'receive-only'/'bidirectional-private' collapse to canonical.
+  return 'bidirectional';
+}
 
 interface SyncAction {
   id: string;
@@ -37,6 +56,10 @@ interface SyncConflict {
 }
 
 export class ActionBasedSyncManager {
+  private static activeInstance: ActionBasedSyncManager | null = null;
+  private static instanceCounter = 0;
+  private instanceId = ++ActionBasedSyncManager.instanceCounter;
+
   private microsoftService: any;
   private isRunning = false;
   private syncInterval: NodeJS.Timeout | null = null;
@@ -64,6 +87,14 @@ export class ActionBasedSyncManager {
   private lastSavedQueueSize = 0; // ✨ 上次保存的队列大小
   private saveIndexMapDebounceTimer: NodeJS.Timeout | null = null; // 🗺️ IndexMap保存防抖定时器
   private indexMapDirty = false; // 🗺️ IndexMap脏标记
+
+  // 性能监控（用于慢同步告警的 breakdown）
+  private lastLocalSyncDuration = 0;
+  private lastRemoteSyncDuration = 0;
+  private lastDedupDuration = 0;
+
+  // IndexMap mismatch 计数（避免日志刷屏）
+  private indexMapMismatchCount = 0;
   
   // 🔧 [NEW] 删除候选追踪机制 - 两轮确认才删除
   private deletionCandidates: Map<string, {
@@ -77,114 +108,83 @@ export class ActionBasedSyncManager {
   private syncRoundCounter = 0; // 同步轮次计数器
   private lastSyncBatchCount = 0; // 🔧 [NEW] 上次同步的批次数量（用于动态计算删除确认时间）
   
-  // � [NEW] IndexMap 重建状态追踪
+  // [NEW] IndexMap 重建状态追踪
   private indexMapRebuildPromise: Promise<void> | null = null;
-  
-  // �📊 [NEW] 同步统计信息
-  private syncStats = {
-    syncFailed: 0,        // 同步至日历失败
-    calendarCreated: 0,   // 新增日历事项
-    syncSuccess: 0        // 成功同步至日历
+
+  // [NEW] 同步统计信息
+  private syncStats: { syncFailed: number; calendarCreated: number; syncSuccess: number } = {
+    syncFailed: 0,
+    calendarCreated: 0,
+    syncSuccess: 0,
   };
-  
-  // ✨ 单例追踪（警告重复实例）
-  private static activeInstance: ActionBasedSyncManager | null = null;
-  private static instanceCount = 0;
-  private instanceId: number;
 
   constructor(microsoftService: any) {
-    ActionBasedSyncManager.instanceCount++;
-    this.instanceId = ActionBasedSyncManager.instanceCount;
-    
-    if (ActionBasedSyncManager.activeInstance) {
-      console.warn(`⚠️ [ActionBasedSyncManager] Multiple instances detected! Instance #${this.instanceId} created while instance #${ActionBasedSyncManager.activeInstance.instanceId} is still active`);
-    } else {
-      console.log(`✅ [ActionBasedSyncManager] Instance #${this.instanceId} created`);
-      ActionBasedSyncManager.activeInstance = this;
-    }
-    
     this.microsoftService = microsoftService;
-    
-    // 🔄 [MIGRATION] Step 1: 迁移 localStorage 数据到 IndexedDB（优先执行）
-    this.migrateLocalStorageToIndexedDB()
-      .then(() => {
-        // 🔄 [MIGRATION] Step 2: 从 IndexedDB 加载队列
-        return this.loadActionQueue();
-      })
-      .catch(err => console.error('Failed to migrate/load action queue:', err));
-    
-    this.loadConflictQueue();
-    this.loadDeletedEventIds(); // 🆕 加载已删除事件ID
-    
-    // 🔧 [MIGRATION] 一次性清理重复的 outlook- 前缀
-    this.migrateOutlookPrefixes().catch(err => console.error('Migration failed:', err));
-    
-    // 🔧 [NEW] 修复历史 pending 事件（补充到同步队列）
-    this.fixOrphanedPendingEvents().catch(err => console.error('Fix orphaned events failed:', err));
-    
-    // 🔧 [NEW] 设置网络状态监听
+    ActionBasedSyncManager.activeInstance = this;
+
+    // Best-effort early init; `start()` will wait on queue availability.
+    void this.loadActionQueue();
+    void this.loadConflictQueue();
+    void this.loadDeletedEventIds();
+
     this.setupNetworkListeners();
-    
-    // 🔧 [NEW] 订阅 EventHub 事件，同步更新 IndexMap
     this.setupEventHubSubscription();
-    
-    // 🔧 [NEW] 监听窗口焦点状态（用于检测用户是否正在使用应用）
-    if (typeof window !== 'undefined') {
-      window.addEventListener('focus', () => {
-        this.isWindowFocused = true;
-      }, { passive: true });
-      
-      window.addEventListener('blur', () => {
-        this.isWindowFocused = false;
-      }, { passive: true });
-      
-      // 🚀 [NEW] 监听日历视图变化，触发优先同步
-      window.addEventListener('calendarViewChanged', ((event: CustomEvent) => {
-        const { visibleStart, visibleEnd } = event.detail;
-        
-        // 防抖处理：避免快速切换月份时频繁同步
-        if (this.viewChangeTimeout) {
-          clearTimeout(this.viewChangeTimeout);
-        }
-        
-        this.viewChangeTimeout = setTimeout(async () => {
-          if (this.isRunning && !this.syncInProgress) {
-            // 🔧 [FIX] 等待 TagService 初始化（防止视图切换时触发过早同步）
-            if (typeof window !== 'undefined' && (window as any).TagService) {
-              try {
-                await (window as any).TagService.initialize();
-              } catch (error) {
-                syncLogger.error('❌ [View Change] TagService initialization failed:', error);
-              }
+    this.setupCalendarViewChangeListener();
+    this.exposeDebugHelpers();
+  }
+
+  private setupCalendarViewChangeListener() {
+    if (typeof window === 'undefined') return;
+
+    window.addEventListener('calendarViewChanged', (event) => {
+      const detail = (event as CustomEvent<{ visibleStart?: unknown; visibleEnd?: unknown }>).detail;
+      const visibleStart = detail?.visibleStart ? new Date(detail.visibleStart as any) : null;
+      const visibleEnd = detail?.visibleEnd ? new Date(detail.visibleEnd as any) : null;
+
+      if (!visibleStart || !visibleEnd) return;
+      if (isNaN(visibleStart.getTime()) || isNaN(visibleEnd.getTime())) return;
+
+      if (this.viewChangeTimeout) {
+        clearTimeout(this.viewChangeTimeout);
+      }
+
+      this.viewChangeTimeout = setTimeout(async () => {
+        if (this.isRunning && !this.syncInProgress) {
+          // 🔧 等待 TagService 初始化（防止视图切换时触发过早同步）
+          if (window.TagService) {
+            try {
+              await window.TagService.initialize();
+            } catch (error) {
+              syncLogger.error('❌ [View Change] TagService initialization failed:', error);
             }
-            
-            syncLogger.log('📅 [View Change] Triggering priority sync for new visible range');
-            this.syncVisibleDateRangeFirst(
-              new Date(visibleStart),
-              new Date(visibleEnd)
-            ).catch(error => {
-              syncLogger.error('❌ [View Change] Priority sync failed:', error);
-            });
           }
-        }, 500); // 500ms 防抖
-      }) as EventListener);
-    }
-    
-    // 🔍 [DEBUG] 暴露调试函数到全局
-    if (typeof window !== 'undefined') {
-      (window as any).debugSyncManager = {
-        getActionQueue: () => this.actionQueue,
-        getConflictQueue: () => this.conflictQueue,
-        isRunning: () => this.isRunning,
-        isSyncInProgress: () => this.syncInProgress,
-        getLastSyncTime: () => this.lastSyncTime,
-        triggerSync: () => this.performSync(),
-        checkTagMapping: (tagId: string) => this.getCalendarIdForTag(tagId),
-        getHealthScore: () => this.getLastHealthScore(),
-        getIncrementalUpdateCount: () => this.incrementalUpdateCount,
-        resetFullCheck: () => { this.fullCheckCompleted = false; }
-      };
-    }
+
+          syncLogger.log('📅 [View Change] Triggering priority sync for new visible range');
+          this.syncVisibleDateRangeFirst(visibleStart, visibleEnd).catch((error) => {
+            syncLogger.error('❌ [View Change] Priority sync failed:', error);
+          });
+        }
+      }, 500);
+    });
+  }
+
+  private exposeDebugHelpers() {
+    if (typeof window === 'undefined') return;
+
+    window.debugSyncManager = {
+      getActionQueue: () => this.actionQueue,
+      getConflictQueue: () => this.conflictQueue,
+      isRunning: () => this.isRunning,
+      isSyncInProgress: () => this.syncInProgress,
+      getLastSyncTime: () => this.lastSyncTime,
+      triggerSync: () => this.performSync(),
+      checkTagMapping: (tagId: string) => this.getCalendarIdForTag(tagId),
+      getHealthScore: () => this.getLastHealthScore(),
+      getIncrementalUpdateCount: () => this.incrementalUpdateCount,
+      resetFullCheck: () => {
+        this.fullCheckCompleted = false;
+      },
+    };
   }
 
   // 🔧 [NEW] 订阅 EventHub 事件，同步更新 IndexMap
@@ -194,7 +194,7 @@ export class ActionBasedSyncManager {
     const maxRetries = 50; // 最多重试 5 秒
     
     const attemptSubscribe = () => {
-      const EventHub = (window as any).EventHub;
+      const EventHub = window.EventHub;
       if (!EventHub) {
         retryCount++;
         if (retryCount >= maxRetries) {
@@ -379,20 +379,19 @@ export class ActionBasedSyncManager {
       return null;
     }
     
-      try {
-        // 🔧 修复：使用TagService获取标签，而不是直接读取localStorage
-        if (typeof window !== 'undefined' && (window as any)['FourDNoteCache']?.tags?.service) {
-          const flatTags = (window as any)['FourDNoteCache'].tags.service.getFlatTags();        const foundTag = flatTags.find((tag: any) => tag.id === tagId);
+    try {
+      // 🔧 修复：从缓存服务读取标签映射
+      if (typeof window !== 'undefined' && window.FourDNoteCache?.tags?.service) {
+        const flatTags = window.FourDNoteCache.tags.service.getFlatTags();
+        const foundTag = flatTags.find((tag: any) => tag.id === tagId);
         if (foundTag && foundTag.calendarMapping) {
           return foundTag.calendarMapping.calendarId;
-        } else {
-          return null;
         }
-      } else {
-        // TagService not available, return null
-        console.warn('[ActionBasedSyncManager] TagService not available for tag', tagId);
         return null;
       }
+
+      console.warn('[ActionBasedSyncManager] TagService not available for tag', tagId);
+      return null;
       
     } catch (error) {
       console.error('❌ [TAG-CALENDAR] Error getting calendar mapping:', error);
@@ -406,8 +405,8 @@ export class ActionBasedSyncManager {
       // 获取所有标签的日历映射
       const mappedCalendars = new Set<string>();
       
-      if (typeof window !== 'undefined' && (window as any).TagService) {
-        const flatTags = (window as any).TagService.getFlatTags();
+      if (typeof window !== 'undefined' && window.TagService) {
+        const flatTags = window.TagService.getFlatTags();
         
         flatTags.forEach((tag: any) => {
           if (tag.calendarMapping?.calendarId) {
@@ -626,15 +625,24 @@ export class ActionBasedSyncManager {
     try {
       const allEvents: any[] = [];
 
-      // 优先从缓存读取用户的全部日历
-      let calendars: any[] = [];
-      try {
-        const savedCalendars = localStorage.getItem(STORAGE_KEYS.CALENDARS_CACHE);
-        if (savedCalendars) {
-          calendars = JSON.parse(savedCalendars) || [];
+      const storageManager = StorageManager.getInstance();
+
+      // 优先从 StorageManager(metadata) 读取用户的全部日历（若为空则一次性导入 legacy localStorage）
+      let calendars: any[] = (await storageManager.getMetadata<any[]>(STORAGE_KEYS.CALENDARS_CACHE)) || [];
+      if (!Array.isArray(calendars) || calendars.length === 0) {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEYS.CALENDARS_CACHE);
+          if (raw) {
+            const parsed = JSON.parse(raw) || [];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              calendars = parsed;
+              await storageManager.setMetadata(STORAGE_KEYS.CALENDARS_CACHE, parsed);
+              localStorage.removeItem(STORAGE_KEYS.CALENDARS_CACHE);
+            }
+          }
+        } catch {
+          // ignore and fallback to empty list
         }
-      } catch (e) {
-        // ignore and fallback to empty list
       }
 
       if (!calendars || calendars.length === 0) {
@@ -704,8 +712,8 @@ export class ActionBasedSyncManager {
   // 🔧 [NEW] 找到映射到指定日历的标签ID
   private findTagIdForCalendar(calendarId: string): string | null {
     try {
-      if (typeof window !== 'undefined' && (window as any).TagService) {
-        const flatTags = (window as any).TagService.getFlatTags();
+      if (typeof window !== 'undefined' && window.TagService) {
+        const flatTags = window.TagService.getFlatTags();
         const foundTag = flatTags.find((tag: any) => tag.calendarMapping?.calendarId === calendarId);
         return foundTag?.id || null;
       } else {
@@ -730,14 +738,18 @@ export class ActionBasedSyncManager {
         type: item.operation,
         entityType: item.entityType as 'event' | 'task',
         entityId: item.entityId,
-        timestamp: new Date(item.createdAt),
+        timestamp: parseLocalTimeStringOrNull(item.createdAt) ?? new Date(0),
         source: 'local' as const,
         data: item.data,
         synchronized: item.status === SyncStatus.Synced,
-        synchronizedAt: item.status === SyncStatus.Synced ? new Date(item.updatedAt) : undefined,
+        synchronizedAt: item.status === SyncStatus.Synced
+          ? (parseLocalTimeStringOrNull(item.updatedAt) ?? undefined)
+          : undefined,
         retryCount: item.attempts,
         lastError: item.error,
-        lastAttemptTime: item.lastAttemptAt ? new Date(item.lastAttemptAt) : undefined
+        lastAttemptTime: item.lastAttemptAt
+          ? (parseLocalTimeStringOrNull(item.lastAttemptAt) ?? undefined)
+          : undefined
       }));
 
       console.log(`[ActionBasedSyncManager] ✅ Loaded ${this.actionQueue.length} sync actions from IndexedDB`);
@@ -852,19 +864,39 @@ export class ActionBasedSyncManager {
   }
 
   private loadConflictQueue() {
+    return this.loadConflictQueueAsync();
+  }
+
+  private async loadConflictQueueAsync(): Promise<void> {
     try {
-      const stored = localStorage.getItem(STORAGE_KEYS.SYNC_CONFLICTS);
-      if (stored) {
-        this.conflictQueue = JSON.parse(stored).map((conflict: any) => ({
+      const stored = await storageManager.getMetadata<any>(STORAGE_KEYS.SYNC_CONFLICTS);
+
+      // One-time fallback import from legacy localStorage (then stop using it)
+      if (!stored) {
+        const legacy = localStorage.getItem(STORAGE_KEYS.SYNC_CONFLICTS);
+        if (legacy) {
+          try {
+            const parsed = JSON.parse(legacy);
+            await storageManager.setMetadata(STORAGE_KEYS.SYNC_CONFLICTS, parsed);
+            localStorage.removeItem(STORAGE_KEYS.SYNC_CONFLICTS);
+          } catch {
+            // ignore legacy parse errors
+          }
+        }
+      }
+
+      const stored2 = stored ?? (await storageManager.getMetadata<any>(STORAGE_KEYS.SYNC_CONFLICTS));
+      if (stored2) {
+        this.conflictQueue = stored2.map((conflict: any) => ({
           ...conflict,
           localAction: {
             ...conflict.localAction,
-            timestamp: new Date(conflict.localAction.timestamp)
+            timestamp: new Date(conflict.localAction.timestamp),
           },
           remoteAction: {
             ...conflict.remoteAction,
-            timestamp: new Date(conflict.remoteAction.timestamp)
-          }
+            timestamp: new Date(conflict.remoteAction.timestamp),
+          },
         }));
       }
     } catch (error) {
@@ -874,19 +906,40 @@ export class ActionBasedSyncManager {
   }
 
   private saveConflictQueue() {
+    void this.saveConflictQueueAsync();
+  }
+
+  private async saveConflictQueueAsync(): Promise<void> {
     try {
-      localStorage.setItem(STORAGE_KEYS.SYNC_CONFLICTS, JSON.stringify(this.conflictQueue));
+      await storageManager.setMetadata(STORAGE_KEYS.SYNC_CONFLICTS, this.conflictQueue);
     } catch (error) {
       console.error('Failed to save conflict queue:', error);
     }
   }
 
   // 🆕 加载已删除事件ID
-  private loadDeletedEventIds() {
+  private async loadDeletedEventIds(): Promise<void> {
+    const key = '4dnote-dev-persistent-deletedEventIds';
     try {
-      const stored = localStorage.getItem('4dnote-dev-persistent-deletedEventIds');
-      if (stored) {
-        this.deletedEventIds = new Set(JSON.parse(stored));
+      const stored = await storageManager.getMetadata<any>(key);
+
+      // One-time fallback import from legacy localStorage
+      if (!stored) {
+        const legacy = localStorage.getItem(key);
+        if (legacy) {
+          try {
+            const parsed = JSON.parse(legacy);
+            await storageManager.setMetadata(key, parsed);
+            localStorage.removeItem(key);
+          } catch {
+            // ignore legacy parse errors
+          }
+        }
+      }
+
+      const stored2 = stored ?? (await storageManager.getMetadata<any>(key));
+      if (stored2) {
+        this.deletedEventIds = new Set(stored2);
       }
     } catch (error) {
       console.error('Failed to load deleted event IDs:', error);
@@ -896,8 +949,13 @@ export class ActionBasedSyncManager {
 
   // 🆕 保存已删除事件ID
   private saveDeletedEventIds() {
+    void this.saveDeletedEventIdsAsync();
+  }
+
+  private async saveDeletedEventIdsAsync(): Promise<void> {
+    const key = '4dnote-dev-persistent-deletedEventIds';
     try {
-      localStorage.setItem('4dnote-dev-persistent-deletedEventIds', JSON.stringify(Array.from(this.deletedEventIds)));
+      await storageManager.setMetadata(key, Array.from(this.deletedEventIds));
     } catch (error) {
       console.error('Failed to save deleted event IDs:', error);
     }
@@ -984,8 +1042,8 @@ export class ActionBasedSyncManager {
           const existingIndex = uniqueEvents.findIndex(e => e.externalId === event.externalId);
           if (existingIndex !== -1) {
             const existing = uniqueEvents[existingIndex];
-            const existingTime = existing.lastSyncTime ? new Date(existing.lastSyncTime).getTime() : 0;
-            const currentTime = event.lastSyncTime ? new Date(event.lastSyncTime).getTime() : 0;
+            const existingTime = parseLocalTimeStringOrNull(existing.lastSyncTime)?.getTime() ?? 0;
+            const currentTime = parseLocalTimeStringOrNull(event.lastSyncTime)?.getTime() ?? 0;
             
             if (currentTime > existingTime) {
               // 当前事件更新，替换旧的
@@ -1017,17 +1075,14 @@ export class ActionBasedSyncManager {
         console.log(`🗑️ [deduplicateEvents] Deleting ${removedIds.length} duplicate events from database...`);
         
         // ⚡ [PERFORMANCE] 使用批量删除API（单次事务），比逐个删除快100倍+
-        const StorageManager = (window as any).StorageManager;
-        if (StorageManager) {
-          try {
-            const deleteStart = performance.now();
-            // 批量硬删除（单次事务）
-            await StorageManager.batchHardDeleteEvents(removedIds);
-            const deleteDuration = performance.now() - deleteStart;
-            console.log(`✅ [deduplicateEvents] Deleted ${removedIds.length} duplicates in ${deleteDuration.toFixed(1)}ms`);
-          } catch (error) {
-            console.error('❌ [deduplicateEvents] Batch delete failed:', error);
-          }
+        try {
+          const deleteStart = performance.now();
+          // 批量硬删除（单次事务）
+          await storageManager.batchHardDeleteEvents(removedIds);
+          const deleteDuration = performance.now() - deleteStart;
+          console.log(`✅ [deduplicateEvents] Deleted ${removedIds.length} duplicates in ${deleteDuration.toFixed(1)}ms`);
+        } catch (error) {
+          console.error('❌ [deduplicateEvents] Batch delete failed:', error);
         }
       }
       
@@ -1108,7 +1163,9 @@ export class ActionBasedSyncManager {
   // 🔧 生成创建备注
   private generateCreateNote(source: 'outlook' | '4dnote', createTime?: Date | string, baseText?: string): string {
     // 使用传入的时间或当前时间
-    const timeToUse = createTime ? (typeof createTime === 'string' ? new Date(createTime) : createTime) : new Date();
+    const timeToUse = createTime
+      ? (typeof createTime === 'string' ? (parseLocalTimeStringOrNull(createTime) ?? new Date()) : createTime)
+      : new Date();
     const timeStr = `${timeToUse.getFullYear()}-${(timeToUse.getMonth() + 1).toString().padStart(2, '0')}-${timeToUse.getDate().toString().padStart(2, '0')} ${timeToUse.getHours().toString().padStart(2, '0')}:${timeToUse.getMinutes().toString().padStart(2, '0')}:${timeToUse.getSeconds().toString().padStart(2, '0')}`;
     const sourceIcon = source === 'outlook' ? '📧 Outlook' : '🔮 4DNote';
     
@@ -1266,7 +1323,7 @@ export class ActionBasedSyncManager {
       
       if (createTimeMatch && createTimeMatch[1]) {
         const timeString = createTimeMatch[1];
-        const parsedTime = new Date(timeString);
+        const parsedTime = parseLocalTimeStringOrNull(timeString) ?? new Date(timeString);
         
         if (!isNaN(parsedTime.getTime())) {
           // Found original create time
@@ -1456,14 +1513,25 @@ export class ActionBasedSyncManager {
     }
     
     // 🔧 [FIX] 等待 TagService 初始化完成
-    if (typeof window !== 'undefined' && (window as any).TagService) {
+    if (typeof window !== 'undefined' && window.TagService) {
       try {
         syncLogger.log('⏳ [Start] Waiting for TagService initialization...');
-        await (window as any).TagService.initialize();
+        await window.TagService.initialize();
         syncLogger.log('✅ [Start] TagService ready');
       } catch (error) {
         syncLogger.error('❌ [Start] TagService initialization failed:', error);
       }
+    }
+
+    // 📅 [CRITICAL] 首次同步前确保 CalendarService 已挂载且分组数据就绪
+    // 目的：清库/清缓存后的首次同步，不要先落到默认分组再慢慢纠正。
+    try {
+      syncLogger.log('⏳ [Start] Ensuring CalendarService ready before first sync...');
+      await CalendarService.ensureReady({ forceRemote: true });
+      syncLogger.log('✅ [Start] CalendarService ready');
+    } catch (error) {
+      syncLogger.error('❌ [Start] CalendarService ensureReady failed:', error);
+      // 不阻断同步：没有日历分组也能同步，只是 UI 可能暂时使用默认分组
     }
     
     // 检查是否需要全量同步
@@ -1685,7 +1753,9 @@ export class ActionBasedSyncManager {
       
       if (hasPendingLocalActions) {
       // console.log('📤 [Sync] Step 1: Syncing local changes to remote (lightweight)...');
+        const localStart = performance.now();
         await this.syncPendingLocalActions();
+        this.lastLocalSyncDuration = performance.now() - localStart;
         
         // 🎯 [PRIORITY OPTIMIZATION] 如果定时器触发时发现有本地队列，先推送本地后立即返回
         // 让下一个定时器周期再拉取远程，确保 localToRemote 优先级高于 remoteToLocal
@@ -1699,31 +1769,30 @@ export class ActionBasedSyncManager {
       
       // 根据skipRemote标志决定是否拉取远程
       if (!skipRemote) {
+        const remoteStart = performance.now();
         await this.fetchRemoteChanges();
         await this.syncPendingRemoteActions();
+        this.lastRemoteSyncDuration = performance.now() - remoteStart;
       }
       
       await this.resolveConflicts();
       this.cleanupSynchronizedActions();
       
       // 🔍 去重检查：防止迁移等操作产生重复事件
+      const dedupStart = performance.now();
       await this.deduplicateEvents();
+      this.lastDedupDuration = performance.now() - dedupStart;
       
       this.lastSyncTime = new Date();
-      
-      // 🔧 更新localStorage，供状态栏使用（使用本地时间格式）
-      localStorage.setItem('lastSyncTime', formatTimeForStorage(this.lastSyncTime));
-      localStorage.setItem('lastSyncEventCount', String(this.actionQueue.length || 0));
-      
-      // 📊 保存同步统计信息
-      localStorage.setItem('syncStats', JSON.stringify(this.syncStats));
       
       const syncDuration = performance.now() - syncStartTime;
       
       window.dispatchEvent(new CustomEvent('action-sync-completed', {
         detail: { 
           timestamp: this.lastSyncTime,
-          duration: syncDuration 
+          duration: syncDuration,
+          eventCount: this.actionQueue.length || 0,
+          syncStats: this.syncStats
         }
       }));
       
@@ -2017,12 +2086,8 @@ export class ActionBasedSyncManager {
           : localEvent.externalId;
         
         // 🔧 检查本地事件是否在当前同步的时间窗口内
-        let localEventTime: Date;
-        try {
-          localEventTime = new Date(localEvent.start || localEvent.startTime);
-        } catch {
-          localEventTime = new Date(0); // fallback to epoch
-        }
+        const localEventTime =
+          parseLocalTimeStringOrNull(localEvent.start || localEvent.startTime) ?? new Date(0);
         
         const isInSyncWindow = localEventTime >= startDate && localEventTime <= endDate;
         
@@ -2148,15 +2213,7 @@ export class ActionBasedSyncManager {
     }
   }
 
-// 🔧 获取用户设置的方法（已废弃ongoingDays参数，现在默认同步1年数据）
-private getUserSettings(): any {
-  try {
-    const settings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return settings ? JSON.parse(settings) : {};
-  } catch {
-    return {};
-  }
-}
+
 
   private recordRemoteAction(type: 'create' | 'update' | 'delete', entityType: 'event' | 'task', entityId: string, data?: any, oldData?: any) {
     // 🔥 [CRITICAL FIX] 防止重复 action：检查是否已有相同的未同步 action
@@ -2363,18 +2420,18 @@ private getUserSettings(): any {
           continue;
         }
         
-        // 🔧 [MIGRATION FIX] 自动升级旧的 receive-only 模式为 bidirectional-private
+        // 🔧 [MIGRATION FIX] 自动升级旧的 receive-only 模式为 bidirectional
         // 这是为了修复历史遗留问题：旧代码将 Outlook 事件默认设置为 receive-only
-        if (localEvent.syncMode === 'receive-only' || !localEvent.syncMode) {
+        if (localEvent.syncMode === 'receive-only' || localEvent.syncMode === 'bidirectional-private' || !localEvent.syncMode) {
           if (successCount < 3) {
-            console.log(`🔧 [Migration] 自动升级 syncMode: ${localEvent.id.slice(-8)} receive-only → bidirectional-private`);
+            console.log(`🔧 [Migration] 自动升级 syncMode: ${localEvent.id.slice(-8)} → bidirectional`);
           }
           // 立即更新数据库
           await storageManager.updateEvent(localEvent.id, {
-            syncMode: 'bidirectional-private'
+            syncMode: 'bidirectional'
           });
           // 更新内存中的对象
-          localEvent.syncMode = 'bidirectional-private';
+          localEvent.syncMode = 'bidirectional';
         }
         
         // 🔧 检测变化
@@ -2425,7 +2482,7 @@ private getUserSettings(): any {
         }
         
         // 🔧 读取 syncMode（此时已经过自动升级处理）
-        const syncMode = localEvent.syncMode || 'bidirectional-private'; // 默认双向同步
+        const syncMode = normalizeSyncMode(localEvent.syncMode); // 默认双向同步
         
         // 🔧 [CRITICAL FIX] 如果 remoteTitle 为空但 localTitle 不为空，保留 localTitle
         // Outlook 不允许空标题，如果 action.data.subject 为空，说明数据不完整
@@ -2443,14 +2500,14 @@ private getUserSettings(): any {
               localHasRichText,
               syncMode,
               'localEvent.title': localEvent.title,
-              '会覆盖': syncMode === 'receive-only' && titleChanged
+              '会覆盖': syncMode === 'bidirectional' && titleChanged
             });
           }
           
           // 如果本地有富文本，提取纯文本比较（忽略 emoji/格式差异）
           if (localHasRichText) {
-            const localPlainText = localTitle.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
-            const remotePlainText = remoteTitle.replace(/[\u{1F300}-\u{1F9FF}]/gu, '').trim();
+            const localPlainText = stripSurrogatePairs(localTitle);
+            const remotePlainText = stripSurrogatePairs(remoteTitle);
             titleChanged = remotePlainText && remotePlainText !== localPlainText;
             
             if (successCount < 3) {
@@ -2506,17 +2563,14 @@ private getUserSettings(): any {
         
         // ✅ 增量更新原则：只更新变化的字段
         if (descriptionChanged) {
-          // 🔥 [CRITICAL FIX] 先解析成 Block-Level，再比较 diff，避免无脑更新
-          const { EventService: ES } = await import('./EventService');
-          
           // 🆕 获取 Outlook 时间戳
-          const remoteCreatedAt = action.data.createdDateTime 
-            ? new Date(action.data.createdDateTime).getTime() 
+          const remoteCreatedAt = action.data.createdDateTime
+            ? new Date(action.data.createdDateTime).getTime()
             : undefined;
-          const remoteUpdatedAt = action.data.lastModifiedDateTime 
-            ? new Date(action.data.lastModifiedDateTime).getTime() 
+          const remoteUpdatedAt = action.data.lastModifiedDateTime
+            ? new Date(action.data.lastModifiedDateTime).getTime()
             : undefined;
-          
+
           // 🔍 调试：打印 Outlook 时间戳
           if (successCount < 3) {
             console.log('[Sync] Outlook 时间戳:', {
@@ -2526,49 +2580,16 @@ private getUserSettings(): any {
               remoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt).toLocaleString() : 'undefined'
             });
           }
-          
-          // ✅ 直接传递 remoteCoreContent 作为 eventlogInput（而非 fallback）
-          // 🆕 使用本地 updatedAt 进行 Diff（避免 Outlook 时间戳变化导致签名变化）
-          const localUpdatedAt = localEvent.updatedAt 
-            ? new Date(localEvent.updatedAt).getTime() 
-            : remoteUpdatedAt;
-          
-          const remoteEventlog = ES.normalizeEventLog(
-            remoteCoreContent,  // ✅ 直接传递 HTML/纯文本
-            undefined,          // 不需要 fallback
-            remoteCreatedAt,    // Event.createdAt
-            localUpdatedAt,     // 🆕 使用本地时间（而非 Outlook 时间）
-            localEvent.eventlog // 旧 eventlog（用于 Diff）
-          );
-          
-          // 比较新旧 eventlog 的 slateJson
-          const oldSlateJson = typeof localEvent.eventlog?.slateJson === 'string' 
-            ? localEvent.eventlog.slateJson 
-            : JSON.stringify(localEvent.eventlog?.slateJson || []);
-          const newSlateJson = typeof remoteEventlog.slateJson === 'string'
-            ? remoteEventlog.slateJson
-            : JSON.stringify(remoteEventlog.slateJson || []);
-          
-          // 只有 eventlog 真的变化了才更新
-          if (oldSlateJson !== newSlateJson) {
-            updates.eventlog = remoteEventlog;
-            
-            // 🆕 同时更新 Event 的时间戳（使用 Outlook 的时间）
-            if (remoteCreatedAt) {
-              updates.createdAt = this.safeFormatDateTime(new Date(remoteCreatedAt));
-            }
-            if (remoteUpdatedAt) {
-              updates.updatedAt = this.safeFormatDateTime(new Date(remoteUpdatedAt));
-            }
-            
-            if (successCount < 3) {
-              console.log('✅ [Sync] EventLog 真实变化，将更新（含时间戳）');
-            }
-          } else {
-            if (successCount < 3) {
-              console.log('⏭️ [Sync] Description 变化但 EventLog 相同（仅签名差异），跳过 eventlog 更新');
-            }
-            descriptionChanged = false;  // 重置标志，避免后续无意义更新
+
+          // 外部同步：只写入远端“核心内容”（去签名），由 EventService 负责 canonical 化与签名维护
+          updates.description = remoteCoreContent;
+
+          // 外部同步允许写入远端时间戳（字段契约）
+          if (remoteCreatedAt) {
+            updates.createdAt = this.safeFormatDateTime(new Date(remoteCreatedAt));
+          }
+          if (remoteUpdatedAt) {
+            updates.updatedAt = this.safeFormatDateTime(new Date(remoteUpdatedAt));
           }
         }
         
@@ -2588,9 +2609,8 @@ private getUserSettings(): any {
           updates.isAllDay = remoteIsAllDay;
         }
         
-        // ✅ 修复: bidirectional 模式下不覆盖本地富文本标题
-        // 只有 receive-only 模式才从远程同步标题
-        if (syncMode === 'receive-only' && titleChanged) {
+        // bidirectional 模式才从远程同步标题（push-only/local-only 不做 remote→local）
+        if (syncMode === 'bidirectional' && titleChanged) {
           updates.title = {
             simpleTitle: remoteTitle,
             colorTitle: remoteTitle,
@@ -2599,7 +2619,7 @@ private getUserSettings(): any {
         }
         
         // ✅ 明确保护本地专属字段（不被覆盖）
-        // tags, remarkableSource, childEventIds, parentEventId, linkedEventIds, backlinks
+        // tags, remarkableSource, parentEventId, linkedEventIds, backlinks
         // 这些字段会被 EventService 自动保留，不需要显式传递
         
         // ✅ 通过 EventService 更新（自动触发 eventsUpdated）
@@ -2911,7 +2931,7 @@ private getUserSettings(): any {
           }
           
           // 🆕 使用虚拟标题生成（支持 Note 事件）
-          const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+          const virtualTitle = resolveSyncTitle(action.data, undefined, { maxLength: 50 });
           
           const eventData = {
             subject: virtualTitle,
@@ -3205,10 +3225,18 @@ private getUserSettings(): any {
             
             // 🆕 [v2.19] Note 事件虚拟时间处理
             const isNoteWithVirtualTime_updateToCreate = createDescription.includes('📝 笔记由');
-            if (isNoteWithVirtualTime_updateToCreate && updateToCreateStartTime && !updateToCreateEndTime) {
-              const startDate = new Date(updateToCreateStartTime);
-              updateToCreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
-              console.log('[Sync] 📝 Note事件添加虚拟endTime (update→create):', {
+            if (isNoteWithVirtualTime_updateToCreate) {
+              // Note 的 start/endTime 是同步层派生值：优先使用 startTime，其次回退到 createdAt
+              if (!updateToCreateStartTime) {
+                updateToCreateStartTime = action.data.createdAt || action.data.updatedAt;
+              }
+              if (updateToCreateStartTime && !updateToCreateEndTime) {
+                const startDate = parseLocalTimeStringOrNull(updateToCreateStartTime);
+                if (startDate) {
+                  updateToCreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+                }
+              }
+              console.log('[Sync] 📝 Note事件添加虚拟时间 (update→create):', {
                 startTime: updateToCreateStartTime,
                 virtualEndTime: updateToCreateEndTime
               });
@@ -3225,19 +3253,29 @@ private getUserSettings(): any {
                 updateToCreateEndTime = formatTimeForStorage(tomorrow);
               } else {
                 // 规范化为午夜（保留日期）
-                const startDate = new Date(updateToCreateStartTime);
-                startDate.setHours(0, 0, 0, 0);
-                updateToCreateStartTime = formatTimeForStorage(startDate);
-                
-                const endDate = new Date(updateToCreateEndTime);
-                endDate.setHours(0, 0, 0, 0);
-                endDate.setDate(endDate.getDate() + 1);
-                updateToCreateEndTime = formatTimeForStorage(endDate);
+                const startDate = parseLocalTimeStringOrNull(updateToCreateStartTime);
+                const endDate = parseLocalTimeStringOrNull(updateToCreateEndTime);
+
+                if (!startDate || !endDate) {
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  updateToCreateStartTime = formatTimeForStorage(today);
+                  const tomorrow = new Date(today);
+                  tomorrow.setDate(tomorrow.getDate() + 1);
+                  updateToCreateEndTime = formatTimeForStorage(tomorrow);
+                } else {
+                  startDate.setHours(0, 0, 0, 0);
+                  updateToCreateStartTime = formatTimeForStorage(startDate);
+
+                  endDate.setHours(0, 0, 0, 0);
+                  endDate.setDate(endDate.getDate() + 1);
+                  updateToCreateEndTime = formatTimeForStorage(endDate);
+                }
               }
             }
             
             // 🆕 使用虚拟标题生成（支持 Note 事件）
-            const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+            const virtualTitle = resolveSyncTitle(action.data, undefined, { maxLength: 50 });
             
             const eventData = {
               subject: virtualTitle,
@@ -3342,17 +3380,24 @@ private getUserSettings(): any {
                 let migrateStartTime = action.data.startTime;
                 let migrateEndTime = action.data.endTime;
                 const isNoteWithVirtualTime_migrate = migrateDescription.includes('📝 笔记由');
-                if (isNoteWithVirtualTime_migrate && migrateStartTime && !migrateEndTime) {
-                  const startDate = new Date(migrateStartTime);
-                  migrateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
-                  console.log('[Sync] 📝 Note事件添加虚拟endTime (migrate):', {
+                if (isNoteWithVirtualTime_migrate) {
+                  if (!migrateStartTime) {
+                    migrateStartTime = action.data.createdAt || action.data.updatedAt;
+                  }
+                  if (migrateStartTime && !migrateEndTime) {
+                    const startDate = parseLocalTimeStringOrNull(migrateStartTime);
+                    if (startDate) {
+                      migrateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+                    }
+                  }
+                  console.log('[Sync] 📝 Note事件添加虚拟时间 (migrate):', {
                     startTime: migrateStartTime,
                     virtualEndTime: migrateEndTime
                   });
                 }
                 
                 // 🆕 使用虚拟标题生成（支持 Note 事件）
-                const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+                const virtualTitle = resolveSyncTitle(action.data, undefined, { maxLength: 50 });
                 
                 const migrateEventData = {
                   subject: virtualTitle,
@@ -3402,11 +3447,15 @@ private getUserSettings(): any {
           // 📝 [PRIORITY 3] 中等优先级：字段更新处理
           // 3️⃣ 构建更新数据
           const updateData: any = {};
+
+          // 🎯 获取完整事件数据用于后续处理（包含描述序列化/同步路由判断）
+          const deleteLocalEvents = localEvents || await this.getLocalEvents();
+          const localEvent = deleteLocalEvents.find((e: any) => e.id === action.entityId);
           
           // 📝 文本字段处理
           if (action.data.title) {
             // 🆕 使用虚拟标题生成（支持 Note 事件）
-            const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+            const virtualTitle = resolveSyncTitle(action.data, undefined, { maxLength: 50 });
             updateData.subject = virtualTitle;
           }
           
@@ -3460,11 +3509,6 @@ private getUserSettings(): any {
               updateData.location = null; // 清空位置
             }
           }
-          
-          
-          // 🎯 获取完整事件数据用于同步路由判断 - 使用传入的 localEvents
-          const deleteLocalEvents = localEvents || await this.getLocalEvents();
-          const localEvent = deleteLocalEvents.find((e: any) => e.id === action.entityId);
           
           // 合并 action.data 和 localEvent 得到最新状态
           const mergedEventData = {
@@ -3594,11 +3638,21 @@ private getUserSettings(): any {
               // 🆕 [v2.19] Note 事件虚拟时间处理：如果 description 包含"📝 笔记由"，临时添加 endTime
               const updateDescriptionContent = updateData.body?.content || action.data.description || '';
               const isNoteWithVirtualTime_update = updateDescriptionContent.includes('📝 笔记由');
-              if (isNoteWithVirtualTime_update && mergedEventData.startTime && !mergedEventData.endTime) {
-                const startDate = new Date(mergedEventData.startTime);
-                endDateTime = this.safeFormatDateTime(formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000))); // +1小时
-                console.log('[Sync] 📝 Note事件添加虚拟endTime (update):', {
-                  startTime: mergedEventData.startTime,
+              if (isNoteWithVirtualTime_update) {
+                const virtualStartTime = mergedEventData.startTime || mergedEventData.createdAt;
+                if (virtualStartTime) {
+                  startDateTime = this.safeFormatDateTime(virtualStartTime);
+                  if (!mergedEventData.endTime) {
+                    const startDate = parseLocalTimeStringOrNull(virtualStartTime);
+                    if (startDate) {
+                      endDateTime = this.safeFormatDateTime(
+                        formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000))
+                      ); // +1小时
+                    }
+                  }
+                }
+                console.log('[Sync] 📝 Note事件添加虚拟时间 (update):', {
+                  startTime: virtualStartTime,
                   virtualEndTime: endDateTime
                 });
               }
@@ -3615,15 +3669,23 @@ private getUserSettings(): any {
                   endDateTime = this.safeFormatDateTime(formatTimeForStorage(tomorrow));
                 } else {
                   // 场景2：时间存在，规范化为午夜（保留日期部分）
-                  const startDate = new Date(mergedEventData.startTime!);
-                  startDate.setHours(0, 0, 0, 0);
-                  startDateTime = this.safeFormatDateTime(formatTimeForStorage(startDate));
-                  
-                  const endDate = new Date(mergedEventData.endTime!);
-                  endDate.setHours(0, 0, 0, 0);
-                  // 全天事件结束时间应该是次日午夜
-                  endDate.setDate(endDate.getDate() + 1);
-                  endDateTime = this.safeFormatDateTime(formatTimeForStorage(endDate));
+                  const rawStart = mergedEventData.startTime;
+                  const rawEnd = mergedEventData.endTime;
+                  if (rawStart && rawEnd) {
+                    try {
+                      const startDate = parseLocalTimeString(rawStart);
+                      startDate.setHours(0, 0, 0, 0);
+                      startDateTime = this.safeFormatDateTime(formatTimeForStorage(startDate));
+
+                      const endDate = parseLocalTimeString(rawEnd);
+                      endDate.setHours(0, 0, 0, 0);
+                      // 全天事件结束时间应该是次日午夜
+                      endDate.setDate(endDate.getDate() + 1);
+                      endDateTime = this.safeFormatDateTime(formatTimeForStorage(endDate));
+                    } catch {
+                      // Keep the existing startDateTime/endDateTime if parsing fails
+                    }
+                  }
                 }
               }
               
@@ -3696,10 +3758,17 @@ private getUserSettings(): any {
                 
                 // 🆕 [v2.19] Note 事件虚拟时间处理
                 const isNoteWithVirtualTime_recreate = recreateDescription.includes('📝 笔记由');
-                if (isNoteWithVirtualTime_recreate && recreateStartTime && !recreateEndTime) {
-                  const startDate = new Date(recreateStartTime);
-                  recreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
-                  console.log('[Sync] 📝 Note事件添加虚拟endTime (recreate):', {
+                if (isNoteWithVirtualTime_recreate) {
+                  if (!recreateStartTime) {
+                    recreateStartTime = action.data.createdAt || action.data.updatedAt;
+                  }
+                  if (recreateStartTime && !recreateEndTime) {
+                    const startDate = parseLocalTimeStringOrNull(recreateStartTime);
+                    if (startDate) {
+                      recreateEndTime = formatTimeForStorage(new Date(startDate.getTime() + 60 * 60 * 1000)); // +1小时
+                    }
+                  }
+                  console.log('[Sync] 📝 Note事件添加虚拟时间 (recreate):', {
                     startTime: recreateStartTime,
                     virtualEndTime: recreateEndTime
                   });
@@ -3716,19 +3785,29 @@ private getUserSettings(): any {
                     recreateEndTime = formatTimeForStorage(tomorrow);
                   } else {
                     // 规范化为午夜（保留日期）
-                    const startDate = new Date(recreateStartTime);
-                    startDate.setHours(0, 0, 0, 0);
-                    recreateStartTime = formatTimeForStorage(startDate);
-                    
-                    const endDate = new Date(recreateEndTime);
-                    endDate.setHours(0, 0, 0, 0);
-                    endDate.setDate(endDate.getDate() + 1);
-                    recreateEndTime = formatTimeForStorage(endDate);
+                    const startDate = parseLocalTimeStringOrNull(recreateStartTime);
+                    const endDate = parseLocalTimeStringOrNull(recreateEndTime);
+
+                    if (!startDate || !endDate) {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      recreateStartTime = formatTimeForStorage(today);
+                      const tomorrow = new Date(today);
+                      tomorrow.setDate(tomorrow.getDate() + 1);
+                      recreateEndTime = formatTimeForStorage(tomorrow);
+                    } else {
+                      startDate.setHours(0, 0, 0, 0);
+                      recreateStartTime = formatTimeForStorage(startDate);
+
+                      endDate.setHours(0, 0, 0, 0);
+                      endDate.setDate(endDate.getDate() + 1);
+                      recreateEndTime = formatTimeForStorage(endDate);
+                    }
                   }
                 }
                 
                 // 🆕 使用虚拟标题生成（支持 Note 事件）
-                const virtualTitle = EventService.getVirtualTitle(action.data, 50);
+                const virtualTitle = resolveSyncTitle(action.data, undefined, { maxLength: 50 });
                 
                 const recreateEventData = {
                   subject: virtualTitle,
@@ -4138,7 +4217,10 @@ private getUserSettings(): any {
               e.isTimer &&                    // ✅ 必须是 Timer 事件
               !e.externalId &&                 // ✅ 还没有同步过(没有 externalId)
               e.fourDNoteSource === true &&   // ✅ 4DNote 创建的
-              Math.abs(new Date(e.createdAt).getTime() - createTime.getTime()) < 1000 // ✅ 创建时间匹配(1秒容差)
+              (() => {
+                const createdAt = parseLocalTimeStringOrNull(e.createdAt);
+                return createdAt ? Math.abs(createdAt.getTime() - createTime.getTime()) < 1000 : false;
+              })() // ✅ 创建时间匹配(1秒容差)
             );
             
             if (existingEvent) {
@@ -4153,7 +4235,10 @@ private getUserSettings(): any {
                 !e.externalId &&                // ✅ 还没有同步过(没有 externalId)
                 (e.fourDNoteSource === true || e.id.startsWith('local-')) && // ✅ 4DNote 创建的或本地创建的
                 e.title?.simpleTitle === newEvent.title?.simpleTitle &&   // ✅ 标题匹配
-                Math.abs(new Date(e.createdAt).getTime() - createTime.getTime()) < 5000 // ✅ 创建时间匹配(5秒容差)
+                (() => {
+                  const createdAt = parseLocalTimeStringOrNull(e.createdAt);
+                  return createdAt ? Math.abs(createdAt.getTime() - createTime.getTime()) < 5000 : false;
+                })() // ✅ 创建时间匹配(5秒容差)
               );
               
               if (existingEvent) {
@@ -4297,72 +4382,14 @@ private getUserSettings(): any {
             });
           }
           
-          // 🆕 v2.14.1: 同步 description 到 eventlog 对象
-          // 🔥 [CRITICAL FIX] 先解析成 Block-Level，再比较 diff，避免无脑更新
-          let updatedEventlog = oldEvent.eventlog;
-          let eventlogActuallyChanged = false;
-          
-          if (descriptionChanged) {
-            // ✅ Step 1: 将远程内容解析成 Block-Level eventlog
-            const { EventService } = await import('./EventService');
-            
-            // 🆕 获取 Outlook 时间戳
-            const remoteCreatedAt = action.data.createdDateTime 
-              ? new Date(action.data.createdDateTime).getTime() 
-              : undefined;
-            const remoteUpdatedAt = action.data.lastModifiedDateTime 
-              ? new Date(action.data.lastModifiedDateTime).getTime() 
-              : undefined;
-            
-            // 🔍 调试：打印 Outlook 时间戳
-            if ((action as any).__debugCount < 5) {
-              console.log('[applyAction] Outlook 时间戳:', {
-                eventId: oldEvent.id.slice(-8),
-                createdDateTime: action.data.createdDateTime,
-                lastModifiedDateTime: action.data.lastModifiedDateTime,
-                remoteCreatedAt: remoteCreatedAt ? new Date(remoteCreatedAt).toLocaleString() : 'undefined',
-                remoteUpdatedAt: remoteUpdatedAt ? new Date(remoteUpdatedAt).toLocaleString() : 'undefined'
-              });
-            }
-            
-            // ✅ 直接传递 remoteCoreContent 作为 eventlogInput（而非 fallback）
-            // 🆕 使用本地 updatedAt 进行 Diff（避免 Outlook 时间戳变化导致签名变化）
-            const localUpdatedAt = oldEvent.updatedAt 
-              ? new Date(oldEvent.updatedAt).getTime() 
-              : remoteUpdatedAt;
-            
-            const remoteEventlog = EventService.normalizeEventLog(
-              remoteCoreContent,  // ✅ 直接传递 HTML/纯文本
-              undefined,          // 不需要 fallback
-              remoteCreatedAt,    // Event.createdAt
-              localUpdatedAt,     // 🆕 使用本地时间（而非 Outlook 时间）
-              oldEvent.eventlog   // 旧 eventlog（用于 Diff）
-            );
-            
-            // ✅ Step 2: 比较新旧 eventlog 的 slateJson（规范化后的结构）
-            const oldSlateJson = typeof oldEvent.eventlog?.slateJson === 'string' 
-              ? oldEvent.eventlog.slateJson 
-              : JSON.stringify(oldEvent.eventlog?.slateJson || []);
-            const newSlateJson = typeof remoteEventlog.slateJson === 'string'
-              ? remoteEventlog.slateJson
-              : JSON.stringify(remoteEventlog.slateJson || []);
-            
-            // ✅ Step 3: 只有 eventlog 真的变化了才更新
-            if (oldSlateJson !== newSlateJson) {
-              updatedEventlog = remoteEventlog;
-              eventlogActuallyChanged = true;
-              console.log('✅ [Sync] EventLog 真实变化，将更新:', {
-                eventId: oldEvent.id.slice(-8),
-                oldLength: oldSlateJson.length,
-                newLength: newSlateJson.length
-              });
-            } else {
-              console.log('⏭️ [Sync] Description 变化但 EventLog 相同（仅签名差异），跳过更新:', {
-                eventId: oldEvent.id.slice(-8)
-              });
-              // EventLog 没变化，不更新
-            }
-          }
+          // 🆕 外部同步：description 变化时仅写入“去签名的核心内容”，canonical 化交给 EventService
+          // 同时允许写入远端时间戳（字段契约）
+          const remoteCreatedAt = action.data.createdDateTime
+            ? new Date(action.data.createdDateTime).getTime()
+            : undefined;
+          const remoteUpdatedAt = action.data.lastModifiedDateTime
+            ? new Date(action.data.lastModifiedDateTime).getTime()
+            : undefined;
           
           // 🔧 将 Outlook subject 转换为完整的 EventTitle 对象
           const cleanTitle = action.data.subject || '';
@@ -4382,10 +4409,15 @@ private getUserSettings(): any {
           if (titleChanged) {
             updates.title = titleObject;
           }
-          
-          if (eventlogActuallyChanged && updatedEventlog) {
-            // ✅ 只在 eventlog 真正变化时才更新
-            updates.eventlog = updatedEventlog;
+
+          if (descriptionChanged) {
+            updates.description = remoteCoreContent;
+            if (remoteCreatedAt) {
+              updates.createdAt = this.safeFormatDateTime(new Date(remoteCreatedAt));
+            }
+            if (remoteUpdatedAt) {
+              updates.updatedAt = this.safeFormatDateTime(new Date(remoteUpdatedAt));
+            }
           }
           
           if (timeChanged) {
@@ -4405,7 +4437,7 @@ private getUserSettings(): any {
           }
           
           // ⚠️ 明确不传递以下本地专属字段（让 EventService 自动保留）：
-          // tags, remarkableSource, childEventIds, parentEventId, linkedEventIds, backlinks
+          // tags, remarkableSource, parentEventId, linkedEventIds, backlinks
           
           // ✅ 使用 EventService 更新（会自动保存到 StorageManager）
           // 🔧 v2.17.2: 传递 source: 'external-sync' 触发本地字段保护
@@ -4591,9 +4623,9 @@ private getUserSettings(): any {
     }
   }
 
-  private localEventsCache: Event[] | null = null;
+  private localEventsCache: AppEvent[] | null = null;
   private localEventsCacheTime: number = 0;
-  private localEventsPromise: Promise<Event[]> | null = null; // 🔧 查询去重
+  private localEventsPromise: Promise<AppEvent[]> | null = null; // 🔧 查询去重
   private readonly CACHE_TTL = 5000; // 5秒缓存过期
 
   private async getLocalEvents() {
@@ -4662,11 +4694,6 @@ private getUserSettings(): any {
         const batchStart = performance.now();
       
       batchEvents.forEach(event => {
-        // 🔧 规范化 title 格式（避免标题闪烁）
-        if (event.title) {
-          event.title = EventService.normalizeTitle(event.title);
-        }
-        
         if (event.id) {
           this.eventIndexMap.set(event.id, event);
         }
@@ -4746,11 +4773,6 @@ private getUserSettings(): any {
   // 🔧 同步版本（仅用于关键路径）
   private rebuildEventIndexMap(events: any[]) {
     events.forEach(event => {
-      // 🔧 规范化 title 格式（避免标题闪烁）
-      if (event.title) {
-        event.title = EventService.normalizeTitle(event.title);
-      }
-      
       if (event.id) {
         this.eventIndexMap.set(event.id, event);
       }
@@ -4781,11 +4803,6 @@ private getUserSettings(): any {
     
     // 添加新索引 (🗺️ 只存储完整对象用于内存查询，不持久化)
     if (event) {
-      // 🔧 规范化 title 格式（避免标题闪烁）
-      if (event.title) {
-        event.title = EventService.normalizeTitle(event.title);
-      }
-      
       if (event.id) {
         this.eventIndexMap.set(event.id, event);
       }
@@ -4936,143 +4953,41 @@ private getUserSettings(): any {
 
   private convertRemoteEventToLocal(remoteEvent: any): any {
     const cleanTitle = remoteEvent.subject || '';
-    
-    // 🔍 [DEBUG v2.18.8] 检查 Outlook 返回的时间字段
-    console.log('[convertRemoteEventToLocal] 🔍 Outlook 原始时间字段:', {
-      eventId: remoteEvent.id?.slice(-10),
-      hasCreatedDateTime: !!remoteEvent.createdDateTime,
-      createdDateTime: remoteEvent.createdDateTime,
-      hasLastModifiedDateTime: !!remoteEvent.lastModifiedDateTime,
-      lastModifiedDateTime: remoteEvent.lastModifiedDateTime
-    });
-    
-    // ✅ [v2.18.0 架构优化] 直接获取原始 HTML，让 normalizeEvent 统一处理
-    // 优势：保留 Outlook HTML 格式，避免 HTML → 纯文本 → 重新生成 HTML 的损失
+
+    // ✅ 外部同步：保留 Outlook 原始 HTML（仅做轻量清洗）
     let htmlContent = remoteEvent.body?.content || 
                        remoteEvent.description || 
                        remoteEvent.bodyPreview || 
                        '';
-    
-    // 🔥 [v2.20.0 Outlook 深度规范化] 应用 Outlook 专属的 HTML 清洗流程
-    // 优化点：
-    //   1. P0: 移除 Office XML 残留标签（<o:p>, <w:sdtPr>, xmlns等）
-    //   2. P0: 识别并转换 MsoList 伪列表为语义化 <ul>/<ol>
-    //   3. P0: 样式白名单清洗 + 明色背景自动添加黑色文字（防止白色文字）
-    //   4. P2: 空行折叠（5个连续空行 → 1个空行）
-    // 注：P1 CID 图片处理需要 event.attachments 参数，暂未实现
+
     if (htmlContent && htmlContent.trim()) {
-      htmlContent = EventService.cleanOutlookXmlTags(htmlContent);
-      htmlContent = EventService.processMsoLists(htmlContent);
-      htmlContent = EventService.sanitizeInlineStyles(htmlContent);
-      // CID 图片处理（P1）需要在 MicrosoftCalendarService 添加 attachments 获取
-      // htmlContent = EventService.processCidImages(htmlContent, remoteEvent.attachments);
-    }
-    
-    // 🔥 [v2.21.0 CompleteMeta V2 反序列化] 尝试从 Outlook HTML 中恢复节点 ID 和元数据
-    // 如果 HTML 中包含 CompleteMeta V2（hidden div），则执行三层容错匹配算法
-    // 优势：
-    //   1. 保留节点 ID（mention 链接不断裂）
-    //   2. 恢复 mention、timestamp、bulletLevel 等元数据
-    //   3. 抗修改能力：用户在 Outlook 修改段落后仍能正确匹配（90%+ 保留率）
-    let deserializedData: any = null;
-    if (htmlContent.includes('id="4dnote-meta"')) {
-      deserializedData = EventService.deserializeEventDescription(htmlContent, remoteEvent.id);
-      
-      if (deserializedData) {
-        console.log('[convertRemoteEventToLocal] ✅ CompleteMeta V2 反序列化成功:', {
-          eventId: remoteEvent.id.slice(-10),
-          nodeCount: JSON.parse(deserializedData.eventlog.slateJson).length
-        });
-      }
+      htmlContent = cleanupOutlookHtml(htmlContent);
     }
     
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
     // 不要重复添加前缀！同时 externalId 应该是纯 Outlook ID（不带前缀）
     const pureOutlookId = remoteEvent.id.replace(/^outlook-/, '');
-    
-    // ✅ [v2.18.1 架构优化] 单一职责原则：只传 description，让 normalizeEvent 统一处理
-    // 数据流：Outlook HTML → description → normalizeEvent 自动生成 eventlog
-    // 优势：
-    //   1. 单一数据源（description）
-    //   2. 逻辑集中（EventService 完全负责签名提取、eventlog 生成）
-    //   3. 接口简洁（ActionBasedSyncManager 不需要知道内部细节）
-    // 
-    // 🔥 [v2.21.0] 如果有反序列化数据，优先使用（保留节点 ID 和元数据）
-    const partialEvent = {
+
+    const startValue = remoteEvent.start?.dateTime || remoteEvent.start;
+    const endValue = remoteEvent.end?.dateTime || remoteEvent.end;
+
+    return {
       id: remoteEvent.id, // 已经是 'outlook-AAMkAD...'
-      title: cleanTitle,  // ✅ 传递字符串，让 normalizeTitle() 转换
-      description: htmlContent,  // ✅ 传递清洗后的 HTML
-      ...(deserializedData?.eventlog && { eventlog: deserializedData.eventlog }), // 🆕 如果有反序列化数据，直接使用
-      startTime: this.safeFormatDateTime(remoteEvent.start?.dateTime || remoteEvent.start),
-      endTime: this.safeFormatDateTime(remoteEvent.end?.dateTime || remoteEvent.end),
+      title: { simpleTitle: cleanTitle } as EventTitle,
+      description: htmlContent,
+      startTime: this.safeFormatDateTime(startValue || new Date()),
+      endTime: this.safeFormatDateTime(endValue || new Date()),
       isAllDay: remoteEvent.isAllDay || false,
       location: remoteEvent.location?.displayName || '',
       reminder: 0,
-      // 🔥 [CRITICAL FIX v2.19.0] 总是传递 Outlook 的时间戳
-      // normalizeEvent 会收集3个候选：
-      //   1. 签名中的时间（extractedTimestamps.createdAt）
-      //   2. Outlook 的时间（event.createdAt，即下面传的值）
-      //   3. 同步时间（new Date()，作为最后回退）
-      // 然后取最早的时间，确保创建时间永远不会变晚
-      // 
-      // ✅ [FIX] createdDateTime/lastModifiedDateTime 默认不在 Graph API 响应中
-      //    使用 start.dateTime 作为回退值（事件开始时间作为创建时间的近似值）
-      createdAt: this.safeFormatDateTime(
-        remoteEvent.createdDateTime || 
-        remoteEvent.start?.dateTime || 
-        remoteEvent.start || 
-        new Date()
-      ),
-      updatedAt: this.safeFormatDateTime(
-        remoteEvent.lastModifiedDateTime || 
-        remoteEvent.end?.dateTime || 
-        remoteEvent.end || 
-        new Date()
-      ),
-      externalId: pureOutlookId, // 纯 Outlook ID，不带 'outlook-' 前缀
-      calendarIds: remoteEvent.calendarIds || ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
-      source: 'outlook', // 🔧 设置source字段（默认值，extractCreatorFromSignature 会根据签名覆盖）
-      syncStatus: 'synced',
-      // ✅ [v2.18.0] fourDNoteSource 由 extractCreatorFromSignature() 从签名中提取
-      // 🔥 [CRITICAL FIX] 设置默认 syncMode，避免 undefined 导致单向覆盖
-      // 规则：所有从 Outlook 同步的事件默认双向同步（bidirectional-private）
-      //       用户可以在 UI 中随时修改同步模式
-      syncMode: 'bidirectional-private'
+      createdAt: this.safeFormatDateTime(remoteEvent.createdDateTime || startValue || new Date()),
+      updatedAt: this.safeFormatDateTime(remoteEvent.lastModifiedDateTime || endValue || new Date()),
+      externalId: pureOutlookId,
+      calendarIds: remoteEvent.calendarIds || ['microsoft'],
+      source: 'outlook' as const,
+      syncStatus: 'synced' as const,
+      syncMode: normalizeSyncMode(remoteEvent.syncMode),
     };
-    
-    // 🔍 [DEBUG v2.18.8] 调试时间戳问题
-    const extractedTimestamps = SignatureUtils.extractTimestamps(htmlContent);
-    console.log('[convertRemoteEventToLocal] 🔍 时间戳候选值:', {
-      eventId: remoteEvent.id?.slice(-10),
-      title: cleanTitle.slice(0, 30),
-      '1️⃣ 签名时间': extractedTimestamps.createdAt?.slice(0, 19),
-      '2️⃣ Outlook createdDateTime': remoteEvent.createdDateTime,
-      '2️⃣ 格式化后': this.safeFormatDateTime(remoteEvent.createdDateTime || new Date()).slice(0, 19),
-      '3️⃣ 同步时间（当前）': new Date().toISOString().slice(0, 19),
-      '🏆 应选择': '最早的时间'
-    });
-    
-    // ✅ 通过 EventService 规范化，自动处理所有字段
-    // normalizeEvent 会自动：
-    //   1. normalizeTitle(title) → 生成 EventTitle 对象
-    //   2. extractTimestampsFromSignature(description) → 提取创建/修改时间
-    //   3. extractCreatorFromSignature(description) → 提取创建者信息
-    //   4. normalizeEventLog(undefined, description) → 从 description 生成 EventLog
-    //   5. maintainDescriptionSignature(eventlog.plainText) → 重新生成签名
-    const normalizedEvent = EventService.normalizeEvent(partialEvent);
-    
-    // 🔍 诊断日志：检查 eventlog 是否正确生成
-    if (!normalizedEvent.eventlog || !normalizedEvent.eventlog.slateJson || normalizedEvent.eventlog.slateJson === '[]') {
-      console.warn('[convertRemoteEventToLocal] eventlog 可能为空:', {
-        eventId: normalizedEvent.id.substring(0, 20),
-        hasEventlog: !!normalizedEvent.eventlog,
-        slateJson: normalizedEvent.eventlog?.slateJson?.substring(0, 50),
-        htmlLength: htmlContent.length,
-        htmlPreview: htmlContent.substring(0, 100)
-      });
-    }
-    
-    return normalizedEvent;
   }
 
   private cleanHtmlContent(htmlContent: string): string {
@@ -5518,10 +5433,14 @@ private getUserSettings(): any {
 
       // 检查时间逻辑（快速）
       if (event.startTime && event.endTime) {
-        const start = new Date(event.startTime).getTime();
-        const end = new Date(event.endTime).getTime();
-        if (end < start) {
-          issues.push({ type: 'invalid-time', eventId: event.id });
+        try {
+          const start = parseLocalTimeString(event.startTime).getTime();
+          const end = parseLocalTimeString(event.endTime).getTime();
+          if (end < start) {
+            issues.push({ type: 'invalid-time', eventId: event.id });
+          }
+        } catch {
+          // ignore parse errors in background integrity scan
         }
       }
 
@@ -5560,9 +5479,22 @@ private getUserSettings(): any {
     const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
     const visibleEvents = events.filter((e: any) => {
-      if (!e.startTime) return false;
-      const eventDate = new Date(e.startTime);
-      return eventDate >= currentMonthStart && eventDate <= currentMonthEnd;
+      try {
+        const { start } = resolveCalendarDateRange({
+          isTask: e.isTask,
+          startTime: e.startTime,
+          endTime: e.endTime,
+          createdAt: e.createdAt,
+          checked: e.checked,
+          unchecked: e.unchecked
+        });
+        return start >= currentMonthStart && start <= currentMonthEnd;
+      } catch {
+        // If resolver fails (unexpected shape), fall back to startTime only.
+        if (!e.startTime) return false;
+        const eventDate = parseLocalTimeString(e.startTime);
+        return eventDate >= currentMonthStart && eventDate <= currentMonthEnd;
+      }
     });
     let checked = 0;
     const issues: any[] = [];
@@ -5608,211 +5540,6 @@ private getUserSettings(): any {
     // 🔧 [FIX] 只在有实际问题且问题数量 > 0 时才打印日志
     if (checked > 0) {
       // console.log(`✅ [Integrity] Quick check: ${checked} fixed silently (${duration.toFixed(1)}ms)`);
-    }
-  }
-
-  /**
-   * 🔧 [MIGRATION] 一次性清理重复的 outlook- 前缀
-   * 修复历史数据中的：
-   * 1. id: 'outlook-outlook-AAMkAD...' → 'outlook-AAMkAD...'
-   * 2. externalId: 'outlook-AAMkAD...' → 'AAMkAD...'
-   */
-  
-  // 🔧 [NEW] 修复历史 pending 事件（补充到同步队列）
-  private async fixOrphanedPendingEvents() {
-    // 每次启动时都检查，不使用迁移标记
-    try {
-      const events = await EventService.getAllEvents(); // 自动规范化 title
-      
-      // 查找需要同步但未同步的事件：
-      // 1. syncStatus 为 'pending'（统一的待同步状态，包含新建和更新）
-      // 2. fourDNoteSource = true（本地创建）
-      // 3. 没有 externalId（尚未同步到远程）
-      // 4. syncStatus !== 'local-only'（排除本地专属事件，如运行中的 Timer）
-      // 5. 有目标日历：calendarIds 不为空 或 有 tagId（可能有日历映射）
-      const pendingEvents = events.filter((event: any) => {
-        const needsSync = event.syncStatus === 'pending' && 
-                         event.fourDNoteSource === true &&
-                         !event.externalId;
-        
-        if (!needsSync) return false;
-        
-        // 检查是否有目标日历
-        const hasCalendars = (event.calendarIds && event.calendarIds.length > 0) || event.calendarId;
-        const hasTag = event.tagId || (event.tags && event.tags.length > 0);
-        
-        // 有日历或有标签（标签可能有日历映射）才需要同步
-        return hasCalendars || hasTag;
-      });
-      
-      if (pendingEvents.length === 0) {
-        return;
-      }
-      // 检查这些事件是否已经在同步队列中
-      const existingActionIds = new Set(
-        this.actionQueue
-          .filter(a => a.source === 'local' && !a.synchronized)
-          .map(a => a.entityId)
-      );
-      
-      let addedCount = 0;
-      
-      for (const event of pendingEvents) {
-        // 如果事件不在同步队列中，添加它
-        if (!existingActionIds.has(event.id)) {
-          const action: SyncAction = {
-            id: `migration-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-            type: 'create',
-            entityType: 'event',
-            entityId: event.id,
-            timestamp: new Date(event.createdAt || event.startTime),
-            source: 'local',
-            data: event,
-            synchronized: false,
-            retryCount: 0
-          };
-          
-          this.actionQueue.push(action);
-          addedCount++;
-        }
-      }
-      
-      if (addedCount > 0) {
-        this.saveActionQueue();
-      } else {
-      }
-      
-    } catch (error) {
-      console.error('❌ [Fix Pending] Failed to fix orphaned pending events:', error);
-    }
-  }
-
-  private async migrateOutlookPrefixes() {
-    const MIGRATION_KEY = '4dnote-outlook-prefix-migration-v1';
-    
-    // 检查是否已经迁移过
-    if (localStorage.getItem(MIGRATION_KEY) === 'completed') {
-      return;
-    }
-    try {
-      const events = await EventService.getAllEvents(); // 自动规范化 title
-      let migratedCount = 0;
-      
-      const migratedEvents = events.map((event: any) => {
-        let needsMigration = false;
-        const newEvent = { ...event };
-        
-        // 1. 修复 id 的重复前缀：outlook-outlook- → outlook-
-        if (newEvent.id?.startsWith('outlook-outlook-')) {
-          newEvent.id = newEvent.id.replace(/^outlook-outlook-/, 'outlook-');
-          needsMigration = true;
-        }
-        
-        // 2. 修复 externalId 的错误前缀：outlook-AAMkAD... → AAMkAD...
-        if (newEvent.externalId?.startsWith('outlook-')) {
-          newEvent.externalId = newEvent.externalId.replace(/^outlook-/, '');
-          needsMigration = true;
-        }
-        
-        if (needsMigration) {
-          migratedCount++;
-        }
-        
-        return newEvent;
-      });
-      
-      if (migratedCount > 0) {
-        console.log(`✅ [Migration] Migrated ${migratedCount} events with Outlook prefix issues`);
-        // ⚠️ 注意：migratedEvents 是修改后的数组，但我们不能直接批量保存
-        // EventService v3.0.0 需要逐个更新事件
-        // 由于这是启动时的一次性迁移，可以接受性能损耗
-        for (const migratedEvent of migratedEvents) {
-          const original = events.find((e: any) => e.id === migratedEvent.id);
-          if (original && JSON.stringify(original) !== JSON.stringify(migratedEvent)) {
-            // 有变化，需要更新
-            if (original.id !== migratedEvent.id) {
-              // ID 变化，使用 updateLocalEvent
-              await this.updateLocalEvent(original.id, migratedEvent);
-            } else {
-              // 只更新字段
-              await EventService.updateEvent(migratedEvent.id, migratedEvent, true);
-            }
-          }
-        }
-        
-        // 重建索引
-        const updatedEvents = await EventService.getAllEvents();
-        this.rebuildEventIndexMapAsync(updatedEvents).catch(err => {
-          console.error('❌ [Migration] Failed to rebuild IndexMap:', err);
-        });
-      } else {
-        console.log('✅ [Migration] No events need Outlook prefix migration');
-      }
-      
-      // 标记迁移完成
-      localStorage.setItem(MIGRATION_KEY, 'completed');
-    } catch (error) {
-      console.error('❌ [Migration] Failed to migrate Outlook prefixes:', error);
-    }
-  }
-
-  /**
-   * 🔄 [MIGRATION] 迁移 localStorage 同步队列到 IndexedDB
-   * 一次性迁移，完成后标记，避免重复执行
-   */
-  private async migrateLocalStorageToIndexedDB() {
-    const MIGRATION_KEY = '4dnote-sync-queue-migration-v1';
-    
-    // 检查是否已经迁移过
-    if (localStorage.getItem(MIGRATION_KEY) === 'completed') {
-      console.log('[ActionBasedSyncManager] ✅ Sync queue already migrated to IndexedDB');
-      return;
-    }
-
-    try {
-      console.log('[ActionBasedSyncManager] 🔄 Starting localStorage → IndexedDB migration...');
-      
-      // 1. 读取 localStorage 中的旧数据
-      const stored = localStorage.getItem(STORAGE_KEYS.SYNC_ACTIONS);
-      if (!stored) {
-        console.log('[ActionBasedSyncManager] ℹ️ No localStorage data to migrate');
-        localStorage.setItem(MIGRATION_KEY, 'completed');
-        return;
-      }
-
-      // 2. 解析旧数据
-      const oldActions: any[] = JSON.parse(stored);
-      console.log(`[ActionBasedSyncManager] Found ${oldActions.length} actions in localStorage`);
-
-      // 3. 转换为 SyncQueueItem 格式
-      const syncQueueItems: SyncQueueItem[] = oldActions.map((action: any) => ({
-        id: action.id,
-        operation: action.type,
-        entityType: action.entityType as 'event' | 'contact' | 'tag' | 'eventlog',
-        entityId: action.entityId,
-        data: action.data,
-        status: action.synchronized ? SyncStatus.Synced : SyncStatus.Pending,
-        attempts: action.retryCount || 0,
-        lastAttemptAt: action.lastAttemptTime,
-        error: action.lastError,
-        createdAt: action.timestamp,
-        updatedAt: action.synchronizedAt || formatTimeForStorage(new Date())
-      }));
-
-      // 4. 批量保存到 IndexedDB
-      await storageManager.createSyncActions(syncQueueItems);
-      
-      console.log(`[ActionBasedSyncManager] ✅ Migrated ${syncQueueItems.length} actions to IndexedDB`);
-
-      // 5. 清理 localStorage（可选，保留一段时间以防回滚）
-      // localStorage.removeItem(STORAGE_KEYS.SYNC_ACTIONS);
-      
-      // 6. 标记迁移完成
-      localStorage.setItem(MIGRATION_KEY, 'completed');
-      
-    } catch (error) {
-      console.error('[ActionBasedSyncManager] ❌ Migration failed:', error);
-      // 不设置 completed 标记，下次启动时重试
     }
   }
 

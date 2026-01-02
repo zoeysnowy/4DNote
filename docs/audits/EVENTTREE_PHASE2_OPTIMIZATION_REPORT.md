@@ -180,7 +180,7 @@ const executeTabIndent = async (currentEventId, previousEventId, ...) => {
 
 **关键改进**:
 
-1. **原子更新**: EventTreeAPI.reparent()自动维护双向关联（parentEventId + childEventIds）
+1. **原子更新**: EventTreeAPI.reparent() 仅更新 parentEventId（childEventIds 不维护/不依赖）
 2. **批量优化**: 从3次独立写入→2次批量更新（父子关系+bulletLevel）
 3. **环检测**: TreeEngine自动环检测（防止循环引用）
 4. **错误回滚**: try-catch + Slate状态回滚（数据一致性）

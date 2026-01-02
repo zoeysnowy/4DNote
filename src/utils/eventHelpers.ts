@@ -4,6 +4,7 @@
  */
 
 import { Event, CheckType } from '../types';
+import { resolveCheckState } from './TimeResolver';
 
 /**
  * 判断事件是否应该显示 checkbox
@@ -31,18 +32,5 @@ export function shouldShowCheckbox(event: { checkType?: CheckType }): boolean {
  * @returns 是否已完成
  */
 export function isEventChecked(event: Event): boolean {
-  const checked = event.checked || [];
-  const unchecked = event.unchecked || [];
-  
-  // 如果都没有操作，默认未签到
-  if (checked.length === 0 && unchecked.length === 0) {
-    return false;
-  }
-  
-  // 获取最后的操作时间戳
-  const lastCheckIn = checked.length > 0 ? checked[checked.length - 1] : undefined;
-  const lastUncheck = unchecked.length > 0 ? unchecked[unchecked.length - 1] : undefined;
-  
-  // 比较最后的签到和取消签到时间
-  return !!lastCheckIn && (!lastUncheck || lastCheckIn > lastUncheck);
+  return resolveCheckState(event).isChecked;
 }

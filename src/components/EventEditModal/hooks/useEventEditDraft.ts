@@ -38,8 +38,6 @@ export function useEventEditDraft({
         }
       }
 
-      // 🔧 直接从 event prop 读取 EventTree 数据（避免异步问题）
-      const childEventIds = (event as any).childEventIds || [];
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
 
@@ -50,7 +48,6 @@ export function useEventEditDraft({
         isTask: event.isTask || false,
         isTimer: event.isTimer || false,
         parentEventId: event.parentEventId || null,
-        childEventIds,
         linkedEventIds,
         backlinks,
         startTime: event.startTime || null,
@@ -83,7 +80,6 @@ export function useEventEditDraft({
       isTask: false,
       isTimer: false,
       parentEventId: null,
-      childEventIds: [],
       linkedEventIds: [],
       backlinks: [],
       startTime: null,
@@ -114,7 +110,6 @@ export function useEventEditDraft({
         isTask: false,
         isTimer: false,
         parentEventId: null,
-        childEventIds: [],
         linkedEventIds: [],
         backlinks: [],
         startTime: initialStartTime || null,
@@ -146,8 +141,6 @@ export function useEventEditDraft({
     }
 
     titleRef.current = titleText;
-
-    const childEventIds = (event as any).childEventIds || [];
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
 
@@ -158,7 +151,6 @@ export function useEventEditDraft({
       isTask: event.isTask || false,
       isTimer: event.isTimer || false,
       parentEventId: event.parentEventId || null,
-      childEventIds,
       linkedEventIds,
       backlinks,
       startTime: event.startTime || null,

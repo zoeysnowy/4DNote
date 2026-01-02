@@ -9,6 +9,7 @@ import { OCRTool } from '../tools/ocr/OCRTool';
 import { QRCodeTool, QRCodeInfo } from '../tools/qrcode/QRCodeTool';
 import { LLMService } from '../services/LLMService';
 import { llmConfig } from '../../config/ai.config';
+import { formatTimeForStorage } from '../../utils/timeUtils';
 
 /**
  * 工作流状态
@@ -133,7 +134,7 @@ export class EventExtractionWorkflow {
           qrCodes: result.data.codes.map((code, i) => ({
             ...code,
             id: `qr_${Date.now()}_${i}`,
-            extractedAt: new Date().toISOString()
+            extractedAt: formatTimeForStorage(new Date())
           }))
         };
       } else {
@@ -239,17 +240,22 @@ export class EventExtractionWorkflow {
 
       // 提醒任务（提前一天）
       if (state.extractedEvent?.startTime) {
-        const startDate = new Date(state.extractedEvent.startTime);
-        const reminderDate = new Date(startDate);
-        reminderDate.setDate(reminderDate.getDate() - 1);
+        const { parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const startDate = parseLocalTimeStringOrNull(state.extractedEvent.startTime);
+        if (!startDate) {
+          console.warn('[GenerateTasks] startTime 无法解析，跳过提醒任务:', state.extractedEvent.startTime);
+        } else {
+          const reminderDate = new Date(startDate);
+          reminderDate.setDate(reminderDate.getDate() - 1);
 
-        tasks.push({
-          title: `提醒：${state.extractedEvent.title}`,
-          type: 'reminder',
-          dueDate: reminderDate.toISOString(),
-          priority: 'medium',
-          description: '活动前一天提醒'
-        });
+          tasks.push({
+            title: `提醒：${state.extractedEvent.title}`,
+            type: 'reminder',
+            dueDate: formatTimeForStorage(reminderDate),
+            priority: 'medium',
+            description: '活动前一天提醒'
+          });
+        }
       }
 
       console.log(`✅ [GenerateTasks] 生成了 ${tasks.length} 个任务`);

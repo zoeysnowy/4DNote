@@ -45,7 +45,7 @@ export const DashboardSwapy: React.FC<DashboardSwapyProps> = ({
     if (savedLayout) {
       try {
         const layout = JSON.parse(savedLayout);
-        swapy.setData(layout);
+        (swapy as any).setData?.(layout);
       } catch (e) {
         console.error('Failed to load saved layout:', e);
       }

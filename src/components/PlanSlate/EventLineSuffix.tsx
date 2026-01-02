@@ -8,6 +8,7 @@ import React from 'react';
 import { EventLineNode } from './types';
 import { useEventTime } from '../../hooks/useEventTime';
 import { formatRelativeTimeDisplay } from '../../utils/relativeDateFormatter';
+import { parseLocalTimeStringOrNull } from '../../utils/timeUtils';
 import Tippy from '@tippyjs/react';
 import TimeHoverCard from '../TimeHoverCard';
 import { icons } from '../../assets/icons';
@@ -24,19 +25,38 @@ export const EventLineSuffix: React.FC<EventLineSuffixProps> = React.memo(({ ele
   const eventTime = useEventTime(element.eventId);
   
   // 🆕 获取事件的 isDeadline 信息
-  const event = React.useMemo(() => {
-    if (!element.eventId) return null;
-    return EventService.getEventById(element.eventId);
+  const [isDeadline, setIsDeadline] = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+
+    if (!element.eventId) {
+      setIsDeadline(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const event = await EventService.getEventById(element.eventId);
+        if (!cancelled) setIsDeadline(!!event?.isDeadline);
+      } catch {
+        if (!cancelled) setIsDeadline(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [element.eventId]);
-  
-  const isDeadline = event?.isDeadline || false;
   
   // 时间显示逻辑
   const [showHoverCard, setShowHoverCard] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
   
-  const startTime = (eventTime.start && eventTime.start !== '') ? new Date(eventTime.start) : (metadata.startTime ? new Date(metadata.startTime) : null);
-  const dueDateTime = metadata.dueDateTime ? new Date(metadata.dueDateTime) : null;
+  const startTime = (eventTime.start && eventTime.start !== '')
+    ? parseLocalTimeStringOrNull(eventTime.start)
+    : (metadata.startTime ? parseLocalTimeStringOrNull(metadata.startTime) : null);
+  const dueDateTime = metadata.dueDateTime ? parseLocalTimeStringOrNull(metadata.dueDateTime) : null;
   
   const startTimeStr = (eventTime.start && eventTime.start !== '') ? eventTime.start : (metadata.startTime || null);
   const endTimeStr = (eventTime.end && eventTime.end !== '') ? eventTime.end : (metadata.endTime || null);
@@ -44,9 +64,7 @@ export const EventLineSuffix: React.FC<EventLineSuffixProps> = React.memo(({ ele
   const isAllDay = eventTime.timeSpec?.allDay ?? metadata.isAllDay;
   
   // 格式化时间显示（v2.8.2: 移除了 displayHint 参数）
-  const relativeTimeDisplay = startTime || dueDateTime 
-    ? formatRelativeTimeDisplay(startTimeStr, endTimeStr, isAllDay ?? false, dueDateTimeStr)
-    : null;
+  const relativeTimeDisplay = formatRelativeTimeDisplay(startTimeStr, endTimeStr, isAllDay ?? false, dueDateTimeStr) || null;
   
   // 🆕 判断时间类型并设置标签和颜色
   let timeLabel = null;

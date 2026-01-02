@@ -12,10 +12,11 @@
  * @date 2025-12-02
  */
 
-import { generateId } from '../utils/id';
+import { generateAttachmentId } from '../utils/idGenerator';
 import type { Attachment } from '../types';
 
 import { AttachmentType } from '../types';
+import { formatTimeForStorage } from '../utils/timeUtils';
 
 /**
  * 支持的文件类型配置
@@ -182,7 +183,8 @@ class AttachmentService {
     const extension = this.getFileExtension(file.name).toLowerCase();
     
     for (const [type, config] of Object.entries(SUPPORTED_FILE_TYPES)) {
-      if (config.mimeTypes.includes(mimeType) || config.extensions.includes(extension)) {
+      const typedConfig = config as unknown as { mimeTypes: string[]; extensions: string[] };
+      if (typedConfig.mimeTypes.includes(mimeType) || typedConfig.extensions.includes(extension)) {
         return type as 'image' | 'video' | 'audio' | 'document';
       }
     }
@@ -282,7 +284,7 @@ class AttachmentService {
       // EXIF 数据提取（需要 exif-js 库，简化版本）
       // TODO: 集成 exif-js 或类似库提取完整 EXIF
       result.exifData = {
-        DateTimeOriginal: new Date().toISOString(), // 临时使用当前时间
+        DateTimeOriginal: formatTimeForStorage(new Date()), // 临时使用当前时间
         Make: 'Unknown',
         Model: 'Unknown',
       };
@@ -472,7 +474,7 @@ class AttachmentService {
       throw new Error('附件上传需要 Electron 环境');
     }
     
-    const attachmentId = generateId('attachment');
+    const attachmentId = generateAttachmentId();
     const result = await this.invoke<{
       success: boolean;
       localPath: string;
@@ -497,13 +499,19 @@ class AttachmentService {
     // 4. 创建附件对象
     const attachment: Attachment = {
       id: attachmentId,
+      type: options.type ?? this.detectAttachmentType(file),
       filename: file.name,
       size: file.size,
+      fileSize: file.size,
       mimeType: file.type,
       localPath: result.localPath,
+      fullPath: result.fullPath,
+      thumbnailPath: result.thumbnailPath || undefined,
       status: 'local-only',
-      uploadedAt: new Date().toISOString(),
+      uploadedAt: formatTimeForStorage(new Date()),
       isPinned: false,
+      timestamp: options.timestamp || formatTimeForStorage(new Date()),
+      caption: options.caption,
     };
     
     console.log('[AttachmentService] ✅ 附件上传成功:', {
@@ -769,7 +777,7 @@ class AttachmentService {
       throw new Error('附件上传需要 Electron 环境');
     }
 
-    const attachmentId = generateId('attachment');
+    const attachmentId = generateAttachmentId();
     const result = await this.invoke<{
       success: boolean;
       localPath: string;
@@ -801,9 +809,10 @@ class AttachmentService {
       localPath: result.localPath,
       fullPath: result.fullPath,
       thumbnailPath: result.thumbnailPath || undefined,
-      timestamp: options.timestamp || new Date().toISOString(),
+      timestamp: options.timestamp || formatTimeForStorage(new Date()),
       caption: options.caption,
-      status: 'completed',
+      status: 'local-only',
+      uploadedAt: formatTimeForStorage(new Date()),
       ...processedData,
     };
 
@@ -820,7 +829,7 @@ class AttachmentService {
     childEventId: string,
     caption?: string
   ): Promise<Attachment> {
-    const attachmentId = generateId('attachment');
+    const attachmentId = generateAttachmentId();
 
     const attachment: Attachment = {
       id: attachmentId,
@@ -831,9 +840,10 @@ class AttachmentService {
       localPath: '',
       fullPath: '',
       linkedEventId: childEventId,
-      timestamp: new Date().toISOString(),
+      timestamp: formatTimeForStorage(new Date()),
       caption: caption || '子事件链接',
-      status: 'completed',
+      status: 'local-only',
+      uploadedAt: formatTimeForStorage(new Date()),
     };
 
     // 保存到数据库
@@ -853,7 +863,7 @@ class AttachmentService {
     // TODO: 调用 Puppeteer 或类似工具截取网页
     console.log('[AttachmentService] 捕获网页剪藏:', url);
 
-    const attachmentId = generateId('attachment');
+    const attachmentId = generateAttachmentId();
 
     // 模拟抓取
     const attachment: Attachment = {
@@ -867,8 +877,9 @@ class AttachmentService {
       webUrl: url,
       webTitle: options.title || url,
       webFavicon: '',
-      timestamp: new Date().toISOString(),
-      status: 'completed',
+      timestamp: formatTimeForStorage(new Date()),
+      status: 'local-only',
+      uploadedAt: formatTimeForStorage(new Date()),
     };
 
     // TODO: 实际抓取网页内容并保存

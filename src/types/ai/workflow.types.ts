@@ -3,6 +3,8 @@
  * Workflow 定义了完成特定任务的步骤序列
  */
 
+import type { RetryPolicy } from './tool.types';
+
 /**
  * 工作流节点类型
  */
@@ -68,16 +70,6 @@ export interface WorkflowEdge {
    * 标签
    */
   label?: string;
-}
-
-/**
- * 重试策略
- */
-export interface RetryPolicy {
-  maxRetries: number;
-  initialDelay: number;
-  maxDelay: number;
-  backoffMultiplier: number;
 }
 
 /**

@@ -312,12 +312,12 @@
                 const childBId = resultB.event.id;
                 timeline.push(`T3 (${Date.now() - startTime}ms): 子事件 B 已创建，ID = ${childBId.slice(-8)}`);
 
-                // T4: 立即查询父事件 A（关键时刻！）
-                timeline.push(`T4 (${Date.now() - startTime}ms): <span class="highlight">查询父事件 A - 测试 Read-Your-Own-Writes</span>`);
-                const parentAUpdated = await EventServiceAPI.getEventById(parentId);
+                // T4: 立即查询子事件 B（关键时刻！）
+                timeline.push(`T4 (${Date.now() - startTime}ms): <span class="highlight">查询子事件 B - 测试 Read-Your-Own-Writes</span>`);
+                const childBUpdated = await EventServiceAPI.getEventById(childBId);
                 
-                const hasChild = parentAUpdated.childEventIds?.includes(childBId);
-                timeline.push(`T5 (${Date.now() - startTime}ms): ${hasChild ? '✅ 成功！父事件包含子事件' : '❌ 失败！父事件未包含子事件'}`);
+                const hasParent = childBUpdated.parentEventId === parentId;
+                timeline.push(`T5 (${Date.now() - startTime}ms): ${hasParent ? '✅ 成功！子事件 parentEventId 正确' : '❌ 失败！子事件 parentEventId 不正确/缺失'}`);
 
                 // T6: 创建孙子事件 C
                 await new Promise(r => setTimeout(r, 10));
@@ -352,11 +352,11 @@
                             parentEventId: finalChildB.parentEventId?.slice(-8),
                             childEventIds: finalChildB.childEventIds || []
                         },
-                        '测试结论': hasChild ? 'PASS - Transient Buffer 工作正常' : 'FAIL - 缓冲机制失效'
+                        '测试结论': hasParent ? 'PASS - Transient Buffer 工作正常（parentEventId 可读回）' : 'FAIL - 缓冲机制失效（parentEventId 未正确写入/可读回）'
                     }, null, 2)}</pre>
                 `;
                 
-                resultDiv.innerHTML = `<p><strong>测试完成</strong> <span class="status ${hasChild ? 'success' : 'error'}">${hasChild ? 'PASS' : 'FAIL'}</span></p>${html}`;
+                resultDiv.innerHTML = `<p><strong>测试完成</strong> <span class="status ${hasParent ? 'success' : 'error'}">${hasParent ? 'PASS' : 'FAIL'}</span></p>${html}`;
             } catch (error) {
                 resultDiv.innerHTML = `<p><strong>测试失败</strong> <span class="status error">ERROR</span></p><pre>${error.message}\n${error.stack}</pre>`;
             }
@@ -388,19 +388,18 @@
                     })
                 ));
                 
-                // 验证父事件包含所有子事件
+                // 验证所有子事件都正确写入 parentEventId（ADR-001）
                 await new Promise(r => setTimeout(r, 1000));
-                const parent = await getEvent(parentId);
-                
-                const allIncluded = children.every(c => parent.childEventIds?.includes(c.id));
+                const fetchedChildren = await Promise.all(children.map(c => getEvent(c.id)));
+                const allIncluded = fetchedChildren.every(c => c.parentEventId === parentId);
                 
                 resultDiv.innerHTML = `
                     <p><strong>测试完成</strong> <span class="status ${allIncluded ? 'success' : 'error'}">${allIncluded ? 'PASS' : 'FAIL'}</span></p>
                     <pre>${JSON.stringify({
                         父事件: parentId.slice(-8),
                         预期子事件数: 3,
-                        实际子事件数: parent.childEventIds?.length || 0,
-                        完整性: allIncluded ? '✅ 所有子事件都已关联' : '❌ 部分子事件丢失'
+                        实际子事件数: fetchedChildren.length,
+                        完整性: allIncluded ? '✅ 所有子事件 parentEventId 都已关联' : '❌ 部分子事件 parentEventId 丢失/不一致'
                     }, null, 2)}</pre>
                 `;
             } catch (error) {

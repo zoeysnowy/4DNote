@@ -1,3 +1,4 @@
+import { parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
 /**
  * DashScope AI Provider
  * 
@@ -189,9 +190,9 @@ export class DashScopeProvider implements AIProvider {
       }
 
       // 验证时间格式
-      const startDate = new Date(parsed.startTime);
-      const endDate = new Date(parsed.endTime);
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      const startDate = parseLocalTimeStringOrNull(parsed.startTime);
+      const endDate = parseLocalTimeStringOrNull(parsed.endTime);
+      if (!startDate || !endDate) {
         throw new Error('时间格式无效');
       }
 

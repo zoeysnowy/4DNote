@@ -182,7 +182,7 @@ T2 (1-5ms): 📡 发起异步持久化
 
 T10 (10-50ms): 💾 EventService 完成
   ├─ StorageManager.updateEvent()
-  ├─ 自动维护 parent.childEventIds
+  ├─ ADR-001：仅持久化 parentEventId；不维护/不依赖 childEventIds
   ├─ 生成 updateId = 1001
   ├─ 记录 pendingLocalUpdates
   └─ 广播 eventsUpdated({ originComponent: 'PlanManager', updateId: 1001 })

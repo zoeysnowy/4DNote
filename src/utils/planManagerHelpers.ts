@@ -32,9 +32,8 @@ export function extractCalendarIds(tags: string[]): string[] {
 export function validateEventTreeFields(
   updatedItem: any,
   existingItem: any
-): { parentEventId?: string; childEventIds?: string[] } {
+): { parentEventId?: string } {
   let validatedParentEventId = updatedItem.parentEventId ?? existingItem?.parentEventId;
-  let validatedChildEventIds = updatedItem.childEventIds ?? existingItem?.childEventIds;
 
   // 检查 parentEventId 是否为临时ID
   if (validatedParentEventId && validatedParentEventId.startsWith('line-')) {
@@ -46,24 +45,7 @@ export function validateEventTreeFields(
     validatedParentEventId = undefined;
   }
 
-  // 检查 childEventIds 中的临时ID
-  if (validatedChildEventIds && Array.isArray(validatedChildEventIds)) {
-    const originalCount = validatedChildEventIds.length;
-    validatedChildEventIds = validatedChildEventIds.filter((id: string) => !id.startsWith('line-'));
-    if (validatedChildEventIds.length < originalCount) {
-      console.warn('[validateEventTreeFields] ⚠️ 过滤掉childEventIds中的临时ID:', {
-        eventId: updatedItem.id?.slice(-8),
-        原始数量: originalCount,
-        过滤后: validatedChildEventIds.length
-      });
-    }
-    // 如果过滤后为空，设为undefined
-    if (validatedChildEventIds.length === 0) {
-      validatedChildEventIds = undefined;
-    }
-  }
-
-  return { parentEventId: validatedParentEventId, childEventIds: validatedChildEventIds };
+  return { parentEventId: validatedParentEventId };
 }
 
 /**
@@ -77,15 +59,40 @@ export function buildEventForSave(
   const now = new Date();
   const nowLocal = formatTimeForStorage(now);
   const timeSnapshot = TimeHub.getSnapshot(updatedItem.id);
-  const { parentEventId, childEventIds } = validateEventTreeFields(updatedItem, existingItem);
+
+  const sanitizedUpdatedItem = { ...(updatedItem || {}) };
+
+  const { parentEventId } = validateEventTreeFields(sanitizedUpdatedItem, existingItem);
+
+  // Optional arrays: do not inject [] when the canonical value was undefined.
+  const tagsInput: string[] | undefined = Array.isArray(sanitizedUpdatedItem.tags)
+    ? sanitizedUpdatedItem.tags
+    : undefined;
+  const tagsForPersist: string[] | undefined =
+    tagsInput && tagsInput.length === 0 && (existingItem?.tags === undefined || existingItem?.tags === null)
+      ? undefined
+      : (tagsInput ?? existingItem?.tags);
+
+  // Optional boolean: do not inject false when the canonical value was undefined.
+  const isAllDayInput: boolean | undefined =
+    typeof sanitizedUpdatedItem.isAllDay === 'boolean' ? sanitizedUpdatedItem.isAllDay : undefined;
+  const isAllDayForPersist: boolean | undefined =
+    isAllDayInput === false && (existingItem?.isAllDay === undefined || existingItem?.isAllDay === null)
+      ? undefined
+      : (isAllDayInput ?? existingItem?.isAllDay);
+
+  // SyncStatus: avoid default injection when there is no calendar mapping and no prior value.
+  const computedSyncStatus = calendarIds.length > 0 ? 'pending' : 'local-only';
+  const syncStatusForPersist = existingItem?.syncStatus ?? (calendarIds.length > 0 ? computedSyncStatus : undefined);
 
   const eventItem: Event = {
     ...(existingItem || {}),
-    ...updatedItem,
+    ...sanitizedUpdatedItem,
     // 🔥 强制使用 TimeHub 的最新时间
     startTime: timeSnapshot.start || updatedItem.startTime || existingItem?.startTime,
     endTime: timeSnapshot.end !== undefined ? timeSnapshot.end : (updatedItem.endTime || existingItem?.endTime),
-    tags: updatedItem.tags || [],
+    isAllDay: isAllDayForPersist,
+    tags: tagsForPersist,
     calendarIds: calendarIds.length > 0 ? calendarIds : undefined,
     priority: updatedItem.priority || existingItem?.priority || 'medium',
     isCompleted: updatedItem.isCompleted ?? existingItem?.isCompleted ?? false,
@@ -94,12 +101,11 @@ export function buildEventForSave(
     isTask: true,
     isTimeCalendar: false,
     fourDNoteSource: true,
-    createdAt: existingItem?.createdAt || nowLocal,
+    createdAt: existingItem?.createdAt ?? sanitizedUpdatedItem.createdAt ?? nowLocal,
     updatedAt: nowLocal,
     source: 'local',
-    syncStatus: calendarIds.length > 0 ? 'pending' : 'local-only',
+    syncStatus: syncStatusForPersist as any,
     parentEventId,
-    childEventIds,
     bulletLevel: updatedItem.bulletLevel ?? existingItem?.bulletLevel,
     position: updatedItem.position ?? existingItem?.position,
   } as Event;
@@ -127,7 +133,6 @@ export function detectChanges(updatedItem: any, existingItem: any): boolean {
     JSON.stringify(existingItem.tags) !== JSON.stringify(updatedItem.tags) ||
     // ✅ Persist ordering and tree structure changes even when content is unchanged
     (existingItem.parentEventId || undefined) !== (updatedItem.parentEventId || undefined) ||
-    JSON.stringify(existingItem.childEventIds || []) !== JSON.stringify(updatedItem.childEventIds || []) ||
     (existingItem.position ?? undefined) !== (updatedItem.position ?? undefined)
   );
 }

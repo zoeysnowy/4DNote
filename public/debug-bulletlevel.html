@@ -142,18 +142,27 @@
                 log(`✅ 找到 ${events.length} 个 Plan 事件`, 'success');
             }
             
-            // 统计 EventTree 字段
+            // 统计 EventTree 字段（ADR-001：结构真相来自 parentEventId）
             const withParent = events.filter(e => e.parentEventId);
-            const withChildren = events.filter(e => e.childEventIds && e.childEventIds.length > 0);
+            const withLegacyChildEventIds = events.filter(e => e.childEventIds && e.childEventIds.length > 0);
             const withBulletLevel = events.filter(e => e.bulletLevel !== undefined);
+
+            const parentToChildrenCount = new Map();
+            events.forEach(e => {
+                if (!e.parentEventId) return;
+                parentToChildrenCount.set(e.parentEventId, (parentToChildrenCount.get(e.parentEventId) || 0) + 1);
+            });
+            const withDerivedChildren = events.filter(e => (parentToChildrenCount.get(e.id) || 0) > 0);
+            const derivedOrphans = events.filter(e => !e.parentEventId && (parentToChildrenCount.get(e.id) || 0) === 0);
             
             log(`📊 统计数据：`, 'info');
             logPre({
                 '总事件数': events.length,
                 '有 parentEventId': withParent.length,
-                '有 childEventIds': withChildren.length,
+                '有派生子节点(parentEventId)': withDerivedChildren.length,
+                '有 childEventIds(legacy)': withLegacyChildEventIds.length,
                 '有 bulletLevel': withBulletLevel.length,
-                '孤立事件（无父无子）': events.filter(e => !e.parentEventId && (!e.childEventIds || e.childEventIds.length === 0)).length
+                '孤立事件（无父无子，按 parentEventId 派生）': derivedOrphans.length
             });
             
             // 显示前10个事件的 EventTree 数据
@@ -167,7 +176,8 @@
                     <div class="event-meta">
                         bulletLevel: ${e.bulletLevel ?? 'undefined'} | 
                         parentEventId: ${e.parentEventId ? e.parentEventId.slice(-8) : 'null'} | 
-                        childEventIds: ${e.childEventIds ? e.childEventIds.length : 0}
+                        派生直接子节点: ${parentToChildrenCount.get(e.id) || 0} | 
+                        childEventIds(legacy): ${e.childEventIds ? e.childEventIds.length : 0}
                     </div>
                 `;
                 output.appendChild(div);
@@ -254,6 +264,13 @@
             
             // 模拟 PlanManager 的排序逻辑
             const eventMap = new Map(events.map(e => [e.id, e]));
+            const childrenMap = new Map();
+            events.forEach(e => {
+                if (!e.parentEventId) return;
+                const arr = childrenMap.get(e.parentEventId) || [];
+                arr.push(e);
+                childrenMap.set(e.parentEventId, arr);
+            });
             const visited = new Set();
             const sortedEvents = [];
             
@@ -264,9 +281,7 @@
                 visited.add(event.id);
                 sortedEvents.push(event);
                 
-                const children = (event.childEventIds || [])
-                    .map(childId => eventMap.get(childId))
-                    .filter(child => !!child)
+                const children = (childrenMap.get(event.id) || [])
                     .sort((a, b) => {
                         const timeA = new Date(a.createdAt || 0).getTime();
                         const timeB = new Date(b.createdAt || 0).getTime();

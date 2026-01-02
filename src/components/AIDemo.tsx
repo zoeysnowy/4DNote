@@ -382,7 +382,7 @@ export const AIDemo: React.FC = () => {
       
       if (result.success) {
         // 获取创建后的事件快照
-        const createdEvent = EventHub.getSnapshot(newEvent.id);
+        const createdEvent = await EventHub.getSnapshotAsync(newEvent.id);
         console.log('[AIDemo] ✅ 事件已创建，快照:', createdEvent);
         
         alert('✅ 事件创建成功！\n\n可以在 TimeCalendar 中查看该事件。');

@@ -4,7 +4,6 @@ export const STORAGE_KEYS = {
   SETTINGS: '4dnote-settings',
   
   // 事件相关
-  EVENTS: '4dnote-events',
   EVENT_TAGS: '4dnote-event-tags',
   HIERARCHICAL_TAGS: '4dnote-hierarchical-tags',
   

@@ -169,7 +169,7 @@ static async createEvent(
 1. normalizeEvent() - 数据规范化
 2. UUID 生成 - event_${nanoid(21)}
 3. 临时 ID 替换 - resolveTempIdReferences()
-4. 双向关联维护 - 添加到 parentEvent.childEventIds
+4. 树结构真相写入 - 仅持久化 parentEventId（childEventIds 不维护/不依赖）
 5. convertEventToStorageEvent() - 转换为存储格式
 6. storageManager.createEvent() - 持久化
 7. EventHistoryService.logCreate() - 记录历史
@@ -186,17 +186,10 @@ const tempId = `line-${Date.now()}-${Math.random()}`;
 await this.resolveTempIdReferences(tempId, realId);
 ```
 
-**双向关联自动维护**:
-```typescript
-if (event.parentEventId) {
-  const parent = await this.getEventById(event.parentEventId);
-  if (parent) {
-    await this.updateEvent(parent.id, {
-      childEventIds: [...(parent.childEventIds || []), realId]
-    }, true); // skipSync=true，避免触发远程同步
-  }
-}
-```
+**ADR-001（树结构真相）**:
+
+- createEvent 仅持久化 `event.parentEventId`
+- 子列表通过 `parentEventId` 派生/查询获得；不维护/不依赖 `childEventIds`
 
 #### 3.2 updateEvent()
 
@@ -924,9 +917,9 @@ normalizeEvent()
   ├─ resolveTempIdReferences(tempId, realId)
   └─ 更新所有引用
   ↓
-双向关联维护
-  ├─ 添加到 parentEvent.childEventIds
-  └─ 添加到 linkedEvent.backlinks
+关联字段维护
+  ├─ 结构真相：仅持久化/更新 child.parentEventId（ADR-001；不维护 parent.childEventIds）
+  └─ 双向链接：linkedEventIds/backlinks（仍维护）
   ↓
 convertEventToStorageEvent()
   ├─ 确保 eventlog.html 包含 Meta-Comment
@@ -1109,35 +1102,14 @@ static calculateBulletLevel(
 **⚡️ v2.20.0 优化**: 批量查询替代逐个查询，性能提升 5-10 倍
 
 ```typescript
+// ADR-001: 子列表必须通过 parentEventId 反查/派生获得；childEventIds 为 legacy 字段，不维护/不依赖。
 static async getChildEvents(parentId: string): Promise<Event[]> {
-  const parent = await this.getEventById(parentId);
-  if (!parent?.childEventIds || parent.childEventIds.length === 0) {
-    return [];
-  }
-  
-  // ⚡️ [BATCH QUERY] 一次查询所有子事件，避免 N 次异步查询
-  try {
-    const result = await storageManager.queryEvents({
-      filters: { eventIds: parent.childEventIds },
-      limit: 1000 // 足够大的限制
-    });
-    
-    eventLogger.log('⚡️ [getChildEvents] Batch query completed:', {
-      parentId: parentId.slice(-8),
-      childCount: result.items.length,
-      expected: parent.childEventIds.length
-    });
-    
-    return result.items;
-  } catch (error) {
-    eventLogger.error('❌ [getChildEvents] Batch query failed, fallback to individual queries:', error);
-    
-    // 🔧 Fallback: 如果批量查询失败，回退到逐个查询
-    const children = await Promise.all(
-      parent.childEventIds.map(id => this.getEventById(id))
-    );
-    return children.filter(Boolean) as Event[];
-  }
+  // ⚡️ [BATCH QUERY] 一次查询所有子事件（按 parentEventId 过滤）
+  const result = await storageManager.queryEvents({
+    filters: { parentEventId },
+    limit: 1000
+  });
+  return result.items;
 }
 ```
 

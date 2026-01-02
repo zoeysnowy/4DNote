@@ -111,11 +111,11 @@ export async function resetAllData() {
     }
 
     // 4. 清空 SQLite（仅 Electron 环境）
-    if ((window as any).electronAPI?.sqlite) {
+    if (window.electronAPI?.sqlite) {
       console.log('4️⃣  清空 SQLite 数据库...');
       try {
         // 通知 Electron 主进程删除数据库文件
-        const result = await (window as any).electronAPI.sqlite.clearAllDatabases?.();
+        const result = await window.electronAPI.sqlite.clearAllDatabases?.();
         if (result?.success) {
           console.log('   ✅ SQLite 数据库已清空');
         } else {
@@ -140,7 +140,6 @@ export async function resetAllData() {
     console.log('\n✅ ============================================');
     console.log('✅ 所有数据已重置！');
     console.log('✅ ============================================\n');
-    console.log('🔄 页面将在 2 秒后自动刷新...\n');
 
     // 延迟刷新，让用户看到结果
     setTimeout(() => {

@@ -93,7 +93,7 @@ const newEvent = await EventService.createEvent({
 - 生成唯一 ID (`event_${nanoid(21)}`)
 - 设置 `created_at` 和 `updated_at`
 - 规范化时间格式（ISO 8601）
-- 如果指定 `parentEventId`，自动添加到父事件的 `childEventIds`
+- 如果指定 `parentEventId`，持久化 `parentEventId`；子列表通过派生/查询获得（不维护/不依赖 `childEventIds`）
 - 分发 EventHub 事件
 - 加入同步队列（多账户同步）
 
@@ -188,7 +188,7 @@ await EventService.deleteEvent('event_abc123', true);
 ```
 
 **自动处理**:
-- 从父事件的 `childEventIds` 中移除
+- ADR-001：父子结构真相来自 `parentEventId`；不维护/不依赖 `childEventIds`
 - 递归删除所有子事件（可选）
 - 清理双向链接引用
 - 分发 EventHub 事件
@@ -509,18 +509,13 @@ const events = await storageManager.queryEvents({
 ### 1. 父子关系一致性
 
 ```typescript
-// 创建子事件时自动更新父事件
-if (event.parentEventId) {
-  const parent = await this.getEventById(event.parentEventId);
-  if (parent) {
-    const childIds = parent.childEventIds || [];
-    if (!childIds.includes(event.id)) {
-      await this.updateEvent(parent.id, {
-        childEventIds: [...childIds, event.id]
-      });
-    }
-  }
-}
+// ADR-001：父子结构真相 = child.parentEventId。
+// 创建/更新子事件时不需要、也不应自动维护 parent.childEventIds（legacy-only）。
+// 需要子列表时通过 parentEventId 反查/派生获得。
+const children = await storageManager.queryEvents({
+  filters: { parentEventId: event.parentEventId },
+  limit: 1000
+});
 ```
 
 ### 2. 循环依赖检测

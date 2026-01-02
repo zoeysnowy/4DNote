@@ -70,7 +70,6 @@ export function buildEventTree(
     const node: EventNode = {
       id: event.id,
       parentEventId: event.parentEventId,
-      childEventIds: event.childEventIds || [],
       position: event.position,
       createdAt: event.createdAt,
       _fullEvent: 'title' in event ? (event as Event) : undefined,
@@ -399,10 +398,10 @@ export function computeReparentEffect(
       position: newPosition,
     },
   });
-  // ADR-001/v2.22+: 废弃自动维护 parent.childEventIds（不写、不保证一致性）。
+  // ADR-001: 结构真相来自 parentEventId（不维护/不依赖额外“子列表”字段）。
   
   // 2. 计算受影响的子树（需要重新计算 bulletLevel）
-  // ADR-001: 结构真相来自 parentEventId；不要依赖 childEventIds 遍历后代
+  // ADR-001: 结构真相来自 parentEventId
   const childrenByParentId = new Map<string, string[]>();
   for (const event of eventsById.values()) {
     const parentId = event.parentEventId;

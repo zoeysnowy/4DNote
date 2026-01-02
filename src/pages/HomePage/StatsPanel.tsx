@@ -6,6 +6,7 @@ import { PixelView } from './charts/PixelView';
 import { EventService } from '../../services/EventService';
 import { TagService } from '../../services/TagService';
 import { getAvailableCalendarsForSettings } from '../../utils/calendarUtils';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './StatsPanel.css';
 
 /**
@@ -30,7 +31,11 @@ export const StatsPanel: React.FC = () => {
   // 计算事件时长（毫秒）- 从 EventStats 计算
   const getEventDuration = (stats: import('../../services/storage/types').EventStats): number => {
     if (!stats.startTime || !stats.endTime) return 0;
-    return new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
+    try {
+      return parseLocalTimeString(stats.endTime).getTime() - parseLocalTimeString(stats.startTime).getTime();
+    } catch {
+      return 0;
+    }
   };
 
   // 计算日期范围

@@ -42,7 +42,8 @@
 | 文档 | 状态 | 字数 | 代码行数 | 描述 | 最后更新 |
 |------|------|------|----------|------|----------|
 | [**EventEditModal V2 PRD**](./EVENTEDITMODAL_V2_PRD.md) | ✅ **完成** | ~20,000 | ~1,200 | EventEditModal v2 完整 PRD，包含日历同步配置功能 | 2025-11-19 v2.0 |
-| [**同步机制 PRD**](./SYNC_MECHANISM_PRD.md) | ⚠️ **缺失** | ~15,000 | - | ActionBasedSyncManager、MicrosoftCalendarService、EventService 的完整同步架构 | 2025-11-05 |
+| [**ActionBasedSyncManager PRD**](./ACTIONBASEDSYNCMANAGER_PRD.md) | ✅ **完成** | - | - | 同步机制当前维护入口（优先参考） | - |
+| [**同步机制 PRD（legacy）**](../architecture/SYNC_MECHANISM_PRD.md) | ⚠️ **存在但久未维护** | ~15,000 | - | 历史同步架构口径（背景参考） | 2025-11-05 |
 | [**Timer 模块 PRD**](./TIMER_MODULE_PRD.md) | ✅ **完成** | ~11,000 | ~800 | 计时器生命周期、状态管理、与同步机制的集成、与 PlanManager 的交互 | 2025-11-05 v1.2 |
 | [**TimeCalendar 模块 PRD**](./TIMECALENDAR_MODULE_PRD.md) | ✅ **完成** | ~48,000 | ~2,400 | 日历视图、事件 CRUD、拖拽编辑、实时 Timer 事件生成、事件过滤系统 | 2025-11-05 |
 | [**EventEditModal 模块 PRD**](./EVENTEDITMODAL_MODULE_PRD.md) | ✅ **完成** | ~15,000 | ~650 | 事件编辑弹窗、表单字段、UnifiedDateTimePicker 集成、TagManager 集成 | 2025-11-05 |
@@ -77,7 +78,7 @@
 docs/
 ├── PRD/                          # 产品需求文档（本目录）
 │   ├── README.md                 # 📋 文档目录（本文件）
-│   ├── SYNC_MECHANISM_PRD.md     # 🔄 同步机制 PRD（⚠️ 缺失）
+│   ├── ACTIONBASEDSYNCMANAGER_PRD.md # 🔄 同步机制（当前维护入口）
 │   ├── TIMER_MODULE_PRD.md       # ⏱️ Timer 模块 PRD v1.2
 │   ├── TIMECALENDAR_MODULE_PRD.md # 📅 TimeCalendar 模块 PRD
 │   ├── EVENTEDITMODAL_MODULE_PRD.md # 📝 EventEditModal 模块 PRD

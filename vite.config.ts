@@ -34,8 +34,15 @@ export default defineConfig({
     ignoreBetterSqlite3(),
   ],
   test: {
-    // Exclude vendored upstream tests under tui.calendar (some use Jest globals / missing deps)
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['src/test/vitest.setup.ts'],
+    // Keep Vitest defaults and also exclude vendored upstream tests under tui.calendar.
+    // (Some upstream tests rely on Jest globals / missing deps.)
     exclude: [
+      '**/node_modules/**',
+      'build/**',
+      'dist/**',
       'src/lib/tui.calendar/**',
     ],
   },

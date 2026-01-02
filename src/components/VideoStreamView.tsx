@@ -146,7 +146,9 @@ export const VideoStreamView: React.FC<VideoStreamViewProps> = ({
         <div key={video.id} className="video-grid-item">
           <div className="video-container">
             <video
-              ref={(el) => el && videoRefs.current.set(video.id, el)}
+              ref={(el) => {
+                if (el) videoRefs.current.set(video.id, el);
+              }}
               src={videoPaths.get(video.id) || ''}
               poster={video.thumbnailPath ? `file://${video.thumbnailPath}` : undefined}
               onEnded={() => handleVideoEnded(video.id, index)}
@@ -226,7 +228,9 @@ export const VideoStreamView: React.FC<VideoStreamViewProps> = ({
       <div className="video-theater">
         <div className="main-video-container">
           <video
-            ref={(el) => el && videoRefs.current.set(currentVideo.id, el)}
+            ref={(el) => {
+              if (el) videoRefs.current.set(currentVideo.id, el);
+            }}
             src={videoPath || ''}
             poster={currentVideo.thumbnailPath ? `file://${currentVideo.thumbnailPath}` : undefined}
             controls
@@ -287,7 +291,7 @@ export const VideoStreamView: React.FC<VideoStreamViewProps> = ({
       {layout === 'list' && renderList()}
       {layout === 'theater' && renderTheater()}
 
-      <style jsx>{`
+      <style>{`
         .video-stream-view {
           padding: 16px;
           background: var(--bg-primary, white);

@@ -5,6 +5,11 @@ import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
 import { defaultTimePolicy } from '../config/time.config';
 import { dbg, error } from '../utils/debugLogger';
 
+// React 18/19 useSyncExternalStore requires getSnapshot() to be referentially stable
+// when the underlying store value hasn't changed. Returning a fresh `{}` on every
+// call can cause an infinite re-render loop ("Maximum update depth exceeded").
+const EMPTY_TIME_SNAPSHOT: Readonly<TimeGetResult> = Object.freeze({});
+
 // Lightweight TimeHub: single source of truth for event time intents and normalized values
 // - getEventTime(eventId)
 // - setEventTime(eventId, payload)
@@ -113,27 +118,32 @@ class TimeHubImpl {
       dbg('timehub', '📦 返回缓存的快照', { eventId, start: cached.start, end: cached.end });
       return cached;
     }
-    const res = this.loadFromEventService(eventId);
-    this.cache.set(eventId, res);
-    dbg('timehub', '🔍 冷加载快照 (首次getSnapshot)', { eventId, start: res.start, end: res.end, timeSpec: res.timeSpec });
-    return res;
+    // EventService.getEventById is async; avoid blocking sync snapshot reads.
+    // Return an empty snapshot and asynchronously refresh the cache.
+    void this.refreshFromEventService(eventId);
+    // IMPORTANT: return a stable reference to avoid useSyncExternalStore loops.
+    this.cache.set(eventId, EMPTY_TIME_SNAPSHOT as TimeGetResult);
+    dbg('timehub', '🔍 冷加载快照 (首次getSnapshot)：返回稳定空快照并异步刷新', { eventId });
+    return EMPTY_TIME_SNAPSHOT as TimeGetResult;
   }
 
-  private loadFromEventService(eventId: string): TimeGetResult {
+  private async refreshFromEventService(eventId: string): Promise<void> {
     try {
-      const ev = EventService.getEventById(eventId);
-      if (!ev) return {};
-      const start = ev.startTime;
-      const end = ev.endTime;
-      const timeSpec = (ev as any).timeSpec as TimeSpec | undefined;
-      const isFuzzyDate = (ev as any).isFuzzyDate as boolean | undefined; // 🆕 v2.6
-      const timeFieldState = (ev as any).timeFieldState as [number, number, number, number] | undefined; // 🆕 v2.6
-      const isFuzzyTime = (ev as any).isFuzzyTime as boolean | undefined; // 🆕 v2.7
-      const fuzzyTimeName = (ev as any).fuzzyTimeName as string | undefined; // 🆕 v2.7
-      const title = ev.title; // 🆕 v2.15.4: 包含标题信息
-      return { timeSpec, start, end, isFuzzyDate, timeFieldState, isFuzzyTime, fuzzyTimeName, title };
+      const ev = await EventService.getEventById(eventId);
+      if (!ev) return;
+      const snapshot: TimeGetResult = {
+        timeSpec: (ev as any).timeSpec as TimeSpec | undefined,
+        start: ev.startTime,
+        end: ev.endTime,
+        isFuzzyDate: (ev as any).isFuzzyDate as boolean | undefined,
+        timeFieldState: (ev as any).timeFieldState as [number, number, number, number] | undefined,
+        isFuzzyTime: (ev as any).isFuzzyTime as boolean | undefined,
+        fuzzyTimeName: (ev as any).fuzzyTimeName as string | undefined,
+      };
+      this.cache.set(eventId, snapshot);
+      this.emit(eventId);
     } catch {
-      return {};
+      // ignore
     }
   }
 
@@ -212,7 +222,7 @@ class TimeHubImpl {
     this.emit(eventId);
 
     // 🔧 持久化到 EventService（同步操作，无需 await）
-    const existing = EventService.getEventById(eventId);
+    const existing = await EventService.getEventById(eventId);
     if (!existing) {
       // 🔧 [新行场景] 事件尚未创建
       // 缓存已更新，订阅者已通知，serialization.ts 会在创建时读取缓存
@@ -273,7 +283,7 @@ class TimeHubImpl {
   // Set fuzzy intent (e.g., rawText: "下周"), without resolving to concrete times.
   async setFuzzy(eventId: string, rawText: string, options?: { source?: TimeSource; policy?: Partial<TimePolicy> }) {
     this.init();
-    const existing = EventService.getEventById(eventId);
+    const existing = await EventService.getEventById(eventId);
     if (!existing) return { success: false, error: `Event not found: ${eventId}` };
     const policy: TimePolicy = { ...defaultTimePolicy, ...(options?.policy ?? {}) };
 
@@ -312,7 +322,7 @@ class TimeHubImpl {
     input: { start?: string | Date; end?: string | Date; allDay?: boolean; policy?: Partial<TimePolicy> }
   ) {
     this.init();
-    const existing = EventService.getEventById(eventId);
+    const existing = await EventService.getEventById(eventId);
     if (!existing) return { success: false, error: `Event not found: ${eventId}` };
 
     const normalize = (v?: string | Date) => {

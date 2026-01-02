@@ -8,6 +8,7 @@
  */
 
 import { Event } from '../types';
+import { parseLocalTimeString } from './timeUtils';
 
 export interface ValidationResult {
   valid: boolean;
@@ -84,7 +85,7 @@ export function validateEventTime(event: Event): ValidationResult {
   }
   
   // 验证时间逻辑（开始时间 <= 结束时间）
-  if (new Date(event.startTime) > new Date(event.endTime)) {
+  if (parseLocalTimeString(event.startTime) > parseLocalTimeString(event.endTime)) {
     return {
       valid: false,
       error: 'Start time must be before or equal to end time',

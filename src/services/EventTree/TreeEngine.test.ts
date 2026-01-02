@@ -17,14 +17,12 @@ import type { EventNode } from './types';
 function createTestEvent(
   id: string,
   parentId?: string,
-  position?: number,
-  childIds?: string[]
+  position?: number
 ): Event {
   return {
     id,
     title: { simpleTitle: `Event ${id}` },
     parentEventId: parentId,
-    childEventIds: childIds || [],
     position,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -36,12 +34,9 @@ describe('EventTree Engine - Core Functions', () => {
     it('应该正确构建简单的树结构', () => {
       const events: Event[] = [
         createTestEvent('root', undefined, 0),
-        createTestEvent('child1', 'root', 0, []),
-        createTestEvent('child2', 'root', 1, []),
+        createTestEvent('child1', 'root', 0),
+        createTestEvent('child2', 'root', 1),
       ];
-      
-      // 更新 root 的 childEventIds
-      events[0].childEventIds = ['child1', 'child2'];
       
       const tree = buildEventTree(events, {
         validateStructure: true,
@@ -59,9 +54,9 @@ describe('EventTree Engine - Core Functions', () => {
     
     it('应该正确处理多层嵌套', () => {
       const events: Event[] = [
-        createTestEvent('root', undefined, 0, ['child1']),
-        createTestEvent('child1', 'root', 0, ['grandchild1']),
-        createTestEvent('grandchild1', 'child1', 0, []),
+        createTestEvent('root', undefined, 0),
+        createTestEvent('child1', 'root', 0),
+        createTestEvent('grandchild1', 'child1', 0),
       ];
       
       const tree = buildEventTree(events, {
@@ -77,8 +72,8 @@ describe('EventTree Engine - Core Functions', () => {
     
     it('应该检测循环引用', () => {
       const events: Event[] = [
-        createTestEvent('a', 'b', 0, []),
-        createTestEvent('b', 'a', 0, []), // 循环：a -> b -> a
+        createTestEvent('a', 'b', 0),
+        createTestEvent('b', 'a', 0), // 循环：a -> b -> a
       ];
       
       const tree = buildEventTree(events, {
@@ -91,7 +86,7 @@ describe('EventTree Engine - Core Functions', () => {
     
     it('应该检测孤儿节点', () => {
       const events: Event[] = [
-        createTestEvent('orphan', 'missing-parent', 0, []),
+        createTestEvent('orphan', 'missing-parent', 0),
       ];
       
       const tree = buildEventTree(events, {
@@ -105,10 +100,10 @@ describe('EventTree Engine - Core Functions', () => {
     
     it('应该按 position 正确排序兄弟节点', () => {
       const events: Event[] = [
-        createTestEvent('root', undefined, 0, ['child3', 'child1', 'child2']),
-        createTestEvent('child1', 'root', 1, []),
-        createTestEvent('child2', 'root', 2, []),
-        createTestEvent('child3', 'root', 0, []),
+        createTestEvent('root', undefined, 0),
+        createTestEvent('child1', 'root', 1),
+        createTestEvent('child2', 'root', 2),
+        createTestEvent('child3', 'root', 0),
       ];
       
       const tree = buildEventTree(events, {
@@ -119,14 +114,13 @@ describe('EventTree Engine - Core Functions', () => {
       expect(childIds).toEqual(['child3', 'child1', 'child2']);
     });
 
-    it('ADR-001: 应该以 parentEventId 作为结构真相（即使 parent.childEventIds 缺失）', () => {
+    it('ADR-001: 应该以 parentEventId 作为结构真相', () => {
       const events: Event[] = [
-        createTestEvent('root', undefined, 0, []),
-        createTestEvent('child1', 'root', 0, []),
-        createTestEvent('child2', 'root', 1, []),
+        createTestEvent('root', undefined, 0),
+        createTestEvent('child1', 'root', 0),
+        createTestEvent('child2', 'root', 1),
       ];
 
-      // root.childEventIds 故意保持为空，模拟历史数据未维护/漂移
       const tree = buildEventTree(events, {
         validateStructure: true,
         computeBulletLevels: true,
@@ -139,13 +133,12 @@ describe('EventTree Engine - Core Functions', () => {
       expect(tree.bulletLevels.get('child2')).toBe(1);
     });
 
-    it('v2.22: sibling order should not depend on childEventIds (fallback to createdAt/id)', () => {
+    it('sibling order should fall back to createdAt/id when no position', () => {
       const events: Event[] = [
-        // root.childEventIds 提示顺序被忽略
-        createTestEvent('root', undefined, 0, ['child2', 'child1']),
+        createTestEvent('root', undefined, 0),
         // 两个 child 都没有 position，用 createdAt 排序
-        { ...createTestEvent('child1', 'root', undefined, []), createdAt: '2024-01-01' },
-        { ...createTestEvent('child2', 'root', undefined, []), createdAt: '2024-01-02' },
+        { ...createTestEvent('child1', 'root', undefined), createdAt: '2024-01-01' },
+        { ...createTestEvent('child2', 'root', undefined), createdAt: '2024-01-02' },
       ];
 
       const tree = buildEventTree(events as Event[], {
@@ -157,10 +150,9 @@ describe('EventTree Engine - Core Functions', () => {
     
     it('应该在没有 position 时按 createdAt 排序', () => {
       const events: Event[] = [
-        // 没有 childEventIds 提示时才回退到 createdAt 排序
-        createTestEvent('root', undefined, undefined, []),
-        { ...createTestEvent('child1', 'root', undefined, []), createdAt: '2024-01-01' },
-        { ...createTestEvent('child2', 'root', undefined, []), createdAt: '2024-01-02' },
+        createTestEvent('root', undefined, undefined),
+        { ...createTestEvent('child1', 'root', undefined), createdAt: '2024-01-01' },
+        { ...createTestEvent('child2', 'root', undefined), createdAt: '2024-01-02' },
       ];
       
       const tree = buildEventTree(events as Event[], {
@@ -208,9 +200,9 @@ describe('EventTree Engine - Core Functions', () => {
   describe('computeReparentEffect', () => {
     it('应该计算重新父化的影响范围', () => {
       const events = new Map<string, Event>([
-        ['parent1', createTestEvent('parent1', undefined, 0, ['child1'])],
-        ['parent2', createTestEvent('parent2', undefined, 1, [])],
-        ['child1', createTestEvent('child1', 'parent1', 0, [])],
+        ['parent1', createTestEvent('parent1', undefined, 0)],
+        ['parent2', createTestEvent('parent2', undefined, 1)],
+        ['child1', createTestEvent('child1', 'parent1', 0)],
       ]);
       
       const result = computeReparentEffect(events, {
@@ -228,7 +220,7 @@ describe('EventTree Engine - Core Functions', () => {
       expect(child1Update?.updates.parentEventId).toBe('parent2');
       expect(child1Update?.updates.position).toBe(0);
       
-      // 不再维护 parent.childEventIds
+      // ADR-001: 不维护任何父节点“子列表”字段
       expect(result.nodesToUpdate.find(u => u.eventId === 'parent1')).toBeUndefined();
       expect(result.nodesToUpdate.find(u => u.eventId === 'parent2')).toBeUndefined();
 
@@ -236,15 +228,13 @@ describe('EventTree Engine - Core Functions', () => {
       expect(result.affectedParents).toEqual([]);
     });
 
-    it('ADR-001: affectedSubtree 应该基于 parentEventId 收集（即使 childEventIds 漂移/缺失）', () => {
+    it('ADR-001: affectedSubtree 应该基于 parentEventId 收集', () => {
       const events = new Map<string, Event>([
-        // root.childEventIds 故意为空
-        ['root', createTestEvent('root', undefined, 0, [])],
-        // child1 作为 root 的孩子，但 child1.childEventIds 也为空
-        ['child1', createTestEvent('child1', 'root', 0, [])],
+        ['root', createTestEvent('root', undefined, 0)],
+        ['child1', createTestEvent('child1', 'root', 0)],
         // grandchild 仅通过 parentEventId 关联到 child1
-        ['grandchild', createTestEvent('grandchild', 'child1', 0, [])],
-        ['newParent', createTestEvent('newParent', undefined, 1, [])],
+        ['grandchild', createTestEvent('grandchild', 'child1', 0)],
+        ['newParent', createTestEvent('newParent', undefined, 1)],
       ]);
 
       const result = computeReparentEffect(events, {
@@ -264,9 +254,9 @@ describe('EventTreeAPI - High-Level Interface', () => {
   describe('calculateAllBulletLevels', () => {
     it('应该批量计算所有节点的 bulletLevel', () => {
       const events: Event[] = [
-        createTestEvent('root', undefined, 0, ['child1']),
-        createTestEvent('child1', 'root', 0, ['grandchild1']),
-        createTestEvent('grandchild1', 'child1', 0, []),
+        createTestEvent('root', undefined, 0),
+        createTestEvent('child1', 'root', 0),
+        createTestEvent('grandchild1', 'child1', 0),
       ];
       
       const levels = EventTreeAPI.calculateAllBulletLevels(events);
@@ -295,10 +285,10 @@ describe('EventTreeAPI - High-Level Interface', () => {
   describe('getDirectChildren', () => {
     it('应该返回直接子节点', () => {
       const events: Event[] = [
-        createTestEvent('parent', undefined, 0, ['child1', 'child2']),
-        createTestEvent('child1', 'parent', 0, ['grandchild1']),
-        createTestEvent('child2', 'parent', 1, []),
-        createTestEvent('grandchild1', 'child1', 0, []),
+        createTestEvent('parent', undefined, 0),
+        createTestEvent('child1', 'parent', 0),
+        createTestEvent('child2', 'parent', 1),
+        createTestEvent('grandchild1', 'child1', 0),
       ];
       
       const children = EventTreeAPI.getDirectChildren('parent', events);
@@ -311,10 +301,10 @@ describe('EventTreeAPI - High-Level Interface', () => {
   describe('getSubtree', () => {
     it('应该返回完整子树（包含所有后代）', () => {
       const events: Event[] = [
-        createTestEvent('root', undefined, 0, ['child1']),
-        createTestEvent('child1', 'root', 0, ['grandchild1', 'grandchild2']),
-        createTestEvent('grandchild1', 'child1', 0, []),
-        createTestEvent('grandchild2', 'child1', 1, []),
+        createTestEvent('root', undefined, 0),
+        createTestEvent('child1', 'root', 0),
+        createTestEvent('grandchild1', 'child1', 0),
+        createTestEvent('grandchild2', 'child1', 1),
       ];
       
       const subtree = EventTreeAPI.getSubtree('root', events);
@@ -332,10 +322,10 @@ describe('EventTreeAPI - High-Level Interface', () => {
   describe('toDFSList', () => {
     it('应该生成 DFS 顺序的扁平列表', () => {
       const events: Event[] = [
-        createTestEvent('root1', undefined, 0, ['child1']),
-        createTestEvent('root2', undefined, 1, ['child2']),
-        createTestEvent('child1', 'root1', 0, []),
-        createTestEvent('child2', 'root2', 0, []),
+        createTestEvent('root1', undefined, 0),
+        createTestEvent('root2', undefined, 1),
+        createTestEvent('child1', 'root1', 0),
+        createTestEvent('child2', 'root2', 0),
       ];
       
       const dfsList = EventTreeAPI.toDFSList(events);
@@ -375,10 +365,7 @@ describe('EventTreeAPI - Performance', () => {
     
     for (let i = 0; i < 1000; i++) {
       const id = `event-${i}`;
-      events.push(createTestEvent(id, parentId, i, parentId ? [] : [id + 1]));
-      if (i < 999) {
-        events[i].childEventIds = [`event-${i + 1}`];
-      }
+      events.push(createTestEvent(id, parentId, i));
       parentId = id;
     }
     

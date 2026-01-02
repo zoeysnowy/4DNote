@@ -2,19 +2,14 @@ import { EventService } from '../../services/EventService';
 import { TimeHub } from '../../services/TimeHub';
 import { formatTimeForStorage } from '../../utils/timeUtils';
 
-const EVENTS_KEY = '4dnote-events';
-
 describe('TimeHub basic set/get/subscribe', () => {
   beforeEach(() => {
-    // Clear events storage
-    localStorage.removeItem(EVENTS_KEY);
+    EventService.initialize(null);
   });
 
   test('setEventTime updates event and notifies subscribers', async () => {
     // Seed an event
-    const eventId = 'e1';
-    await EventService.createEvent({
-      id: eventId,
+    const seeded = await EventService.createEvent({
       title: 'Test',
       startTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 0, 0)),
       endTime: formatTimeForStorage(new Date(2025, 9, 20, 10, 0, 0)),
@@ -23,14 +18,16 @@ describe('TimeHub basic set/get/subscribe', () => {
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
     } as any, true);
+    expect(seeded.success).toBe(true);
+    const eventId = seeded.event!.id!;
 
     // Subscribe
     let calls = 0;
     const unsub = TimeHub.subscribe(eventId, () => { calls += 1; });
 
     // Update via TimeHub
-    const start = '2025-10-21T09:30:00';
-    const end = '2025-10-21T10:30:00';
+    const start = '2025-10-21 09:30:00';
+    const end = '2025-10-21 10:30:00';
     const result = await TimeHub.setEventTime(eventId, { start, end });
     expect(result.success).toBe(true);
 
@@ -47,9 +44,7 @@ describe('TimeHub basic set/get/subscribe', () => {
   });
 
   test('setTimerWindow updates locally and marks isTimer', async () => {
-    const eventId = 'e2';
-    await EventService.createEvent({
-      id: eventId,
+    const seeded = await EventService.createEvent({
       title: 'Timer Event',
       startTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 0, 0)),
       endTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 15, 0)),
@@ -58,16 +53,18 @@ describe('TimeHub basic set/get/subscribe', () => {
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
     } as any, true);
+    expect(seeded.success).toBe(true);
+    const eventId = seeded.event!.id!;
 
-    const start = '2025-10-21T10:00:00';
-    const end = '2025-10-21T10:05:00';
+    const start = '2025-10-21 10:00:00';
+    const end = '2025-10-21 10:05:00';
     const res = await TimeHub.setTimerWindow(eventId, { start, end });
     expect(res.success).toBe(true);
 
-    const ev = EventService.getEventById(eventId)!;
-    expect(ev.startTime).toBe(start);
-    expect(ev.endTime).toBe(end);
-    expect((ev as any).timeSpec?.source).toBe('timer');
-    expect(ev.isTimer).toBe(true);
+    const ev = await EventService.getEventById(eventId);
+    expect(ev?.startTime).toBe(start);
+    expect(ev?.endTime).toBe(end);
+    expect((ev as any)?.timeSpec?.source).toBe('timer');
+    expect(ev?.isTimer).toBe(true);
   });
 });

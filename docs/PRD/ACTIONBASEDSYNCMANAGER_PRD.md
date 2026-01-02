@@ -2186,7 +2186,9 @@ migrateOutlookPrefixes() {
   
   if (fixed > 0) {
     console.log(`🔧 [Migration] Fixed ${fixed} events with duplicate outlook- prefix`);
-    localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
+    // Legacy note: older implementations wrote back to a localStorage events cache.
+    // Current architecture persists via EventService/StorageManager.
+    this.persistEvents(events);
   }
 }
 ```

@@ -2,6 +2,8 @@
  * FloatingToolbar 类型定义
  */
 
+import type { ReactNode } from 'react';
+
 // 🆕 FloatingBar 显示模式
 export type FloatingBarMode = 
   | 'hidden'              // 隐藏状态
@@ -13,7 +15,7 @@ export type ToolbarMode = 'quick-action' | 'text-format';
 
 export interface ToolbarFeature {
   id: string;
-  icon: React.ReactNode | string;
+  icon: ReactNode | string;
   label: string;
   onClick: () => void;
   type?: 'button' | 'picker' | 'menu';
@@ -49,7 +51,6 @@ export type ToolbarFeatureType =
   | 'color'         // 颜色选择
   | 'link'          // 链接
   | 'textStyle'     // 🆕 文本样式子菜单
-  | 'addTask'       // 🆕 添加任务开关
   | 'addTask';      // 🆕 任务开关（控制 checkbox 显示）
 
 export interface FloatingToolbarProps {

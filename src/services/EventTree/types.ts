@@ -17,7 +17,6 @@ import { Event } from '../../types';
 export interface EventNode {
   id: string;
   parentEventId?: string;
-  childEventIds?: string[];
   position?: number;
   createdAt?: string;
   
@@ -100,7 +99,7 @@ export interface ReparentUpdateResult {
     updates: Partial<Event>;
   }>;
   
-  // 受影响的父节点（用于 UI 刷新/重排；v2.22+ 不再维护 childEventIds）
+  // 受影响的父节点（用于 UI 刷新/重排）
   affectedParents: string[];
   
   // 需要重新计算 bulletLevel 的节点范围

@@ -153,7 +153,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
   /**
    * 保存联系人
    */
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!contactEditableRef.current) return;
     
     // 提取各个字段的值
@@ -180,7 +180,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
     if (hasChanges) {
       if (mode === 'create') {
         // 创建新联系人
-        const newContact = ContactService.addContact({
+        const newContact = await ContactService.addContact({
           name: updates.name || '',
           email: updates.email,
           phone: updates.phone,
@@ -190,7 +190,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
         onSave?.(newContact);
       } else if (contact?.id) {
         // 更新现有联系人
-        const updated = ContactService.updateContact(contact.id, updates);
+        const updated = await ContactService.updateContact(contact.id, updates);
         if (updated) {
           onSave?.(updated);
         }
@@ -207,7 +207,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({
     if (!contact?.id) return;
     
     if (confirm(`确定要删除联系人 "${contact.name}" 吗？`)) {
-      ContactService.deleteContact(contact.id);
+      void ContactService.deleteContact(contact.id);
       onDelete?.(contact.id);
       onClose();
     }

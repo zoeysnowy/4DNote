@@ -4,7 +4,7 @@
  * EventTree 的核心节点组件，集成双向链接堆叠卡片。
  * 
  * 架构：
- * - 刚性骨架（Rigid Bone）：parentEventId/childEventIds 占据画布空间，显示为 line + link 标记
+ * - 刚性骨架（Rigid Bone）：parentEventId 占据画布空间，显示为 line + link 标记
  * - 柔性血管（Flexible Vessels）：linkedEventIds 堆叠在背后，悬停时扇形展开
  * 
  * 特性：

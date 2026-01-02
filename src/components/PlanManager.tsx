@@ -1,3 +1,4 @@
+import { resolveCheckState } from '../utils/TimeResolver';
 import React, { useState, useRef, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
@@ -24,7 +25,7 @@ import { EventHistoryService } from '../services/EventHistoryService'; // 🆕 �
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
 import { generateEventId } from '../utils/calendarUtils';
 import { EventTreeAPI } from '../services/EventTree'; // 🆕 v2.20.0: EventTree Engine
-import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../utils/timeUtils';
 import { icons } from '../assets/icons';
 import { useEventTime } from '../hooks/useEventTime';
 import { TimeHub } from '../services/TimeHub';
@@ -79,9 +80,13 @@ const PlanItemTimeDisplay = React.memo<{
   const containerRef = useRef<HTMLDivElement>(null);
 
   // 🔧 [FIX] 空字符串视为 undefined（TimeHub 用空字符串清空时间字段）
-  const startTime = (eventTime.start && eventTime.start !== '') ? new Date(eventTime.start) : (item.startTime ? new Date(item.startTime) : null);
-  const endTime = (eventTime.end && eventTime.end !== '') ? new Date(eventTime.end) : (item.endTime ? new Date(item.endTime) : null);
-  const dueDateTime = item.dueDateTime ? new Date(item.dueDateTime) : null;
+  const startTime = (eventTime.start && eventTime.start !== '')
+    ? parseLocalTimeStringOrNull(eventTime.start)
+    : (item.startTime ? parseLocalTimeStringOrNull(item.startTime) : null);
+  const endTime = (eventTime.end && eventTime.end !== '')
+    ? parseLocalTimeStringOrNull(eventTime.end)
+    : (item.endTime ? parseLocalTimeStringOrNull(item.endTime) : null);
+  const dueDateTime = item.dueDateTime ? parseLocalTimeStringOrNull(item.dueDateTime) : null;
   const isAllDay = eventTime.timeSpec?.allDay ?? item.isAllDay;
   // displayHint 已移除，使用动态计算
   
@@ -167,7 +172,8 @@ const PlanItemTimeDisplay = React.memo<{
   };
 
   // ✅ v2.8: 简化逻辑 - 只要有任何时间信息就显示
-  if (!startTime && !dueDateTime) return null;
+  // endTime-only is allowed for tasks (planned completion)
+  if (!startTime && !endTime && !dueDateTime) return null;
 
   // 使用相对时间格式化（动态计算）
   const relativeTimeDisplay = formatRelativeTimeDisplay(
@@ -233,11 +239,16 @@ const PlanItemTimeDisplay = React.memo<{
 export interface PlanManagerProps {
   // ❌ [REMOVED] items: Event[] - PlanManager 自己管理
   // ✅ 移除 onSave/onDelete，改用 EventHub 直接操作
+  // Left panel visibility (ContentSelectionPanel)
+  isPanelVisible?: boolean;
+  onPanelVisibilityChange?: (visible: boolean) => void;
   availableTags?: string[];
   onCreateEvent?: (event: Event) => void;
   onUpdateEvent?: (eventId: string, updates: Partial<Event>) => void;
   microsoftService?: any; // 🆕 Microsoft 服务实例
 }
+
+type EventWithLevel = Event & { bulletLevel?: number };
 
 // 🔍 调试开关 - 通过 window.SLATE_DEBUG = true 开启
 const isDebugEnabled = () => {
@@ -534,10 +545,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         
         // 8. 附加 bulletLevel 到事件对象
         const bulletLevels = treeResult.bulletLevels;
-        const eventsWithLevels = sortedEvents.map(event => ({
+        const eventsWithLevels: EventWithLevel[] = sortedEvents.map(event => ({
           ...event,
           bulletLevel: bulletLevels.get(event.id!) || 0
-        })) as Event[];
+        }));
         
         // 调试：检查排序结果（前 30 个）
         console.log('[PlanManager] 🔍 sortedEvents 顺序检查（前30个）:');
@@ -661,11 +672,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       
       // 3.2 已完成任务：过0点后自动隐藏
       if (event.checkType && event.checkType !== 'none') {
-        const lastChecked = event.checked?.[event.checked.length - 1];
-        const lastUnchecked = event.unchecked?.[event.unchecked.length - 1];
-        const isCompleted = lastChecked && (!lastUnchecked || lastChecked > lastUnchecked);
+        const { isChecked: isCompleted, lastChecked } = resolveCheckState(event);
         if (isCompleted && lastChecked) {
-          const completedTime = new Date(lastChecked);
+          const completedTime = parseLocalTimeString(lastChecked);
           const today = new Date(now);
           today.setHours(0, 0, 0, 0);
           if (completedTime < today) return false;
@@ -700,13 +709,13 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // 2. 计算受影响的事件范围
       const affectedEventIds = new Set<string>([eventId]);
       
-      // 2.1 父事件（childEventIds 可能变化）
+      // 2.1 父事件（结构变化可能影响父节点）
       if (updatedEvent.parentEventId) {
         affectedEventIds.add(updatedEvent.parentEventId);
       }
       
       // 2.2 子事件（bulletLevel 需要重新计算）
-      // ADR-001/v2.22+: childEventIds 不再维护；使用 parentEventId 派生直接子节点
+      // ADR-001/v2.22+: 直接子节点由 parentEventId 派生
       const directChildren = await EventService.getChildEvents(eventId);
       directChildren.forEach(child => affectedEventIds.add(child.id));
       
@@ -776,12 +785,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // 🚫 循环更新防护：跳过本组件发出的更新
       if (isLocalUpdate && originComponent === 'PlanManager') {
         console.log('🔄 [PlanManager] ⏭️ Skip own update (optimistic update already applied):', eventId?.slice(-10));
-        return;
-      }
-      
-      // 🚫 双重检查：询问EventService确认
-      if (updateId && EventService.isLocalUpdate(eventId, updateId)) {
-        console.log('🔄 [PlanManager] ⏭️ EventService confirmed local update, skip:', eventId?.slice(-10));
         return;
       }
       
@@ -1317,15 +1320,13 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           } else {
             // 🔍 DEBUG: Check what existingItem actually has
             if (existingItem) {
-              console.log('[PlanManager] 🔍 existingItem EventTree fields:', {
-                id: existingItem.id.slice(-8),
-                hasParentEventId: 'parentEventId' in existingItem,
-                parentEventIdValue: (existingItem as any).parentEventId,
-                hasChildEventIds: 'childEventIds' in existingItem,
-                childEventIdsValue: (existingItem as any).childEventIds,
-                keys: Object.keys(existingItem).filter(k => k.includes('Event') || k.includes('child') || k.includes('parent'))
-              });
-            }
+                console.log('[PlanManager] 🔍 existingItem EventTree fields:', {
+                  id: existingItem.id.slice(-8),
+                  hasParentEventId: 'parentEventId' in existingItem,
+                  parentEventIdValue: (existingItem as any).parentEventId,
+                  keys: Object.keys(existingItem).filter(k => k.includes('Event') || k.includes('parent'))
+                });
+              }
             
             // ✅ FIX: serialization 现在包含 EventTree 字段（从 Slate metadata 读取）
             // Tab 键同时更新 metadata 和数据库，onChange 读取 metadata 并保存
@@ -1335,7 +1336,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
               idLength: item.id.length,
               parentEventId: (item as any).parentEventId,
               parentEventIdLength: (item as any).parentEventId?.length,
-              childEventIds: (item as any).childEventIds,
               title: item.title?.simpleTitle?.substring(0, 20),
               fromDB: !existingItem
             });
@@ -1383,7 +1383,14 @@ const PlanManager: React.FC<PlanManagerProps> = ({
               hasDescription: !!item.description
             });
             
-            await EventHub.updateFields(item.id, item, { source: 'PlanManager' });
+            // Contract-safe updates: avoid writing UI/default `undefined` back into canonical storage
+            // (EventHub.updateFields spreads updates; explicit undefined would clear existing values.)
+            const compactUpdates: any = { ...item };
+            for (const key of Object.keys(compactUpdates)) {
+              if (compactUpdates[key] === undefined) delete compactUpdates[key];
+            }
+
+            await EventHub.updateFields(item.id, compactUpdates, { source: 'PlanManager' });
             
             // 🆕 v2.17: 不再需要 EventIdPool.markAsUsed()，UUID 无需标记
           }
@@ -1419,7 +1426,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           const isEmpty = isEmptyEvent(item);
           
           // 检查创建时间是否超过5分钟
-          const createdTime = new Date(item.createdAt || 0).getTime();
+          const createdTime = parseLocalTimeStringOrNull(item.createdAt)?.getTime() ?? 0;
           const isOld = now - createdTime > 5 * 60 * 1000; // 5分钟
           
           if (isEmpty && isOld) {
@@ -1470,9 +1477,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           isTask: true,
           isTimeCalendar: false,
           fourDNoteSource: true,
-          startTime: '',
-          endTime: '',
-          isAllDay: false,
+          // Field contract: 时间/全天字段保持可选，不默认注入
+          startTime: undefined,
+          endTime: undefined,
+          isAllDay: undefined,
           createdAt: nowLocal,
           updatedAt: nowLocal,
           source: 'local',
@@ -1492,15 +1500,14 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     // ⚡️ [SMART DEBOUNCE] 检测是否有父子关系变更
     const hasParentChildChange = updatedItems.some(item => 
-      item.parentEventId !== undefined || 
-      item.childEventIds !== undefined
+      item.parentEventId !== undefined
     );
     
     if (hasParentChildChange) {
       // 🚀 关键操作：立即保存，跳过防抖
       console.log('[PlanManager] ⚡️ 检测到父子关系变更，立即保存（跳过防抖）', {
         itemsCount: updatedItems.length,
-        timestamp: new Date().toISOString()
+        timestamp: formatTimeForStorage(new Date())
       });
       
       // 清除之前的定时器
@@ -1613,6 +1620,25 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       };
     }
   }, [session.filter.dateRange, session.snapshotVersion]); // 添加 snapshotVersion 依赖
+
+  const [panelSnapshot, setPanelSnapshot] = useState<{ created: number; updated: number; completed: number; deleted: number; details: any[] }>(
+    { created: 0, updated: 0, completed: 0, deleted: 0, details: [] }
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    generateEventSnapshot()
+      .then(snapshot => {
+        if (!cancelled) setPanelSnapshot(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setPanelSnapshot({ created: 0, updated: 0, completed: 0, deleted: 0, details: [] });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [generateEventSnapshot]);
   
   // 🆕 过滤后的事件列表
   const filteredItems = useMemo(() => {
@@ -1659,7 +1685,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             id: item.id?.slice(-8),
             title: item.title?.simpleTitle?.substring(0, 20) || item.content?.substring(0, 20),
             _isDeleted: item._isDeleted,
-            _deletedAt: item._deletedAt ? new Date(item._deletedAt).toLocaleString() : 'N/A'
+            _deletedAt: item._deletedAt
+              ? (parseLocalTimeStringOrNull(item._deletedAt)?.toLocaleString() ?? item._deletedAt)
+              : 'N/A'
           }))
         );
       }
@@ -1670,12 +1698,14 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (session.filter.dateRange) {
         const startTime = formatTimeForStorage(session.filter.dateRange.start);
         const endTime = formatTimeForStorage(session.filter.dateRange.end);
+        const startDate = parseLocalTimeStringOrNull(startTime);
+        const endDate = parseLocalTimeStringOrNull(endTime);
         
         // 1️⃣ 获取起点时刻的所有事件
         const existingAtStart = await EventHistoryService.getExistingEventsAtTime(startTime);
         console.log('[PlanManager] 📊 Snapshot 时间范围:', {
-          起点: new Date(startTime).toLocaleString(),
-          终点: new Date(endTime).toLocaleString(),
+          起点: startDate ? startDate.toLocaleString() : startTime,
+          终点: endDate ? endDate.toLocaleString() : endTime,
           起点存在事件数: existingAtStart.size
         });
         
@@ -1828,7 +1858,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           hasTitle,
           hasEventlog,
           eventlogType: typeof log.before.eventlog,
-          删除于: new Date(log.timestamp).toLocaleString()
+          删除于: parseLocalTimeString(log.timestamp).toLocaleString()
         });
         allItems.push({
           ...log.before,
@@ -1873,7 +1903,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       })) as Event[];
 
       // 3️⃣ 按照层级结构排序（DFS，与正常模式一致）
-      // ADR-001: 结构真相来自 parentEventId；避免直接用 childEventIds 遍历
+      // ADR-001: 结构真相来自 parentEventId
       result = EventTreeAPI.toDFSList(eventsWithLevels);
       console.log('[PlanManager] ✅ Snapshot 排序完成:', result.length, '个事件');
     } else {
@@ -1901,7 +1931,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           index: idx,
           id: e.id?.slice(-8),
           title: e.title?.simpleTitle?.slice(0, 30),
-          bulletLevel: e.bulletLevel
+          bulletLevel: (e as any).bulletLevel
         }))
       );
       
@@ -1989,16 +2019,19 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         console.log(`[getEventStatuses] ❌ ${eventTitle}: 无历史记录${isGhost ? '（但已添加deleted状态）' : ''}`);
         return Array.from(statuses); // 返回已有的状态（可能包含 deleted）
       }
-      const rangeStart = new Date(startTime);
-      const rangeEnd = new Date(endTime);
+      const rangeStart = parseLocalTimeString(startTime);
+      const rangeEnd = parseLocalTimeString(endTime);
       
-      // TODO: getCheckInStatus 是异步的，需要重构
-      // 暂时跳过签到状态检查
-      const isCurrentlyChecked = false;
+      // ✅ 当前完成态：统一走 TimeResolver（不依赖异步查询）
+      const currentEvent =
+        editorItems.find((item: any) => item.id === eventId) ||
+        items.find((item: any) => item.id === eventId) ||
+        pendingEmptyItems.get(eventId);
+      const isCurrentlyChecked = currentEvent ? resolveCheckState(currentEvent).isChecked : false;
       
       // 遍历历史记录（这些记录已经被 queryHistory 按时间范围过滤过了）
       history.forEach(log => {
-        const logTime = new Date(log.timestamp);
+        const logTime = parseLocalTimeString(log.timestamp);
         
         console.log(`[getEventStatuses]   - ${eventTitle}: ${log.operation} at ${log.timestamp}`, {
           在范围内: logTime >= rangeStart && logTime <= rangeEnd,
@@ -2038,11 +2071,22 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         console.log(`[getEventStatuses]   ✅ ${eventTitle}: 补充添加 DELETED 状态（Ghost事件）`);
       }
       
-      // TODO: 判断 missed 状态需要事件详情，暂时跳过
-      // 🔧 判断 "missed" 状态：事件时间已过（取当前时间和范围结束时间的较早者），且在范围内没有完成
-      // if (event && event.startTime) {
-      //   ...
-      // }
+      // 🔧 判断 "missed" 状态（派生，不落盘）：
+      // - 仅对 task-like 且存在 planned endTime 的事件
+      // - 判断时间取 min(现在, rangeEnd)
+      // - endTime 落在 range 内，且 endTime <= evalTime，且当前未完成
+      if (!statuses.has('deleted') && currentEvent?.isTask && currentEvent.endTime && !isCurrentlyChecked) {
+        const plannedEnd = parseLocalTimeString(currentEvent.endTime);
+        const now = new Date();
+        const evalTime = new Date(Math.min(now.getTime(), rangeEnd.getTime()));
+        if (plannedEnd >= rangeStart && plannedEnd <= rangeEnd && plannedEnd <= evalTime) {
+          statuses.add('missed');
+          console.log(`[getEventStatuses]   ✅ ${eventTitle}: 添加 MISSED 状态`, {
+            plannedEnd: currentEvent.endTime,
+            evalTime: formatTimeForStorage(evalTime)
+          });
+        }
+      }
       
       const result = Array.from(statuses);
       console.log(`[getEventStatuses] ✅ ${eventTitle}: 最终状态 = ${JSON.stringify(result)}`);
@@ -2051,7 +2095,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       console.error('[getEventStatuses] ❌ 错误:', error);
       return [];
     }
-  }, [session.filter.dateRange, items]);
+  }, [session.filter.dateRange, items, editorItems, pendingEmptyItems]);
 
   // 🆕 计算状态竖线段 - 支持多状态显示 - ✅ 改用 useEffect + useState 处理异步
   const [statusLineSegments, setStatusLineSegments] = useState<StatusLineSegment[]>([]);
@@ -2277,10 +2321,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           fourDNoteSource: true, // ✅ 标识事件来源（用于同步识别）
           checkType: 'once', // 🆕 默认单次签到（显示 checkbox）
           // ✅ 默认不设置时间，用户通过 FloatingBar 或 @chrono 自行定义
-          startTime: '', // ✅ 空字符串表示无时间
-          endTime: '',   // ✅ 空字符串表示无时间
+          startTime: undefined,
+          endTime: undefined,
           dueDateTime: undefined, // ✅ 不预设截止日期/时间
-          isAllDay: false,
+          isAllDay: undefined,
           createdAt: nowLocal, // ✅ 使用 timeUtils 格式化，避免时区问题
           updatedAt: nowLocal,
           source: 'local',
@@ -2326,10 +2370,21 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       for (const item of changedItems) {
         try {
           const existingItem = itemsMap[item.id];
+          const calendarIds = extractCalendarIds((item as any).tags || []);
+          const eventItem = buildEventForSave(item, existingItem, calendarIds);
+
           if (!existingItem) {
-            await EventHub.createEvent(item);
+            const createPayload: any = { ...eventItem };
+            for (const key of Object.keys(createPayload)) {
+              if (createPayload[key] === undefined) delete createPayload[key];
+            }
+            await EventHub.createEvent(createPayload);
           } else {
-            await EventHub.updateFields(item.id, item, { source: 'PlanManager' });
+            const compactUpdates: any = { ...eventItem };
+            for (const key of Object.keys(compactUpdates)) {
+              if (compactUpdates[key] === undefined) delete compactUpdates[key];
+            }
+            await EventHub.updateFields(item.id, compactUpdates, { source: 'PlanManager' });
           }
         } catch (error) {
           console.error('[handleBatchUpdateWithNewIds] 保存失败:', item.id, error);
@@ -2389,7 +2444,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       actualSyncConfig: item.actualSyncConfig,
       // 🆕 保留父子事件关系 + EventTree 关系字段
       parentEventId: item.parentEventId,
-      childEventIds: (item as any).childEventIds,
       linkedEventIds: (item as any).linkedEventIds,
       backlinks: (item as any).backlinks,
 
@@ -2524,7 +2578,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     if (item.isAllDay || (hasStart && hasEnd)) {
       return '📅'; // event
-    } else if (hasStart || hasEnd || item.dueDate) {
+    } else if (hasStart || hasEnd || item.dueDateTime) {
       return '📋'; // task
     }
     return ''; // 无时间
@@ -2549,7 +2603,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         isPanelVisible={isPanelVisible}
         onPanelVisibilityChange={onPanelVisibilityChange}
         dateRange={session.filter.dateRange}
-        snapshot={generateEventSnapshot()}
+        snapshot={panelSnapshot}
         tags={TagService.getFlatTags()}
         hiddenTags={session.filter.hiddenTags}
         onFilterChange={(filter) => {
@@ -2671,9 +2725,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   isTask: true,
                   isTimeCalendar: false,
                   fourDNoteSource: true,
-                  startTime: '',
-                  endTime: '',
-                  isAllDay: false,
+                  // Field contract: 时间/全天字段保持可选，不默认注入
+                  startTime: undefined,
+                  endTime: undefined,
+                  isAllDay: undefined,
                   createdAt: nowLocal,
                   updatedAt: nowLocal,
                   source: 'local',
@@ -2876,7 +2931,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             const updatedTime = await setEventTime(item.id, {
               start: startIso,
               end: endIso,  // ✅ 允许 undefined
-              isAllDay: false,
             });
             
             dbg('picker', '✅ 时间更新成功（TimeHub + EventService 已同步）', { 
@@ -2979,13 +3033,9 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             const actualItemId = session.focus.lineId.replace('-desc', '');
             const item = items.find(i => i.id === actualItemId);
             if (item) {
-              const updatedItem: Event = {
-                ...item,
-                isTask,
-              };
               // ✅ 使用 EventHub 保存
               try {
-                await EventHub.updateFields(updatedItem.id, updatedItem, { source: 'PlanManager' });
+                await EventHub.updateFields(item.id, { isTask } as any, { source: 'PlanManager' });
                 sessionActions.setFocus(session.focus.lineId!, { isTask }); // 更新本地状态
               } catch (error) {
                 console.error('[add_task] 保存失败:', error);
@@ -3086,8 +3136,41 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                     
                     // ✅ 使用 EventHub 保存
                     try {
-                      await EventHub.updateFields(updatedItem.id, updatedItem, { source: 'PlanManager' });
-                      syncToUnifiedTimeline(updatedItem);
+                      // Contract-safe: 仅保存必要字段，避免 UI 默认值写回 canonical
+                      const updates: any = {
+                        ...(isDescriptionMode
+                          ? { description: editableElement?.innerHTML || item.description }
+                          : { content: editableElement?.innerHTML || item.content }
+                        ),
+                      };
+
+                      // 时间字段：支持显式清除（TimeHub 返回 null）
+                      if (timeSnapshot?.start === null) updates.startTime = undefined;
+                      if (typeof timeSnapshot?.start === 'string' && timeSnapshot.start) updates.startTime = timeSnapshot.start;
+                      if (timeSnapshot?.end === null) updates.endTime = undefined;
+                      if (typeof timeSnapshot?.end === 'string' && timeSnapshot.end) updates.endTime = timeSnapshot.end;
+
+                      // timeSpec：有快照就保存
+                      if (timeSnapshot?.timeSpec) {
+                        updates.timeSpec = timeSnapshot.timeSpec;
+                        // isAllDay：只在必要时写入
+                        if (timeSnapshot.timeSpec.allDay === true) {
+                          updates.isAllDay = true;
+                        } else if (item.isAllDay === true) {
+                          // 允许从 true 切换为 false
+                          updates.isAllDay = false;
+                        }
+                      }
+
+                      // compact undefined（但允许 startTime/endTime 显式 undefined 作为清除）
+                      for (const key of Object.keys(updates)) {
+                        if (updates[key] === undefined && key !== 'startTime' && key !== 'endTime') {
+                          delete updates[key];
+                        }
+                      }
+
+                      await EventHub.updateFields(updatedItem.id, updates, { source: 'PlanManager' });
+                      syncToUnifiedTimeline({ ...updatedItem, ...updates } as any);
                     } catch (error) {
                       console.error('[UnifiedDateTimePicker] 保存失败:', error);
                     }
@@ -3190,7 +3273,23 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                           };
                           // ✅ 使用 EventHub 保存
                           try {
-                            await EventHub.updateFields(updatedItem.id, updatedItem, { source: 'PlanManager' });
+                            const updates: any = {
+                              title: updatedItem.title,
+                              content: updatedItem.content,
+                            };
+
+                            // Optional arrays: 不要把 [] 写回 undefined；但允许从非空显式清空
+                            if (Array.isArray(extractedTags) && extractedTags.length > 0) {
+                              updates.tags = extractedTags;
+                            } else if (Array.isArray(item.tags) && item.tags.length > 0) {
+                              updates.tags = [];
+                            }
+
+                            for (const key of Object.keys(updates)) {
+                              if (updates[key] === undefined) delete updates[key];
+                            }
+
+                            await EventHub.updateFields(updatedItem.id, updates, { source: 'PlanManager' });
                           } catch (error) {
                             console.error('[标签替换] 保存失败:', error);
                           }

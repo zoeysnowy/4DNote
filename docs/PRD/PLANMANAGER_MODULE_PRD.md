@@ -544,7 +544,7 @@ if (textAfterCursor) {
 **问题背景**:
 - **现象**: PlanManager EventTree 视图显示层级错误，所有 L1 子事件混在一起，未按所属根事件分组
 - **影响**: 用户无法理解事件层级，UUID 迁移测试无法验证父子关系
-- **验证**: 数据库 `parentEventId` ↔ `childEventIds` 双向关系正确，`calculateAllBulletLevels()` 计算正确，DFS 遍历正确，`sortedEvents` 数组顺序正确
+- **验证**: 以数据库 `parentEventId` 作为结构真相，`calculateAllBulletLevels()` 计算正确，DFS 遍历正确，`sortedEvents` 数组顺序正确（`childEventIds` 为 legacy 字段：不维护/不依赖其正确性）
 - **根本原因**: `computeEditorItems()` 在 L2095-2102 处按 `position` 字段重新排序，破坏了 DFS 树结构顺序
 
 **数据流修复**:
@@ -782,12 +782,12 @@ console.log('[Shift+Tab] 🎯 Decreasing level:', {
 
 ---
 
-### v2.10 (2025-12-06) - 父子关系自动维护 + EditableEventTree 完整实现 ✅
+### v2.10 (2025-12-06) - 父子关系（ADR-001：parentEventId 真相） + EditableEventTree 完整实现 ✅
 
 > 📖 **完整数据链路说明**: 详见本文档 [🔄 ParentID/ChildID/BulletLevel 完整数据链路](#-parentid--childid--bulletlevel-完整数据链路-v218-整合视图) 章节
 
 **核心突破**:
-- 🔥 **父子关系自动维护**：`EventService.updateEvent()` 自动同步 `childEventIds`
+- 🔥 **父子关系真相**：仅持久化/更新 `parentEventId`；子列表通过派生/查询获得（不维护/不依赖 `childEventIds`）
 - ✅ **Tab 键建立层级**：创建/更新时直接传入 `parentEventId`，避免二次数据库写入
 - ✅ **EditableEventTree 递归加载**：完整递归加载所有层级子事件，支持无限深度
 - ✅ **独立 Slate 编辑器**：每个树节点独立编辑器，实时保存标题
@@ -8144,7 +8144,7 @@ const handleChange = useCallback((newValue: Descendant[]) => {
 parentEventId:  创建时设置 → metadata → serialization → Event → IndexedDB
 position:       创建时计算 → metadata → serialization → Event → IndexedDB  
 bulletLevel:    初始undefined → 后续通过 Tab 键或系统计算获得
-childEventIds:  初始[] → EventService.updateEvent() 自动维护
+childEventIds:  legacy（若存在则兼容保留，但不维护/不依赖）
 ```
 
 ---

@@ -183,11 +183,11 @@ export class StorageManager {
       
       // 初始化 SQLite（仅在 Electron 环境）
       // ⚠️ 注意：在 Web 环境中不导入 SQLiteService，因为 better-sqlite3 是 Node.js 原生模块
-      const hasElectronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      const hasElectronAPI = typeof window !== 'undefined' && !!window.electronAPI;
       console.log('[StorageManager] 🔍 Electron check:', {
         hasWindow: typeof window !== 'undefined',
         hasElectronAPI,
-        electronAPIKeys: hasElectronAPI ? Object.keys((window as any).electronAPI) : []
+        electronAPIKeys: hasElectronAPI && window.electronAPI ? Object.keys(window.electronAPI) : []
       });
       
       if (hasElectronAPI) {
@@ -451,7 +451,7 @@ export class StorageManager {
 
       console.log('✅ [StorageManager] 批量更新成功:', {
         count: events.length,
-        cacheSize: this.eventCache.size
+        cacheSize: this.eventCache.getStats().count
       });
     } catch (error) {
       console.error('[StorageManager] ❌ 批量更新失败:', error);
@@ -1207,6 +1207,18 @@ export class StorageManager {
     this.contactCache.clear();
     this.tagCache.clear();
     console.log('[StorageManager] Cache cleared');
+  }
+
+  // ==================== Metadata (Key-Value) ====================
+
+  async getMetadata<T = any>(key: string): Promise<T | null> {
+    await this.ensureInitialized();
+    return (await this.indexedDBService.getMetadata(key)) as T | null;
+  }
+
+  async setMetadata(key: string, value: any): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.setMetadata(key, value);
   }
 
   // ==================== Event History Methods ====================

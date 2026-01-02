@@ -6,7 +6,10 @@
 import { BaseTool } from '../base/Tool';
 import { z } from 'zod';
 import QrCodeReader from 'qrcode-reader';
-import * as Jimp from 'jimp';
+import { Jimp, JimpMime } from 'jimp';
+import { formatTimeForStorage } from '../../../utils/timeUtils';
+
+type JimpImage = Awaited<ReturnType<typeof Jimp.read>>;
 
 /**
  * 二维码输入
@@ -24,6 +27,7 @@ const QRCodeInputSchema = z.object({
  * 二维码信息
  */
 const QRCodeInfoSchema = z.object({
+  id: z.string(), // 唯一 ID
   content: z.string(), // 二维码内容
   type: z.enum(['url', 'text', 'vcard', 'wifi', 'email', 'phone', 'sms', 'geo', 'unknown']),
   url: z.string().optional(), // 如果是 URL 类型，解析后的 URL
@@ -38,7 +42,8 @@ const QRCodeInfoSchema = z.object({
     width: z.number(),
     height: z.number()
   }).optional(),
-  imageData: z.string().optional() // 二维码区域的图片 base64（用于保存）
+  imageData: z.string().optional(), // 二维码区域的图片 base64（用于保存）
+  extractedAt: z.string().optional() // 提取时间
 });
 
 /**
@@ -120,7 +125,7 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
   /**
    * 加载图片
    */
-  private async loadImage(image: string | File | Blob | Buffer): Promise<Jimp> {
+  private async loadImage(image: string | File | Blob | Buffer): Promise<JimpImage> {
     if (typeof image === 'string') {
       if (image.startsWith('data:')) {
         // base64
@@ -134,7 +139,7 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
         // 文件路径
         return await Jimp.read(image);
       }
-    } else if (image instanceof Buffer) {
+    } else if (Buffer.isBuffer(image)) {
       return await Jimp.read(image);
     } else {
       // File 或 Blob
@@ -146,7 +151,7 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
   /**
    * 识别二维码
    */
-  private async detectQRCodes(image: Jimp, multiple: boolean): Promise<Array<{
+  private async detectQRCodes(image: JimpImage, multiple: boolean): Promise<Array<{
     content: string;
     location?: any;
   }>> {
@@ -183,7 +188,7 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
   /**
    * 分析二维码类型和内容
    */
-  private async analyzeQRCode(code: { content: string; location?: any }, image: Jimp): Promise<QRCodeInfo> {
+  private async analyzeQRCode(code: { content: string; location?: any }, image: JimpImage): Promise<QRCodeInfo> {
     const content = code.content;
     let type: QRCodeInfo['type'] = 'unknown';
     let url: string | undefined;
@@ -222,8 +227,8 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
         const height = Math.floor(bottomRightCorner.y - topLeftCorner.y);
 
         // 裁剪二维码区域
-        const croppedImage = image.clone().crop(x, y, width, height);
-        imageData = await croppedImage.getBase64Async(Jimp.MIME_PNG);
+        const croppedImage = image.clone().crop({ x, y, w: width, h: height } as any);
+        imageData = await croppedImage.getBase64(JimpMime.png);
       } catch (error) {
         console.error('Failed to extract QR code image:', error);
       }
@@ -242,7 +247,7 @@ export class QRCodeTool extends BaseTool<QRCodeInput, QRCodeOutput> {
         height: code.location.bottomRightCorner.y - code.location.topLeftCorner.y
       } : undefined,
       imageData,
-      extractedAt: new Date().toISOString() // 添加提取时间
+      extractedAt: formatTimeForStorage(new Date()) // 添加提取时间
     };
   }
 

@@ -8,7 +8,6 @@ export interface MockEvent {
   isTimer: boolean;
   parentEventId: string | null;
   // \ud83d\udd17 EventTree \u5173\u7cfb\u5b57\u6bb5
-  childEventIds?: string[];
   linkedEventIds?: string[];
   backlinks?: string[];
   startTime: string | null; // ISO 8601 string

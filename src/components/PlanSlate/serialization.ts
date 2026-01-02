@@ -4,7 +4,7 @@
  * 负责 Slate 节点 ↔ PlanItem 数组的双向转换
  */
 
-import { Descendant, Text, Editor, Transforms, Node, Path } from 'slate';
+import { Descendant, Text, Editor, Transforms, Node as SlateNode, Path } from 'slate';
 import { formatTimeForStorage } from '../../utils/timeUtils';
 import { 
   EventLineNode, 
@@ -35,7 +35,7 @@ export function setEventLineLevel(
   path: Path,
   newLevel: number
 ): void {
-  const currentNode = Node.get(editor, path) as EventLineNode;
+  const currentNode = SlateNode.get(editor, path) as unknown as EventLineNode;
   
   Transforms.setNodes(
     editor,
@@ -45,7 +45,7 @@ export function setEventLineLevel(
         ...(currentNode.metadata || {}),
         bulletLevel: newLevel,  // 🔥 数据持久层级（必须同步）
       }
-    } as unknown as Partial<Node>,
+    } as unknown as Partial<SlateNode>,
     { at: path }
   );
   
@@ -115,7 +115,6 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       
       // 🔥 EventTree 字段（用于 serialization 读取）
       parentEventId: item.parentEventId,
-      childEventIds: item.childEventIds,
       
       // 🔥 Position 和 BulletLevel（用于排序和层级显示）
       bulletLevel: item.bulletLevel,
@@ -216,7 +215,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
   // ✅ v1.5: 如果没有节点，创建一个临时空节点（供 Slate 编辑器使用）
   // 但在 slateNodesToPlanItems 转换时会被过滤掉
   if (nodes.length === 0) {
-    nodes.push(createEmptyEventLine(0, undefined, undefined, true)); // isPlaceholder = true
+    nodes.push(createEmptyEventLine(0, undefined, undefined));
   }
   
   return nodes;
@@ -474,13 +473,12 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
       const metadata = node.metadata || {};
       
       // 🔍 DEBUG: 检查 EventTree 字段
-      if (metadata.parentEventId || metadata.childEventIds) {
+      if (metadata.parentEventId) {
         // console.log('[Serialization] 🔍 Reading EventTree from metadata:', {
         //   baseId: baseId.slice(-8),
         //   parentEventId: metadata.parentEventId ? metadata.parentEventId.slice(-8) : metadata.parentEventId,
         //   parentEventIdFull: metadata.parentEventId,  // 🆕 显示完整ID
         //   parentEventIdLength: metadata.parentEventId?.length,  // 🆕 显示长度
-        //   childEventIds: metadata.childEventIds,
         //   hasMetadata: !!node.metadata,
         //   metadataKeys: Object.keys(metadata)
         // });
@@ -503,39 +501,6 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         }
       }
       
-      // 🔥 [FIX] childEventIds 清理（移除空数组和 placeholder）
-      // 🆕 v2.17: UUID迁移完成，所有ID都是真实的UUID格式
-      // 🆕 v2.20.0: 过滤掉 __placeholder__（占位符不应该出现在父子关系中）
-      if (metadata.childEventIds && Array.isArray(metadata.childEventIds)) {
-        const originalChildren = metadata.childEventIds;
-        
-        // 过滤掉 placeholder 和空字符串
-        const filteredChildren = metadata.childEventIds.filter(id => 
-          id && 
-          id !== '__placeholder__' && 
-          id.startsWith('event_')
-        );
-        
-        // 调试：如果过滤掉了 placeholder，记录日志
-        if (filteredChildren.length !== originalChildren.length) {
-          console.log('[Serialization] 🗑️ Filtered placeholders from childEventIds:', {
-            eventId: baseId.slice(-8),
-            before: originalChildren,
-            after: filteredChildren,
-            filtered: originalChildren.filter((id: string) => 
-              !filteredChildren.includes(id)
-            )
-          });
-        }
-        
-        // 移除空数组
-        if (filteredChildren.length === 0) {
-          metadata.childEventIds = undefined;
-        } else {
-          metadata.childEventIds = filteredChildren;
-        }
-      }
-      
       items.set(baseId, {
         id: baseId,
         eventId: node.eventId,
@@ -549,7 +514,8 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         startTime: metadata.startTime,
         endTime: metadata.endTime,
         dueDate: metadata.dueDate,
-        isAllDay: metadata.isAllDay ?? false,
+        // Field contract: isAllDay 必须保持可选；不要默认注入 false
+        isAllDay: metadata.isAllDay,
         timeSpec: metadata.timeSpec,
         
         emoji: metadata.emoji,
@@ -566,7 +532,6 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         
         // 🔥 EventTree 字段 - 从 metadata 读取（Tab 键更新的）
         parentEventId: metadata.parentEventId,
-        childEventIds: metadata.childEventIds,
         
         // 🔥 Position 和 BulletLevel - 从 metadata 读取
         bulletLevel: metadata.bulletLevel ?? 0,

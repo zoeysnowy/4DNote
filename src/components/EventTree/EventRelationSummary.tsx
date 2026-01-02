@@ -16,6 +16,7 @@ import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
 import { EventTreeAPI } from '../../services/EventTree';
 import { EventTreeCanvas } from '../EventTree/EventTreeCanvas';
+import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 
 interface EventRelationSummaryProps {
   event: Event;                     // 当前事件
@@ -44,20 +45,20 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
   onEventClick,
   showTreeView = false,
 }) => {
+  const { events: snapshotEvents } = useEventHubSnapshot({ enabled: true });
+
   const [isExpanded, setIsExpanded] = useState(showTreeView);
   const [relationInfo, setRelationInfo] = useState<RelationInfo>({
     parentInfo: { event: null, docCount: 0, taskTotal: 0, taskCompleted: 0 },
     childInfo: { total: 0, docCount: 0, taskTotal: 0, taskCompleted: 0 },
     linkedCount: 0,
   });
-  const [allEvents, setAllEvents] = useState<Event[]>([]);
 
   // 异步加载关联信息
   useEffect(() => {
     const loadRelationInfo = async () => {
       // 一次性加载全量事件（避免 N+1），并统一用 EventTreeAPI（ADR-001）推导父子结构
-      const events = await EventService.getAllEvents();
-      setAllEvents(events);
+      const events = snapshotEvents || [];
       const eventsById = new Map(events.map(e => [e.id!, e]));
       const tree = EventTreeAPI.buildTree(events, {
         validateStructure: false,
@@ -127,7 +128,7 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
     };
 
     loadRelationInfo();
-  }, [event]);
+  }, [event, snapshotEvents]);
 
   // 生成摘要文本
   const summaryText = (() => {
@@ -242,7 +243,7 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
         <div style={{ marginTop: '12px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
           <EventTreeCanvas
             rootEventId={event.id}
-            events={allEvents}
+            events={snapshotEvents || []}
             onEventClick={onEventClick}
           />
         </div>

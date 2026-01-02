@@ -75,12 +75,12 @@ function formatDate(date: Date, format: string): string {
  * @returns 相对时间描述字符串
  * 
  * @example
- * formatRelativeDate(new Date('2025-11-11'), new Date('2025-11-10')) // "明天"
- * formatRelativeDate(new Date('2025-11-09'), new Date('2025-11-10')) // "昨天"
- * formatRelativeDate(new Date('2025-11-12'), new Date('2025-11-10')) // "后天"
- * formatRelativeDate(new Date('2025-11-13'), new Date('2025-11-10')) // "周三"
- * formatRelativeDate(new Date('2025-11-18'), new Date('2025-11-10')) // "下周一"
- * formatRelativeDate(new Date('2025-11-20'), new Date('2025-11-10')) // "10天后"
+ * formatRelativeDate(new Date(2025, 10, 11), new Date(2025, 10, 10)) // "明天"
+ * formatRelativeDate(new Date(2025, 10, 9), new Date(2025, 10, 10)) // "昨天"
+ * formatRelativeDate(new Date(2025, 10, 12), new Date(2025, 10, 10)) // "后天"
+ * formatRelativeDate(new Date(2025, 10, 13), new Date(2025, 10, 10)) // "周三"
+ * formatRelativeDate(new Date(2025, 10, 18), new Date(2025, 10, 10)) // "下周一"
+ * formatRelativeDate(new Date(2025, 10, 20), new Date(2025, 10, 10)) // "10天后"
  */
 export function formatRelativeDate(
   targetDate: Date, 
@@ -305,8 +305,8 @@ export function formatRelativeTimeDisplay(
 ): string {
   const now = new Date();
   
-  // 优先使用开始时间，其次是截止日期/时间
-  const primaryDate = startTime || dueDateTime;
+  // 优先使用开始时间，其次是截止日期/时间；如果都没有，则允许用 endTime（planned completion / end-only task）
+  const primaryDate = startTime || dueDateTime || endTime;
   
   if (!primaryDate) {
     return ''; // 没有任何日期信息
@@ -315,7 +315,8 @@ export function formatRelativeTimeDisplay(
   const startDate = parseLocalTimeString(primaryDate);
   
   // 🆕 智能日期范围检测（使用共享词库）
-  if (endTime) {
+  // 仅当 startTime + endTime 同时存在时才视作“范围”，避免 end-only 误判为范围
+  if (startTime && endTime) {
     const endDate = parseLocalTimeString(endTime);
     const dateRange = detectDateRange(startDate, endDate, now);
     if (dateRange) {
@@ -352,12 +353,20 @@ export function formatRelativeTimeDisplay(
     const startTimeStr = formatTime(startDate);
     
     if (hasValidEndTime) {
-      const endDate = parseLocalTimeString(endTime!);
+      // endTime exists here, but TS can't narrow via hasValidEndTime boolean
+      const endDate = parseLocalTimeString(endTime as string);
       const endTimeStr = formatTime(endDate);
       return `${relativeDate} ${startTimeStr} - ${endTimeStr}`;
     }
     
     return `${relativeDate} ${startTimeStr}`;
+  }
+
+  // end-only：允许显示 planned completion 的具体时间
+  if (!hasValidStartTime && hasValidEndTime && !startTime && endTime) {
+    const endDate = parseLocalTimeString(endTime);
+    const endTimeStr = formatTime(endDate);
+    return `${relativeDate} ${endTimeStr}`;
   }
   
   // 只有日期，没有具体时间

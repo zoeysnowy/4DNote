@@ -34,7 +34,7 @@
 | 获取子事件列表 | `EventTreeAPI.getDirectChildren()` | 已排序，支持缓存 |
 | 获取完整子树 | `EventTreeAPI.getSubtree()` | DFS递归，防止环 |
 | 检测孤儿节点 | `EventTreeAPI.validateTree()` | 检测孤儿/环/无效父节点 |
-| Tab/Shift+Tab 重新父化 | `EventTreeAPI.reparent()` | 原子更新，自动维护双向关联 |
+| Tab/Shift+Tab 重新父化 | `EventTreeAPI.reparent()` | 原子更新（仅写 parentEventId；childEventIds 不维护/不依赖） |
 | 兄弟节点排序 | `EventTreeAPI.resortSiblings()` | 自动重新计算 position |
 
 ### 1.2 为什么不应该手写树逻辑
@@ -747,7 +747,7 @@ const executeTabIndent = async (
 
 **优势**:
 - ✅ **原子更新**: `EventTreeAPI.reparent()` 一次性计算所有更新
-- ✅ **自动双向关联**: 自动更新父节点和子节点的 `childEventIds`
+- ✅ **结构真相**: 仅写 `parentEventId`（`childEventIds` 不维护/不依赖）
 - ✅ **验证完备**: 检测环、无效父节点、孤儿节点
 - ✅ **性能优化**: 单次数据库事务（vs 多次异步写入）
 - ✅ **易于回滚**: 如果失败，只需恢复 Slate 状态

@@ -20,6 +20,7 @@ import {
   decompressFullEventLog,
   type DeltaResult 
 } from '../../utils/versionDiff';
+import { formatTimeForStorage } from '../../utils/timeUtils';
 
 /**
  * 版本信息接口
@@ -97,7 +98,7 @@ export class StorageManagerVersionExt {
         deltaSize: deltaResult.deltaSize,
         originalSize: deltaResult.originalSize,
         compressionRatio: deltaResult.compressionRatio,
-        createdAt: new Date().toISOString(),
+        createdAt: formatTimeForStorage(new Date()),
         createdBy: 'system', // TODO: 添加用户信息
         changeSummary: newVersion === 1 ? 'Initial version' : 'Update'
       });

@@ -14,8 +14,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Event, EventTag } from '../../types';
-import { TagService } from '../../services/TagService';
+import { Event } from '../../types';
+import { TagService, type FlatTag } from '../../services/TagService';
 import './EventTree.css';
 
 /**
@@ -92,7 +92,7 @@ export const LinkedCard: React.FC<LinkedCardProps> = ({
   isHovered,
   onClick,
 }) => {
-  const [firstTag, setFirstTag] = useState<EventTag | null>(null);
+  const [firstTag, setFirstTag] = useState<FlatTag | null>(null);
   const [cardStyle, setCardStyle] = useState<{ background: string; text: string; border: string }>({
     background: 'linear-gradient(135deg, rgba(239, 246, 255, 0.98) 0%, rgba(219, 234, 254, 0.98) 100%)',
     text: '#1e3a8a',

@@ -24,12 +24,15 @@ import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
 import { supportsMultiWindow, openEventInWindow } from '../utils/electronUtils';
 import { createPortal, flushSync } from 'react-dom';
 import { generateEventId } from '../utils/idGenerator'; // 🔧 使用新的 UUID 生成器
-import { formatTimeForStorage, formatDateForStorage } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
+import { formatTimeForStorage, formatDateForStorage, parseLocalTimeStringOrNull } from '../utils/timeUtils'; // 🔧 TimeSpec 格式化
 import { getLocationDisplayText } from '../utils/locationUtils'; // 🔧 Location 显示工具
 import { slateNodesToHtml, slateNodesToPlainText } from '../utils/slateSerializer';
 import { resolveDisplayTitle } from '../utils/TitleResolver';
+import { useEventsUpdatedSubscription } from '../hooks/useEventsUpdatedSubscription';
+import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
 import type { Event } from '../types';
 import './TimeLog.css';
+import { resolveCalendarDateRange } from '../utils/TimeResolver';
 
 // 导入图标
 import ExportIconSvg from '../assets/icons/export.svg';
@@ -387,13 +390,21 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     setActiveEditor(null);
   }, [activeEditor?.eventId]);
 
-  const updateLocalEvent = useCallback((eventId: string, patch: Partial<Event>) => {
+  type EventsUpdater = Event[] | ((prev: Event[]) => Event[]);
+  const setAllEventsSynced = useCallback((updater: EventsUpdater) => {
     setAllEvents(prev => {
-      const next = prev.map(e => (e.id === eventId ? ({ ...e, ...patch } as Event) : e));
+      const next =
+        typeof updater === 'function'
+          ? (updater as (prev: Event[]) => Event[])(prev)
+          : updater;
       allEventsRef.current = next;
       return next;
     });
   }, []);
+
+  const updateLocalEvent = useCallback((eventId: string, patch: Partial<Event>) => {
+    setAllEventsSynced(prev => prev.map(e => (e.id === eventId ? ({ ...e, ...patch } as Event) : e)));
+  }, [setAllEventsSynced]);
 
   const escapeHtml = useCallback((text: string) => {
     return String(text)
@@ -760,8 +771,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           newStart.setDate(newStart.getDate() - 30); // 往前加✅0✅
           
           // console.log('📅 [TimeLog] Loading history:', {
-          //   from: newStart.toISOString(),
-          //   to: currentStart.toISOString(),
+          //   from: formatTimeForStorage(newStart),
+          //   to: formatTimeForStorage(currentStart),
           //   anchorElement: firstVisibleElement?.getAttribute('data-date-key') || 'none',
           //   offsetFromTop
           // });
@@ -776,9 +787,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             const uniqueEvents = Array.from(
               new Map(mergedEvents.map(e => [e.id, e])).values()
             );
-            
-            setAllEvents(uniqueEvents);
-            allEventsRef.current = uniqueEvents;
+
+            setAllEventsSynced(uniqueEvents);
             setDynamicStartDate(newStart);
             dynamicStartDateRef.current = newStart;
             
@@ -829,8 +839,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           newEnd.setHours(23, 59, 59, 999);
           
           // console.log('📅 [TimeLog] Loading future:', {
-          //   from: currentEnd.toISOString(),
-          //   to: newEnd.toISOString()
+          //   from: formatTimeForStorage(currentEnd),
+          //   to: formatTimeForStorage(newEnd)
           // });
           
           try {
@@ -843,9 +853,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
             const uniqueEvents = Array.from(
               new Map(mergedEvents.map(e => [e.id, e])).values()
             );
-            
-            setAllEvents(uniqueEvents);
-            allEventsRef.current = uniqueEvents;
+
+            setAllEventsSynced(uniqueEvents);
             setDynamicEndDate(newEnd);
             
             console.log(`✅[TimeLog] Loaded ${futureEvents.length} future events (filtered)`);
@@ -933,6 +942,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         const getEventTimeSafe = (event: Event): Date | null => {
           const raw = event.startTime || event.endTime || event.createdAt;
           if (!raw) return null;
+
+          // Prefer strict local parsing for our canonical TimeSpec formats.
+          const strict = parseLocalTimeStringOrNull(raw);
+          if (strict) return strict;
+
+          // Fallback for legacy / external formats (e.g. ISO strings).
           const d = new Date(raw);
           return Number.isNaN(d.getTime()) ? null : d;
         };
@@ -989,8 +1004,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         const dbQueryTime = performance.now() - dbQueryStartTime;
         
         console.log(`✅[TimeLog] Loaded ${events.length} timeline events (filtered) - DB query: ${dbQueryTime.toFixed(2)}ms`);
-        setAllEvents(events);
-        allEventsRef.current = events;
+        setAllEventsSynced(events);
 
         // 同步面板的日期范围（用于 LogTab 刷新等）
         setDateRange({ start: effectiveStartDate, end: initialEndDate });
@@ -1006,86 +1020,90 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         
       } catch (error) {
         console.error('✅[TimeLog] Failed to load events:', error);
-        setAllEvents([]);
-        allEventsRef.current = [];
+        setAllEventsSynced([]);
       } finally {
         setLoadingEvents(false);
       }
     };
 
     loadEvents();
-    
-    // 🎧 监听全局事件更新（增量更新）
-    const handleEventsUpdated = (e: globalThis.Event) => {
-      const detail = (e as unknown as globalThis.CustomEvent<any>).detail;
-      console.log('🔔 [TimeLog] 收到事件更新通知:', detail);
-      
-      // 🔒 循环更新防护：跳过来✅TimeLog 自身的本地更✅
-      const timeLogSources = [
-        'TimeLog-eventlogChange', 
-        'TimeLog-tagsChange',
-        'TimeLog-locationSave',
-        'TimeLog-timeChange',
-        'TimeLog-attendeesSave',
-        'TimeLog-editSave'
-      ];
-      
-      if (detail?.isLocalUpdate && detail?.originComponent && timeLogSources.includes(detail.originComponent)) {
-        console.log('⏭️ [TimeLog] 跳过自身更新:', detail.originComponent);
-        return;
-      }
-      
-      if (detail?.event) {
-        const updatedEvent = detail.event;
-        
-        // 增量更新：只更新变化的事件
-        setAllEvents(prev => {
-          const index = prev.findIndex(e => e.id === updatedEvent.id);
-          
-          if (index >= 0) {
-            // 更新现有事件
-            const newEvents = [...prev];
-            newEvents[index] = updatedEvent;
-            console.log('✅[TimeLog] 更新事件:', {
-              id: updatedEvent.id.slice(-8),
-              title: updatedEvent.title?.simpleTitle
-            });
-            return newEvents;
-          } else {
-            // 新事件：检查是否符✅Timeline 过滤条件
-            const shouldShow = !updatedEvent.isTimer && 
-                              !updatedEvent.isTimeLog && 
-                              !updatedEvent.isOutsideApp &&
-                              (updatedEvent.startTime || updatedEvent.endTime || updatedEvent.createdAt);
-            
-            if (shouldShow) {
-              console.log('✅[TimeLog] 添加新事件', {
-                id: updatedEvent.id.slice(-8),
-                title: updatedEvent.title?.simpleTitle
-              });
-              return [...prev, updatedEvent];
-            }
-            
-            return prev;
-          }
-        });
-        
-        // 同步更新 ref
-        allEventsRef.current = allEventsRef.current.map(e => 
-          e.id === updatedEvent.id ? updatedEvent : e
-        );
-        if (!allEventsRef.current.find(e => e.id === updatedEvent.id)) {
-          allEventsRef.current.push(updatedEvent);
-        }
-      }
-    };
-    
-    window.addEventListener('eventsUpdated', handleEventsUpdated);
-    
-    return () => {
-      window.removeEventListener('eventsUpdated', handleEventsUpdated);
-    };
   }, []);
+
+  // 🎧 监听全局事件更新（增量更新）
+  const handleEventsUpdated = useCallback((detail: any) => {
+    console.log('🔔 [TimeLog] 收到事件更新通知:', detail);
+
+    // 🔒 循环更新防护：跳过来自 TimeLog 自身的本地更新
+    const originComponent = detail?.originComponent;
+    if (
+      detail?.isLocalUpdate &&
+      typeof originComponent === 'string' &&
+      originComponent.startsWith('TimeLog-')
+    ) {
+      console.log('⏭️ [TimeLog] 跳过自身更新:', originComponent);
+      return;
+    }
+
+    if (!detail?.event) return;
+    const updatedEvent = detail.event as Event;
+
+    const isTimelineEvent = (event: Event): boolean => {
+      // Keep consistent with EventService.getTimelineEvents
+      if (event.isTimer === true || event.isTimeLog === true || event.isOutsideApp === true) {
+        return false;
+      }
+
+      const hasExplicitTime =
+        (typeof event.startTime === 'string' && event.startTime !== '') ||
+        (typeof event.endTime === 'string' && event.endTime !== '');
+
+      // Plan/Task without explicit time should not appear on the timeline
+      if (event.isPlan === true && !hasExplicitTime) return false;
+      if (event.isTask === true && !hasExplicitTime) return false;
+
+      return true;
+    };
+
+    setAllEventsSynced(prev => {
+      const index = prev.findIndex(e => e.id === updatedEvent.id);
+      const shouldShow = isTimelineEvent(updatedEvent);
+
+      if (index >= 0) {
+        if (!shouldShow) {
+          console.log('🧹✅[TimeLog] 事件已不符合时间轴条件，移除:', {
+            id: updatedEvent.id.slice(-8),
+            title: (updatedEvent as any).title?.simpleTitle,
+          });
+          return prev.filter(e => e.id !== updatedEvent.id);
+        }
+
+        const next = [...prev];
+        next[index] = updatedEvent;
+        console.log('✅[TimeLog] 更新事件:', {
+          id: updatedEvent.id.slice(-8),
+          title: (updatedEvent as any).title?.simpleTitle,
+        });
+        return next;
+      }
+
+      if (!shouldShow) return prev;
+
+      console.log('✅[TimeLog] 添加新事件', {
+        id: updatedEvent.id.slice(-8),
+        title: (updatedEvent as any).title?.simpleTitle,
+      });
+      return [...prev, updatedEvent];
+    });
+  }, [setAllEventsSynced]);
+
+  useEventsUpdatedSubscription({ enabled: true, onEventsUpdated: handleEventsUpdated });
+
+  // ✅ 用于少数功能（如 isNote 子树批量操作）按需拿到全量 events
+  // 不在页面挂载时自动全量加载，避免影响 TimeLog 的范围加载性能。
+  const { ensureLoaded: ensureAllEventsSnapshotLoaded } = useEventHubSnapshot({
+    enabled: true,
+    autoLoad: false,
+  });
 
   // 当用户在左侧面板选择日期范围时：更新动态范围并重新加载事件
   useEffect(() => {
@@ -1109,8 +1127,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           formatTimeForStorage(start),
           formatTimeForStorage(end)
         );
-        setAllEvents(loaded);
-        allEventsRef.current = loaded;
+        setAllEventsSynced(loaded);
         console.log(`✅[TimeLog] Reloaded ${loaded.length} events for selected range`);
       } catch (error) {
         console.error('✅[TimeLog] Failed to reload events for range:', error);
@@ -1128,21 +1145,22 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // EventService.getTimelineEvents 已经完成过滤，这里只需排序
   const events = useMemo(() => {
     const startTime = performance.now();
+
+    const safeSortTs = (event: Event): number => {
+      try {
+        const range = resolveCalendarDateRange(event);
+        const ts = range.start.getTime();
+        return Number.isFinite(ts) ? ts : 0;
+      } catch {
+        return 0;
+      }
+    };
     
     // 按时间正序排序（最早的在前✅
-    const sorted = [...allEvents].sort((a, b) => {
-      const timeA = a.startTime || a.endTime || a.createdAt || '';
-      const timeB = b.startTime || b.endTime || b.createdAt || '';
-      
-      const dateA = new Date(timeA).getTime();
-      const dateB = new Date(timeB).getTime();
-      
-      const valA = isNaN(dateA) ? 0 : dateA;
-      const valB = isNaN(dateB) ? 0 : dateB;
-      
-      // 强制正序：最早的时间在前 (Ascending)
-      return valA - valB;
-    });
+    // ✅ 使用 TimeResolver 派生 anchor，兼容 no-time / end-only task
+    const enriched = allEvents.map(event => ({ event, ts: safeSortTs(event) }));
+    enriched.sort((a, b) => a.ts - b.ts);
+    const sorted = enriched.map(x => x.event);
     
     const processingTime = performance.now() - startTime;
     if (processingTime > 1 || sorted.length > 100) {
@@ -1166,7 +1184,12 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     const groups: Map<string, Event[]> = new Map();
     
     events.forEach(event => {
-      const eventTime = new Date(event.startTime || event.endTime || event.createdAt!);
+      let eventTime: Date;
+      try {
+        eventTime = resolveCalendarDateRange(event).start;
+      } catch {
+        eventTime = new Date(0);
+      }
       const dateKey = `${eventTime.getFullYear()}-${String(eventTime.getMonth() + 1).padStart(2, '0')}-${String(eventTime.getDate()).padStart(2, '0')}`;
       
       if (!groups.has(dateKey)) {
@@ -1191,7 +1214,9 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     const sorted = dates.sort((a, b) => {
       // 强制正序：最早的日期在前 (Ascending)
       // 使用时间戳比较以确保准确✅
-      return new Date(a).getTime() - new Date(b).getTime();
+      const aTime = parseLocalTimeStringOrNull(a)?.getTime() ?? 0;
+      const bTime = parseLocalTimeStringOrNull(b)?.getTime() ?? 0;
+      return aTime - bTime;
     });
     
     // console.log('📅 [TimeLog Zipper] Sorted dates (Ascending):', sorted);
@@ -1220,7 +1245,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     
     // console.log('📅 [TimeLog] Today calculation:', {
-    //   now: now.toISOString(),
+    //   now: formatTimeForStorage(now),
     //   todayKey,
     //   year: now.getFullYear(),
     //   month: now.getMonth() + 1,
@@ -1370,8 +1395,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       let currentMonthKey: string;
       
       if (segment.type === 'events') {
-        const date = new Date(segment.dateKey);
-        currentMonthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+        const date = parseLocalTimeStringOrNull(segment.dateKey);
+        if (date) {
+          currentMonthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
+        } else {
+          const parts = segment.dateKey.split('-');
+          currentMonthKey = parts.length >= 2 ? `${parts[0]}-${Number(parts[1])}` : segment.dateKey;
+        }
       } else if (segment.type === 'compressed') {
         currentMonthKey = `${segment.startDate.getFullYear()}-${segment.startDate.getMonth() + 1}`;
       } else {
@@ -1545,8 +1575,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         await EventService.deleteEvent(eventId);
         
         // 从列表中移除
-        setAllEvents(prev => prev.filter(e => e.id !== eventId));
-        allEventsRef.current = allEventsRef.current.filter(e => e.id !== eventId);
+        setAllEventsSynced(prev => prev.filter(e => e.id !== eventId));
         
         // 从追踪中移除
         emptyNotesRef.current.delete(eventId);
@@ -1787,7 +1816,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     }
 
     // ✅ [EventTreeAPI] 获取完整子树（包括当前事件）
-    const allEvents = await EventService.getAllEvents();
+    // 这里需要全量 events（子节点可能不在当前 TimeLog 的日期范围内）
+    const allEvents = await ensureAllEventsSnapshotLoaded();
     const subtree = EventTreeAPI.getSubtree(event.id, allEvents);
     const allEventIds = subtree.map(e => e.id);
     
@@ -1919,11 +1949,13 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   };
 
   // 处理创建笔记（纯 eventlog 的日记）
-  const handleCreateNote = async (_suggestedStartTime?: Date) => {
+  const handleCreateNote = async (suggestedStartTime?: Date) => {
     try {
-      // 🎯 创建一个纯笔记：无时间、无标题、无标签，只记录 createdAt
-      // 注意：忽略建议的 startTime，笔记不需要时间
-      const createdAt = formatTimeForStorage(new Date());
+      // 🎯 创建一个纯笔记：默认无时间；但如果来自 TimeGap（用户选了时间），则把该时间作为 startTime 锚点
+      // 说明：TimeGap 选择的是“笔记发生/归档时间”，这里将 createdAt 对齐到该锚点，避免显示/排序混乱
+      const anchorTime = suggestedStartTime ?? new Date();
+      const createdAt = formatTimeForStorage(anchorTime);
+      const startTime = suggestedStartTime ? formatTimeForStorage(suggestedStartTime) : undefined;
       const newEvent: Event = {
         id: generateEventId(),
         title: {
@@ -1931,8 +1963,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
           colorTitle: '',
           fullTitle: ''
         }, // 允许空标✅
-        startTime: '', // 🔧 设置为空字符串而不受null
-        endTime: '', // 🔧 设置为空字符串而不受null
+        ...(startTime ? { startTime } : {}), // 来自 TimeGap 时使用锚点时间，否则不写入字段（规范：undefined 表示无时间）
         tags: [], // 允许空标✅
         isAllDay: false,
         // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤✅
@@ -1948,6 +1979,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         ]),
         createdAt,
         updatedAt: createdAt,
+        syncStatus: 'local-only',
+        fourDNoteSource: true,
       };
       
       const result = await EventService.createEvent(newEvent);
@@ -1977,7 +2010,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       
       // 🔧 直接将新笔记添加到列表中，而不是重新加载全部事件
       // 这样可以避免日期范围过滤导致的问✅
-      setAllEvents(prev => {
+      setAllEventsSynced(prev => {
         // 检查是否已存在（避免重复）
         if (prev.find(e => e.id === savedNote.id)) {
           console.log('📋 [TimeLog] Note already in list, skipping');
@@ -1989,7 +2022,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         console.log('📋 [TimeLog] Added note to list:', newList.length);
         return newList;
       });
-      allEventsRef.current = [savedNote, ...allEventsRef.current];
       
       // 🆕 v2.19: 追踪空Note（用于自动清理）
       emptyNotesRef.current.add(newEvent.id);
@@ -2548,7 +2580,11 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                       <>
                         <TimeGap
                           prevEventEndTime={undefined}
-                          nextEventStartTime={dateEvents[0].startTime ? new Date(dateEvents[0].startTime) : undefined}
+                          nextEventStartTime={
+                            dateEvents[0].startTime
+                              ? (parseLocalTimeStringOrNull(dateEvents[0].startTime) ?? undefined)
+                              : undefined
+                          }
                           onCreateEvent={handleCreateEvent}
                           onCreateNote={handleCreateNote}
                           onUploadAttachment={handleUploadAttachment}
@@ -3254,8 +3290,16 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                   - 性能优化：虚线按需渲染，压缩日期不渲染
               */}
               <TimeGap
-                prevEventEndTime={event.endTime ? new Date(event.endTime) : (event.startTime ? new Date(event.startTime) : undefined)}
-                nextEventStartTime={nextEvent && nextEvent.startTime ? new Date(nextEvent.startTime) : undefined}
+                prevEventEndTime={
+                  event.endTime
+                    ? (parseLocalTimeStringOrNull(event.endTime) ?? undefined)
+                    : (event.startTime ? (parseLocalTimeStringOrNull(event.startTime) ?? undefined) : undefined)
+                }
+                nextEventStartTime={
+                  nextEvent && nextEvent.startTime
+                    ? (parseLocalTimeStringOrNull(nextEvent.startTime) ?? undefined)
+                    : undefined
+                }
                 onCreateEvent={handleCreateEvent}
                 onCreateNote={handleCreateNote}
                 onUploadAttachment={handleUploadAttachment}
@@ -3294,7 +3338,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         dateRange!.start,
                         dateRange!.end
                       );
-                      setAllEvents(updatedEvents);
+                      setAllEventsSynced(updatedEvents);
                     }}
                     onDelete={async (eventId) => {
                       // 删除事件后刷新列表并关闭标签✅
@@ -3303,7 +3347,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
                         dateRange!.start,
                         dateRange!.end
                       );
-                      setAllEvents(updatedEvents);
+                      setAllEventsSynced(updatedEvents);
                       setActiveTabId('timelog');
                       setTabManagerEvents(prev => prev.filter(e => e.id !== eventId));
                       if (tabManagerEvents.length <= 1) {
@@ -3370,7 +3414,10 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
 // 辅助函数：格式化时间
 function formatTime(dateStr: string | Date): string {
-  const date = typeof dateStr === 'string' ? new Date(dateStr) : dateStr;
+  const date = typeof dateStr === 'string'
+    ? (parseLocalTimeStringOrNull(dateStr) ?? new Date(dateStr))
+    : dateStr;
+  if (Number.isNaN(date.getTime())) return '';
   const hours = date.getHours().toString().padStart(2, '0');
   const minutes = date.getMinutes().toString().padStart(2, '0');
   return `${hours}:${minutes}`;
@@ -3378,8 +3425,13 @@ function formatTime(dateStr: string | Date): string {
 
 // 辅助函数：格式化时长
 function formatDuration(startStr: string | Date, endStr: string | Date): string {
-  const start = typeof startStr === 'string' ? new Date(startStr) : startStr;
-  const end = typeof endStr === 'string' ? new Date(endStr) : endStr;
+  const start = typeof startStr === 'string'
+    ? (parseLocalTimeStringOrNull(startStr) ?? new Date(startStr))
+    : startStr;
+  const end = typeof endStr === 'string'
+    ? (parseLocalTimeStringOrNull(endStr) ?? new Date(endStr))
+    : endStr;
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '';
   const diff = end.getTime() - start.getTime();
   const hours = Math.floor(diff / 3600000);
   const minutes = Math.floor((diff % 3600000) / 60000);
@@ -3397,7 +3449,10 @@ function formatDuration(startStr: string | Date, endStr: string | Date): string 
 function formatRelativeTime(timestamp: number | string | undefined): string {
   if (!timestamp) return '未知';
   
-  const date = typeof timestamp === 'string' ? new Date(timestamp) : new Date(timestamp);
+  const date = typeof timestamp === 'string'
+    ? (parseLocalTimeStringOrNull(timestamp) ?? new Date(timestamp))
+    : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '未知';
   const now = Date.now();
   const diff = now - date.getTime();
   
@@ -3415,7 +3470,10 @@ function formatRelativeTime(timestamp: number | string | undefined): string {
 
 // 辅助函数：格式化截止日期剩余时间
 function formatDueDateRemaining(dueDateTime: string | Date): string {
-  const date = typeof dueDateTime === 'string' ? new Date(dueDateTime) : dueDateTime;
+  const date = typeof dueDateTime === 'string'
+    ? (parseLocalTimeStringOrNull(dueDateTime) ?? new Date(dueDateTime))
+    : dueDateTime;
+  if (Number.isNaN(date.getTime())) return '未知';
   const now = Date.now();
   const diff = date.getTime() - now;
   

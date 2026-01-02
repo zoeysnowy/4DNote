@@ -22,6 +22,7 @@ import { EventService } from '../../services/EventService';
 import { TagService } from '../../services/TagService';
 import { Event } from '../../types';
 import { EventTreeAPI } from '../../services/EventTree';
+import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 import { LinkedCard } from './LinkedCard';
 import { resolveDisplayTitle } from '../../utils/TitleResolver';
 import './EventTree.css';
@@ -144,13 +145,18 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
   const [loading, setLoading] = useState(true);
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 
+  const { events: snapshotEvents, ensureLoaded } = useEventHubSnapshot({ enabled: events == null });
+
   // ==================== 数据加载 ====================
 
   /**
-   * ADR-001: 使用 EventTreeAPI 基于 parentEventId 构建树（避免依赖 childEventIds 漂移 + 避免 N+1 查询）
+   * ADR-001: 使用 EventTreeAPI 基于 parentEventId 构建树（避免 N+1 查询）
    */
   const buildTreeValue = useCallback(async (): Promise<TreeNodeElement[]> => {
-    const allEvents = events ?? (await EventService.getAllEvents());
+    if (events == null) {
+      await ensureLoaded();
+    }
+    const allEvents = events ?? snapshotEvents;
     const subtree = EventTreeAPI.getSubtree(rootEventId, allEvents);
     if (subtree.length === 0) return [];
 
@@ -198,7 +204,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
 
     dfs(rootEventId, 0, undefined);
     return nodes;
-  }, [rootEventId, events]);
+  }, [rootEventId, events, snapshotEvents, ensureLoaded]);
 
   /**
    * 初始化加载树

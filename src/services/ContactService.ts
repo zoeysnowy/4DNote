@@ -25,7 +25,6 @@ import { formatTimeForStorage } from '../utils/timeUtils';
 import { storageManager } from './storage/StorageManager';
 import { generateContactId } from '../utils/idGenerator';
 
-const STORAGE_KEY = '4dnote-contacts';
 const contactLogger = logger.module('ContactService');
 
 // 事件类型定义
@@ -72,9 +71,6 @@ export class ContactService {
         if (result.items.length > 0) {
           this.contacts = result.items;
           contactLogger.log(`✅ [ContactService] Loaded ${this.contacts.length} contacts from storage`);
-        } else {
-          // 尝试从 localStorage 迁移旧数据
-          await this.migrateFromLocalStorage();
         }
         
         this.initialized = true;
@@ -91,34 +87,6 @@ export class ContactService {
   }
 
   /**
-   * 从 localStorage 迁移旧数据
-   */
-  private static async migrateFromLocalStorage(): Promise<void> {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) return;
-    
-    try {
-      const oldContacts: Contact[] = JSON.parse(stored);
-      if (oldContacts.length === 0) return;
-      
-      contactLogger.log(`🔄 [ContactService] Migrating ${oldContacts.length} contacts from localStorage...`);
-      
-      // 批量写入 StorageManager（自动双写）
-      const result = await storageManager.batchCreateContacts(oldContacts);
-      contactLogger.log(`✅ [ContactService] Migrated ${result.successful}/${oldContacts.length} contacts`);
-      
-      // 重新加载到内存
-      this.contacts = oldContacts;
-      
-      // 备份旧数据并清理
-      localStorage.setItem(`${STORAGE_KEY}-backup`, stored);
-      localStorage.removeItem(STORAGE_KEY);
-      
-      contactLogger.log('✅ [ContactService] Migration completed, old data backed up');
-    } catch (error) {
-      contactLogger.error('❌ [ContactService] Migration failed:', error);
-    }
-  }  /**
    * 添加事件监听器
    * @param eventType 事件类型
    * @param listener 监听器回调函数
@@ -391,17 +359,25 @@ export class ContactService {
       return newContact;
     });
 
-    // 批量写入 StorageManager
-    const result = await storageManager.batchCreateContacts(newContacts);
-    
-    if (result.failed.length > 0) {
-      contactLogger.warn(`⚠️ [ContactService] Failed to create ${result.failed.length} contacts`);
+    // 写入 StorageManager
+    // 注意：StorageManager.batchCreateContacts 当前只返回成功/失败数量，
+    // 不返回失败明细；这里逐个创建以便拿到成功列表，避免运行期 shape 不匹配。
+    const successfulContacts: Contact[] = [];
+    let failedCount = 0;
+
+    for (const contact of newContacts) {
+      try {
+        await storageManager.createContact(contact);
+        successfulContacts.push(contact);
+      } catch (error) {
+        failedCount++;
+        contactLogger.warn('⚠️ [ContactService] Failed to create contact:', contact.id, error);
+      }
     }
 
-    // 更新内存缓存（只添加成功的）
-    const successfulContacts = newContacts.filter(c => 
-      !result.failed.some(f => f.contact.id === c.id)
-    );
+    if (failedCount > 0) {
+      contactLogger.warn(`⚠️ [ContactService] Failed to create ${failedCount} contacts`);
+    }
     this.contacts.push(...successfulContacts);
     
     // 触发批量同步事件
@@ -484,14 +460,14 @@ export class ContactService {
   /**
    * 从 Event 的 organizer/attendees 中提取联系人并自动添加到联系人列表
    */
-  static extractAndAddFromEvent(organizer?: Contact, attendees?: Contact[]): void {
-    this.initialize();
-    
+  static async extractAndAddFromEvent(organizer?: Contact, attendees?: Contact[]): Promise<void> {
+    await this.initialize();
+
     const contactsToAdd: Contact[] = [];
 
     // 提取组织者
     if (organizer && organizer.email) {
-      const existing = this.getContactByEmail(organizer.email);
+      const existing = await this.getContactByEmail(organizer.email);
       if (!existing) {
         contactsToAdd.push({ ...organizer, is4DNote: true });
       }
@@ -499,18 +475,17 @@ export class ContactService {
 
     // 提取参会人
     if (attendees) {
-      attendees.forEach(attendee => {
-        if (attendee.email) {
-          const existing = this.getContactByEmail(attendee.email);
-          if (!existing) {
-            contactsToAdd.push({ ...attendee, is4DNote: true });
-          }
+      for (const attendee of attendees) {
+        if (!attendee.email) continue;
+        const existing = await this.getContactByEmail(attendee.email);
+        if (!existing) {
+          contactsToAdd.push({ ...attendee, is4DNote: true });
         }
-      });
+      }
     }
 
     if (contactsToAdd.length > 0) {
-      this.addContacts(contactsToAdd);
+      await this.addContacts(contactsToAdd);
     }
   }
 
@@ -642,14 +617,14 @@ export class ContactService {
   /**
    * 从 JSON 导入联系人
    */
-  static importContacts(json: string): number {
+  static async importContacts(json: string): Promise<number> {
     try {
       const imported = JSON.parse(json) as Contact[];
       if (!Array.isArray(imported)) {
         throw new Error('Invalid format: expected array');
       }
 
-      const added = this.addContacts(imported);
+      const added = await this.addContacts(imported);
       return added.length;
     } catch (error) {
       console.error('[ContactService] Failed to import contacts:', error);
@@ -712,14 +687,13 @@ export class ContactService {
    * 包括扩展字段（职务、标签等）
    */
   static getFullContactInfo(contact: Contact): Contact {
-    this.initialize();
+    // Best-effort: keep this API synchronous for UI callsites.
+    void this.initialize();
     
     // 如果有 ID，从存储中获取最新数据
     if (contact.id) {
-      const stored = this.getContactById(contact.id);
-      if (stored) {
-        return stored;
-      }
+      const stored = this.contacts.find(c => c.id === contact.id);
+      if (stored) return this.parseExtendedFields(stored);
     }
     
     // 否则返回传入的数据（解析扩展字段）

@@ -70,12 +70,12 @@ export class SQLiteService {
       try {
         console.log('🔍 [SQLiteService] Initializing...');
       
-      // 检?Electron 环境
-      if (typeof window === 'undefined' || !(window as any).electronAPI) {
+      // 检查 Electron 环境
+      if (typeof window === 'undefined' || !window.electronAPI) {
         throw new Error('SQLiteService requires Electron environment');
       }
       
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = window.electronAPI;
       if (!electronAPI.sqlite || !electronAPI.sqlite.available) {
         throw new Error('SQLite not available in this Electron build');
       }
@@ -1032,9 +1032,10 @@ export class SQLiteService {
     }
 
     // 排序
-    if (sort && typeof sort === 'object' && 'field' in sort) {
-      const direction = (sort as any).direction === 'desc' ? 'DESC' : 'ASC';
-      query += ` ORDER BY ${this.camelToSnake((sort as any).field)} ${direction}`;
+    const sortField = (sort as any)?.field;
+    if (sortField) {
+      const direction = (sort as any)?.direction === 'desc' ? 'DESC' : 'ASC';
+      query += ` ORDER BY ${this.camelToSnake(sortField)} ${direction}`;
     } else {
       query += ' ORDER BY start_time ASC';
     }
@@ -1682,7 +1683,7 @@ export class SQLiteService {
       LIMIT ? OFFSET ?
     `);
 
-    const rows: any[] = stmt.all(...values, limit, offset);
+    const rows: any[] = await stmt.all(...values, limit, offset) as any[];
 
     // 查询总数
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM tags ${whereSQL}`);
@@ -1760,7 +1761,7 @@ export class SQLiteService {
       LIMIT ? OFFSET ?
     `);
 
-    const rows: any[] = stmt.all(...values, limit, offset);
+    const rows: any[] = await stmt.all(...values, limit, offset) as any[];
 
     // 查询总数
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM contacts WHERE ${whereSQL}`);
@@ -1802,18 +1803,25 @@ export class SQLiteService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const source = contact.isOutlook
+      ? 'outlook'
+      : contact.isGoogle
+        ? 'google'
+        : contact.isiCloud
+          ? 'icloud'
+          : 'local';
+
     stmt.run(
       contact.id,
       contact.name,
       contact.email,
       contact.phone || null,
-      contact.avatar || null,
-      contact.source || 'local',
-      contact.sourceId || null,
+      contact.avatarUrl || null,
+      source,
+      contact.externalId || null,
       contact.createdAt,
       contact.updatedAt,
       JSON.stringify({
-        company: contact.company,
         notes: contact.notes,
         avatarUrl: contact.avatarUrl,
         organization: contact.organization,
@@ -1836,17 +1844,24 @@ export class SQLiteService {
       WHERE id = ?
     `);
 
+    const source = contact.isOutlook
+      ? 'outlook'
+      : contact.isGoogle
+        ? 'google'
+        : contact.isiCloud
+          ? 'icloud'
+          : 'local';
+
     stmt.run(
       contact.name,
       contact.email,
       contact.phone || null,
-      contact.avatar || null,
-      contact.source || 'local',
-      contact.sourceId || null,
+      contact.avatarUrl || null,
+      source,
+      contact.externalId || null,
       contact.updatedAt,
-      contact.deletedAt || null,
+      (contact as any).deletedAt || null,
       JSON.stringify({
-        company: contact.company,
         notes: contact.notes,
         avatarUrl: contact.avatarUrl,
         organization: contact.organization,

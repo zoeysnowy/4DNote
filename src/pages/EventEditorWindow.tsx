@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { EventEditModalV2 } from '../components/EventEditModal/EventEditModalV2';
 import { EventService } from '../services/EventService';
-import { TagService } from '../services/TagService';
 import { getAvailableCalendarsForSettings } from '../utils/calendarUtils';
 import type { Event } from '../types';
 import './EventEditorWindow.css';
@@ -16,7 +15,6 @@ const EventEditorWindow: React.FC = () => {
   // 从 URL hash 获取 eventId
   const eventId = window.location.hash.split('/').pop() || '';
   const [event, setEvent] = useState<Event | null>(null);
-  const [allTags, setAllTags] = useState<string[]>([]);
   const [availableCalendars, setAvailableCalendars] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,10 +29,6 @@ const EventEditorWindow: React.FC = () => {
         if (eventData) {
           setEvent(eventData);
         }
-
-        // 加载标签
-        const tags = TagService.getTags();
-        setAllTags(tags);
 
         // 加载日历
         const calendars = await getAvailableCalendarsForSettings();

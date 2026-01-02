@@ -2,6 +2,7 @@
 import { MICROSOFT_GRAPH_CONFIG } from '../config/calendar';
 import { formatTimeForStorage } from '../utils/timeUtils';
 import { STORAGE_KEYS } from '../constants/storage';
+import { StorageManager } from './storage/StorageManager';
 import { Contact } from '../types';
 
 import { logger } from '../utils/logger';
@@ -195,6 +196,13 @@ export interface CalendarSyncMeta {
 }
 
 export class MicrosoftCalendarService {
+  private static readonly AUTH_STORAGE_KEYS = {
+    ACCESS_TOKEN: 'ms-access-token',
+    REFRESH_TOKEN: 'ms-refresh-token',
+    EXPIRES_AT: 'ms-token-expires',
+    SELECTED_CALENDAR_ID: 'selectedCalendarId'
+  } as const;
+
   private msalInstance!: PublicClientApplication;
   private isAuthenticated: boolean = false;
   private syncInterval: NodeJS.Timeout | null = null;
@@ -202,9 +210,16 @@ export class MicrosoftCalendarService {
   private eventChangeListeners: Array<(events: GraphEvent[]) => void> = [];
   private simulationMode: boolean = false;
   private accessToken: string | null = null;
+  private tokenExpiresAt: number | null = null;
   private calendarGroups: CalendarGroup[] = [];
+  private todoListsCache: any[] = [];
+  private syncMetaCache: CalendarSyncMeta | null = null;
+  private storageManager = StorageManager.getInstance();
   private calendars: Calendar[] = [];
   private selectedCalendarId: string | null = null;
+
+  // 🚀 [FIX] 初始化完成 Promise：避免 UI/Sync 在构造后立即调用 API 时误判“未认证”
+  private initializationPromise: Promise<void> | null = null;
   
   // 🚀 [NEW] 日历缓存加载锁（防止并发重复请求）
   private calendarCacheLoadingPromise: Promise<void> | null = null;
@@ -231,11 +246,155 @@ export class MicrosoftCalendarService {
         (window as any).debug.microsoftCalendarService = this;
       }
 
-      this.initializeGraph();
+      // NOTE: initializeGraph 是 async；保存 promise 供后续 API 调用 await，避免竞态。
+      // initializeGraph 内会负责 hydration（包含 legacy import）
+      this.initializationPromise = this.initializeGraph();
       
     } catch (error) {
       MSCalendarLogger.error('❌ MicrosoftCalendarService constructor error:', error);
       this.enableSimulationMode();
+    }
+  }
+
+  private async ensureInitialized(): Promise<void> {
+    try {
+      await this.initializationPromise;
+    } catch (e) {
+      // 初始化失败会进入 simulationMode；此处不抛出，避免把错误扩散到 UI。
+      MSCalendarLogger.warn('⚠️ [MSCalendar] ensureInitialized failed (non-blocking):', e);
+    }
+  }
+
+  private tryImportLegacyLocalStorage<T>(key: string): T | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as T;
+      void this.storageManager.setMetadata(key, parsed);
+      localStorage.removeItem(key);
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private tryImportLegacyLocalStorageString(key: string): string | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return null;
+      void this.storageManager.setMetadata(key, raw);
+      localStorage.removeItem(key);
+      return raw;
+    } catch {
+      return null;
+    }
+  }
+
+  private tryImportLegacyLocalStorageNumber(key: string): number | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw === null) return null;
+      const parsed = parseInt(raw);
+      localStorage.removeItem(key);
+      if (!Number.isFinite(parsed)) return null;
+      void this.storageManager.setMetadata(key, parsed);
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getStoredString(key: string): Promise<string | null> {
+    const stored = await this.storageManager.getMetadata<string>(key);
+    if (typeof stored === 'string') return stored;
+    return this.tryImportLegacyLocalStorageString(key);
+  }
+
+  private async getStoredNumber(key: string): Promise<number | null> {
+    const stored = await this.storageManager.getMetadata<number>(key);
+    if (typeof stored === 'number') return stored;
+    return this.tryImportLegacyLocalStorageNumber(key);
+  }
+
+  private async persistAuthTokens(params: {
+    accessToken: string | null;
+    expiresAt: number | null;
+    refreshToken?: string | null;
+  }): Promise<void> {
+    await this.storageManager.setMetadata(
+      MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN,
+      params.accessToken
+    );
+    await this.storageManager.setMetadata(
+      MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT,
+      params.expiresAt
+    );
+    if (params.refreshToken !== undefined) {
+      await this.storageManager.setMetadata(
+        MicrosoftCalendarService.AUTH_STORAGE_KEYS.REFRESH_TOKEN,
+        params.refreshToken
+      );
+    }
+
+    // legacy cleanup
+    localStorage.removeItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+    localStorage.removeItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT);
+    localStorage.removeItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.REFRESH_TOKEN);
+  }
+
+  private async hydrateCalendarCachesFromStorage(): Promise<void> {
+    try {
+      const calendars =
+        (await this.storageManager.getMetadata<Calendar[]>(STORAGE_KEYS.CALENDARS_CACHE)) ??
+        this.tryImportLegacyLocalStorage<Calendar[]>(STORAGE_KEYS.CALENDARS_CACHE) ??
+        [];
+      if (Array.isArray(calendars) && calendars.length > 0) {
+        this.calendars = calendars;
+      }
+
+      const groups =
+        (await this.storageManager.getMetadata<CalendarGroup[]>(STORAGE_KEYS.CALENDAR_GROUPS_CACHE)) ??
+        this.tryImportLegacyLocalStorage<CalendarGroup[]>(STORAGE_KEYS.CALENDAR_GROUPS_CACHE) ??
+        [];
+      if (Array.isArray(groups) && groups.length > 0) {
+        this.calendarGroups = groups;
+      }
+
+      const meta =
+        (await this.storageManager.getMetadata<CalendarSyncMeta>(STORAGE_KEYS.CALENDAR_SYNC_META)) ??
+        this.tryImportLegacyLocalStorage<CalendarSyncMeta>(STORAGE_KEYS.CALENDAR_SYNC_META);
+      if (meta) {
+        this.syncMetaCache = meta;
+      }
+
+      const todoLists =
+        (await this.storageManager.getMetadata<any[]>(STORAGE_KEYS.TODO_LISTS_CACHE)) ??
+        this.tryImportLegacyLocalStorage<any[]>(STORAGE_KEYS.TODO_LISTS_CACHE) ??
+        [];
+      if (Array.isArray(todoLists) && todoLists.length > 0) {
+        this.todoListsCache = todoLists;
+      }
+
+      const selectedCalendarId = await this.getStoredString(
+        MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID
+      );
+      if (selectedCalendarId) {
+        this.selectedCalendarId = selectedCalendarId;
+      }
+
+      const storedAccessToken = await this.getStoredString(
+        MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN
+      );
+      if (storedAccessToken) {
+        this.accessToken = storedAccessToken;
+      }
+
+      const expiresAt = await this.getStoredNumber(MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT);
+      if (expiresAt) {
+        this.tokenExpiresAt = expiresAt;
+      }
+    } catch (error) {
+      MSCalendarLogger.error('❌ Failed to hydrate calendar cache from storage:', error);
     }
   }
 
@@ -246,11 +405,9 @@ export class MicrosoftCalendarService {
    */
   public getCachedCalendarGroups(): CalendarGroup[] {
     try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CALENDAR_GROUPS_CACHE);
-      if (cached) {
-        const groups = JSON.parse(cached);
-        MSCalendarLogger.log('📋 [Cache] Retrieved calendar groups from cache:', groups.length, 'groups');
-        return groups;
+      if (Array.isArray(this.calendarGroups) && this.calendarGroups.length > 0) {
+        MSCalendarLogger.log('📋 [Cache] Retrieved calendar groups from memory:', this.calendarGroups.length, 'groups');
+        return this.calendarGroups;
       }
       return [];
     } catch (error) {
@@ -264,16 +421,9 @@ export class MicrosoftCalendarService {
    */
   public getCachedCalendars(): Calendar[] {
     try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CALENDARS_CACHE);
-      if (cached) {
-        const calendars = JSON.parse(cached);
-        
-        // 🔧 [FIX v1.7.4] 同步更新内存中的 calendars 数组
-        // 确保 this.calendars 与 localStorage 保持一致
-        this.calendars = calendars;
-        
-        MSCalendarLogger.log('📋 [Cache] Retrieved calendars from cache:', calendars.length, 'calendars');
-        return calendars;
+      if (Array.isArray(this.calendars) && this.calendars.length > 0) {
+        MSCalendarLogger.log('📋 [Cache] Retrieved calendars from memory:', this.calendars.length, 'calendars');
+        return this.calendars;
       }
       return [];
     } catch (error) {
@@ -287,11 +437,9 @@ export class MicrosoftCalendarService {
    */
   public getCachedTodoLists(): any[] {
     try {
-      const cached = localStorage.getItem(STORAGE_KEYS.TODO_LISTS_CACHE);
-      if (cached) {
-        const todoLists = JSON.parse(cached);
-        MSCalendarLogger.log('📋 [Cache] Retrieved To Do Lists from cache:', todoLists.length, 'lists');
-        return todoLists;
+      if (Array.isArray(this.todoListsCache) && this.todoListsCache.length > 0) {
+        MSCalendarLogger.log('📋 [Cache] Retrieved To Do Lists from memory:', this.todoListsCache.length, 'lists');
+        return this.todoListsCache;
       }
       return [];
     } catch (error) {
@@ -305,7 +453,11 @@ export class MicrosoftCalendarService {
    */
   private setCachedTodoLists(todoLists: any[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.TODO_LISTS_CACHE, JSON.stringify(todoLists));
+      this.todoListsCache = todoLists;
+      void this.storageManager.setMetadata(STORAGE_KEYS.TODO_LISTS_CACHE, todoLists);
+
+      // legacy cleanup
+      localStorage.removeItem(STORAGE_KEYS.TODO_LISTS_CACHE);
       MSCalendarLogger.log('💾 [Cache] Saved To Do Lists to cache:', todoLists.length, 'lists');
     } catch (error) {
       MSCalendarLogger.error('❌ [Cache] Failed to save To Do Lists to cache:', error);
@@ -317,7 +469,8 @@ export class MicrosoftCalendarService {
    */
   private setCachedCalendarGroups(groups: CalendarGroup[]): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.CALENDAR_GROUPS_CACHE, JSON.stringify(groups));
+      this.calendarGroups = groups;
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDAR_GROUPS_CACHE, groups);
       MSCalendarLogger.log('💾 [Cache] Saved calendar groups to cache:', groups.length, 'groups');
     } catch (error) {
       MSCalendarLogger.error('❌ [Cache] Failed to save calendar groups to cache:', error);
@@ -331,8 +484,8 @@ export class MicrosoftCalendarService {
     try {
       // 🔧 [FIX v1.7.4] 同时更新内存中的 calendars 数组
       this.calendars = calendars;
-      
-      localStorage.setItem(STORAGE_KEYS.CALENDARS_CACHE, JSON.stringify(calendars));
+
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDARS_CACHE, calendars);
       MSCalendarLogger.log('💾 [Cache] Saved calendars to cache:', calendars.length, 'calendars');
     } catch (error) {
       MSCalendarLogger.error('❌ [Cache] Failed to save calendars to cache:', error);
@@ -344,11 +497,7 @@ export class MicrosoftCalendarService {
    */
   public getSyncMeta(): CalendarSyncMeta | null {
     try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CALENDAR_SYNC_META);
-      if (cached) {
-        return JSON.parse(cached);
-      }
-      return null;
+      return this.syncMetaCache;
     } catch (error) {
       MSCalendarLogger.error('❌ [Cache] Failed to get sync meta:', error);
       return null;
@@ -360,7 +509,8 @@ export class MicrosoftCalendarService {
    */
   private setSyncMeta(meta: CalendarSyncMeta): void {
     try {
-      localStorage.setItem(STORAGE_KEYS.CALENDAR_SYNC_META, JSON.stringify(meta));
+      this.syncMetaCache = meta;
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDAR_SYNC_META, meta);
       MSCalendarLogger.log('💾 [Cache] Updated sync meta:', meta);
     } catch (error) {
       MSCalendarLogger.error('❌ [Cache] Failed to save sync meta:', error);
@@ -379,8 +529,12 @@ export class MicrosoftCalendarService {
     }
     
     try {
-      const cached = localStorage.getItem(STORAGE_KEYS.CALENDARS_CACHE);
-      if (!cached || JSON.parse(cached).length === 0) {
+      // 先确保内存缓存已从 IndexedDB hydration（若已有则几乎无成本）
+      if (!Array.isArray(this.calendars) || this.calendars.length === 0) {
+        await this.hydrateCalendarCachesFromStorage();
+      }
+
+      if (!Array.isArray(this.calendars) || this.calendars.length === 0) {
         MSCalendarLogger.log('📅 Calendar cache empty, syncing from remote...');
         
         // 🔒 设置加载锁
@@ -396,9 +550,8 @@ export class MicrosoftCalendarService {
         await this.calendarCacheLoadingPromise;
       } else {
         MSCalendarLogger.log('✅ Calendar cache already exists, loading into memory...');
-        
-        // 🔧 [FIX v1.7.4] 从 localStorage 加载到内存（this.calendars）
-        this.getCachedCalendars(); // 这会更新 this.calendars
+
+        // 这里 this.calendars 已有值，直接进行增量检查
         
         // 🔄 检查是否需要增量同步（24小时检查一次）
         await this.checkCalendarListChanges();
@@ -557,6 +710,15 @@ export class MicrosoftCalendarService {
    */
   public clearCalendarCache(): void {
     try {
+      this.calendarGroups = [];
+      this.calendars = [];
+      this.syncMetaCache = null;
+
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDAR_GROUPS_CACHE, []);
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDARS_CACHE, []);
+      void this.storageManager.setMetadata(STORAGE_KEYS.CALENDAR_SYNC_META, null);
+
+      // legacy cleanup
       localStorage.removeItem(STORAGE_KEYS.CALENDAR_GROUPS_CACHE);
       localStorage.removeItem(STORAGE_KEYS.CALENDARS_CACHE);
       localStorage.removeItem(STORAGE_KEYS.CALENDAR_SYNC_META);
@@ -717,18 +879,22 @@ export class MicrosoftCalendarService {
 
   private async initializeGraph() {
     try {
-      // 🔧 Electron环境：优先从localStorage加载令牌
+      // 尽早水合 metadata（包含 token/selectedCalendarId；可一次性导入 legacy localStorage）
+      await this.hydrateCalendarCachesFromStorage();
+
+      // 🔧 Electron环境：优先从 metadata/legacy 导入加载令牌
       if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        const token = localStorage.getItem('ms-access-token');
-        const expiresAt = localStorage.getItem('ms-token-expires');
+        const token = await this.getStoredString(MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+        const expiresAt = await this.getStoredNumber(MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT);
         
         if (token && expiresAt) {
-          const expiresTime = parseInt(expiresAt);
+          const expiresTime = expiresAt;
           const now = Date.now();
           
           if (now < expiresTime - 60000) {
             MSCalendarLogger.log('✅ [Electron] 从localStorage加载了有效的访问令牌');
             this.accessToken = token;
+            this.tokenExpiresAt = expiresTime;
             this.isAuthenticated = true;
             this.simulationMode = false;
             
@@ -780,17 +946,18 @@ export class MicrosoftCalendarService {
           MSCalendarLogger.warn('⚠️ 静默获取token失败，尝试从localStorage恢复:', error);
           
           // 🔧 静默获取失败，尝试从localStorage恢复
-          const token = localStorage.getItem('ms-access-token');
-          const expiresAt = localStorage.getItem('ms-token-expires');
+          const token = await this.getStoredString(MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+          const expiresAt = await this.getStoredNumber(MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT);
           
           if (token && expiresAt) {
-            const expiresTime = parseInt(expiresAt);
+            const expiresTime = expiresAt;
             const now = Date.now();
             const BUFFER_TIME = 5 * 60 * 1000; // 5分钟缓冲
             
             if (now < expiresTime - BUFFER_TIME) {
               MSCalendarLogger.log('✅ 从localStorage恢复了有效的访问令牌');
               this.accessToken = token;
+              this.tokenExpiresAt = expiresTime;
               this.isAuthenticated = true;
               this.simulationMode = false;
               
@@ -830,10 +997,27 @@ export class MicrosoftCalendarService {
       
       const response = await this.msalInstance.acquireTokenSilent(tokenRequest);
       this.accessToken = response.accessToken;
+
+      // ✅ 记录并持久化 expiresAt，避免 token 过期检查缺失
+      this.tokenExpiresAt = response.expiresOn ? response.expiresOn.getTime() : this.tokenExpiresAt;
+      await this.persistAuthTokens({
+        accessToken: this.accessToken,
+        expiresAt: this.tokenExpiresAt,
+      });
       
       // 🔧 先设置认证状态为 true（因为已经获得了 token）
+      const wasAuthenticated = this.isAuthenticated;
       this.isAuthenticated = true;
       this.simulationMode = false;
+
+      // ✅ 统一派发认证状态变化事件（避免 UI/StatusBar 不更新）
+      if (!wasAuthenticated && typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('auth-state-changed', {
+            detail: { isAuthenticated: true },
+          })
+        );
+      }
       
       // � [FIX] 检查日历缓存，如果为空则同步
       this.ensureCalendarCacheLoaded().catch(error => {
@@ -858,10 +1042,27 @@ export class MicrosoftCalendarService {
               account: account
             });
             this.accessToken = response.accessToken;
+
+            // ✅ 记录并持久化 expiresAt，避免 token 过期检查缺失
+            this.tokenExpiresAt = response.expiresOn ? response.expiresOn.getTime() : this.tokenExpiresAt;
+            await this.persistAuthTokens({
+              accessToken: this.accessToken,
+              expiresAt: this.tokenExpiresAt,
+            });
             
             // 🔧 先设置认证状态为 true（因为已经获得了 token）
+            const wasAuthenticated = this.isAuthenticated;
             this.isAuthenticated = true;
             this.simulationMode = false;
+
+            // ✅ 统一派发认证状态变化事件（避免 UI/StatusBar 不更新）
+            if (!wasAuthenticated && typeof window !== 'undefined') {
+              window.dispatchEvent(
+                new CustomEvent('auth-state-changed', {
+                  detail: { isAuthenticated: true },
+                })
+              );
+            }
             
             // � [FIX] 检查日历缓存，如果为空则同步
             this.ensureCalendarCacheLoaded().catch(error => {
@@ -1096,14 +1297,14 @@ export class MicrosoftCalendarService {
               const tokenData = await tokenResponse.json();
               this.accessToken = tokenData.access_token;
               
-              // 保存到 localStorage（Electron 持久化）
+              // 保存到 IndexedDB metadata（Electron 持久化）
               const expiresAt = Date.now() + (tokenData.expires_in * 1000);
-              localStorage.setItem('ms-access-token', tokenData.access_token);
-              localStorage.setItem('ms-token-expires', expiresAt.toString());
-              
-              if (tokenData.refresh_token) {
-                localStorage.setItem('ms-refresh-token', tokenData.refresh_token);
-              }
+              this.tokenExpiresAt = expiresAt;
+              await this.persistAuthTokens({
+                accessToken: tokenData.access_token,
+                expiresAt,
+                refreshToken: tokenData.refresh_token
+              });
               
               // 设置认证状态
               this.isAuthenticated = true;
@@ -1237,16 +1438,6 @@ export class MicrosoftCalendarService {
       MSCalendarLogger.error('❌ Get user info error:', error);
       this.enableSimulationMode();
       throw error;
-    }
-  }
-
-  private getUserSettings(): any {
-    try {
-      const settings = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-      return settings ? JSON.parse(settings) : null;
-    } catch (error) {
-      MSCalendarLogger.error('❌ Error reading user settings:', error);
-      return null;
     }
   }
 
@@ -1929,14 +2120,13 @@ export class MicrosoftCalendarService {
       return false;
     }
 
-    // 从 localStorage 读取过期时间
-    const expiresAt = localStorage.getItem('ms-token-expires');
-    if (!expiresAt) {
-      MSCalendarLogger.warn('⚠️ [Token Check] No expiration time found in localStorage');
+    // 使用内存过期时间（从 metadata hydration 或 setAuthTokens/electron 登录写入）
+    if (!this.tokenExpiresAt) {
+      MSCalendarLogger.warn('⚠️ [Token Check] No expiration time loaded');
       return true; // 没有过期时间，假设有效（避免误判）
     }
 
-    const expiresTime = parseInt(expiresAt);
+    const expiresTime = this.tokenExpiresAt;
     const now = Date.now();
     
     // 提前 5 分钟判定为过期（避免在使用时才发现过期）
@@ -1967,9 +2157,12 @@ export class MicrosoftCalendarService {
     // 清除认证状态
     this.isAuthenticated = false;
     this.accessToken = null;
+    this.tokenExpiresAt = null;
     
-    // 清除 localStorage 中的认证标记
-    localStorage.setItem('4dnote-outlook-authenticated', 'false');
+    // 通知 UI 层更新认证状态（localStorage 由 UI 负责同步给 Widget）
+    window.dispatchEvent(new CustomEvent('auth-state-changed', {
+      detail: { isAuthenticated: false }
+    }));
     
     // 触发自定义事件通知应用
     window.dispatchEvent(new CustomEvent('auth-expired', {
@@ -1989,17 +2182,18 @@ export class MicrosoftCalendarService {
     try {
       MSCalendarLogger.log('🔄 [ReloadToken] 重新加载访问令牌...');
       
-      // 从 localStorage 加载
-      const token = localStorage.getItem('ms-access-token');
-      const expiresAt = localStorage.getItem('ms-token-expires');
+      // 从 metadata 加载（若为空则一次性导入 legacy localStorage）
+      const token = await this.getStoredString(MicrosoftCalendarService.AUTH_STORAGE_KEYS.ACCESS_TOKEN);
+      const expiresAt = await this.getStoredNumber(MicrosoftCalendarService.AUTH_STORAGE_KEYS.EXPIRES_AT);
       
       if (token && expiresAt) {
-        const expiresTime = parseInt(expiresAt);
+        const expiresTime = expiresAt;
         const now = Date.now();
         
         if (now < expiresTime - 60000) {
           MSCalendarLogger.log('✅ [ReloadToken] 成功加载有效的访问令牌');
           this.accessToken = token;
+          this.tokenExpiresAt = expiresTime;
           this.isAuthenticated = true;
           this.simulationMode = false;
           
@@ -2024,6 +2218,26 @@ export class MicrosoftCalendarService {
     } catch (error) {
       MSCalendarLogger.error('❌ [ReloadToken] 重新加载令牌失败:', error);
       return false;
+    }
+  }
+
+  public async setAuthTokens(params: { accessToken: string; expiresAt: number; refreshToken?: string | null }): Promise<void> {
+    this.accessToken = params.accessToken;
+    this.tokenExpiresAt = params.expiresAt;
+    this.isAuthenticated = true;
+    this.simulationMode = false;
+
+    await this.persistAuthTokens({
+      accessToken: params.accessToken,
+      expiresAt: params.expiresAt,
+      refreshToken: params.refreshToken
+    });
+
+    // 统一从这里通知 UI 更新认证状态
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('auth-state-changed', {
+        detail: { isAuthenticated: true }
+      }));
     }
   }
 
@@ -2083,6 +2297,7 @@ export class MicrosoftCalendarService {
    * 获取指定分组下的日历列表
    */
   async getCalendarsInGroup(groupId: string): Promise<Calendar[]> {
+    await this.ensureInitialized();
     if (!this.isAuthenticated || !this.accessToken) {
       throw new Error('未认证，无法获取日历列表');
     }
@@ -2116,6 +2331,7 @@ export class MicrosoftCalendarService {
    * 通过 /me/calendar 端点获取，这是 Microsoft Graph API 的标准方式
    */
   async getDefaultCalendar(): Promise<Calendar> {
+    await this.ensureInitialized();
     if (!this.isAuthenticated || !this.accessToken) {
       throw new Error('未认证，无法获取默认日历');
     }
@@ -2149,6 +2365,7 @@ export class MicrosoftCalendarService {
    * 获取用户的所有日历（包括默认日历）
    */
   async getAllCalendars(): Promise<Calendar[]> {
+    await this.ensureInitialized();
     if (!this.isAuthenticated || !this.accessToken) {
       throw new Error('未认证，无法获取日历列表');
     }
@@ -2344,7 +2561,9 @@ export class MicrosoftCalendarService {
    */
   setSelectedCalendar(calendarId: string): void {
     this.selectedCalendarId = calendarId;
-    localStorage.setItem('selectedCalendarId', calendarId);
+    void this.storageManager.setMetadata(MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID, calendarId);
+    // legacy cleanup
+    localStorage.removeItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID);
     MSCalendarLogger.log('📅 设置默认同步日历:', calendarId);
   }
 
@@ -2353,7 +2572,13 @@ export class MicrosoftCalendarService {
    */
   getSelectedCalendarId(): string | null {
     if (!this.selectedCalendarId) {
-      this.selectedCalendarId = localStorage.getItem('selectedCalendarId');
+      // sync fallback: legacy localStorage one-time import
+      const legacy = localStorage.getItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID);
+      if (legacy) {
+        this.selectedCalendarId = legacy;
+        void this.storageManager.setMetadata(MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID, legacy);
+      }
+      localStorage.removeItem(MicrosoftCalendarService.AUTH_STORAGE_KEYS.SELECTED_CALENDAR_ID);
     }
     return this.selectedCalendarId;
   }

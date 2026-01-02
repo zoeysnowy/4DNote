@@ -104,7 +104,6 @@ export const INTERNAL_ONLY_FIELDS = new Set([
   
   // 事件关系
   'parentEventId',
-  'childEventIds',
   'linkedEventIds',
   'backlinks',
   'parentTaskId',         // 父任务（内部关系）
@@ -407,15 +406,3 @@ export function shouldSyncFieldToOutlook(field: string): boolean {
   if (INTERNAL_ONLY_FIELDS.has(field)) return false;
   return (SYNC_COMPARABLE_FIELDS as readonly string[]).includes(field);
 }
-
-/**
- * 不应该做 diff 对比的字段（内部字段或只读字段）
- */
-export const NON_COMPARABLE_FIELDS = [
-  ...Array.from(INTERNAL_ONLY_FIELDS),
-  'id',
-  'createdAt',
-  'updatedAt',
-  'createdDateTime',
-  'lastModifiedDateTime',
-];

@@ -15,7 +15,6 @@
 
 import { TimeHub } from '../services/TimeHub';
 import { EventHub } from '../services/EventHub';  // 🎯 使用 EventHub
-import { EventService } from '../services/EventService';  // 🔧 仅用于查询
 import { dbg } from './debugLogger';
 
 /**
@@ -58,26 +57,7 @@ export function getEventTime(eventId: string, fallback?: Partial<EventTime>): Ev
     };
   }
   
-  // 优先级 2: EventService
-  const event = EventService.getEventById(eventId);
-  if (event?.startTime && event?.endTime) {
-    dbg('time', '📖 从 EventService 读取时间', {
-      eventId,
-      source: 'EventService',
-      start: event.startTime,
-      end: event.endTime,
-      allDay: event.isAllDay,
-    });
-    
-    return {
-      start: event.startTime,
-      end: event.endTime,
-      dueDate: event.dueDate,
-      isAllDay: event.isAllDay ?? false,
-    };
-  }
-  
-  // 优先级 3: Fallback
+  // 优先级 2: Fallback
   if (fallback?.start || fallback?.end) {
     dbg('time', '📖 使用 fallback 时间', {
       eventId,
@@ -129,13 +109,18 @@ export async function setEventTime(
   
   // 🎯 Step 1: 通过 EventHub 更新时间（EventHub 内部会调用 TimeHub）
   if (start && end) {
-    const result = await EventHub.setEventTime(eventId, {
+    const payload: any = {
       start,
       end,
-      allDay: isAllDay ?? false,
       source: 'planmanager',
       ...timeSpec,
-    });
+    };
+    // Field contract: isAllDay 保持可选；不要默认注入 false
+    if (typeof isAllDay === 'boolean') {
+      payload.allDay = isAllDay;
+    }
+
+    const result = await EventHub.setEventTime(eventId, payload);
     
     if (!result.success) {
       throw new Error(result.error || 'Failed to set event time');
@@ -157,7 +142,8 @@ export async function setEventTime(
   return {
     start: start ?? null,
     end: end ?? null,
-    dueDateTime: dueDate ?? null,
+    dueDate: dueDate ?? null,
+    // UI 侧仍然可以把 undefined 当作 false 渲染；这里保持旧行为
     isAllDay: isAllDay ?? false,
     timeSpec,
   };

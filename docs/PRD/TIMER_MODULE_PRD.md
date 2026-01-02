@@ -888,9 +888,8 @@ useEffect(() => {
       const timerEventId = timer.eventId;
     
     // 🔧 [BUG FIX] 读取现有事件，保留用户的 description 和 location
-    const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-    const existingEvents: Event[] = saved ? JSON.parse(saved) : [];
-    const existingEvent = existingEvents.find(e => e.id === timerEventId);
+    // Legacy: 早期实现从 localStorage 事件缓存读取；当前以 EventService/IndexedDB 为准
+    const existingEvent = await EventService.getEventById(timerEventId);
     
     const timerEvent: Event = {
       id: timerEventId,
@@ -904,15 +903,8 @@ useEffect(() => {
       // ...
     };
     
-    // 🔧 直接更新 localStorage，不调用 EventService（避免触发同步）
-    const updatedEvents = existingEvents.map(e => 
-      e.id === timerEventId ? timerEvent : e
-    );
-    if (!existingEvents.some(e => e.id === timerEventId)) {
-      updatedEvents.push(timerEvent);
-    }
-    
-    localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(updatedEvents));
+    // 🔧 通过 EventService 持久化（可选：skipSync=true），避免触发同步
+    await EventService.updateEvent(timerEventId, timerEvent as any, true);
     
     // 触发 UI 更新
     window.dispatchEvent(new CustomEvent('eventsUpdated', {
@@ -1282,23 +1274,14 @@ setGlobalTimer({
 // 这样 saveTimerEvent 每30秒运行时会读取到最新的用户输入
 if (globalTimer.eventId) {
   try {
-    const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-    const existingEvents: Event[] = saved ? JSON.parse(saved) : [];
-    const eventIndex = existingEvents.findIndex((e: Event) => e.id === globalTimer.eventId);
-    
-    if (eventIndex !== -1) {
-      // 只更新用户可编辑的字段，保持其他字段不变
-      existingEvents[eventIndex] = {
-        ...existingEvents[eventIndex],
-        description: updatedEvent.description,
-        location: updatedEvent.location,
-        title: updatedEvent.title,
-        updatedAt: formatTimeForStorage(new Date())
-      };
-      
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(existingEvents));
-      AppLogger.log('💾 [Timer Edit] Saved user edits to localStorage');
-    }
+    // Legacy note: older implementations mutated a localStorage events cache.
+    // Current architecture persists via EventService/StorageManager (optionally skipSync=true).
+    await EventService.updateEvent(globalTimer.eventId, {
+      description: updatedEvent.description,
+      location: updatedEvent.location,
+      title: updatedEvent.title,
+      updatedAt: formatTimeForStorage(new Date()),
+    } as any, true);
   } catch (error) {
     AppLogger.error('💾 [Timer Edit] Failed to save user edits:', error);
   }
@@ -1595,10 +1578,9 @@ useEffect(() => {
       
       const timerEventId = `timer-${globalTimer.tagId}-${startTime.getTime()}`;
       
-      // 读取现有事件，保留用户输入
-      const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-      const existingEvents: Event[] = saved ? JSON.parse(saved) : [];
-      const existingEvent = existingEvents.find(e => e.id === timerEventId);
+      // Legacy note: older implementations read/write a localStorage events cache synchronously.
+      // Current architecture avoids full-event-list localStorage writes; persist via bridge or service.
+      const existingEvent = null as any;
       
       const timerEvent: Event = {
         id: timerEventId,
@@ -1608,10 +1590,7 @@ useEffect(() => {
       };
       
       // 同步保存（不能使用 async）
-      const updatedEvents = existingEvents.map(e => 
-        e.id === timerEventId ? timerEvent : e
-      );
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(updatedEvents));
+      // Current approach: write a small pending-upserts bridge record for next startup flush.
       
       // 提示用户
       event.preventDefault();
@@ -1835,21 +1814,14 @@ T=30s: saveTimerEvent 自动执行
 // App.tsx L748-780
 if (globalTimer.eventId) {
   try {
-    const saved = localStorage.getItem(STORAGE_KEYS.EVENTS);
-    const existingEvents: Event[] = saved ? JSON.parse(saved) : [];
-    const eventIndex = existingEvents.findIndex((e: Event) => e.id === globalTimer.eventId);
-    
-    if (eventIndex !== -1) {
-      existingEvents[eventIndex] = {
-        ...existingEvents[eventIndex],
-        description: updatedEvent.description,  // 🔧 立即保存
-        location: updatedEvent.location,        // 🔧 立即保存
-        title: updatedEvent.title,              // 🔧 立即保存
-        updatedAt: formatTimeForStorage(new Date())
-      };
-      
-      localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(existingEvents));
-    }
+    // Legacy note: older implementations mutated a localStorage events cache.
+    // Current architecture persists via EventService/StorageManager (optionally skipSync=true).
+    await EventService.updateEvent(globalTimer.eventId, {
+      description: updatedEvent.description,
+      location: updatedEvent.location,
+      title: updatedEvent.title,
+      updatedAt: formatTimeForStorage(new Date()),
+    } as any, true);
   } catch (error) {
     AppLogger.error('💾 [Timer Edit] Failed to save user edits:', error);
   }

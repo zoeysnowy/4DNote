@@ -13,7 +13,7 @@ import React, { useMemo, useState, useRef, useEffect, useCallback, memo } from '
 import { createPortal } from 'react-dom';
 import { RenderElementProps, useSelected, useFocused, ReactEditor } from 'slate-react';
 import { Transforms, Editor, Path } from 'slate';
-import { DateMentionElement, DateMentionNode } from '../types';
+import { DateMentionNode } from '../types';
 import { useEventTime } from '../../../hooks/useEventTime';
 import { formatRelativeDate, formatRelativeTimeDisplay } from '../../../utils/relativeDateFormatter';
 import { calculateTimeDiff, isDateMentionOutdated } from '../../../utils/timeDiffCalculator';
@@ -21,7 +21,7 @@ import { Button, Space } from 'antd';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 import UnifiedDateTimePicker from '../../FloatingToolbar/pickers/UnifiedDateTimePicker';
-import { formatTimeForStorage } from '../../../utils/timeFormatter';
+import { formatTimeForStorage } from '../../../utils/timeUtils';
 import datetimeIcon from '../../../assets/icons/datetime.svg';
 import { EventService } from '../../../services/EventService';
 
@@ -73,12 +73,29 @@ const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes,
   const { timeSpec, start, end, loading, setEventTime } = useEventTime(eventId);
   
   // 🆕 获取事件的 isDeadline 信息
-  const event = useMemo(() => {
-    if (!eventId) return null;
-    return EventService.getEventById(eventId);
+  const [isDeadline, setIsDeadline] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!eventId) {
+      setIsDeadline(false);
+      return;
+    }
+
+    (async () => {
+      try {
+        const event = await EventService.getEventById(eventId);
+        if (!cancelled) setIsDeadline(!!event?.isDeadline);
+      } catch {
+        if (!cancelled) setIsDeadline(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [eventId]);
-  
-  const isDeadline = event?.isDeadline || false;
   
   // 🆕 v2.3: 检测时间是否过期
   // 优先使用节点自身的 isOutdated 字段（持久化状态）
@@ -318,7 +335,7 @@ const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes,
         { at: path }
       );
       
-      setShowPopover(false);
+      setShowPicker(false);
       console.log('[DateMentionElement] ✅ 已更新 DateMention 到 TimeHub 的最新时间', { start, end });
     } catch (error) {
       console.error('[DateMentionElement] 更新失败:', error);
@@ -337,7 +354,7 @@ const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes,
       const path = ReactEditor.findPath(editor, element);
       Transforms.removeNodes(editor, { at: path });
       
-      setShowPopover(false);
+      setShowPicker(false);
       console.log('[DateMentionElement] ✅ 已删除 DateMention 元素');
     } catch (error) {
       console.error('[DateMentionElement] 删除失败:', error);
@@ -346,7 +363,7 @@ const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes,
   
   // 🆕 v2.4: 取消操作 - 关闭 popover，保持 DateMention 不变
   const handleCancel = () => {
-    setShowPopover(false);
+    setShowPicker(false);
     console.log('[DateMentionElement] 用户取消操作，保持 DateMention 不变');
   };
 

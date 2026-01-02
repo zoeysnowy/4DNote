@@ -466,7 +466,7 @@ export const TreeNavigationView: React.FC<TreeNavigationViewProps> = ({
         {layout === 'graph' && renderGraph()}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .tree-navigation-view {
           height: 100%;
           display: flex;

@@ -299,7 +299,7 @@ export const GalleryView: React.FC<GalleryViewProps> = ({
       {layout === 'timeline' && renderTimeline()}
       {renderLightbox()}
 
-      <style jsx>{`
+      <style>{`
         .gallery-view {
           padding: 16px;
           background: var(--bg-primary, white);

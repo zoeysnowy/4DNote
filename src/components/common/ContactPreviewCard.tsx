@@ -51,19 +51,21 @@ export const ContactPreviewCard: React.FC<ContactPreviewCardProps> = ({
       // 如果更新的是当前显示的联系人，自动刷新
       if (id === fullContact.id) {
         console.log('[ContactPreviewCard] 📇 收到联系人更新事件，自动刷新显示');
-        
+
         // 重新获取完整信息（包括关联事件）
-        const identifier = after.email || after.name || '';
-        const events = EventService.getEventsByContact(identifier, 5);
-        const totalEvents = EventService.getEventsByContact(identifier, 9999).length;
-        
-        setFullContact({
-          ...after,
-          recentEvents: events,
-          totalEvents,
-        });
-        
-        onUpdate?.(after);
+        void (async () => {
+          const identifier = after.email || after.name || '';
+          const events = await EventService.getEventsByContact(identifier, 5);
+          const allEvents = await EventService.getEventsByContact(identifier, 9999);
+
+          setFullContact({
+            ...after,
+            recentEvents: events,
+            totalEvents: allEvents.length,
+          });
+
+          onUpdate?.(after);
+        })();
       }
     };
 
@@ -96,13 +98,13 @@ export const ContactPreviewCard: React.FC<ContactPreviewCardProps> = ({
       
       // 获取关联事件
       const identifier = contact.email || contact.name || '';
-      const events = EventService.getEventsByContact(identifier, 5);
-      const totalEvents = EventService.getEventsByContact(identifier, 9999).length;
+      const events = await EventService.getEventsByContact(identifier, 5);
+      const allEvents = await EventService.getEventsByContact(identifier, 9999);
       
       setFullContact({
         ...contactInfo,
         recentEvents: events,
-        totalEvents,
+        totalEvents: allEvents.length,
       });
     } catch (error) {
       console.error('[ContactPreviewCard] Failed to load contact info:', error);

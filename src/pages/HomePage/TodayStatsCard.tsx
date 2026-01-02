@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
 import { EventService } from '../../services/EventService';
 import { TimeRange } from './TimeRangeSelector';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './TodayStatsCard.css';
 
 interface TodayStats {
@@ -71,14 +72,20 @@ export const TodayStatsCard: React.FC<TodayStatsCardProps> = ({ timeRange }) => 
 
         eventStats.forEach(stats => {
           if (stats.startTime && stats.endTime) {
-            const duration = new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
-            totalTime += duration;
+            try {
+              const duration =
+                parseLocalTimeString(stats.endTime).getTime() -
+                parseLocalTimeString(stats.startTime).getTime();
+              totalTime += duration;
 
-            // 简单判断：如果结束时间在未来，则为进行中
-            if (new Date(stats.endTime).getTime() > Date.now()) {
-              ongoingEvents++;
-            } else {
-              completedEvents++;
+              // 简单判断：如果结束时间在未来，则为进行中
+              if (parseLocalTimeString(stats.endTime).getTime() > Date.now()) {
+                ongoingEvents++;
+              } else {
+                completedEvents++;
+              }
+            } catch {
+              // ignore invalid time values
             }
           }
         });

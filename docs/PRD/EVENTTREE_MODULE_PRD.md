@@ -184,7 +184,7 @@ Vitest 单测覆盖重点：
 ## 6. 非目标（Out of Scope）
 
 - 不新增新的页面/复杂 UI
-- 不引入新的“自动维护 childEventIds”机制
+- 不引入新的 `childEventIds` 写入/维护路径
 - 不在此 PRD 里规定 Library 的最终 UI 形态（只提供所需的 tree context 指标）
 
 ---
@@ -245,16 +245,16 @@ const yOffset = isHovered ? index * 80 : (index + 1) * 4; // 第一张从 0 开�
 
 ```typescript
 class EventService {
-  // 创建事件时自动维护父子关系
+  // 创建事件：可带 parentEventId；仅写入该事件自身字段（ADR-001）
   async createEvent(event: Partial<Event>): Promise<Event>
   
-  // 更新事件时自动同步父子关系
+  // 更新事件：包括 parentEventId（reparent）；不维护父事件的 childEventIds（ADR-001）
   async updateEvent(id: string, updates: Partial<Event>): Promise<Event>
   
-  // 删除事件时自动清理父子引用
+  // 删除事件：仅删除该事件自身；是否级联删除子树由调用方决定（通过 parentEventId 派生子树）
   async deleteEvent(id: string): Promise<void>
   
-  // 获取子事件列表（⚡ v2.20.0: 批量查询优化，性能提升 5-10 倍）
+  // 获取子事件列表：通过 parentEventId 查询（依赖 parentEventId 索引）
   async getChildEvents(parentId: string): Promise<Event[]>
   
   // 获取事件的完整树结构
@@ -285,95 +285,29 @@ class EventService {
 
 ---
 
-## 🔄 自动维护机制
+## 🔄 结构变更口径（ADR-001）
 
-### 1. 父子关系自动同步
+### 1. 父子关系写入规则
 
-#### 创建事件
+- 树结构唯一真相：`parentEventId`
+- 写路径（create/update/reparent）只更新“子事件自己的 `parentEventId`”（以及必要的 `position` 等排序字段）
+- 子列表/子树通过 `parentEventId` 派生/查询获得；若历史数据/旧版本中仍存在 `childEventIds`，它不作为真相且不维护/不依赖
+
+### 2. 删除策略（可选）
+
+- 是否级联删除子树由调用方策略决定
+- 若需要级联，应先通过 `parentEventId` 派生出子树，再执行删除（不要依赖 `childEventIds`）
+
+#### 写路径示例（ADR-001：仅更新 parentEventId）
 ```typescript
-// 创建子事件时
-if (event.parentEventId) {
-  // 自动添加到父事件的 childEventIds
-  parentEvent.childEventIds = [...(parentEvent.childEventIds || []), event.id];
-}
-```
+// reparent：只更新“子事件自己的 parentEventId”
+async function reparent(eventId: string, newParentEventId: string | null) {
+  await EventService.updateEvent(eventId, {
+    parentEventId: newParentEventId ?? undefined
+  });
 
-#### 更新事件
-```typescript
-// 修改 parentEventId 时
-if (updates.parentEventId !== oldEvent.parentEventId) {
-  // 1. 从旧父事件移除
-  if (oldEvent.parentEventId) {
-    removeFromParent(oldEvent.parentEventId, event.id);
-  }
-  
-  // 2. 添加到新父事件
-  if (updates.parentEventId) {
-    addToParent(updates.parentEventId, event.id);
-  }
-}
-```
-
-#### 删除事件
-```typescript
-// 删除事件时
-// 1. 从父事件的 childEventIds 中移除
-if (event.parentEventId) {
-  parentEvent.childEventIds = parentEvent.childEventIds.filter(id => id !== event.id);
-}
-
-// 2. 递归删除所有子事件（可选）
-if (event.childEventIds?.length) {
-  for (const childId of event.childEventIds) {
-    await deleteEvent(childId);
-  }
-}
-```
-
-### 2. 父子关系自动维护（v2.18+）
-
-#### 触发时机
-- **创建事件**: 在 `EventHub.createEvent()` 时传入 `parentEventId`
-- **更新事件**: 调用 `EventService.updateEvent()` 修改 `parentEventId`
-- **Tab 键缩进**: PlanManager 中按 Tab 键建立父子关系
-- **Shift+Tab 反缩进**: 解除父子关系或改变层级
-
-#### 双向维护逻辑
-```typescript
-// EventService.updateEvent() 自动维护
-async updateEvent(eventId: string, updates: Partial<Event>) {
-  const originalEvent = await this.getEventById(eventId);
-  const filteredUpdates = { ...updates }; // 过滤 undefined 字段
-  
-  // 🔥 检测 parentEventId 变化
-  if (filteredUpdates.parentEventId !== undefined) {
-    const parentHasChanged = 
-      filteredUpdates.parentEventId !== originalEvent.parentEventId;
-    
-    // 1️⃣ 从旧父事件移除（如果父事件变化）
-    if (parentHasChanged && originalEvent.parentEventId) {
-      const oldParent = await this.getEventById(originalEvent.parentEventId);
-      if (oldParent?.childEventIds) {
-        await this.updateEvent(oldParent.id, {
-          childEventIds: oldParent.childEventIds.filter(id => id !== eventId)
-        }, true); // skipSync
-      }
-    }
-    
-    // 2️⃣ 添加到新父事件（无论是否变化，都确保包含）
-    if (filteredUpdates.parentEventId) {
-      const newParent = await this.getEventById(filteredUpdates.parentEventId);
-      if (newParent) {
-        const childIds = newParent.childEventIds || [];
-        
-        if (!childIds.includes(eventId)) {
-          await this.updateEvent(newParent.id, {
-            childEventIds: [...childIds, eventId]
-          }, true); // skipSync
-        }
-      }
-    }
-  }
+  // ✅ 不更新父事件的 childEventIds
+  // 子列表/子树应通过 parentEventId 派生/查询获得
 }
 ```
 
@@ -517,7 +451,7 @@ const timerEvent = {
 };
 
 await EventService.createEvent(timerEvent);
-// 自动添加到 parentEvent.childEventIds
+// 子列表通过 parentEventId 派生/查询获得（不维护/不依赖 childEventIds）
 ```
 
 ### 场景 2: 外部日历同步
@@ -534,7 +468,7 @@ const syncedEvent = {
 };
 
 await EventService.createEvent(syncedEvent);
-// 自动维护父子关系
+// 父子结构以 parentEventId 为真相
 ```
 
 ### 场景 3: 双向链接
@@ -561,17 +495,8 @@ async function validateEventTree() {
   const allEvents = await EventService.getAllEvents();
   
   for (const event of allEvents) {
-    // 检查1: childEventIds 中的事件是否存在且 parentEventId 正确
-    if (event.childEventIds) {
-      for (const childId of event.childEventIds) {
-        const child = allEvents.find(e => e.id === childId);
-        if (!child || child.parentEventId !== event.id) {
-          console.error(`Integrity error: Child ${childId} mismatch`);
-        }
-      }
-    }
-    
-    // 检查2: parentEventId 指向的父事件是否存在
+    // ADR-001：以 parentEventId 为结构真相
+    // 检查：parentEventId 指向的父事件是否存在
     if (event.parentEventId) {
       const parent = allEvents.find(e => e.id === event.parentEventId);
       if (!parent) {
@@ -613,42 +538,25 @@ async function detectCycle(eventId: string, proposedParentId: string): Promise<b
 ```sql
 -- SQLite 索引
 CREATE INDEX idx_events_parent ON events(parentEventId) WHERE deleted_at IS NULL;
-CREATE INDEX idx_events_child_ids ON events(childEventIds) WHERE deleted_at IS NULL;
 ```
 
 #### 批量查询
 
-**⚡ v2.20.0 重大优化**: `getChildEvents` 使用批量查询替代逐个查询，性能提升 5-10 倍
+**⚡ v2.20.0 重大优化**: `getChildEvents` 直接按 `parentEventId` 查询（命中索引），避免 N+1
 
 ```typescript
-// ✅ v2.20.0 优化后实现
+// ✅ v2.20.0 优化后实现（ADR-001：通过 parentEventId 查询子列表）
 static async getChildEvents(parentId: string): Promise<Event[]> {
-  const parent = await this.getEventById(parentId);
-  if (!parent?.childEventIds || parent.childEventIds.length === 0) {
-    return [];
-  }
-  
-  // ⚡ [BATCH QUERY] 一次查询所有子事件，避免 N 次异步查询
-  try {
-    const result = await storageManager.queryEvents({
-      filters: { eventIds: parent.childEventIds },
-      limit: 1000
-    });
-    
-    return result.items;
-  } catch (error) {
-    // 🛡️ Fallback: 如果批量查询失败，回退到逐个查询
-    const children = await Promise.all(
-      parent.childEventIds.map(id => this.getEventById(id))
-    );
-    return children.filter(Boolean) as Event[];
-  }
+  const result = await storageManager.queryEvents({
+    filters: { parentEventId: parentId },
+    limit: 1000
+  });
+  return result.items;
 }
 
-// 性能对比
-// ❌ 旧实现：10 个子事件 = 10 次异步查询 ≈ 50ms
-// ✅ 新实现：10 个子事件 = 1 次批量查询 ≈ 5ms
-// 性能提升：10倍
+// 性能对比（示意）
+// ❌ 旧实现：逐个查询子事件（N+1）
+// ✅ 新实现：按 parentEventId 一次查询（命中 idx_events_parent）
 
 // 避免 N+1 查询（树结构批量获取）
 async function getEventTreeBatch(rootId: string): Promise<EventTreeNode> {
@@ -687,14 +595,13 @@ async function getEventTreeBatch(rootId: string): Promise<EventTreeNode> {
 
 **1. 验证数据库完整性** ✅
 ```typescript
-// 检查 parentEventId ↔ childEventIds 双向关系
+// 以 parentEventId 为结构真相验证
 const parent = await EventService.getEventById(parentId);
 const child = await EventService.getEventById(childId);
 
-console.log('父事件的 childEventIds:', parent.childEventIds);
 console.log('子事件的 parentEventId:', child.parentEventId);
 
-// 应该满足：parent.childEventIds.includes(child.id) && child.parentEventId === parent.id
+// 应该满足：child.parentEventId === parent.id
 ```
 
 **2. 验证 bulletLevel 计算** ✅
@@ -718,11 +625,10 @@ function addEventWithChildren(event: Event) {
   visited.add(event.id!);
   sortedEvents.push(event);
   
-  if (event.childEventIds) {
-    for (const childId of event.childEventIds) {
-      const child = eventMap.get(childId);
-      if (child) addEventWithChildren(child);
-    }
+  // ADR-001：通过 parentEventId 派生子列表（而非 childEventIds）
+  const children = allEvents.filter(e => e.parentEventId === event.id);
+  for (const child of children) {
+    addEventWithChildren(child);
   }
 }
 
@@ -928,15 +834,18 @@ if (isTreeView) {
 // src/services/__tests__/EventService.eventTree.test.ts
 
 describe('EventTree Management', () => {
-  test('自动维护父子关系 - 创建', async () => {
+  test('parentEventId 写入 - 创建', async () => {
     const parent = await createEvent({ title: 'Parent' });
     const child = await createEvent({ 
       title: 'Child', 
       parentEventId: parent.id 
     });
     
-    const updatedParent = await getEvent(parent.id);
-    expect(updatedParent.childEventIds).toContain(child.id);
+    // ADR-001：不依赖/不要求 parent.childEventIds
+    // 子列表应通过 parentEventId 派生/查询获得
+    const all = await EventService.getAllEvents();
+    const children = all.filter(e => e.parentEventId === parent.id);
+    expect(children.map(e => e.id)).toContain(child.id);
   });
   
   test('双向链接创建', async () => {
@@ -978,7 +887,7 @@ describe('EventTree Management', () => {
 
 ### v2.16 (2025-12-01)
 - ✅ 统一字段架构（`timerLogs` → `childEventIds`）
-- ✅ 自动维护父子关系
+- ✅ ADR-001：以 `parentEventId` 为结构真相（`childEventIds` 视为 legacy 兼容字段）
 - ✅ 类型标记系统（`isTimer`, `isTimeLog` 等）
 
 ### v2.17 (2025-12-02)
@@ -987,7 +896,7 @@ describe('EventTree Management', () => {
 - ✅ EventRelationSummary 组件
 
 ### v2.18 (2025-12-06) ✅ 已完成
-- ✅ **父子关系自动维护**: `updateEvent()` 检测 `parentEventId` 变化，自动同步 `childEventIds`
+- ✅ **父子关系（ADR-001）**: 仅更新 `parentEventId`；子列表通过派生/查询获得
 - ✅ **PlanManager Tab 键集成**: Tab 缩进建立父子关系，Shift+Tab 解除关系
 - ✅ **EditableEventTree 组件**: 树形结构编辑器，每个节点独立 Slate 编辑器
 - ✅ **递归子事件加载**: `buildTree()` 递归加载所有层级子事件
@@ -997,7 +906,7 @@ describe('EventTree Management', () => {
 #### 关键修复
 - 🐛 修复 `executeShiftTabOutdent` 函数提升问题
 - 🐛 修复 EventEditModalV2 `parentEvent` 未定义问题
-- 🐛 确保 `childEventIds` 即使 `parentEventId` 未变化也能正确维护
+- 🐛 避免从 `childEventIds` 推导结构（以 `parentEventId` 为准）
 
 ### v2.19 (计划中)
 - ⏳ **单一 Slate 编辑器架构**: 重构 EditableEventTree 使用单一编辑器 + 自定义 `tree-node` 类型，支持跨行选择

@@ -6,8 +6,6 @@ export type { StatsDimension, StatsTimeRange, StatsViewMode } from './StatsContr
 // Dashboard v2.0 Components
 export { DashboardCard } from './DashboardCard';
 export type { DashboardCardProps } from './DashboardCard';
-export { DashboardGrid } from './DashboardGrid';
-export type { DashboardGridProps, GridItem } from './DashboardGrid';
 export { TodayStatsCard } from './TodayStatsCard';
 export { FocusScoreCard } from './FocusScoreCard';
 export { TimeDistributionCard } from './TimeDistributionCard';

@@ -402,7 +402,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
         </div>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .transcript-view {
           height: 100%;
           background: var(--bg-primary, white);

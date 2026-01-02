@@ -403,7 +403,7 @@ export const AudioStreamView: React.FC<AudioStreamViewProps> = ({
       {layout === 'compact' && renderCompact()}
       {layout === 'waveform' && renderWaveform()}
 
-      <style jsx>{`
+      <style>{`
         .audio-stream-view {
           padding: 16px;
           background: var(--bg-primary, white);

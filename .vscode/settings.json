@@ -1,37 +1,22 @@
 {
   // TypeScript 服务器优化
-  "typescript.tsserver.maxTsServerMemory": 4096,
+  "typescript.tsserver.maxTsServerMemory": 8192,
   "typescript.disableAutomaticTypeAcquisition": true,
   "typescript.suggest.autoImports": true,
   
   // 排除不必要的文件监控
   "files.watcherExclude": {
-    "**/.git/objects/**": true,
-    "**/.git/subtree-cache/**": true,
-    "**/node_modules/**": true,
-    "**/build/**": true,
-    "**/dist/**": true,
-    "**/.cache/**": true,
-    "**/tui.calendar-main/**": true
+    "**/node_modules/**": true
   },
   
   // 排除搜索范围
   "search.exclude": {
-    "**/node_modules": true,
-    "**/build": true,
-    "**/dist": true,
-    "**/.git": true,
-    "**/tui.calendar-main": true,
-    "**/package-lock.json": true
+    "**/node_modules/**": true
   },
   
   // 文件排除
   "files.exclude": {
-    "**/.git": true,
-    "**/.DS_Store": true,
-    "**/node_modules": false,
-    "**/build": true,
-    "**/.cache": true
+    "**/node_modules": true
   },
   
   // ESLint 优化
@@ -81,6 +66,6 @@
   "terminal.integrated.rendererType": "dom",
   "terminal.integrated.gpuAcceleration": "off",
   "mcpFigma.aiAssistant": "github-copilot",
-  "mcpFigma.autoStartWebSocket": true,
+  "mcpFigma.autoStartWebSocket": false,
   "mcpFigma.websocketPort": 3845
 }

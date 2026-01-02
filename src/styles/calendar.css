@@ -846,8 +846,8 @@
   overflow: visible !important;
 }
 
-/* 强制移除 Task 事件块的背景色（覆盖内联样式�?*/
-.toastui-calendar-weekday-event-block[data-testid*="default-event"] .toastui-calendar-weekday-event {
+/* 强制移除 Task 事件块的背景色（仅限 task 模板；避免误伤默认日历的普通事件） */
+.toastui-calendar-weekday-event-block[data-testid*="default-event"]:has(.toastui-calendar-template-task) .toastui-calendar-weekday-event {
   background-color: transparent !important;
   border-left: none !important;
   padding: 0 !important; /* 移除所有内边距 */

@@ -618,7 +618,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   // 🔍 组件挂载日志
   React.useEffect(() => {
     if (isDebugEnabled()) {
-      const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+      const timestamp = formatTimeForStorage(new Date()).split(' ')[1];
       window.console.log(`%c[🚀 ${timestamp}] PlanSlate - 调试模式已开启`, 
         'background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-weight: bold;');
       window.console.log(`%c关闭调试: localStorage.removeItem('SLATE_DEBUG') 然后刷新`, 
@@ -632,7 +632,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     
     return () => {
       if (isDebugEnabled()) {
-        window.console.log(`%c[👋 ${new Date().toISOString().split('T')[1].slice(0, 12)}] PlanSlate unmounted`, 
+        const timestamp = formatTimeForStorage(new Date()).split(' ')[1];
+        window.console.log(`%c[👋 ${timestamp}] PlanSlate unmounted`, 
           'background: #f44336; color: white; padding: 4px 8px; border-radius: 3px;');
       }
     };
@@ -985,13 +986,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       // ✅ BulletLevel → EventTree: Tab/Shift+Tab 触发的更新会被跳过
       if (isLocalUpdate || 
           originComponent === 'PlanManager' || 
-          recentlySavedEventsRef.current.has(eventId) ||
-          (updateId && EventService.isLocalUpdate(eventId, updateId))) {
+          recentlySavedEventsRef.current.has(eventId)) {
         console.log('%c[⏭️ 跳过] 本组件相关的更新（已乐观更新）', 'background: #FF9800; color: white; padding: 2px 6px;', {
           eventId: eventId?.slice(-10),
           reason: isLocalUpdate ? 'isLocalUpdate' : 
                   originComponent === 'PlanManager' ? 'originComponent=PlanManager' :
-                  recentlySavedEventsRef.current.has(eventId) ? 'recentlySaved' : 'isLocalUpdate(eventId)'
+                  'recentlySaved'
         });
         return;
       }
@@ -1103,6 +1103,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       // 🔧 只更新 metadata 字段，不覆盖 children（避免破坏光标）
       // 🆕 同时更新 children 中的 DateMentionNode
+      // 🎯 外部同步触发的变更不应回流触发 onChange/flush（否则可能造成循环更新）
+      skipNextOnChangeRef.current = true;
       Editor.withoutNormalizing(editor, () => {
         nodesToUpdate.forEach(index => {
           const currentNode = value[index] as EventLineNode;
@@ -1208,10 +1210,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       console.log('%c[🔄 强制重新渲染]', 'background: #FF5722; color: white; padding: 2px 6px;', {
         eventId: eventId?.slice(-10),
-        skipNextOnChange: true,
+        skipNextOnChange: skipNextOnChangeRef.current,
         editorChildrenCount: editor.children.length
       });
-      skipNextOnChangeRef.current = true;
       lastValueRef.current = [...editor.children] as unknown as EventLineNode[];
     };
     
@@ -1243,7 +1244,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (isDebugEnabled() && typeof window !== 'undefined') {
       (window as any).insertTimestamp = (eventId: string) => {
         try {
-          timestampServiceRef.current.insertTimestamp(editor, eventId);
+          timestampServiceRef.current.insertTimestamp(editor, undefined, eventId);
         } catch (error) {
           console.error('[Timestamp Debug] 插入失败:', error);
         }
@@ -1253,7 +1254,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   }, [editor]);
   
   const handleEditorChange = useCallback((newValue: Descendant[]) => {
-    const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+    const timestamp = formatTimeForStorage(new Date()).split(' ')[1];
     
     // 🔥 调试：记录每次 onChange 的选区状态
     // console.log('%c[🔄 onChange]', 'background: #2196F3; color: white; padding: 2px 6px;', {
@@ -1643,22 +1644,22 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       console.log('[Timestamp Debug] 所有条件满足，进行 eventId 检查:', {
         eventId,
         isPlaceholder: eventId === '__placeholder__',
-        shouldInsert: timestampServiceRef.current.shouldInsertTimestamp(eventId)
+        shouldInsert: timestampServiceRef.current.shouldInsertTimestamp({ eventId })
       });
       
-      if (eventId !== '__placeholder__' && timestampServiceRef.current.shouldInsertTimestamp(eventId)) {
+      if (eventId !== '__placeholder__' && timestampServiceRef.current.shouldInsertTimestamp({ eventId })) {
         console.log('[Timestamp] 需要插入时间戳', { eventId: eventId.slice(-8) });
         
         // 🔥 严谨修复：同步插入，避免竞态问题（用户快速打字时光标可能移走）
         try {
-          timestampServiceRef.current.insertTimestamp(editor, eventId);
+          timestampServiceRef.current.insertTimestamp(editor, undefined, eventId);
         } catch (error) {
           console.error('[Timestamp] 插入失败:', error);
         }
       } else {
         console.log('[Timestamp Debug] 跳过插入:', {
           isPlaceholder: eventId === '__placeholder__',
-          shouldInsert: timestampServiceRef.current.shouldInsertTimestamp(eventId)
+          shouldInsert: timestampServiceRef.current.shouldInsertTimestamp({ eventId })
         });
       }
     } else {
@@ -2463,8 +2464,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     for (let i = currentIndex - 1; i >= 0; i--) {
       try {
         const [node] = Editor.node(editor, [i]);
-        if (node.type === 'event-line' && node.mode === 'title') {
-          return node as unknown as EventLineNode;
+        if (SlateElement.isElement(node) && (node as any).type === 'event-line') {
+          const eventLine = node as unknown as EventLineNode;
+          if (eventLine.mode === 'title') {
+            return eventLine;
+          }
         }
       } catch (e) {
         // 节点不存在，继续向上查找
@@ -3764,8 +3768,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (bulletItems.length > 0) {
       // 如果包含 Bullet 项，使用增强的剪贴板数据
       const clipboardData = generateClipboardData(bulletItems);
-      event.clipboardData.setData('text/html', clipboardData.html);
-      event.clipboardData.setData('text/plain', clipboardData.plain);
+      event.clipboardData.setData('text/html', clipboardData['text/html']);
+      event.clipboardData.setData('text/plain', clipboardData['text/plain']);
       console.log('📋 复制 Bullet 列表:', bulletItems.length, '个项目');
     } else {
       // 回退到原有逻辑（EventLine 富文本）

@@ -282,7 +282,7 @@ export const AttendeeDisplay: React.FC<AttendeeDisplayProps> = ({
     // 搜索所有来源
     const platformContacts = ContactService.searchPlatformContacts(query);
     const localContacts = ContactService.searchLocalContacts(query);
-    const historicalContacts = EventService.searchHistoricalParticipants(query);
+    const historicalContacts = await EventService.searchHistoricalParticipants(query);
     
     // 使用 ContactService 的去重逻辑
     const mergedContacts = ContactService.mergeContactSources([

@@ -18,6 +18,8 @@ import './RAGDemo.css';
 import { processTranscriptFromURL, TranscriptSegment } from '../utils/transcriptProcessor';
 import type { Event as EventType } from '../types';
 import { EventService } from '../services/EventService';
+import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
+import { formatDateForStorage } from '../utils/timeUtils';
 
 interface TimestampNode {
   timestamp: string;
@@ -89,6 +91,9 @@ export const RAGDemo: React.FC = () => {
   // 代理服务器状态
   const [proxyStatus, setProxyStatus] = useState<'checking' | 'running' | 'stopped'>('checking');
   const [isStartingProxy, setIsStartingProxy] = useState(false);
+
+  // Master Plan v2.22: UI reads should prefer subscription-backed snapshots.
+  const { events: snapshotEvents, ensureLoaded: ensureEventsLoaded } = useEventHubSnapshot({ enabled: true });
   
   // 示例数据
   const [nodes] = useState<TimestampNode[]>([
@@ -344,6 +349,9 @@ export const RAGDemo: React.FC = () => {
     setTranscriptError('');
 
     try {
+      await ensureEventsLoaded();
+      const localEvents: EventType[] = [...(snapshotEvents || [])];
+
       for (const file of Array.from(files)) {
         console.log('[RAGDemo] 处理文件:', file.name);
         
@@ -394,8 +402,7 @@ export const RAGDemo: React.FC = () => {
           console.log('[RAGDemo] 生成事件:', event);
 
           // 🔍 检查是否已存在同名事件（避免重复上传）
-          const allEvents = await EventService.getAllEvents();
-          const duplicateEvent = allEvents.find((e: any) => {
+          const duplicateEvent = localEvents.find((e: any) => {
             const eventTitle = typeof e.title === 'string' ? e.title : e.title?.simpleTitle;
             return eventTitle === fileName;
           });
@@ -416,6 +423,11 @@ export const RAGDemo: React.FC = () => {
             // 删除旧事件
             await EventService.deleteEvent(duplicateEvent.id);
             console.log('[RAGDemo] 🗑️ 已删除旧事件:', duplicateEvent.id);
+
+            const idx = localEvents.findIndex(e => e.id === duplicateEvent.id);
+            if (idx >= 0) {
+              localEvents.splice(idx, 1);
+            }
           }
 
           // 批量创建事件
@@ -426,6 +438,8 @@ export const RAGDemo: React.FC = () => {
           if (result.created === 0) {
             throw new Error(`事件创建失败。${result.errors.join('; ')}`);
           }
+
+          localEvents.push(event as unknown as EventType);
           
           // 🔥 触发全局事件更新，让 TimeCalendar 刷新
           window.dispatchEvent(new CustomEvent('events-updated', { 
@@ -783,7 +797,7 @@ export const RAGDemo: React.FC = () => {
                 </label>
                 <input
                   type="date"
-                  value={transcriptConfig.daysAgo === 0 ? new Date().toISOString().split('T')[0] : ''}
+                  value={transcriptConfig.daysAgo === 0 ? formatDateForStorage(new Date()) : ''}
                   onChange={(e) => {
                     const selectedDate = new Date(e.target.value);
                     const today = new Date();

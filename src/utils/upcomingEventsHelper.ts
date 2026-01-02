@@ -1,5 +1,6 @@
 import { Event } from '../types';
 import { TagService } from '../services/TagService';
+import { parseLocalTimeStringOrNull } from './timeUtils';
 
 export type TimeFilter = 'today' | 'tomorrow' | 'week' | 'nextWeek' | 'all';
 
@@ -62,7 +63,8 @@ export function isEventInRange(event: Event, start: Date, end: Date): boolean {
     return false; // 没有 timeSpec 的事件不显示
   }
   
-  const eventStart = new Date(event.timeSpec.resolved.start);
+  const eventStart = parseLocalTimeStringOrNull(event.timeSpec.resolved.start);
+  if (!eventStart) return false;
   return eventStart >= start && eventStart <= end;
 }
 
@@ -80,13 +82,15 @@ export function isEventExpired(event: Event, now: Date = new Date()): boolean {
   
   // 如果有结束时间，使用结束时间判断
   if (resolved.end) {
-    const eventEnd = new Date(resolved.end);
+    const eventEnd = parseLocalTimeStringOrNull(resolved.end);
+    if (!eventEnd) return false;
     return eventEnd < now;
   }
   
   // 如果只有开始时间，使用开始时间判断
   if (resolved.start) {
-    const eventStart = new Date(resolved.start);
+    const eventStart = parseLocalTimeStringOrNull(resolved.start);
+    if (!eventStart) return false;
     return eventStart < now;
   }
   
@@ -109,7 +113,8 @@ export function getEventTimeDiff(event: Event, now: Date = new Date()): number {
     return Infinity; // 没有时间信息的排到最后
   }
   
-  const eventDate = new Date(timeString);
+  const eventDate = parseLocalTimeStringOrNull(timeString);
+  if (!eventDate) return Infinity;
   return eventDate.getTime() - now.getTime();
 }
 

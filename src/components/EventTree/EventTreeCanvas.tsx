@@ -5,7 +5,7 @@
  * 
  * 功能：
  * - 过滤系统事件（isTimer/isOutsideApp/isTimeLog）
- * - 父子关系可视化（刚性骨架 - parentEventId/childEventIds）
+ * - 父子关系可视化（刚性骨架 - parentEventId）
  * - 双向链接堆叠卡片（柔性血管 - linkedEventIds/backlinks）
  * - 自动布局（使用 dagre 算法）
  * - 交互：拖拽、缩放、点击节点打开 EventEditModal

@@ -324,10 +324,11 @@ const displayTitle = EventService.getVirtualTitle(event, 15); // "双击Alt召�
 2. 点击 NoteTree 图标（Assets/icon/Notetree.svg）
 3. 系统检测 EventTree 结构：
    - 查找父事件（`event.parentEventId`）
-   - 查找所有子事件（`event.childEventIds`）
+  - 查找所有子事件（通过 `parentEventId` 反查；**不依赖** `childEventIds`，ADR-001）
 4. 批量更新：
    ```typescript
    // 示例：标记整个树
+   // 注意：children 必须通过 parentEventId 递归查询得到（不要读 parent.childEventIds）
    const treeEvents = [parent, ...children, currentEvent];
    for (const evt of treeEvents) {
      await EventService.updateEvent(evt.id, { isNote: true }, false, {
@@ -14445,7 +14446,7 @@ export class SyncEngine {
 
 **数据结构设计:**
 ```typescript
-// STORAGE_KEYS.EVENTS 存储格式
+// (Legacy) localStorage events array format (deprecated)
 // localStorage.getItem('remarkable-events') → JSON Array
 [
   {
@@ -14684,7 +14685,7 @@ db.event_versions.createIndex({ eventId: 1, versionNumber: -1 });
 1. **分离冷热数据**:
    ```typescript
    // 活跃事件（最近 30 天）
-   STORAGE_KEYS.EVENTS: Event[]  // ~500 events, ~2MB
+  Events: Event[]  // ~500 events, ~2MB
    
    // 归档事件（30+ 天前）
    STORAGE_KEYS.ARCHIVED_EVENTS: Event[]  // ~4500 events, ~18MB
