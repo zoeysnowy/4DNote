@@ -564,7 +564,7 @@ Feature/
 - [ ] 创建 `pages/Event/` 并移入 LogTab.tsx (重命名为 DetailTab.tsx)
 - [ ] 创建 `pages/Event/` 并移入 EventEditorWindow.tsx (重命名为 EditorWindow.tsx)
 - [x] 创建 `pages/Calendar/` 并移入 DesktopCalendarWidget.tsx (重命名为 WidgetWindow.tsx) (ac23942)
-- [ ] 创建 `pages/Calendar/` 并移入 WidgetSettings.tsx
+- [x] 创建 `pages/Calendar/` 并移入 WidgetSettings.tsx (1108318)
 - [ ] 创建 `pages/Home/` 并移入 HomePage
 
 ### P2 - Features 完善
