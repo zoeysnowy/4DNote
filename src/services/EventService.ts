@@ -28,7 +28,7 @@ import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签�
 import { cleanupOutlookHtml as cleanupOutlookHtmlExternal } from './eventlogProcessing/outlookHtmlCleanup';
 import { resolveDisplayTitle } from '../utils/TitleResolver';
 import { resolveCheckState } from '../utils/TimeResolver';
-import { updateSubtreeRootEventIdUsingStatsIndex } from './eventTreeStats';
+import { updateSubtreeRootEventIdUsingStatsIndex } from '@backend/eventTree';
 import { EventTreeAPI } from './eventTree'; // 🆕 EventTree Engine 集成
 
 const eventLogger = logger.module('EventService');
@@ -868,7 +868,7 @@ export class EventService {
       try {
         const savedEventForNodes = await storageManager.getEvent(finalEvent.id);
         if (savedEventForNodes) {
-          const { EventNodeService } = await import('./EventNodeService');
+          const { EventNodeService } = await import('@backend/eventTree/EventNodeService');
           await EventNodeService.syncNodesFromEvent(savedEventForNodes);
           eventLogger.log('🔍 [EventService] EventNodes 同步完成');
         } else {
@@ -1463,7 +1463,7 @@ export class EventService {
 
       // 🔍 [Nodes Sync] 同步更新 EventNodes（非阻塞）
       try {
-        const { EventNodeService } = await import('./EventNodeService');
+        const { EventNodeService } = await import('@backend/eventTree/EventNodeService');
         await EventNodeService.syncNodesFromEvent(updatedEvent);
         eventLogger.log('✅ [EventService] EventNodes synced successfully on update');
       } catch (nodesSyncError) {
@@ -1613,7 +1613,7 @@ export class EventService {
 
       // 🔍 [Nodes Sync] 删除关联的 EventNodes（非阻塞）
       try {
-        const { EventNodeService } = await import('./EventNodeService');
+        const { EventNodeService } = await import('@backend/eventTree/EventNodeService');
         const deletedCount = await EventNodeService.deleteNodesByEventId(eventId);
         eventLogger.log(`✅ [EventService] ${deletedCount} EventNodes deleted`);
       } catch (nodesDeletionError) {

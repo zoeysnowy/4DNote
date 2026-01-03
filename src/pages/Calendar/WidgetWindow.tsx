@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
 import TimeCalendar from '../../features/Calendar/TimeCalendar'; // Calendar 模块
 import { MicrosoftCalendarService } from '../../services/MicrosoftCalendarService';
-import { ActionBasedSyncManager } from '../../services/ActionBasedSyncManager';
+import { ActionBasedSyncManager } from '@backend/sync/ActionBasedSyncManager';
 import { logger } from '../../utils/logger';
 import '../../features/Calendar/styles/DesktopCalendarWidget.css'; // Desktop Widget 样式
 import SyncIcon from '../../assets/icons/Sync.svg';

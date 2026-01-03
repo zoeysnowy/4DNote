@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MicrosoftCalendarService } from './services/MicrosoftCalendarService';
 import { CalendarService } from './services/CalendarService'; // 🆕 v2.0: 统一日历服务
-import { ActionBasedSyncManager } from './services/ActionBasedSyncManager';
+import { ActionBasedSyncManager } from '@backend/sync/ActionBasedSyncManager';
 import { AuthStore } from './state/authStore';
 import { SyncStatusStore } from './state/syncStatusStore';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
