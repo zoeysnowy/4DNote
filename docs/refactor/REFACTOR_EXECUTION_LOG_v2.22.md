@@ -15,6 +15,7 @@
 ## Working Agreement
 - Small commits (1 logical change per commit).
 - After each green step: `git push`.
+- No shims/compat layers: refactors must update imports to TypeScript path aliases (`@frontend/*`, `@backend/*`, `@shared/*`) in the same commit.
 - Every change must state:
   - **Why** (bug/risk addressed)
   - **Scope** (files/modules)

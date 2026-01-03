@@ -10,7 +10,7 @@ import CalendarSync from './features/Calendar/components/CalendarSync';
 import AppLayout, { PageType } from './components/AppLayout';
 import PageContainer from './components/PageContainer';
 import DesktopCalendarWidget from './pages/DesktopCalendarWidget';
-import { TimerCard } from './components/TimerCard'; // 计时卡片组件
+import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
 import { HomePage } from './pages/HomePage'; // 🆕 HomePage with stats dashboard
 import { TimerSession, Event } from './types';

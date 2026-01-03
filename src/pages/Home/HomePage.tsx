@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TimerCard } from '../../components/TimerCard';
+import { TimerCard } from '@frontend/features/Timer';
 import UpcomingEventsPanel from '../../components/UpcomingEventsPanel';
 import { DashboardGridStack, GridItem } from './DashboardGridStack';
 import { TodayStatsCard } from './TodayStatsCard';

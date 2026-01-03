@@ -33,6 +33,24 @@
 3. **服务层集中** (`services/`)：EventService 为中枢，按职责分包
 4. **组件可复用** (`components/`)：跨模块通用 UI，不承载业务逻辑
 5. **工具纯函数** (`utils/`)：无副作用，可被任意层安全调用
+6. **导入路径明确且可重构**：所有导入必须使用 TypeScript Path Alias（`@frontend/*`, `@backend/*`, `@shared/*`），禁止任何 shim/兼容层
+
+### TypeScript Path Alias（强制）
+
+目标：
+- IDE 可稳定跳转到定义（Go to Definition）
+- 重构/移动文件时导入可自动更新（减少手动改路径）
+- 编译错误尽量等价于运行时错误（提前暴露模块边界问题）
+
+约定：
+- `@frontend/*`：UI 与产品层（`src/pages`, `src/features`, `src/components`, `src/hooks`, `src/styles`, `src/assets` 等）
+- `@backend/*`：领域/数据服务层（`src/services/*`）
+- `@shared/*`：跨前后端共用的“纯模块”（建议目标位置：`src/shared/*`，包含 utils/constants/types/contracts 等）
+
+禁止：
+- 任何形式的 shim 或兼容层（例如旧路径 re-export、CSS @import 转发等）
+- `shim.d.ts` 与任何通配符模块声明（例如 `declare module '*/something'`）
+- 模糊的全局模块声明（例如 `declare module 'utils'`）
 
 ### 补充约定（建议）
 
@@ -430,24 +448,21 @@ src/
     logger.ts                            # 日志工具
 
   ┌─────────────────────────────────────────────────────────────
+  │ shared/ - 跨层共享的纯模块（建议目标归拢目录）
+  └─────────────────────────────────────────────────────────────
+  shared/
+    constants/
+    contracts/
+    types/
+    utils/
+
+  ┌─────────────────────────────────────────────────────────────
   │ 其他目录
   └─────────────────────────────────────────────────────────────
   config/
     time.config.ts
     sync.config.ts
     app.config.ts
-  
-  constants/
-    storage.ts
-    events.ts
-    routes.ts
-  
-  types/
-    index.ts
-    event.ts
-    time.ts
-    storage.ts
-    slate.d.ts
   
   styles/
     globals.css
@@ -473,8 +488,8 @@ src/
 **当前问题**：
 ```
 pages/
-  TimeLog.tsx          # 只是 shim
-  TimeLog_new.tsx      # 只是 shim
+  TimeLog.tsx          # 历史遗留入口文件（应收敛为薄编排）
+  TimeLog_new.tsx      # 历史遗留入口文件（应收敛为薄编排）
   LogTab.tsx           # 4181 行大文件！
   DesktopCalendarWidget.tsx
   EventEditorWindow.tsx
@@ -585,9 +600,10 @@ Feature/
 每一步迁移必须满足：
 1. ✅ TypeScript 编译通过（`npx tsc --noEmit`）
 2. ✅ 单元测试全绿（`npm test -- --run`）
-3. ✅ 保留 shim 文件，旧 import 路径继续工作
-4. ✅ 更新 REFACTOR_EXECUTION_LOG
-5. ✅ Git commit + push
+3. ✅ **禁止 shim/兼容层**：必须同步更新所有导入到 `@frontend/*` / `@backend/*` / `@shared/*`
+4. ✅ 禁止 `shim.d.ts` 与通配符模块声明；类型与实现应尽量同目录
+5. ✅ 更新 REFACTOR_EXECUTION_LOG
+6. ✅ Git commit + push
 
 ---
 
