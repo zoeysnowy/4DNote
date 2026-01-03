@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { MicrosoftCalendarService } from './services/MicrosoftCalendarService';
 import { CalendarService } from './services/CalendarService'; // 🆕 v2.0: 统一日历服务
-import { ActionBasedSyncManager } from './services/ActionBasedSyncManager';
+import { ActionBasedSyncManager } from '@backend/sync/ActionBasedSyncManager';
 import { AuthStore } from './state/authStore';
 import { SyncStatusStore } from './state/syncStatusStore';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
@@ -9,10 +9,10 @@ import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用
 import AppLayout, { PageType } from './components/AppLayout';
 import PageContainer from './components/PageContainer';
-import DesktopCalendarWidget from './pages/DesktopCalendarWidget';
-import { TimerCard } from './components/TimerCard'; // 计时卡片组件
+import DesktopCalendarWidget from '@frontend/pages/Calendar/WidgetWindow';
+import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
-import { HomePage } from './pages/HomePage'; // 🆕 HomePage with stats dashboard
+import { HomePage } from '@frontend/pages/Home'; // 🆕 HomePage with stats dashboard
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
@@ -30,8 +30,8 @@ import './App.css';
 // 🔧 暂时禁用懒加载，测试性能
 import TagManager from './components/TagManager';
 import TimeCalendar from './features/Calendar/TimeCalendar';
-import PlanManager from './components/PlanManager';
-import TimeLog from './pages/TimeLog';
+import PlanManager from '@frontend/features/Plan/components/PlanManager';
+import TimeLog from '@frontend/features/TimeLog/pages/TimeLogPage';
 
 import { logger } from './utils/logger';
 
@@ -2143,7 +2143,7 @@ export default function AppWrapper() {
   // 如果是 Widget Settings 模式，渲染设置页面
   if (isWidgetSettings) {
     // 动态导入 WidgetSettings 组件
-    const WidgetSettings = React.lazy(() => import('./pages/WidgetSettings'));
+    const WidgetSettings = React.lazy(() => import('@frontend/pages/Calendar/WidgetSettings'));
     return (
       <React.Suspense fallback={<div>Loading...</div>}>
         <WidgetSettings />

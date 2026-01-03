@@ -54,10 +54,21 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
 
   // 构建节点数据
   const initialNodes: Node<EventNodeData>[] = useMemo(() => {
+    // ADR-001: childEvents 来自 parentEventId 推导（childEventIds 仅 legacy hint）
+    const childrenMap = new Map<string, Event[]>();
+    for (const e of filteredEvents) {
+      if (e.parentEventId) {
+        const list = childrenMap.get(e.parentEventId) || [];
+        list.push(e);
+        childrenMap.set(e.parentEventId, list);
+      }
+    }
+
     return filteredEvents.map((event, index) => {
       // 获取双向链接的事件（outgoing + incoming）
       // 注意：getLinkedEvents 是异步的，这里使用空数组，实际应该在组件 mount 时异步加载
       const linkedEvents: Event[] = [];
+      const childEvents = childrenMap.get(event.id) || [];
 
       return {
         id: event.id,
@@ -66,6 +77,7 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
         data: {
           event,
           linkedEvents,
+          childEvents,
           onEventClick,
           onCheckboxChange,
         },

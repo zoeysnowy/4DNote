@@ -61,7 +61,7 @@ import {
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 
 // 🆕 v2.20.0: EventTree Engine for Tab/Shift+Tab optimization
-import { EventTreeAPI } from '../../services/EventTree';
+import { EventTreeAPI } from '@backend/eventTree';
 import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
 import { SlateErrorBoundary } from './ErrorBoundary';
 import { EventService } from '../../services/EventService';
@@ -1222,7 +1222,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (isDebugEnabled() && typeof window !== 'undefined') {
       (window as any).insertTimestamp = (eventId: string) => {
         try {
-          timestampServiceRef.current.insertTimestamp(editor, eventId);
+          timestampServiceRef.current.insertTimestamp(editor, undefined, eventId);
         } catch (error) {
           console.error('[Timestamp Debug] 插入失败:', error);
         }
@@ -1610,22 +1610,22 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       console.log('[Timestamp Debug] 所有条件满足，进行 eventId 检查:', {
         eventId,
         isPlaceholder: eventId === '__placeholder__',
-        shouldInsert: timestampServiceRef.current.shouldInsertTimestamp(eventId)
+        shouldInsert: timestampServiceRef.current.shouldInsertTimestamp({ eventId })
       });
       
-      if (eventId !== '__placeholder__' && timestampServiceRef.current.shouldInsertTimestamp(eventId)) {
+      if (eventId !== '__placeholder__' && timestampServiceRef.current.shouldInsertTimestamp({ eventId })) {
         console.log('[Timestamp] 需要插入时间戳', { eventId: eventId.slice(-8) });
         
         // 🔥 严谨修复：同步插入，避免竞态问题（用户快速打字时光标可能移走）
         try {
-          timestampServiceRef.current.insertTimestamp(editor, eventId);
+          timestampServiceRef.current.insertTimestamp(editor, undefined, eventId);
         } catch (error) {
           console.error('[Timestamp] 插入失败:', error);
         }
       } else {
         console.log('[Timestamp Debug] 跳过插入:', {
           isPlaceholder: eventId === '__placeholder__',
-          shouldInsert: timestampServiceRef.current.shouldInsertTimestamp(eventId)
+          shouldInsert: timestampServiceRef.current.shouldInsertTimestamp({ eventId })
         });
       }
     } else {
@@ -2432,7 +2432,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     for (let i = currentIndex - 1; i >= 0; i--) {
       try {
         const [node] = Editor.node(editor, [i]);
-        if (node.type === 'event-line' && node.mode === 'title') {
+        if (
+          SlateElement.isElement(node) &&
+          (node as any).type === 'event-line' &&
+          (node as any).mode === 'title'
+        ) {
           return node as unknown as EventLineNode;
         }
       } catch (e) {
@@ -3742,8 +3746,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     if (bulletItems.length > 0) {
       // 如果包含 Bullet 项，使用增强的剪贴板数据
       const clipboardData = generateClipboardData(bulletItems);
-      event.clipboardData.setData('text/html', clipboardData.html);
-      event.clipboardData.setData('text/plain', clipboardData.plain);
+      event.clipboardData.setData('text/html', clipboardData['text/html']);
+      event.clipboardData.setData('text/plain', clipboardData['text/plain']);
       console.log('📋 复制 Bullet 列表:', bulletItems.length, '个项目');
     } else {
       // 回退到原有逻辑（EventLine 富文本）

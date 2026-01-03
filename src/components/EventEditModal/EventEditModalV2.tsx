@@ -85,7 +85,7 @@ import { EventHub } from '../../services/EventHub';
 import { useEventHubCache, useEventSubscription } from '../../hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact, EventTitle } from '../../types';
+import { Event, Contact, EventTitle, type SyncStatusType } from '../../types';
 import { HierarchicalTagPicker } from '../HierarchicalTagPicker/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { AttendeeDisplay } from '../common/AttendeeDisplay';
@@ -1163,7 +1163,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // - Timer 运行中：强制 'local-only'
       // - 有标签或日历映射：'pending'（需要同步）
       // - 否则：保留原始状态或默认 'local-only'
-      let finalSyncStatus: SyncStatus;
+      let finalSyncStatus: SyncStatusType;
       
       if (isRunningTimer) {
         finalSyncStatus = 'local-only';

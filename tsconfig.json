@@ -1,6 +1,18 @@
 {
   "compilerOptions": {
-    "target": "es5",
+    "target": "es2020",
+    "baseUrl": ".",
+    "paths": {
+      "@frontend/*": [
+        "src/*"
+      ],
+      "@backend/*": [
+        "src/services/*"
+      ],
+      "@shared/*": [
+        "src/shared/*"
+      ]
+    },
     "lib": [
       "dom",
       "dom.iterable",

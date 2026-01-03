@@ -479,6 +479,10 @@ export interface Event {
   
   // 🆕 Issue #12: EventTree 父子事件关联（刚性骨架）
   parentEventId?: string;      // 父事件 ID（所有类型子事件都用此字段）
+
+  // ⚠️ Legacy hint (do not use as structure truth)
+  // 为兼容旧代码/同步数据保留；结构真相应来自 parentEventId + position (ADR-001)
+  childEventIds?: string[];
   
   // 🆕 v2.16: 事件在同级中的显示位置（用于 Shift+Alt+↑/↓ 移动后保持顺序）
   position?: number;           // 同级事件的排序权重（数字越小越靠前，默认按 createdAt 排序）

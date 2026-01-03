@@ -19,7 +19,7 @@ import { EventEditModalV2 } from '../../../components/EventEditModal/EventEditMo
 import { SimpleCalendarDropdown } from '../../../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../../../components/EventEditModalV2Demo/SyncModeDropdown';
 import EventTabManager from '../../../components/EventTabManager';
-import { LogTab } from '../../../pages/LogTab';
+import { LogTab } from '@frontend/pages/Event/DetailTab';
 import { getAvailableCalendarsForSettings } from '../../../utils/calendarUtils';
 import { supportsMultiWindow, openEventInWindow } from '../../../utils/electronUtils';
 import { createPortal, flushSync } from 'react-dom';

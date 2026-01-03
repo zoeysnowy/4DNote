@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import 'fake-indexeddb/auto';
-let updateSubtreeRootEventIdUsingStatsIndex: typeof import('../eventTreeStats').updateSubtreeRootEventIdUsingStatsIndex;
+let updateSubtreeRootEventIdUsingStatsIndex: typeof import('@backend/eventTree').updateSubtreeRootEventIdUsingStatsIndex;
 
 // Some services initialize at import-time and expect these globals.
 if (!(globalThis as any).localStorage) {
@@ -45,7 +45,7 @@ vi.mock('../storage/StorageManager', () => ({
 const { EventService } = await import('../EventService');
 
 beforeAll(async () => {
-  const helpers = await import('../eventTreeStats');
+  const helpers = await import('@backend/eventTree');
   updateSubtreeRootEventIdUsingStatsIndex = helpers.updateSubtreeRootEventIdUsingStatsIndex;
 
   // Vitest sometimes ends up with an older full-scan getEventTreeContext from this huge module.
