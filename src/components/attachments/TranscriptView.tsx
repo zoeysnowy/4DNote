@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Attachment, AttachmentType, TranscriptData } from '../types';
+import { Attachment, AttachmentType, TranscriptData } from '@frontend/types';
 
 interface TranscriptViewProps {
   eventId: string;

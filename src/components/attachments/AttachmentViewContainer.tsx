@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Attachment, AttachmentType, AttachmentViewMode } from '../types';
-import { AttachmentViewModeSwitcher } from './AttachmentViewModeSwitcher';
-import { GalleryView } from './GalleryView';
-import { VideoStreamView } from './VideoStreamView';
-import { AudioStreamView } from './AudioStreamView';
-import { TranscriptView } from './TranscriptView';
-import { DocumentLibView } from './DocumentLibView';
-import { TreeNavigationView } from './TreeNavigationView';
-import { BookmarkView } from './BookmarkView';
+import { Attachment, AttachmentType, AttachmentViewMode } from '@frontend/types';
+import { AttachmentViewModeSwitcher } from '@frontend/components/attachments/AttachmentViewModeSwitcher';
+import { GalleryView } from '@frontend/components/attachments/GalleryView';
+import { VideoStreamView } from '@frontend/components/attachments/VideoStreamView';
+import { AudioStreamView } from '@frontend/components/attachments/AudioStreamView';
+import { TranscriptView } from '@frontend/components/attachments/TranscriptView';
+import { DocumentLibView } from '@frontend/components/attachments/DocumentLibView';
+import { TreeNavigationView } from '@frontend/components/attachments/TreeNavigationView';
+import { BookmarkView } from '@frontend/components/attachments/BookmarkView';
 
 interface AttachmentViewContainerProps {
   eventId: string;

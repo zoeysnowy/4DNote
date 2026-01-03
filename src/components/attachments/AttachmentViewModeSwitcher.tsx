@@ -1,5 +1,5 @@
 import React from 'react';
-import { AttachmentType, AttachmentViewMode } from '../types';
+import { AttachmentType, AttachmentViewMode } from '@frontend/types';
 
 interface AttachmentViewModeSwitcherProps {
   currentMode: AttachmentViewMode;

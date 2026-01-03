@@ -14,8 +14,8 @@
  */
 
 import React, { useState, useRef, useCallback } from 'react';
-import { attachmentService } from '../services/AttachmentService';
-import type { Attachment } from '../types';
+import { attachmentService } from '@backend/AttachmentService';
+import type { Attachment } from '@frontend/types';
 import './AttachmentUploader.css';
 
 interface AttachmentUploaderProps {

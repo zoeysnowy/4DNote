@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Attachment, AttachmentType } from '../types';
+import { Attachment, AttachmentType } from '@frontend/types';
 
 interface BookmarkViewProps {
   eventId: string;

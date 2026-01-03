@@ -14,19 +14,19 @@
  */
 
 // 主容器
-export { AttachmentViewContainer } from '../AttachmentViewContainer';
+export { AttachmentViewContainer } from './AttachmentViewContainer';
 
 // 模式切换器
-export { AttachmentViewModeSwitcher } from '../AttachmentViewModeSwitcher';
+export { AttachmentViewModeSwitcher } from './AttachmentViewModeSwitcher';
 
 // 各种查看模式组件
-export { GalleryView } from '../GalleryView';
-export { VideoStreamView } from '../VideoStreamView';
-export { AudioStreamView } from '../AudioStreamView';
-export { TranscriptView } from '../TranscriptView';
-export { DocumentLibView } from '../DocumentLibView';
-export { TreeNavigationView } from '../TreeNavigationView';
-export { BookmarkView } from '../BookmarkView';
+export { GalleryView } from './GalleryView';
+export { VideoStreamView } from './VideoStreamView';
+export { AudioStreamView } from './AudioStreamView';
+export { TranscriptView } from './TranscriptView';
+export { DocumentLibView } from './DocumentLibView';
+export { TreeNavigationView } from './TreeNavigationView';
+export { BookmarkView } from './BookmarkView';
 
 // 其他附件相关组件（如果存在）
-export { AttachmentUploader } from '../AttachmentUploader';
+export { AttachmentUploader } from './AttachmentUploader';

@@ -8,9 +8,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { AttachmentViewContainer } from '../components/AttachmentViewContainer';
-import { attachmentService } from '../services/AttachmentService';
-import { Attachment, AttachmentType, AttachmentViewMode, Event } from '../types';
+import { AttachmentViewContainer } from '@frontend/components/attachments/AttachmentViewContainer';
+import { attachmentService } from '@backend/AttachmentService';
+import { Attachment, AttachmentType, AttachmentViewMode, Event } from '@frontend/types';
 
 // ============================================================================
 // 示例 1: 基础集成 - 事件详情页中的附件展示

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Attachment, AttachmentType } from '../types';
-import attachmentService from '../services/AttachmentService';
+import { Attachment, AttachmentType } from '@frontend/types';
+import attachmentService from '@backend/AttachmentService';
 
 interface GalleryViewProps {
   eventId: string;
