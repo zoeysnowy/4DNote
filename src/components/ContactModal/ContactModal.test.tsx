@@ -3,13 +3,22 @@
  */
 
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { ContactModal } from '../ContactModal';
-import { ContactService } from '../../../services/ContactService';
-import { Contact } from '../../../types';
+import { ContactService } from '../../services/ContactService';
+import { Contact } from '../../types';
+import { vi } from 'vitest';
 
 // Mock ContactService
-jest.mock('../../../services/ContactService');
+vi.mock('../../services/ContactService', () => {
+  return {
+    ContactService: {
+      addContact: vi.fn(),
+      updateContact: vi.fn(),
+      deleteContact: vi.fn(),
+    },
+  };
+});
 
 describe('ContactModal', () => {
   const mockContact: Contact = {
@@ -21,12 +30,12 @@ describe('ContactModal', () => {
     is4DNote: true,
   };
 
-  const mockOnClose = jest.fn();
-  const mockOnSave = jest.fn();
-  const mockOnDelete = jest.fn();
+  const mockOnClose = vi.fn();
+  const mockOnSave = vi.fn();
+  const mockOnDelete = vi.fn();
 
   beforeEach(() => {
-    jest.clearAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('渲染测试', () => {
@@ -133,9 +142,9 @@ describe('ContactModal', () => {
   });
 
   describe('保存功能测试', () => {
-    it('create 模式应该调用 ContactService.addContact', () => {
+    it('create 模式应该调用 ContactService.addContact', async () => {
       const mockNewContact = { ...mockContact };
-      (ContactService.addContact as jest.Mock).mockReturnValue(mockNewContact);
+      (ContactService.addContact as any).mockReturnValue(mockNewContact);
       
       render(
         <ContactModal
@@ -151,13 +160,13 @@ describe('ContactModal', () => {
       fireEvent.click(saveBtn);
       
       expect(ContactService.addContact).toHaveBeenCalled();
-      expect(mockOnSave).toHaveBeenCalledWith(mockNewContact);
-      expect(mockOnClose).toHaveBeenCalled();
+      await waitFor(() => expect(mockOnSave).toHaveBeenCalledWith(mockNewContact));
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalled());
     });
 
-    it('edit 模式应该调用 ContactService.updateContact', () => {
+    it('edit 模式应该调用 ContactService.updateContact', async () => {
       const updatedContact = { ...mockContact, phone: '13900139000' };
-      (ContactService.updateContact as jest.Mock).mockReturnValue(updatedContact);
+      (ContactService.updateContact as any).mockReturnValue(updatedContact);
       
       render(
         <ContactModal
@@ -174,7 +183,7 @@ describe('ContactModal', () => {
       fireEvent.click(saveBtn);
       
       // 验证更新被调用（即使没有变更，也应该能正常关闭）
-      expect(mockOnClose).toHaveBeenCalled();
+      await waitFor(() => expect(mockOnClose).toHaveBeenCalled());
     });
   });
 
@@ -206,7 +215,7 @@ describe('ContactModal', () => {
 
     it('点击删除应该调用 ContactService.deleteContact', () => {
       // Mock window.confirm
-      window.confirm = jest.fn(() => true);
+      window.confirm = vi.fn(() => true);
       
       render(
         <ContactModal

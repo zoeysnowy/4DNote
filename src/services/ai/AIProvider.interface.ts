@@ -27,6 +27,7 @@ export interface ExtractedEventInfo {
   attendees?: Array<{
     name: string;
     email?: string;
+    role?: string;
   }>;
   
   /** 详细议程（放到 event.description） */

@@ -3,9 +3,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { EventService } from '../../services/EventService';
 import { TagService } from '../../services/TagService';
 import './MentionMenu.css';
+import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 
 interface MentionMenuProps {
   type: 'mention' | 'hashtag';
@@ -23,42 +23,49 @@ export const MentionMenu: React.FC<MentionMenuProps> = ({
   const [items, setItems] = useState<any[]>([]);
   const [selectedIndex, setSelectedIndex] = useState(0);
 
-  useEffect(() => {
-    const loadItems = async () => {
-      if (type === 'mention') {
-        // 加载事件列表（用于 @ 提及）
-        const events = await EventService.getAllEvents();
-        const filtered = events.filter(event => {
-          const title = typeof event.title === 'object' 
-            ? event.title.simpleTitle 
-            : event.title || '';
-          return title.toLowerCase().includes(search.toLowerCase());
-        }).slice(0, 10);
-        
-        setItems(filtered.map(e => ({
-          id: e.id,
-          name: typeof e.title === 'object' ? e.title.simpleTitle : e.title,
-          type: 'event'
-        })));
-      } else {
-        // 加载标签列表（用于 # 标签）
-        const tags = TagService.getFlatTags();
-        const filtered = tags.filter(tag =>
-          tag.name.toLowerCase().includes(search.toLowerCase())
-        ).slice(0, 10);
-        
-        setItems(filtered.map(t => ({
-          id: t.id,
-          name: t.name,
-          color: t.color,
-          emoji: t.emoji,
-          type: 'tag'
-        })));
-      }
-    };
+  const { events: allEventsSnapshot } = useEventHubSnapshot({ enabled: type === 'mention' });
 
-    loadItems();
-  }, [type, search]);
+  useEffect(() => {
+    if (type === 'mention') {
+      const needle = (search || '').toLowerCase();
+      const filtered = allEventsSnapshot
+        .filter(event => {
+          const title = typeof (event as any).title === 'object'
+            ? (event as any).title.simpleTitle
+            : (event as any).title || '';
+          return String(title).toLowerCase().includes(needle);
+        })
+        .slice(0, 10);
+
+      setItems(
+        filtered.map(e => ({
+          id: (e as any).id,
+          name: typeof (e as any).title === 'object' ? (e as any).title.simpleTitle : (e as any).title,
+          type: 'event',
+        }))
+      );
+      setSelectedIndex(0);
+      return;
+    }
+
+    // 加载标签列表（用于 # 标签）
+    const tags = TagService.getFlatTags();
+    const needle = (search || '').toLowerCase();
+    const filtered = tags
+      .filter(tag => tag.name.toLowerCase().includes(needle))
+      .slice(0, 10);
+
+    setItems(
+      filtered.map(t => ({
+        id: t.id,
+        name: t.name,
+        color: t.color,
+        emoji: t.emoji,
+        type: 'tag',
+      }))
+    );
+    setSelectedIndex(0);
+  }, [type, search, allEventsSnapshot]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

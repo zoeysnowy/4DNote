@@ -408,3 +408,21 @@ Ctrl+N → 创建笔记
 - 功能测试
 - 边界测试
 - 多场景验证
+
+---
+
+## 后续 Refactor 记录（维护）
+
+### 2026-01-01：TimeLog 增量更新与测试隔离加固
+
+1) **TimeLog：统一 state/ref 更新**
+- 引入 `setAllEventsSynced(updater)`：一次性同步更新 `allEvents` state 与 `allEventsRef.current`
+- 目的：避免“只更新 state 或只更新 ref”导致的列表漂移与难复现 bug
+
+2) **TimeLog：eventsUpdated 的过滤规则与移除行为对齐**
+- `handleEventsUpdated` 按 `EventService.getTimelineEvents` 的规则判断是否应显示
+- 当一个已存在的事件更新后变为“不应出现在时间轴”（例如变成无时间的 Plan/Task、或标记为 isTimeLog/isTimer/isOutsideApp）时，会从当前列表中移除，避免 stale
+
+3) **Vitest：全局测试隔离**
+- 在 `src/test/vitest.setup.ts` 增加 `afterEach` 清理：`vi.useRealTimers()` + `vi.restoreAllMocks()`
+- 目的：降低 fake timers / mocks 泄漏导致的间歇性失败（flake）

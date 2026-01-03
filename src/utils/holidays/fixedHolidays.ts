@@ -102,7 +102,7 @@ export const FIXED_SOLAR_HOLIDAYS: Record<string, HolidayInfo> = {
  * 
  * @example
  * ```typescript
- * const holiday = getHoliday(new Date('2025-12-25'));
+ * const holiday = getHoliday(new Date(2025, 11, 25));
  * console.log(holiday); // { name: "圣诞节", isHoliday: false, emoji: "🎄" }
  * ```
  */

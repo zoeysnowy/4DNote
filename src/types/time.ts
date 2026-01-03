@@ -12,7 +12,14 @@ export type TimeKind =
   | 'window'      // flexible window (e.g., next week Mon..Sun)
   | 'fuzzy';      // unresolved or natural text awaiting resolution
 
-export type TimeSource = 'picker' | 'parser' | 'timer' | 'import' | 'system';
+export type TimeSource =
+  | 'picker'
+  | 'parser'
+  | 'timer'
+  | 'import'
+  | 'system'
+  | 'dateMention-edit'
+  | 'dateMention-restore';
 
 export type WindowResolution = 'window-only' | 'snap-to-start' | 'snap-to-end';
 

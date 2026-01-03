@@ -186,7 +186,6 @@ export const EventTabManager: React.FC<EventTabManagerProps> = ({
           <EventEditModalV2
             eventId={activeTab.event.id}
             isOpen={true}
-            embedded={true}
             onClose={() => closeTab(activeTab.id)}
             onSave={(updatedEvent) => {
               updateEvent(activeTab.id, updatedEvent);

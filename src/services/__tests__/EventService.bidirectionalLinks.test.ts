@@ -40,20 +40,21 @@ describe('EventService - 双向链接功能', () => {
     EventService.initialize(null); // 不需要同步管理器
   });
 
+  const createTestEvent = async (label: string) => {
+    const result = await EventService.createEvent({
+      title: { fullTitle: label },
+      startTime: formatTimeForStorage(new Date()),
+      endTime: formatTimeForStorage(new Date()),
+    } as any, true);
+    expect(result.success).toBe(true);
+    return result.event!;
+  };
+
   describe('addLink', () => {
     it('应该成功添加双向链接', async () => {
       // 创建两个事件
-      const eventA = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventB = await EventService.createEvent({
-        title: { fullTitle: '事件 B' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const eventA = await createTestEvent('事件 A');
+      const eventB = await createTestEvent('事件 B');
 
       // 添加链接：A → B
       const result = await EventService.addLink(eventA.id, eventB.id);
@@ -70,11 +71,7 @@ describe('EventService - 双向链接功能', () => {
     });
 
     it('应该阻止自己链接自己', async () => {
-      const event = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const event = await createTestEvent('事件 A');
 
       const result = await EventService.addLink(event.id, event.id);
       
@@ -83,11 +80,7 @@ describe('EventService - 双向链接功能', () => {
     });
 
     it('应该阻止链接不存在的事件', async () => {
-      const event = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const event = await createTestEvent('事件 A');
 
       const result = await EventService.addLink(event.id, 'non-existent-id');
       
@@ -96,23 +89,9 @@ describe('EventService - 双向链接功能', () => {
     });
 
     it('应该支持多个链接', async () => {
-      const eventA = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventB = await EventService.createEvent({
-        title: { fullTitle: '事件 B' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventC = await EventService.createEvent({
-        title: { fullTitle: '事件 C' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const eventA = await createTestEvent('事件 A');
+      const eventB = await createTestEvent('事件 B');
+      const eventC = await createTestEvent('事件 C');
 
       // A → B, A → C
       await EventService.addLink(eventA.id, eventB.id);
@@ -127,17 +106,8 @@ describe('EventService - 双向链接功能', () => {
 
   describe('removeLink', () => {
     it('应该成功移除链接', async () => {
-      const eventA = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventB = await EventService.createEvent({
-        title: { fullTitle: '事件 B' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const eventA = await createTestEvent('事件 A');
+      const eventB = await createTestEvent('事件 B');
 
       // 添加链接
       await EventService.addLink(eventA.id, eventB.id);
@@ -159,23 +129,9 @@ describe('EventService - 双向链接功能', () => {
 
   describe('getLinkedEvents', () => {
     it('应该正确获取正向和反向链接', async () => {
-      const eventA = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventB = await EventService.createEvent({
-        title: { fullTitle: '事件 B' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventC = await EventService.createEvent({
-        title: { fullTitle: '事件 C' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const eventA = await createTestEvent('事件 A');
+      const eventB = await createTestEvent('事件 B');
+      const eventC = await createTestEvent('事件 C');
 
       // A → B (正向)
       await EventService.addLink(eventA.id, eventB.id);
@@ -195,17 +151,8 @@ describe('EventService - 双向链接功能', () => {
 
   describe('hasLink', () => {
     it('应该正确检测链接是否存在', async () => {
-      const eventA = await EventService.createEvent({
-        title: { fullTitle: '事件 A' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
-
-      const eventB = await EventService.createEvent({
-        title: { fullTitle: '事件 B' },
-        startTime: formatTimeForStorage(new Date()),
-        endTime: formatTimeForStorage(new Date()),
-      } as any, 'test');
+      const eventA = await createTestEvent('事件 A');
+      const eventB = await createTestEvent('事件 B');
 
       // 初始状态：无链接
       expect(await EventService.hasLink(eventA.id, eventB.id)).toBe(false);

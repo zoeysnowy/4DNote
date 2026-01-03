@@ -14,7 +14,9 @@
 import React, { useEffect, useState } from 'react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
+import { EventTreeAPI } from '../../services/eventTree';
 import { EventTreeCanvas } from '../EventTree/EventTreeCanvas';
+import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 
 interface EventRelationSummaryProps {
   event: Event;                     // 当前事件
@@ -43,17 +45,27 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
   onEventClick,
   showTreeView = false,
 }) => {
+  const { events: snapshotEvents } = useEventHubSnapshot({ enabled: true });
+
   const [isExpanded, setIsExpanded] = useState(showTreeView);
   const [relationInfo, setRelationInfo] = useState<RelationInfo>({
     parentInfo: { event: null, docCount: 0, taskTotal: 0, taskCompleted: 0 },
     childInfo: { total: 0, docCount: 0, taskTotal: 0, taskCompleted: 0 },
     linkedCount: 0,
   });
-  const [allEvents, setAllEvents] = useState<Event[]>([]);
 
   // 异步加载关联信息
   useEffect(() => {
     const loadRelationInfo = async () => {
+      // 一次性加载全量事件（避免 N+1），并统一用 EventTreeAPI（ADR-001）推导父子结构
+      const events = snapshotEvents || [];
+      const eventsById = new Map(events.map(e => [e.id!, e]));
+      const tree = EventTreeAPI.buildTree(events, {
+        validateStructure: false,
+        computeBulletLevels: false,
+        sortSiblings: true,
+      });
+
       // 1. 上级事件信息
       const parentInfo = {
         event: null as Event | null,
@@ -63,19 +75,16 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       };
 
       if (event.parentEventId) {
-        const parentEvent = await EventService.getEventById(event.parentEventId);
+        const parentEvent = eventsById.get(event.parentEventId);
         if (parentEvent) {
           parentInfo.event = parentEvent;
           
           // 统计父事件的子事件（同级任务）
-          const siblingIds = parentEvent.childEventIds || [];
-          const siblings: Event[] = [];
-          for (const id of siblingIds) {
-            const sibling = await EventService.getEventById(id);
-            if (sibling && EventService.shouldShowInEventTree(sibling)) {
-              siblings.push(sibling);
-            }
-          }
+          const siblingIds = tree.childrenMap.get(parentEvent.id!) || [];
+          const siblings: Event[] = siblingIds
+            .map(id => eventsById.get(id))
+            .filter((e): e is Event => !!e)
+            .filter(e => EventService.shouldShowInEventTree(e));
           
           parentInfo.docCount = siblings.filter(e => !e.isTask).length;
           parentInfo.taskTotal = siblings.filter(e => e.isTask).length;
@@ -84,14 +93,11 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       }
 
       // 2. 下级事件信息
-      const childIds = event.childEventIds || [];
-      const children: Event[] = [];
-      for (const id of childIds) {
-        const child = await EventService.getEventById(id);
-        if (child && EventService.shouldShowInEventTree(child)) {
-          children.push(child);
-        }
-      }
+      const childIds = tree.childrenMap.get(event.id!) || [];
+      const children: Event[] = childIds
+        .map(id => eventsById.get(id))
+        .filter((e): e is Event => !!e)
+        .filter(e => EventService.shouldShowInEventTree(e));
       
       const childInfo = {
         total: children.length,
@@ -104,7 +110,7 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       let linkedCount = 0;
       if (event.linkedEventIds) {
         for (const id of event.linkedEventIds) {
-          const linkedEvent = await EventService.getEventById(id);
+          const linkedEvent = eventsById.get(id);
           if (linkedEvent && EventService.shouldShowInEventTree(linkedEvent)) {
             linkedCount++;
           }
@@ -112,21 +118,17 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       }
       if (event.backlinks) {
         for (const id of event.backlinks) {
-          const linkedEvent = await EventService.getEventById(id);
+          const linkedEvent = eventsById.get(id);
           if (linkedEvent && EventService.shouldShowInEventTree(linkedEvent)) {
             linkedCount++;
           }
         }
       }
-
-      // 加载所有事件（用于 EventTree）
-      const events = await EventService.getAllEvents();
-      setAllEvents(events);
       setRelationInfo({ parentInfo, childInfo, linkedCount });
     };
 
     loadRelationInfo();
-  }, [event]);
+  }, [event, snapshotEvents]);
 
   // 生成摘要文本
   const summaryText = (() => {
@@ -241,7 +243,7 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
         <div style={{ marginTop: '12px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e5e7eb' }}>
           <EventTreeCanvas
             rootEventId={event.id}
-            events={allEvents}
+            events={snapshotEvents || []}
             onEventClick={onEventClick}
           />
         </div>

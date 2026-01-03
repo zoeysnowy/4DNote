@@ -11,6 +11,7 @@
 import { BaseEditor, Descendant } from 'slate';
 import { ReactEditor } from 'slate-react';
 import { HistoryEditor } from 'slate-history';
+import type { EventLineNode } from '../PlanSlate/types';
 
 // ==================== 编辑器类型 ====================
 
@@ -27,6 +28,7 @@ export interface TextNode {
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
+  code?: boolean;
   color?: string;
   backgroundColor?: string;
 }
@@ -61,7 +63,7 @@ export interface TagNode {
  * DateMention - 日期提及元素
  */
 export interface DateMentionNode {
-  type: 'dateMention';
+  type: 'dateMention' | 'date-mention';
   startDate: string;      // ISO string - 用户插入时的时间
   endDate?: string;       // ISO string - 用户插入时的结束时间
   mentionOnly?: boolean;  // description 模式下的只读提及
@@ -75,11 +77,11 @@ export interface DateMentionNode {
  * EventMention - 事件提及元素 (双向链接)
  */
 export interface EventMentionNode {
-  type: 'eventMention';
+  type: 'eventMention' | 'event-mention';
   eventId: string;        // 目标事件 ID
   eventTitle: string;     // 事件标题（缓存，用于显示）
   eventEmoji?: string;    // 事件 emoji（缓存）
-  children: [{ text: '' }];
+  children: [{ text: string }];
 }
 
 /**
@@ -107,6 +109,12 @@ export interface TimestampDividerElement {
 export type SharedElement = ParagraphNode | TagNode | DateMentionNode | TimestampDividerElement;
 
 /**
+ * 全局 Slate 元素类型（聚合各编辑器元素）。
+ * 说明：这会让 RenderElementProps.element 支持 event-line / event-mention 等元素。
+ */
+export type CustomElement = SharedElement | EventMentionNode | EventLineNode;
+
+/**
  * 共享的文本类型
  */
 export type CustomText = TextNode;
@@ -129,7 +137,7 @@ export interface SlateEditorConfig {
 declare module 'slate' {
   interface CustomTypes {
     Editor: CustomEditor;
-    Element: SharedElement;
+    Element: CustomElement;
     Text: CustomText;
   }
 }

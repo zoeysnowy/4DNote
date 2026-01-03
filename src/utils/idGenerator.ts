@@ -16,6 +16,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { nanoid } from 'nanoid';
 
 /**
  * 生成事件 ID

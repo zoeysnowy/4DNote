@@ -19,8 +19,12 @@ import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 
 import { EventService } from '../../services/EventService';
+import { TagService } from '../../services/TagService';
 import { Event } from '../../types';
+import { EventTreeAPI } from '../../services/eventTree';
+import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 import { LinkedCard } from './LinkedCard';
+import { resolveDisplayTitle } from '../../utils/TitleResolver';
 import './EventTree.css';
 
 // ==================== 类型定义 ====================
@@ -35,7 +39,7 @@ export interface TreeNodeElement {
   level: number;           // 缩进层级 (0, 1, 2, ...)
   isOpen: boolean;         // 是否展开子节点
   parentEventId?: string;  // 父事件 ID
-  childEventIds?: string[]; // 子事件 ID 列表
+  childCount?: number;     // 直接子节点数量（由 parentEventId 派生）
   linkedEventIds?: string[]; // 双向链接 ID 列表
   children: Descendant[];  // Slate 文本内容
 }
@@ -126,11 +130,14 @@ const withTreeNodes = (editor: Editor) => {
 
 export interface EventTreeSlateProps {
   rootEventId: string;
+  /** Optional snapshot of events from caller; if provided, avoids internal getAllEvents() */
+  events?: Event[];
   onEventClick?: (event: Event) => void;
 }
 
 export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
   rootEventId,
+  events,
   onEventClick,
 }) => {
   const [editor] = useState(() => withTreeNodes(withReact(withHistory(createEditor()))));
@@ -138,50 +145,66 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
   const [loading, setLoading] = useState(true);
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 
+  const { events: snapshotEvents, ensureLoaded } = useEventHubSnapshot({ enabled: events == null });
+
   // ==================== 数据加载 ====================
 
   /**
-   * 递归构建树形 Slate Value
+   * ADR-001: 使用 EventTreeAPI 基于 parentEventId 构建树（避免 N+1 查询）
    */
-  const buildTreeValue = useCallback(async (
-    eventId: string,
-    level: number = 0,
-    parentEventId?: string
-  ): Promise<TreeNodeElement[]> => {
-    const event = await EventService.getEventById(eventId);
-    if (!event) return [];
+  const buildTreeValue = useCallback(async (): Promise<TreeNodeElement[]> => {
+    if (events == null) {
+      await ensureLoaded();
+    }
+    const allEvents = events ?? snapshotEvents;
+    const subtree = EventTreeAPI.getSubtree(rootEventId, allEvents);
+    if (subtree.length === 0) return [];
+
+    const tree = EventTreeAPI.buildTree(subtree, {
+      validateStructure: false,
+      computeBulletLevels: false,
+      sortSiblings: true,
+    });
 
     const nodes: TreeNodeElement[] = [];
+    const visited = new Set<string>();
 
-    // 当前节点
-    const titleText = typeof event.title === 'string'
-      ? event.title
-      : event.title?.simpleTitle || event.title?.fullTitle || '无标题';
+    const dfs = (eventId: string, level: number, parentEventId?: string) => {
+      if (visited.has(eventId)) return;
+      visited.add(eventId);
 
-    const currentNode: TreeNodeElement = {
-      type: 'tree-node',
-      eventId: event.id,
-      nodeId: `node_${event.id}`,
-      level,
-      isOpen: true,
-      parentEventId,
-      childEventIds: event.childEventIds || [],
-      linkedEventIds: event.linkedEventIds || [],
-      children: [{ text: titleText }],
+      const event = tree.nodesById.get(eventId)?._fullEvent;
+      if (!event) return;
+
+      const titleText = resolveDisplayTitle(event, {
+        getTagLabel: (tagId: string) => {
+          const tag = TagService.getTagById(tagId);
+          if (!tag) return undefined;
+          return tag.emoji ? `${tag.emoji} ${tag.name}` : tag.name;
+        },
+      });
+
+      nodes.push({
+        type: 'tree-node',
+        eventId: event.id,
+        nodeId: `node_${event.id}`,
+        level,
+        isOpen: true,
+        parentEventId,
+        childCount: (tree.childrenMap.get(event.id) || []).length,
+        linkedEventIds: event.linkedEventIds || [],
+        children: [{ text: titleText }],
+      });
+
+      const childIds = tree.childrenMap.get(eventId) || [];
+      for (const childId of childIds) {
+        dfs(childId, level + 1, eventId);
+      }
     };
 
-    nodes.push(currentNode);
-
-    // 递归加载子节点
-    if (event.childEventIds && event.childEventIds.length > 0) {
-      for (const childId of event.childEventIds) {
-        const childNodes = await buildTreeValue(childId, level + 1, event.id);
-        nodes.push(...childNodes);
-      }
-    }
-
+    dfs(rootEventId, 0, undefined);
     return nodes;
-  }, []);
+  }, [rootEventId, events, snapshotEvents, ensureLoaded]);
 
   /**
    * 初始化加载树
@@ -190,7 +213,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
     const loadTree = async () => {
       setLoading(true);
       try {
-        const nodes = await buildTreeValue(rootEventId);
+        const nodes = await buildTreeValue();
         setValue(nodes);
       } catch (err) {
         console.error('[EventTreeSlate] Failed to load tree:', err);
@@ -200,7 +223,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
     };
 
     loadTree();
-  }, [rootEventId, buildTreeValue]);
+  }, [buildTreeValue]);
 
   // ==================== 事件处理 ====================
 
@@ -324,7 +347,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
 
     if ((element as any).type === 'tree-node') {
       const treeNode = element as unknown as TreeNodeElement;
-      const hasChildren = treeNode.childEventIds && treeNode.childEventIds.length > 0;
+      const hasChildren = (treeNode.childCount || 0) > 0;
       const isCollapsed = collapsedNodes.has(treeNode.nodeId);
 
       // 加载链接的事件

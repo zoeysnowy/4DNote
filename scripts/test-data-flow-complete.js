@@ -655,16 +655,22 @@
       const childEvent2 = await EventService.getEventById(childEventId2);
 
       await assert(
-        parentEvent.childEventIds && parentEvent.childEventIds.includes(childEventId1) && parentEvent.childEventIds.includes(childEventId2),
-        '父事件包含子事件 ID',
-        { childEventIds: parentEvent.childEventIds }
-      );
-
-      await assert(
         childEvent1.parentEventId === parentEventId && childEvent2.parentEventId === parentEventId,
-        '子事件包含父事件 ID',
+        '子事件 parentEventId 指向父事件（ADR-001）',
         { child1Parent: childEvent1.parentEventId, child2Parent: childEvent2.parentEventId }
       );
+
+      const allEvents = await EventService.getAllEvents();
+      const derivedChildren = allEvents.filter(e => e.parentEventId === parentEventId);
+      const derivedChildIds = new Set(derivedChildren.map(e => e.id));
+      await assert(
+        derivedChildIds.has(childEventId1) && derivedChildIds.has(childEventId2),
+        '可通过 parentEventId 反查得到子事件（ADR-001）',
+        { derivedChildCount: derivedChildren.length }
+      );
+
+      // legacy-only: childEventIds 可能存在但不要求维护
+      await assert(true, 'childEventIds 为 legacy 字段，不作为正确性断言', { childEventIds: parentEvent.childEventIds });
     } catch (error) {
       await assert(false, '父子关系验证失败', { error: error.message });
     }
@@ -798,12 +804,13 @@
 
     // 验证数据完整性
     const event = await window.EventService.getEventById(testEventId);
+    const timerEvent = await window.EventService.getEventById(timerEventId);
     await assert(
       event.tags.includes(testTag) &&
       event.attendees[0].id === contact.id &&
-      event.childEventIds.includes(timerEventId),
-      '完整事件创建成功（包含联系人、标签、子事件）',
-      { event }
+      timerEvent.parentEventId === testEventId,
+      '完整事件创建成功（包含联系人、标签、子事件 parentEventId）',
+      { eventId: testEventId, timerEventId, timerParentEventId: timerEvent.parentEventId }
     );
 
     // 9.2 测试联动更新（更新联系人，验证事件同步）

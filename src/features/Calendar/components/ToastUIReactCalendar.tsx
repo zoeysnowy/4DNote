@@ -96,6 +96,9 @@ class ToastUIReactCalendarClass extends React.Component<Props> {
       console.error('❌ [TUI] Container ref is null!');
     }
 
+    // ✅ 关键修复：初次挂载时也要设置 calendars，否则硬刷新会出现颜色/分组丢失
+    this.setCalendars(this.props.calendars);
+
     this.setEvents(events);
     this.bindEventHandlers();
   }

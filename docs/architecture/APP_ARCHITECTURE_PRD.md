@@ -12,6 +12,58 @@
 
 ---
 
+## 📚 快速索引（PRD / Architecture 目录地图）
+
+> 目的：把“主要模块的 PRD / 架构口径”收敛到一个入口，便于后续按模块做重构与回归（避免漏文档、漏模块）。
+
+### PRD（docs/PRD）- 主要模块
+
+- App / 首页：
+  - `docs/PRD/HOMEPAGE_STATS_DASHBOARD_PRD.md`
+  - `docs/PRD/HOMEPAGE_DASHBOARD_REDESIGN_v2.md`
+- 事件与树：
+  - `docs/PRD/EVENTSERVICE_MODULE_PRD.md`
+  - `docs/PRD/EVENTTREE_MODULE_PRD.md`
+  - `docs/PRD/EVENTHISTORY_MODULE_PRD.md`
+- 日历与时间：
+  - `docs/PRD/TIMECALENDAR_MODULE_PRD.md`
+  - `docs/PRD/TIME_PICKER_AND_DISPLAY_PRD.md`
+  - `docs/PRD/TimeVisual_PRD.md`
+  - `docs/PRD/TimeLog_&_Description_PRD.md`
+  - `docs/PRD/TIMER_MODULE_PRD.md`
+- 编辑与输入系统：
+  - `docs/PRD/EVENTEDITMODAL_MODULE_PRD.md`
+  - `docs/PRD/EVENTEDITMODAL_V2_PRD.md`
+  - `docs/PRD/SLATEEDITOR_PRD.md`
+  - `docs/PRD/UnifiedMention_PRD.md`
+  - `docs/PRD/FLOATING_COMPONENTS_PRD.md`
+- 标签与联系人：
+  - `docs/PRD/TAGMANAGER_MODULE_PRD.md`
+  - `docs/PRD/CONTACTSERVICE_PRD.md`
+  - `docs/PRD/CALENDARSERVICE_PRD.md`
+  - `docs/PRD/MICROSOFTCALENDARSERVICE_PRD.md`
+- 同步机制（当前维护主入口）：
+  - `docs/PRD/ACTIONBASEDSYNCMANAGER_PRD.md`（✅ 重点维护口径）
+
+### Architecture（docs/architecture）- 关键口径
+
+- 时间与字段契约：
+  - `docs/architecture/TIME_ARCHITECTURE.md`
+  - `docs/architecture/DATEMENTION_TIMEPICKER_TIMEDISPLAY_FLOW.md`
+  - `docs/refactor/EVENT_FIELD_CONTRACT.md`（字段契约唯一口径）
+- 事件与树：
+  - `docs/architecture/EVENTSERVICE_ARCHITECTURE.md`
+  - `docs/architecture/EVENTHUB_TIMEHUB_ARCHITECTURE.md`
+  - `docs/architecture/EVENTTREE_UNIFIED_DESIGN.md`
+  - `docs/architecture/EVENTTREE_ENGINE_REFACTORING_PLAN.md`
+- 同步机制（历史/未持续维护，但仍可做背景参考）：
+  - `docs/architecture/SYNC_MECHANISM_PRD.md`
+- 存储与账号：
+  - `docs/architecture/STORAGE_ARCHITECTURE.md`
+  - `docs/architecture/MULTI_ACCOUNT_SYNC.md`
+
+---
+
 ## 0. 状态管理架构设计 (v2.22)
 
 ### 0.1 设计原则
@@ -30,6 +82,8 @@
   - 事件树推导（`parentEventId/childEventIds/bulletLevel/position`）在多处重复计算  
   - Tab/Shift+Tab 既改 Slate 又试图直接 flush/save，造成时序竞态  
   - `items/editorItems/pendingEmptyItems` 等形成**多源真相**
+
+  > ADR-001：树结构真相来自 `parentEventId`；`childEventIds` 为 legacy 字段（不维护/不依赖其正确性），不应作为结构推导输入。
 - Redux 把 `useState` 搬到 store 并不会消除这些竞态与重复推导；反而可能让"错误的耦合"在全局变得更难追踪。
 
 #### Redux 对"编辑器会话态"并不友好
@@ -253,7 +307,7 @@ if (existingEvent && existingEvent.isTimer && !existingEvent.parentEventId) {
   endTime?: string,                // 从 @date 解析 (TimeSpec: 'YYYY-MM-DD HH:mm:ss')
   isAllDay?: boolean,              // 从时间格式判断
   parentEventId?: string,          // Tab 缩进创建子事件
-  childEventIds?: string[],        // 自动维护
+  childEventIds?: string[],        // legacy（不维护/不依赖）
   eventlog: slateJson              // 完整富文本内容
 }
 ```
@@ -270,12 +324,12 @@ if (existingEvent && existingEvent.isTimer && !existingEvent.parentEventId) {
 **同步规则**:
 - ✅ 用户添加标签后，自动升级为 `'pending'`
 - ✅ 支持父子事件层级（Tab/Shift+Tab）
-- ✅ EventTree 双向关联自动维护
+- ✅ EventTree 层级支持（以 parentEventId 为结构真相）
 
 **EventTree 维护**:
 - Tab 键创建子事件：自动设置 `parentEventId`
-- 父事件自动更新 `childEventIds` 数组
-- 删除事件时自动清理父子关系
+- 子列表通过 `parentEventId` 派生/查询获得（不维护/不依赖 childEventIds）
+- 删除事件时：仅需清理子事件自身（例如置空 parentEventId 或标记删除）；子列表同样为派生
 
 **代码位置**: `PlanManager.tsx` L1500-1550, L2540-2570
 
@@ -630,56 +684,9 @@ if (!event.id || !isValidId(event.id, 'event')) {
 
 #### 4.3.1 双向关联机制
 
-**创建子事件时自动维护**:
-```typescript
-// EventService.createEvent() 自动维护父子关系
-if (finalEvent.parentEventId) {
-  const parentEvent = await this.getEventById(finalEvent.parentEventId);
-  
-  if (parentEvent) {
-    // 🔗 自动添加到父事件的 childEventIds
-    const childIds = parentEvent.childEventIds || [];
-    if (!childIds.includes(finalEvent.id)) {
-      await this.updateEvent(parentEvent.id, {
-        childEventIds: [...childIds, finalEvent.id]
-      }, true); // skipSync=true 避免递归同步
-    }
-  }
-}
-```
-
-**更新父事件时维护**:
-```typescript
-// EventService.updateEvent() 自动处理父事件变更
-if (updates.parentEventId !== undefined) {
-  // 1. 从旧父事件的 childEventIds 移除
-  if (oldParentId && oldParentId !== updates.parentEventId) {
-    await this.updateEvent(oldParentId, {
-      childEventIds: oldParent.childEventIds.filter(id => id !== eventId)
-    });
-  }
-  
-  // 2. 添加到新父事件的 childEventIds
-  if (updates.parentEventId) {
-    await this.updateEvent(newParentId, {
-      childEventIds: [...newParent.childEventIds, eventId]
-    });
-  }
-}
-```
-
-**删除事件时清理**:
-```typescript
-// EventService.deleteEvent() 自动清理父子关系
-if (event.parentEventId) {
-  const parent = await this.getEventById(event.parentEventId);
-  if (parent?.childEventIds) {
-    await this.updateEvent(parent.id, {
-      childEventIds: parent.childEventIds.filter(id => id !== eventId)
-    });
-  }
-}
-```
+**ADR-001（树结构真相）**:
+- 树结构以 `parentEventId` 为唯一真相
+- `childEventIds` 视为 legacy 兼容字段：不维护、不依赖其正确性
 
 #### 4.3.2 EventTree 数据结构
 
@@ -687,7 +694,7 @@ if (event.parentEventId) {
 interface Event {
   id: string;                    // 事件唯一 ID (UUID)
   parentEventId?: string;        // 父事件 ID
-  childEventIds?: string[];      // 子事件 ID 数组
+  childEventIds?: string[];      // legacy（不维护/不依赖）
   // ... 其他字段
 }
 ```
@@ -1013,7 +1020,7 @@ const availableCalendars = useMemo(() => {
   - 修复 PlanSlate.tsx 中的遗留代码
   - 清理所有文档中的 EventIdPool 引用
   - UUID 创建机制：`generateEventId()` 生成 `evt_<timestamp>_<random>` 格式
-  - 父子事件 EventTree 自动维护：创建/更新/删除时自动同步 `parentEventId` 和 `childEventIds`
+  - 父子事件 EventTree：以 `parentEventId` 为结构真相；不维护/不依赖 `childEventIds`
   
 **文档更新**:
 - ✅ 修正 State 数量统计（18个 → 17个）

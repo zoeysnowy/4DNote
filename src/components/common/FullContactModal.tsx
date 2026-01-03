@@ -40,9 +40,11 @@ export const FullContactModal: React.FC<FullContactModalProps> = ({
       setHasChanges(false);
 
       // 加载所有关联事件
-      const identifier = contact.email || contact.name || '';
-      const events = EventService.getEventsByContact(identifier, 9999);
-      setRelatedEvents(events);
+      void (async () => {
+        const identifier = contact.email || contact.name || '';
+        const events = await EventService.getEventsByContact(identifier, 9999);
+        setRelatedEvents(events);
+      })();
     }
   }, [visible, contact]);
 
@@ -60,10 +62,12 @@ export const FullContactModal: React.FC<FullContactModalProps> = ({
         // 重新加载完整信息（包括关联事件）
         const fullInfo = ContactService.getFullContactInfo(after);
         setEditedContact(fullInfo);
-        
-        const identifier = after.email || after.name || '';
-        const events = EventService.getEventsByContact(identifier, 9999);
-        setRelatedEvents(events);
+
+        void (async () => {
+          const identifier = after.email || after.name || '';
+          const events = await EventService.getEventsByContact(identifier, 9999);
+          setRelatedEvents(events);
+        })();
         
         // 如果是外部更新（不是自己触发的），清除 hasChanges 标志
         setHasChanges(false);

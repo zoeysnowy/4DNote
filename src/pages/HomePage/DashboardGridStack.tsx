@@ -19,6 +19,8 @@ export interface DashboardGridStackProps {
   items: GridItem[];
   /** 列数（桌面端） */
   columns?: number;
+  /** 行高（px） */
+  cellHeight?: number;
   /** 网格间距（px） */
   gap?: number;
   /** 自定义类名 */
@@ -45,6 +47,7 @@ const STORAGE_KEY = 'dashboard-layout-gridstack-v1';
 export const DashboardGridStack: React.FC<DashboardGridStackProps> = ({
   items,
   columns = 12,
+  cellHeight = 40,
   gap = 16,
   className = '',
   isDraggable = true,
@@ -61,7 +64,7 @@ export const DashboardGridStack: React.FC<DashboardGridStackProps> = ({
     // 创建 GridStack 实例 - 洞洞板模式
     const grid = GridStack.init({
       column: 24,  // 精细网格，提供更细腻的调整粒度
-      cellHeight: 40,  // 更小的行高，配合精细网格
+      cellHeight,  // 更小的行高，配合精细网格
       margin: 0,  // 去掉物理间距，改用CSS padding控制
       animate: true,
       float: true,  // 允许浮动，更灵活

@@ -34,6 +34,8 @@ async function rebuildSQLiteDatabase() {
 /**
  * 测试 SQLite 存储模块
  */
+import { formatTimeForStorage } from '../utils/timeUtils';
+
 async function testSQLiteModule() {
   console.log('🧪 SQLite Storage Module Test Started');
   console.log('═══════════════════════════════════════');
@@ -73,8 +75,8 @@ async function testSQLiteModule() {
       displayName: 'Test User',
       isActive: true,
       syncEnabled: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     await sqliteService.createAccount(testAccount);
@@ -96,8 +98,8 @@ async function testSQLiteModule() {
       canDelete: true,
       canShare: false,
       isDefault: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     await sqliteService.createCalendar(testCalendar);
@@ -109,8 +111,8 @@ async function testSQLiteModule() {
     const testEvent = {
       id: 'evt-test-001',
       title: { simpleTitle: 'SQLite Test Event' },
-      startTime: new Date().toISOString(),
-      endTime: new Date(Date.now() + 3600000).toISOString(),
+      startTime: formatTimeForStorage(new Date()),
+      endTime: formatTimeForStorage(new Date(Date.now() + 3600000)),
       isAllDay: false,
       description: 'This is a test event in SQLite',
       sourceAccountId: testAccount.id,
@@ -119,8 +121,8 @@ async function testSQLiteModule() {
       isTimer: false,
       isPlan: true,
       tags: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     await sqliteService.createEvent(testEvent);
@@ -132,8 +134,8 @@ async function testSQLiteModule() {
     const batchEvents = Array.from({ length: 5 }, (_, i) => ({
       id: `evt-batch-${i + 1}`,
       title: { simpleTitle: `Batch Event ${i + 1}` },
-      startTime: new Date(Date.now() + i * 3600000).toISOString(),
-      endTime: new Date(Date.now() + (i + 1) * 3600000).toISOString(),
+      startTime: formatTimeForStorage(new Date(Date.now() + i * 3600000)),
+      endTime: formatTimeForStorage(new Date(Date.now() + (i + 1) * 3600000)),
       isAllDay: false,
       sourceAccountId: testAccount.id,
       sourceCalendarId: testCalendar.id,
@@ -141,8 +143,8 @@ async function testSQLiteModule() {
       isTimer: false,
       isPlan: true,
       tags: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     }));
 
     const batchResult = await sqliteService.batchCreateEvents(batchEvents);
@@ -176,7 +178,7 @@ async function testSQLiteModule() {
     // Test 9: Update Event
     console.log('\n9️⃣  Testing Event Update...');
     await sqliteService.updateEvent(testEvent.id, {
-      title: 'Updated SQLite Test Event',
+      title: { simpleTitle: 'Updated SQLite Test Event' },
       description: 'This event has been updated'
     });
     const updatedEvent = await sqliteService.getEvent(testEvent.id);

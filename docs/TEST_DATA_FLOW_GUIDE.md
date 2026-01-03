@@ -234,7 +234,7 @@
 **验证点**：
 - ✅ 创建父事件
 - ✅ 创建子事件（Timer）
-- ✅ 父子关系维护（parentEventId + childEventIds）
+- ✅ 父子关系可恢复（以 parentEventId 为结构真相）
 
 **测试数据**：创建 1 个父事件 + 2 个子事件
 

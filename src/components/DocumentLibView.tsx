@@ -605,7 +605,7 @@ export const DocumentLibView: React.FC<DocumentLibViewProps> = ({
         {layout === 'preview' && renderPreview()}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .document-lib-view {
           height: 100%;
           display: flex;

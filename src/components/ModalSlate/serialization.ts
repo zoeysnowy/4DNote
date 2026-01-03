@@ -11,6 +11,7 @@ import {
   TagNode,
   DateMentionNode
 } from '../PlanSlate/types';
+import { parseLocalTimeStringOrNull } from '../../utils/timeUtils';
 
 /**
  * 将 Slate JSON（字符串或对象）转换为 Slate nodes
@@ -157,17 +158,23 @@ export function slateNodesToHtml(
             // ✅ Outlook 同步: includeTimestamps=true → 包含时间戳（供往返解析）
             let timestampPrefix = '';
             if (includeTimestamps && paraNode.createdAt) {
-              const timestamp = typeof paraNode.createdAt === 'number' 
-                ? paraNode.createdAt 
-                : new Date(paraNode.createdAt).getTime();
-              const date = new Date(timestamp);
-              const year = date.getFullYear();
-              const month = String(date.getMonth() + 1).padStart(2, '0');
-              const day = String(date.getDate()).padStart(2, '0');
-              const hours = String(date.getHours()).padStart(2, '0');
-              const minutes = String(date.getMinutes()).padStart(2, '0');
-              const seconds = String(date.getSeconds()).padStart(2, '0');
-              timestampPrefix = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}\n`;
+              const timestampMs = typeof paraNode.createdAt === 'number'
+                ? paraNode.createdAt
+                : (parseLocalTimeStringOrNull(paraNode.createdAt)?.getTime() ?? NaN);
+
+              const date = Number.isNaN(timestampMs)
+                ? new Date(paraNode.createdAt)
+                : new Date(timestampMs);
+
+              if (!Number.isNaN(date.getTime())) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                const seconds = String(date.getSeconds()).padStart(2, '0');
+                timestampPrefix = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}\n`;
+              }
             }
             
             // 🆕 保留 bullet 属性

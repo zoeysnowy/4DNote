@@ -76,7 +76,7 @@
 
 | 旧键名 | 新键名 | 位置 | 影响 |
 |--------|--------|------|------|
-| `remarkable-events` | `4dnote-events` | localStorage | EventService |
+| `remarkable-events` | （已废弃，不再使用） | localStorage | EventService |
 | `remarkable-settings` | `4dnote-settings` | localStorage | App.tsx |
 | `remarkable-global-timer` | `4dnote-global-timer` | localStorage | App.tsx |
 | `remarkable-outlook-authenticated` | `4dnote-outlook-authenticated` | localStorage | App.tsx |
@@ -119,7 +119,7 @@
 // src/services/EventService.ts
 broadcastChannel = new BroadcastChannel('remarkable-events');
 // →
-broadcastChannel = new BroadcastChannel('4dnote-events');
+broadcastChannel = new BroadcastChannel('4dnote-eventhub');
 ```
 
 ---
@@ -199,7 +199,7 @@ Write-Host "备份完成: $backupDir"
  */
 (function migrateStorageKeys() {
   const migrations = [
-    { old: 'remarkable-events', new: '4dnote-events' },
+    // 事件 key 已废弃：事件数据不再存于 localStorage 全量数组
     { old: 'remarkable-settings', new: '4dnote-settings' },
     { old: 'remarkable-global-timer', new: '4dnote-global-timer' },
     { old: 'remarkable-outlook-authenticated', new: '4dnote-outlook-authenticated' },
@@ -254,7 +254,6 @@ Set-Content electron\package.json
 ```typescript
 // src/constants/storage.ts
 export const STORAGE_KEYS = {
-  EVENTS: '4dnote-events', // remarkable-events
   SETTINGS: '4dnote-settings', // remarkable-settings
   GLOBAL_TIMER: '4dnote-global-timer', // remarkable-global-timer
   // ...
@@ -281,7 +280,7 @@ export interface StorageEvent {
 #### 2.4 更新核心服务
 批量替换:
 - `remarkableSource` → `fourDNoteSource`
-- `remarkable-events` → `4dnote-events`
+- `remarkable-events` →（已废弃，不再使用）
 - `ReMarkableDB` → `4DNoteDB`
 - `remarkable.db` → `4dnote.db`
 
@@ -392,7 +391,7 @@ Select-String -Path .\src\*.tsx,.\src\*.ts -Pattern "ReMarkable|remarkable" -Exc
 ```javascript
 // 浏览器控制台
 console.table(Object.keys(localStorage).filter(k => k.includes('4dnote')));
-console.log('Events count:', JSON.parse(localStorage.getItem('4dnote-events') || '[]').length);
+// Events count: 事件数据不再存于 localStorage 全量数组
 ```
 
 ---
@@ -439,7 +438,7 @@ $codeFiles = Get-ChildItem -Path .\src -Recurse -Include *.ts,*.tsx -Exclude nod
 $replacements = @{
   'remarkableSource' = 'fourDNoteSource'
   'remarkableUserId' = 'fourDnoteUserId'
-  'remarkable-events' = '4dnote-events'
+  # 事件 key 已废弃：事件数据不再存于 localStorage 全量数组
   'remarkable-settings' = '4dnote-settings'
   'remarkable-global-timer' = '4dnote-global-timer'
   'remarkable-outlook-authenticated' = '4dnote-outlook-authenticated'

@@ -95,6 +95,7 @@ import { CalendarPicker } from '../features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../components/EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../utils/calendarUtils';
+import { getLocationDisplayText } from '../utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../components/ModalSlate';
 import { TitleSlate } from '../components/ModalSlate/TitleSlate';
@@ -103,7 +104,7 @@ import { HeadlessFloatingToolbar } from '../components/FloatingToolbar/HeadlessF
 import { useFloatingToolbar } from '../components/FloatingToolbar/useFloatingToolbar';
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../components/PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../components/PlanSlate/serialization';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../utils/timeUtils';
 import { EventRelationSummary } from '../components/EventTree/EventRelationSummary';
 import { EventTreeViewer } from '../components/EventTree/EventTreeViewer';
 import './LogTab.css';
@@ -143,7 +144,6 @@ interface MockEvent {
   isTimer: boolean;
   parentEventId: string | null;
   // 🔗 EventTree 关系字段
-  childEventIds?: string[];
   linkedEventIds?: string[];
   backlinks?: string[];
   startTime: string | null; // TimeSpec format: "YYYY-MM-DD HH:mm:ss"
@@ -370,19 +370,17 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       }
       console.log('✅ [formData 初始化] 最终 titleText:', titleText);
       
-      // 🔧 直接从 event prop 读取 EventTree 数据（避免异步问题）
-      const childEventIds = (event as any).childEventIds || [];
+      // 🔧 直接从 event prop 读取“非结构性关联”数据（避免异步问题）
+      // ADR-001: 结构/子树来自 parentEventId 派生
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
       
       console.log('🔍🔍🔍 [formData 初始化] EventTree 数据来源分析:', {
         eventId: event.id,
-        '步骤1_event.childEventIds': (event as any).childEventIds,
-        '步骤2_event.linkedEventIds': (event as any).linkedEventIds,
-        '步骤3_event.backlinks': (event as any).backlinks,
-        '步骤4_最终childEventIds': childEventIds,
-        '步骤5_最终linkedEventIds': linkedEventIds,
-        '步骤6_最终backlinks': backlinks,
+        '步骤1_event.linkedEventIds': (event as any).linkedEventIds,
+        '步骤2_event.backlinks': (event as any).backlinks,
+        '步骤3_最终linkedEventIds': linkedEventIds,
+        '步骤4_最终backlinks': backlinks,
       });
       
       return {
@@ -392,13 +390,12 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         isTask: event.isTask || false,
         isTimer: event.isTimer || false,
         parentEventId: event.parentEventId || null,
-        childEventIds,
         linkedEventIds,
         backlinks,
         startTime: event.startTime || null,
         endTime: event.endTime || null,
         allDay: event.isAllDay || false,
-        location: event.location || '',
+        location: getLocationDisplayText(event.location) || '',
         organizer: event.organizer,
         attendees: event.attendees || [],
         eventlog: (() => {
@@ -496,7 +493,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       isTask: false,
       isTimer: false,
       parentEventId: null,
-      childEventIds: [],
       linkedEventIds: [],
       backlinks: [],
       startTime: null,
@@ -524,7 +520,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         isTask: false,
         isTimer: false,
         parentEventId: null,
-        childEventIds: [],
         linkedEventIds: [],
         backlinks: [],
         startTime: null,
@@ -568,7 +563,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     // 🔧 同步 titleRef（避免事件切换后 titleRef 与 formData 不一致）
     titleRef.current = titleText;
     
-    const childEventIds = (event as any).childEventIds || [];
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
     
@@ -579,13 +573,12 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       isTask: event.isTask || false,
       isTimer: event.isTimer || false,
       parentEventId: event.parentEventId || null,
-      childEventIds,
       linkedEventIds,
       backlinks,
       startTime: event.startTime || null,
       endTime: event.endTime || null,
       allDay: event.isAllDay || false,
-      location: event.location || '',
+      location: getLocationDisplayText(event.location) || '',
       organizer: event.organizer,
       attendees: event.attendees || [],
       eventlog: (() => {
@@ -722,9 +715,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   
   // 🔧 使用 useMemo 缓存 EventTree 数据，避免频繁序列化
   const eventTreeData = React.useMemo(() => {
-    if (!event) return { childEventIds: [], linkedEventIds: [], backlinks: [] };
+    if (!event) return { linkedEventIds: [], backlinks: [] };
     return {
-      childEventIds: (event as any).childEventIds || [],
       linkedEventIds: (event as any).linkedEventIds || [],
       backlinks: (event as any).backlinks || [],
     };
@@ -821,7 +813,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         childEventId: event.id,
         parentEventId: event.parentEventId,
         found: !!parent,
-        parentChildrenCount: parent?.childEventIds?.length || 0,
         refreshCounter  // 🔧 添加日志验证刷新
       });
       setParentEvent(prev => {
@@ -1109,40 +1100,33 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       
       // 🔧 Step 2: 处理时间格式 - 确保符合 EventService 的要求
       // EventService 要求时间格式为 "YYYY-MM-DD HH:mm:ss"（空格分隔）
-      let startTimeForStorage = formData.startTime;
-      let endTimeForStorage = formData.endTime;
+      const normalizeTimeInput = (value: any): string | undefined => {
+        if (value === null || value === undefined) return undefined;
+        if (typeof value !== 'string') return undefined;
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : undefined;
+      };
+
+      let startTimeForStorage: string | undefined = normalizeTimeInput(formData.startTime);
+      let endTimeForStorage: string | undefined = normalizeTimeInput(formData.endTime);
       
-      if (formData.startTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../utils/timeUtils');
-        try {
-          // ✅ 先尝试解析为 Date 对象（支持多种格式）
-          const startDate = parseLocalTimeString(formData.startTime);
+      if (startTimeForStorage) {
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../utils/timeUtils');
+        const startDate = parseLocalTimeStringOrNull(startTimeForStorage);
+        if (startDate) {
           startTimeForStorage = formatTimeForStorage(startDate);
-        } catch (parseError) {
-          // 降级：尝试用 new Date 解析
-          const startDate = new Date(formData.startTime);
-          if (!isNaN(startDate.getTime())) {
-            startTimeForStorage = formatTimeForStorage(startDate);
-          } else {
-            console.warn('[EventEditModalV2] 无法解析 startTime，保持原值:', formData.startTime);
-          }
+        } else {
+          console.warn('[EventEditModalV2] 无法解析 startTime，保持原值:', startTimeForStorage);
         }
       }
       
-      if (formData.endTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../utils/timeUtils');
-        try {
-          // ✅ 先尝试解析为 Date 对象（支持多种格式）
-          const endDate = parseLocalTimeString(formData.endTime);
+      if (endTimeForStorage) {
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../utils/timeUtils');
+        const endDate = parseLocalTimeStringOrNull(endTimeForStorage);
+        if (endDate) {
           endTimeForStorage = formatTimeForStorage(endDate);
-        } catch (parseError) {
-          // 降级：尝试用 new Date 解析
-          const endDate = new Date(formData.endTime);
-          if (!isNaN(endDate.getTime())) {
-            endTimeForStorage = formatTimeForStorage(endDate);
-          } else {
-            console.warn('[EventEditModalV2] 无法解析 endTime，保持原值:', formData.endTime);
-          }
+        } else {
+          console.warn('[EventEditModalV2] 无法解析 endTime，保持原值:', endTimeForStorage);
         }
       }
       
@@ -1225,6 +1209,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         parentEventId: formData.parentEventId,
         startTime: startTimeForStorage,
         endTime: endTimeForStorage,
+        // ⚠️ formData.allDay 是 UI 层 boolean（会把 undefined 映射为 false）；
+        // 这里先保留 UI 值，真正持久化时会做 contract-safe 的裁剪。
         isAllDay: formData.allDay,
         location: formData.location,
         organizer: formData.organizer,
@@ -1238,6 +1224,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         calendarIds: formData.calendarIds,
         syncMode: formData.syncMode,
       } as Event;
+
+      // ADR-001: EventTree 结构真相来自 parentEventId
 
       // 🔧 调试日志：验证同步配置
       console.log('💾 [EventEditModalV2] Saving event with sync config:', {
@@ -1275,6 +1263,126 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       // 原因：EventHub 可能缓存了 TimeCalendar 传入的临时对象
       const allEvents = await EventService.getAllEvents();
       const existingEvent = allEvents.find((e: Event) => e.id === eventId);
+
+      // ==================== Contract-safe persistence helpers ====================
+      const normalizeEmptyArrayForPersist = <T,>(
+        next: T[] | undefined,
+        prev: T[] | undefined
+      ): T[] | undefined => {
+        if (!Array.isArray(next)) return undefined;
+        if (next.length === 0 && (prev === undefined || prev === null)) return undefined;
+        return next;
+      };
+
+      const computeDefaultSyncMode = (e: Event | null | undefined): string => {
+        const isLocalEvent = e?.fourDNoteSource === true || e?.source === 'local';
+        return isLocalEvent ? 'bidirectional-private' : 'receive-only';
+      };
+
+      const buildContractSafeCreateEvent = (candidate: Event): Event => {
+        const created: any = { ...candidate };
+
+        // Optional arrays: do not persist empty arrays when original was undefined
+        created.tags = normalizeEmptyArrayForPersist(created.tags, undefined);
+        created.calendarIds = normalizeEmptyArrayForPersist(created.calendarIds, undefined);
+        created.attendees = normalizeEmptyArrayForPersist(created.attendees, undefined);
+
+        // Optional booleans: do not persist false when it is just UI default
+        created.isAllDay = created.isAllDay === true ? true : undefined;
+
+        // Optional time fields: null/empty should be undefined
+        if (!created.startTime) delete created.startTime;
+        if (!created.endTime) delete created.endTime;
+
+        return created as Event;
+      };
+
+      const buildContractSafeUpdates = (prev: Event, candidate: Event): Partial<Event> => {
+        const updates: Partial<Event> = {};
+
+        const setIfChanged = (key: keyof Event, value: any) => {
+          const oldValue = (prev as any)[key];
+          if (JSON.stringify(oldValue) !== JSON.stringify(value)) {
+            (updates as any)[key] = value;
+          }
+        };
+
+        // Title
+        setIfChanged('title', candidate.title);
+
+        // Tags (avoid persisting UI default [])
+        const tagsToPersist = normalizeEmptyArrayForPersist(candidate.tags as any, prev.tags);
+        if (tagsToPersist !== undefined) {
+          setIfChanged('tags', tagsToPersist);
+        } else if (Array.isArray(prev.tags) && prev.tags.length > 0 && Array.isArray(candidate.tags) && candidate.tags.length === 0) {
+          // Explicit clear
+          setIfChanged('tags', []);
+        }
+
+        // CalendarIds (avoid persisting UI default [])
+        const calendarIdsToPersist = normalizeEmptyArrayForPersist(candidate.calendarIds as any, (prev as any).calendarIds);
+        if (calendarIdsToPersist !== undefined) {
+          setIfChanged('calendarIds', calendarIdsToPersist);
+        } else if (Array.isArray((prev as any).calendarIds) && (prev as any).calendarIds.length > 0 && Array.isArray(candidate.calendarIds) && candidate.calendarIds.length === 0) {
+          setIfChanged('calendarIds', [] as any);
+        }
+
+        // SyncMode: avoid persisting derived default when prev.syncMode was undefined
+        const defaultSyncMode = computeDefaultSyncMode(prev);
+        const syncModeCandidate = (prev as any).syncMode === undefined && candidate.syncMode === defaultSyncMode
+          ? undefined
+          : candidate.syncMode;
+        if (syncModeCandidate !== undefined) {
+          setIfChanged('syncMode', syncModeCandidate);
+        }
+
+        // Time fields: allow explicit clear (null/empty in UI => undefined)
+        if (formData.startTime === null && (prev as any).startTime) {
+          (updates as any).startTime = undefined;
+        } else if (candidate.startTime !== undefined) {
+          setIfChanged('startTime', candidate.startTime);
+        }
+
+        if (formData.endTime === null && (prev as any).endTime) {
+          (updates as any).endTime = undefined;
+        } else if (candidate.endTime !== undefined) {
+          setIfChanged('endTime', candidate.endTime);
+        }
+
+        // isAllDay: avoid persisting false when it is just UI default
+        const isAllDayCandidate = (prev as any).isAllDay === undefined && candidate.isAllDay === false
+          ? undefined
+          : candidate.isAllDay;
+        if (isAllDayCandidate !== undefined) {
+          setIfChanged('isAllDay', isAllDayCandidate);
+        }
+
+        // Other scalar fields
+        setIfChanged('isTask', candidate.isTask);
+        setIfChanged('isTimer', candidate.isTimer);
+        setIfChanged('parentEventId', candidate.parentEventId);
+        setIfChanged('location', candidate.location);
+        setIfChanged('organizer', candidate.organizer);
+
+        // Attendees (avoid persisting UI default [])
+        const attendeesToPersist = normalizeEmptyArrayForPersist(candidate.attendees as any, (prev as any).attendees);
+        if (attendeesToPersist !== undefined) {
+          setIfChanged('attendees', attendeesToPersist);
+        } else if (Array.isArray((prev as any).attendees) && (prev as any).attendees.length > 0 && Array.isArray(candidate.attendees) && candidate.attendees.length === 0) {
+          setIfChanged('attendees', [] as any);
+        }
+
+        // Eventlog: only persist when changed; if persisted, force description regeneration
+        const prevEventlogStr = typeof (prev as any).eventlog === 'string'
+          ? (prev as any).eventlog
+          : ((prev as any).eventlog?.slateJson as string | undefined);
+        if (prevEventlogStr !== candidate.eventlog) {
+          setIfChanged('eventlog', candidate.eventlog);
+          (updates as any).description = undefined;
+        }
+
+        return updates;
+      };
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
       const isSystemChild = !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp);
@@ -1294,7 +1402,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         // 2. 调用 EventService.createEvent() 持久化
         // 3. EventService 触发 eventsUpdated 事件
         // 4. TimeCalendar 监听 eventsUpdated 自动刷新
-        result = await EventHub.createEvent(updatedEvent);
+        const eventToCreate = buildContractSafeCreateEvent(updatedEvent);
+        result = await EventHub.createEvent(eventToCreate);
         
         if (result.success) {
           console.log('✅ [EventEditModalV2] Event created via EventHub:', result.event?.id);
@@ -1335,29 +1444,30 @@ const LogTabComponent: React.FC<LogTabProps> = ({
           console.log('[EventEditModalV2] 🔄 自动设置 isTask=true (时间不完整)');
         }
         
-        result = await EventHub.updateFields(eventId, {
-          title: updatedEvent.title,
-          tags: updatedEvent.tags,
-          isTask: finalIsTask, // 🔄 使用计算后的值
-          isTimer: updatedEvent.isTimer,
-          parentEventId: updatedEvent.parentEventId,
-          startTime: updatedEvent.startTime,
-          endTime: updatedEvent.endTime,
-          isAllDay: updatedEvent.isAllDay,
-          location: updatedEvent.location,
-          organizer: updatedEvent.organizer,
-          attendees: updatedEvent.attendees,
-          eventlog: updatedEvent.eventlog,
-          description: updatedEvent.description,
-          syncStatus: updatedEvent.syncStatus, // 🔧 包含 Timer 的 local-only 状态
-          // 🔧 日历同步配置字段（单一数据结构）
-          calendarIds: updatedEvent.calendarIds,
-          syncMode: updatedEvent.syncMode,
-          // 🔧 手动子事件：标记是否自定义过配置（用于父事件更新时判断是否继承）
-          hasCustomSyncConfig: !isParentMode && !isSystemChild ? true : undefined,
-          // 🔧 父事件专用：子事件配置模板（仅在父模式下保存）
-          subEventConfig: isParentMode ? updatedEvent.subEventConfig : undefined,
-        }, {
+        const contractSafeUpdates = buildContractSafeUpdates(existingEvent, {
+          ...updatedEvent,
+          isTask: finalIsTask
+        } as Event);
+
+        // 🔧 附加：手动子事件 / 父事件字段（按原逻辑）
+        if (!isParentMode && !isSystemChild) {
+          (contractSafeUpdates as any).hasCustomSyncConfig = true;
+        }
+        if (isParentMode) {
+          // 仅在父模式下保存模板；避免把默认空模板写回
+          const subCfg: any = (updatedEvent as any).subEventConfig;
+          const hasMeaningfulSubCfg = !!(subCfg?.syncMode) || (Array.isArray(subCfg?.calendarIds) && subCfg.calendarIds.length > 0);
+          if (hasMeaningfulSubCfg) {
+            (contractSafeUpdates as any).subEventConfig = subCfg;
+          }
+        }
+
+        // syncStatus: Timer 运行中保持 local-only（若发生变化才写回）
+        if (updatedEvent.syncStatus !== existingEvent.syncStatus) {
+          (contractSafeUpdates as any).syncStatus = updatedEvent.syncStatus;
+        }
+
+        result = await EventHub.updateFields(eventId, contractSafeUpdates, {
           source: 'EventEditModalV2' // 标记更新来源，用于调试
         });
         
@@ -2040,7 +2150,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               if (index === 0 && child.text) {
                 // 移除开头的 emoji（使用完整的 emoji 正则，包括代理对）
                 // 匹配所有 emoji：基础 emoji、扩展 emoji、符号、修饰符等
-                const emojiRegex = /^(?:[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{1F1E6}-\u{1F1FF}])+\s*/u;
+                // TS target=ES5: avoid Unicode code-point escapes/`u` flag.
+                const emojiRegex = /^(?:[\uD83C-\uDBFF][\uDC00-\uDFFF]|[\u2600-\u27BF])+\s*/;
                 const textWithoutEmoji = child.text.replace(emojiRegex, '');
                 return {
                   ...child,
@@ -2134,11 +2245,15 @@ const LogTabComponent: React.FC<LogTabProps> = ({
    * 遵循 TIME_ARCHITECTURE: 处理 TimeSpec 格式 (YYYY-MM-DD HH:mm:ss)
    */
   const formatTimeDisplay = (startTime: string | null, endTime: string | null) => {
-    if (!startTime) return null;
-    
-    // TimeSpec 格式转换: 空格 → T (ISO 8601)
-    const start = new Date(startTime.replace(' ', 'T'));
-    const end = endTime ? new Date(endTime.replace(' ', 'T')) : null;
+    const primary = startTime || endTime;
+    if (!primary) return null;
+
+    // ✅ 统一走 parseLocalTimeString，避免 new Date(undefined)/时区偏移
+    const start = parseLocalTimeString(primary);
+
+    // end-only task：只展示一个时间点，不展示 range/duration
+    const canShowRange = Boolean(startTime && endTime);
+    const end = canShowRange && endTime ? parseLocalTimeString(endTime) : null;
     
     // 格式化日期和星期
     const dateStr = start.toLocaleDateString('zh-CN', { 
@@ -2175,6 +2290,16 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     // 计算时长
     const diffMs = end.getTime() - start.getTime();
     const diffMinutes = Math.floor(diffMs / (1000 * 60));
+    if (!Number.isFinite(diffMinutes) || diffMinutes <= 0) {
+      return {
+        dateStr,
+        weekday,
+        startTimeStr,
+        endTimeStr,
+        duration: null
+      };
+    }
+
     const hours = Math.floor(diffMinutes / 60);
     const minutes = diffMinutes % 60;
     
@@ -2201,9 +2326,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
    */
   const calculateTimerDuration = (timerEvent: Event): number => {
     if (!timerEvent.startTime || !timerEvent.endTime) return 0;
-    // TimeSpec 格式转换: 空格 → T (ISO 8601)
-    const start = new Date(timerEvent.startTime.replace(' ', 'T')).getTime();
-    const end = new Date(timerEvent.endTime.replace(' ', 'T')).getTime();
+    const start = parseLocalTimeString(timerEvent.startTime).getTime();
+    const end = parseLocalTimeString(timerEvent.endTime).getTime();
     return end - start;
   };
 
@@ -2235,9 +2359,14 @@ const LogTabComponent: React.FC<LogTabProps> = ({
    * 检查两个时间是否跨天
    */
   const isCrossingDay = (startTime: string, endTime: string): boolean => {
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    return start.getDate() !== end.getDate() || start.getMonth() !== end.getMonth() || start.getFullYear() !== end.getFullYear();
+    const start = parseLocalTimeStringOrNull(startTime);
+    const end = parseLocalTimeStringOrNull(endTime);
+    if (!start || !end) return false;
+    return (
+      start.getDate() !== end.getDate() ||
+      start.getMonth() !== end.getMonth() ||
+      start.getFullYear() !== end.getFullYear()
+    );
   };
 
   /**
@@ -2516,8 +2645,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               <div className="info-meta-content">
                 <span style={{ fontSize: '14px', color: '#6b7280' }}>
                   {formData.parentEventId ? '有父事件' : 
-                   (formData.childEventIds && formData.childEventIds.length > 0) 
-                     ? `${formData.childEventIds.length} 个子事件` 
+                   (childEvents.length > 0)
+                     ? `${childEvents.length} 个子事件`
                      : '独立事件'}
                 </span>
               </div>
@@ -2962,10 +3091,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                               // 直接使用 EventService 创建事件（不会关闭 Modal）
                               // 注意：根据 PRD，即使没有标题、没有标签也可以计时
                               
-                              // 🔧 转换 title 格式：formData.title 是字符串，Event.title 需要对象
-                              const titleObj = typeof formData.title === 'string' 
-                                ? { simpleTitle: formData.title }
-                                : formData.title;
+                              // ✅ 关键：不要把 Slate JSON 字符串塞进 simpleTitle。
+                              // 让 EventService.normalizeEvent/normalizeTitle 统一识别：
+                              // - 纯文本 => simpleTitle
+                              // - Slate JSON（含转义形式）=> colorTitle/fullTitle 并派生 simpleTitle
+                              const titleObj = formData.title as any;
                               
                               console.log('🔧 [Timer Start Button] 准备保存事件:', {
                                 'formData.title': formData.title,
@@ -3447,8 +3577,9 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                         {childEvents.map((timerEvent) => {
                           if (!timerEvent.startTime || !timerEvent.endTime) return null;
                           
-                          const start = new Date(timerEvent.startTime);
-                          const end = new Date(timerEvent.endTime);
+                          const start = parseLocalTimeStringOrNull(timerEvent.startTime);
+                          const end = parseLocalTimeStringOrNull(timerEvent.endTime);
+                          if (!start || !end) return null;
                           const isCrossDay = isCrossingDay(timerEvent.startTime, timerEvent.endTime);
                           
                           // 格式化日期和星期
@@ -3784,7 +3915,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* 关联区域 - 智能摘要 */}
                     {(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
+                      const hasChildren = childCount > 0;
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3793,10 +3925,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                       console.log('🔍🔍🔍 [关联信息检查] formData 当前状态:', {
                         '步骤1_formData完整对象': formData,
                         '步骤2_formData.id': formData.id,
-                        '步骤3_formData.childEventIds': formData.childEventIds,
-                        '步骤4_formData.childEventIds类型': typeof formData.childEventIds,
-                        '步骤5_formData.childEventIds是数组吗': Array.isArray(formData.childEventIds),
-                        '步骤6_formData.childEventIds长度': formData.childEventIds?.length,
+                        // ADR-001: 结构真相来自 parentEventId
+                        '步骤6b_派生childCount(parentEventId)': childCount,
                         '步骤7_hasChildren判断结果': hasChildren,
                         '步骤8_linkedEventIds': formData.linkedEventIds,
                         '步骤9_backlinks': formData.backlinks,
@@ -3845,7 +3975,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                             if (formData.parentEventId) {
                               parts.push('上级：1个');
                             }
-                            const childCount = formData.childEventIds?.length || 0;
+                            const childCount = allEvents.filter(e => (e as any).parentEventId === formData.id).length;
                             if (childCount > 0) {
                               // TODO: 统计任务完成情况
                               parts.push(`下级：${childCount}个`);
@@ -3881,7 +4011,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* EventTree 展开区域 */}
                     {showEventTree && (() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       const hasRelations = hasParent || hasChildren || hasLinked || hasBacklinks;
@@ -3903,7 +4033,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                     {/* 🔧 开发调试：始终显示关联区域（方便测试） */}
                     {!(() => {
                       const hasParent = formData.parentEventId;
-                      const hasChildren = formData.childEventIds?.length > 0;
+                      const hasChildren = allEvents.some(e => (e as any).parentEventId === formData.id);
                       const hasLinked = formData.linkedEventIds?.length > 0;
                       const hasBacklinks = formData.backlinks?.length > 0;
                       return hasParent || hasChildren || hasLinked || hasBacklinks;

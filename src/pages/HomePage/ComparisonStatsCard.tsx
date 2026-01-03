@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
 import { TimeRangeSelector, TimeRange, TimeRangeType } from './TimeRangeSelector';
 import { EventService } from '../../services/EventService';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './ComparisonStatsCard.css';
 
 interface ComparisonData {
@@ -109,8 +110,14 @@ export const ComparisonStatsCard: React.FC = () => {
 
     eventStats.forEach(stats => {
       if (stats.startTime && stats.endTime) {
-        const duration = new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
-        totalTime += duration;
+        try {
+          const duration =
+            parseLocalTimeString(stats.endTime).getTime() -
+            parseLocalTimeString(stats.startTime).getTime();
+          totalTime += duration;
+        } catch {
+          // ignore invalid time values
+        }
       }
     });
 

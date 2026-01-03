@@ -1,3 +1,4 @@
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
 /**
  * Tencent Hunyuan AI Provider
  * 
@@ -13,8 +14,6 @@
  * 优势：
  * - 免费额度：10 万 tokens/月（可持续）
  * - 中文优化：腾讯自研，中文理解强
-
-import { formatTimeForStorage } from '../../../utils/timeUtils';
  * - 速度快：国内服务器，延迟低
  * - 稳定性高：腾讯云基础设施
  * 
@@ -280,9 +279,9 @@ export class HunyuanProvider implements AIProvider {
       }
 
       // 验证时间格式
-      const startDate = new Date(parsed.startTime);
-      const endDate = new Date(parsed.endTime);
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+      const startDate = parseLocalTimeStringOrNull(parsed.startTime);
+      const endDate = parseLocalTimeStringOrNull(parsed.endTime);
+      if (!startDate || !endDate) {
         throw new Error('时间格式无效');
       }
 

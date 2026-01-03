@@ -18,7 +18,7 @@ interface TimerCardProps {
   onPause?: () => void;
   onStop?: () => void;
   onCancel?: () => void;
-  onEdit: () => void; // 打开编辑框
+  onEdit?: () => void; // 打开编辑框（可选：只读场景可不提供）
   onStart?: () => void; // 开始计时
   onStartTimeChange?: (newStartTime: number) => void; // 修改开始时间
 }

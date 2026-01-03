@@ -70,12 +70,12 @@ export class SQLiteService {
       try {
         console.log('🔍 [SQLiteService] Initializing...');
       
-      // 检?Electron 环境
-      if (typeof window === 'undefined' || !(window as any).electronAPI) {
+      // 检查 Electron 环境
+      if (typeof window === 'undefined' || !window.electronAPI) {
         throw new Error('SQLiteService requires Electron environment');
       }
       
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = window.electronAPI;
       if (!electronAPI.sqlite || !electronAPI.sqlite.available) {
         throw new Error('SQLite not available in this Electron build');
       }
@@ -717,6 +717,13 @@ export class SQLiteService {
   async createEvent(event: StorageEvent): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
+    const locationText =
+      typeof (event as any).location === 'string'
+        ? (event as any).location
+        : (event as any).location && typeof (event as any).location === 'object' && 'displayName' in (event as any).location
+          ? (event as any).location.displayName
+          : null;
+
     const stmt = this.db.prepare(`
       INSERT INTO events (
         id, full_title, color_title, simple_title,
@@ -738,7 +745,7 @@ export class SQLiteService {
       event.endTime || null,
       event.isAllDay ? 1 : 0,
       event.description || null,
-      event.location || null,
+      locationText,
       event.emoji || null,
       event.color || null,
       event.isCompleted ? 1 : 0,
@@ -822,6 +829,11 @@ export class SQLiteService {
           values.push(value.colorTitle || null);
         }
         return;
+      }
+
+      // Handle location object (LocationObject) -> TEXT
+      if (key === 'location' && value && typeof value === 'object' && (value as any).displayName) {
+        value = (value as any).displayName;
       }
       
       const columnName = fieldMapping[key] || this.camelToSnake(key);
@@ -1020,9 +1032,10 @@ export class SQLiteService {
     }
 
     // 排序
-    if (sort && typeof sort === 'object' && 'field' in sort) {
-      const direction = (sort as any).direction === 'desc' ? 'DESC' : 'ASC';
-      query += ` ORDER BY ${this.camelToSnake((sort as any).field)} ${direction}`;
+    const sortField = (sort as any)?.field;
+    if (sortField) {
+      const direction = (sort as any)?.direction === 'desc' ? 'DESC' : 'ASC';
+      query += ` ORDER BY ${this.camelToSnake(sortField)} ${direction}`;
     } else {
       query += ' ORDER BY start_time ASC';
     }
@@ -1100,6 +1113,13 @@ export class SQLiteService {
     try {
       for (const event of events) {
         try {
+          const locationText =
+            typeof (event as any).location === 'string'
+              ? (event as any).location
+              : (event as any).location && typeof (event as any).location === 'object' && 'displayName' in (event as any).location
+                ? (event as any).location.displayName
+                : null;
+
           await insertStmt.run(
             event.id,
             (typeof event.title === 'string' ? event.title : event.title?.fullTitle) || null,
@@ -1109,7 +1129,7 @@ export class SQLiteService {
             event.endTime || null,
             event.isAllDay ? 1 : 0,
             event.description || null,
-            event.location || null,
+            locationText,
             event.emoji || null,
             event.color || null,
             event.isCompleted ? 1 : 0,
@@ -1663,7 +1683,7 @@ export class SQLiteService {
       LIMIT ? OFFSET ?
     `);
 
-    const rows: any[] = stmt.all(...values, limit, offset);
+    const rows: any[] = await stmt.all(...values, limit, offset) as any[];
 
     // 查询总数
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM tags ${whereSQL}`);
@@ -1741,7 +1761,7 @@ export class SQLiteService {
       LIMIT ? OFFSET ?
     `);
 
-    const rows: any[] = stmt.all(...values, limit, offset);
+    const rows: any[] = await stmt.all(...values, limit, offset) as any[];
 
     // 查询总数
     const countStmt = this.db.prepare(`SELECT COUNT(*) as count FROM contacts WHERE ${whereSQL}`);
@@ -1783,18 +1803,25 @@ export class SQLiteService {
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
+    const source = contact.isOutlook
+      ? 'outlook'
+      : contact.isGoogle
+        ? 'google'
+        : contact.isiCloud
+          ? 'icloud'
+          : 'local';
+
     stmt.run(
       contact.id,
       contact.name,
       contact.email,
       contact.phone || null,
-      contact.avatar || null,
-      contact.source || 'local',
-      contact.sourceId || null,
+      contact.avatarUrl || null,
+      source,
+      contact.externalId || null,
       contact.createdAt,
       contact.updatedAt,
       JSON.stringify({
-        company: contact.company,
         notes: contact.notes,
         avatarUrl: contact.avatarUrl,
         organization: contact.organization,
@@ -1817,17 +1844,24 @@ export class SQLiteService {
       WHERE id = ?
     `);
 
+    const source = contact.isOutlook
+      ? 'outlook'
+      : contact.isGoogle
+        ? 'google'
+        : contact.isiCloud
+          ? 'icloud'
+          : 'local';
+
     stmt.run(
       contact.name,
       contact.email,
       contact.phone || null,
-      contact.avatar || null,
-      contact.source || 'local',
-      contact.sourceId || null,
+      contact.avatarUrl || null,
+      source,
+      contact.externalId || null,
       contact.updatedAt,
-      contact.deletedAt || null,
+      (contact as any).deletedAt || null,
       JSON.stringify({
-        company: contact.company,
         notes: contact.notes,
         avatarUrl: contact.avatarUrl,
         organization: contact.organization,

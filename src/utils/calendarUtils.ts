@@ -14,6 +14,30 @@ import { EventHub } from '../services/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
 import { CalendarService } from '../services/CalendarService';
 import dayjs from 'dayjs';
+import { resolveCalendarDateRange } from './TimeResolver';
+import { resolveDisplayTitle } from './TitleResolver';
+
+/**
+ * Get a human-readable tag label from a (possibly hierarchical) tag list.
+ */
+export function getTagLabel(tagId: string | undefined, tags: any[]): string | undefined {
+  if (!tagId) return undefined;
+
+  const findTag = (tagList: any[]): any => {
+    for (const tag of tagList) {
+      if (tag?.id === tagId) return tag;
+      if (Array.isArray(tag?.children) && tag.children.length > 0) {
+        const found = findTag(tag.children);
+        if (found) return found;
+      }
+    }
+    return null;
+  };
+
+  const tag = findTag(tags);
+  const label = (tag?.displayName || tag?.name) as string | undefined;
+  return typeof label === 'string' && label.trim().length > 0 ? label : undefined;
+}
 
 /**
  * 生成唯一ID
@@ -57,23 +81,158 @@ export function getTagColor(tagId: string | undefined, tags: any[]): string {
  * @returns 颜色值
  */
 export function getEventColor(event: Event, tags: any[]): string {
-  // 优先级 1: 如果有 tags 数组，使用第一个标签的颜色
+  // Priority 1: tags (user grouping)
   if (event.tags && event.tags.length > 0) {
     const firstTagId = event.tags[0];
     const color = getTagColor(firstTagId, tags);
-    if (color && color !== '#3788d8') {
-      return color;
-    }
+    if (color) return color;
   }
 
-  // 优先级 2: 回退到事件关联的日历分组颜色（使用新的CalendarService）
+  // Priority 2: calendarIds (external calendars)
   if (event.calendarIds && event.calendarIds.length > 0) {
     const calendarColor = CalendarService.getColor(event.calendarIds[0]);
     if (calendarColor) return calendarColor;
   }
 
-  // 优先级 3: 默认蓝色
+  // Default
   return '#3788d8';
+}
+
+function stripLeadingTimestampBlocksForCalendar(raw: string): string {
+  // Keep consistent with EventService timestamp parsing.
+  const timestampPattern = /^(\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2})(?:\s*\|\s*[^\n]+)?/;
+  const signatureLinePattern = /^\s*(?:由\s+.+?\s+)?(?:创建于|最后修改于|最后编辑于|编辑于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}.*$/;
+
+  const lines = raw.replace(/\r\n?/g, '\n').split('\n');
+  const out: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = (lines[i] ?? '').trim();
+    if (!line) {
+      i++;
+      continue;
+    }
+    if (signatureLinePattern.test(line)) {
+      i++;
+      continue;
+    }
+
+    const m = line.match(timestampPattern);
+    if (m) {
+      const rest = line.slice(m[0].length).trim();
+      if (!rest) {
+        i++;
+        continue;
+      }
+      out.push(rest);
+      i++;
+      break;
+    }
+
+    out.push(line);
+    i++;
+    break;
+  }
+
+  for (; i < lines.length; i++) {
+    const line = (lines[i] ?? '').trim();
+    if (!line) continue;
+    if (signatureLinePattern.test(line)) continue;
+    out.push(line);
+  }
+
+  return out.join('\n');
+}
+
+function normalizeCalendarDisplayTitle(raw: string): string {
+  const original = (raw ?? '').toString();
+  let trimmed = original.trim();
+  if (!trimmed) return '';
+
+  // Preserve the running-timer prefix while sanitizing the rest.
+  let prefix = '';
+  if (trimmed.startsWith('[专注中]')) {
+    prefix = '[专注中] ';
+    trimmed = trimmed.replace(/^\[专注中\]\s*/, '');
+  }
+
+  const looksLikeSlateJson = (() => {
+    const t = trimmed.trim();
+    if (!t) return false;
+    if (t === '[]') return true;
+    if (t.startsWith('[{') || t.startsWith('[ {')) return true;
+    if (t.startsWith('"[{') || t.startsWith('"[ {')) return true;
+    if (t.startsWith('{') || t.startsWith('"{')) {
+      // Sometimes a whole EventLog-like object gets stringified into title.
+      return t.includes('slateJson') || t.includes('plainText') || t.includes('children');
+    }
+    return false;
+  })();
+
+  if (looksLikeSlateJson) {
+    const extracted = extractPlainTextFromSlateJsonForCalendar(trimmed);
+    // If it looks like Slate JSON but we can't parse meaningful text,
+    // treat it as invalid and allow later fallbacks (eventlog/Untitled).
+    trimmed = extracted ? extracted : '';
+  }
+
+  if (!trimmed) return prefix.trim();
+
+  trimmed = stripLeadingTimestampBlocksForCalendar(trimmed);
+  // Month view expects a single-line title; collapse whitespace.
+  trimmed = trimmed.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+  return `${prefix}${trimmed}`.trim();
+}
+
+function extractPlainTextFromSlateJsonForCalendar(slateJson: string): string {
+  try {
+    const decode = (value: unknown, depth: number): any => {
+      if (depth <= 0) return value;
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (!trimmed) return '';
+        if (trimmed.startsWith('[') || trimmed.startsWith('{') || trimmed.startsWith('"')) {
+          try {
+            return decode(JSON.parse(trimmed), depth - 1);
+          } catch {
+            return value;
+          }
+        }
+        return value;
+      }
+      return value;
+    };
+
+    const decoded = decode(slateJson, 2);
+    const nodes = Array.isArray(decoded) ? decoded : (decoded ? [decoded] : []);
+    if (nodes.length === 0) return '';
+
+    const extractText = (node: any): string => {
+      if (!node || typeof node !== 'object') return '';
+      if (typeof node.text === 'string') return node.text;
+      if (Array.isArray(node.children)) return node.children.map(extractText).join('');
+      return '';
+    };
+
+    return nodes.map(extractText).join('\n').trim();
+  } catch {
+    return '';
+  }
+}
+
+function tryExtractSlateTextFromUnknownString(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+
+  // Heuristic: Slate JSON is typically an array of nodes.
+  if (trimmed.startsWith('[') || trimmed.startsWith('{') || trimmed.startsWith('"')) {
+    const extracted = extractPlainTextFromSlateJsonForCalendar(trimmed);
+    if (extracted) return extracted;
+  }
+
+  return '';
 }
 
 /**
@@ -169,30 +328,19 @@ export function convertToCalendarEvent(
   runningTimerEventId: string | null = null,
   isWidgetMode: boolean = false
 ): Partial<EventObject> {
-  // 🔧 修复：对于无时间的 Task，使用 createdAt 作为日期，但不设置具体时间
-  // 适用场景：Plan 页面创建的待办事项，用户未设置时间
-  let startDate: Date;
-  let endDate: Date;
-  
-  if ((!event.startTime || !event.endTime) && event.isTask) {
-    // 📋 Task 类型且无时间：只使用 createdAt 的日期部分
-    const createdDate = parseLocalTimeString(event.createdAt);
-    startDate = new Date(createdDate);
-    startDate.setHours(0, 0, 0, 0); // 只保留日期，时间设为 00:00
-    endDate = new Date(startDate); // Task 的 end 等于 start
-  } else {
-    // ⏰ 有时间的事件：使用实际的 startTime/endTime
-    startDate = parseLocalTimeString(event.startTime || event.createdAt);
-    endDate = parseLocalTimeString(event.endTime || event.createdAt);
-  }
+  // ✅ TimeResolver：统一“时间展示/日期落位”的派生逻辑（不回写 canonical 字段）
+  const { start: startDate, end: endDate } = resolveCalendarDateRange(event);
   
   // 🎨 使用getEventColor获取正确的颜色（支持多标签和日历颜色）
   const eventColor = getEventColor(event, tags);
   
-  // 📋 确定 calendarId：使用第一个标签或 calendarId
+  // 📋 calendarId 决定 ToastUI 的分组与 DOM 结构。
+  // 口径（按你的优先级）：tagId > calendarId > default。
+  // 重要：为了避免“未知 calendar”导致 month view DOM 分支差异，
+  // getCalendars() 必须注册这些 tagId（见 createCalendarsFromCalendarService 的合并逻辑）。
   let calendarId = 'default';
   if (event.tags && event.tags.length > 0) {
-    calendarId = event.tags[0]; // 使用第一个标签作为日历分组
+    calendarId = event.tags[0];
   } else if (event.calendarIds && event.calendarIds.length > 0) {
     calendarId = event.calendarIds[0];
   }
@@ -227,60 +375,28 @@ export function convertToCalendarEvent(
   const isCurrentlyRunningTimer = runningTimerEventId !== null && event.id === runningTimerEventId;
   
   // 🔧 修复：保持已有的"[专注中]"前缀，或为当前运行的timer添加前缀
-  let displayTitle: string = '';
-  
-  // ✅ 提取标题：simpleTitle 可能是纯文本或 Slate JSON，需要智能解析
-  const simpleTitle = event.title?.simpleTitle || '';
-  if (simpleTitle) {
-    try {
-      // 尝试解析为 JSON（v2.14+ 新格式：simpleTitle 存储的是 Slate JSON）
-      const nodes = JSON.parse(simpleTitle);
-      if (Array.isArray(nodes)) {
-        // 递归提取文本内容
-        const extractText = (node: any): string => {
-          if (node.text !== undefined) return node.text;
-          if (node.children) return node.children.map(extractText).join('');
-          return '';
-        };
-        displayTitle = nodes.map(extractText).join('\n').trim();
-      } else {
-        displayTitle = simpleTitle; // 不是数组，作为纯文本使用
-      }
-    } catch {
-      // 不是 JSON（旧格式或纯文本），直接使用
-      displayTitle = simpleTitle;
+  let displayTitle = resolveDisplayTitle(
+    event,
+    {
+      getTagLabel: (id: string) => getTagLabel(id, tags) || id,
+    },
+    {
+      // TimeCalendar: prefer pure text title layer; fall back to tags/eventlog if needed.
+      preferredLayer: 'simpleTitle',
+      fallback: '',
+      maxLength: 50,
     }
-  }
-  
-  // 🆕 v1.2: 如果既没有标题也没有标签，使用 eventlog 内容作为 fallback
-  if (!displayTitle && (!event.tags || event.tags.length === 0)) {
-    const eventlog = event.eventlog || (event as any).description;
-    if (eventlog) {
-      if (typeof eventlog === 'string') {
-        // 纯文本或 HTML
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = eventlog;
-        displayTitle = (tempDiv.textContent || '').substring(0, 50).trim(); // 取前50字符
-      } else if (eventlog.plainText) {
-        // EventLog 对象格式
-        displayTitle = eventlog.plainText.substring(0, 50).trim();
-      } else if (eventlog.html) {
-        // EventLog 对象格式（HTML）
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = eventlog.html;
-        displayTitle = (tempDiv.textContent || '').substring(0, 50).trim();
-      }
-      
-      if (displayTitle) {
-        displayTitle = displayTitle + (displayTitle.length >= 50 ? '...' : ''); // 添加省略号
-      }
-    }
-  }
+  );
   
   // 🆕 v1.1: 对于全天事件，优先使用 displayHint 作为标题
   const eventWithHint = event as any;
   if (eventWithHint.displayHint && event.isAllDay) {
     displayTitle = eventWithHint.displayHint; // 使用 displayHint（如"本周"、"下周 全天"等）
+  }
+
+  // Final fallback to avoid empty titles breaking layout.
+  if (!displayTitle) {
+    displayTitle = 'Untitled';
   }
   
   if (isWidgetMode) {
@@ -450,29 +566,96 @@ export function createCalendarsFromTags(tags: any[]): any[] {
 }
 
 /**
+ * Create calendars from CalendarService (external calendar grouping).
+ * This aligns event colors with `event.calendarIds`.
+ */
+export function createCalendarsFromCalendarService(sourceCalendars?: any[], tags?: any[]): any[] {
+  const defaultColor = '#3788d8';
+  const calendars = Array.isArray(sourceCalendars) && sourceCalendars.length > 0
+    ? sourceCalendars
+    : CalendarService.getCalendars(false);
+
+  const flatTags = Array.isArray(tags) ? flattenTags(tags) : [];
+
+  const isHexColor = (value: unknown): value is string =>
+    typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+
+  const base = [
+    {
+      id: 'default',
+      name: '默认日历',
+      color: '#ffffff',
+      backgroundColor: defaultColor,
+      borderColor: defaultColor,
+      dragBackgroundColor: defaultColor
+    },
+    ...calendars.map(cal => {
+      const serviceColor = typeof cal?.id === 'string' ? CalendarService.getColor(cal.id) : null;
+      const color = (serviceColor && isHexColor(serviceColor))
+        ? serviceColor
+        : (isHexColor(cal?.color) ? cal.color : defaultColor);
+      return {
+        id: cal.id,
+        name: (cal as any).displayName || cal.name || cal.id,
+        color: '#ffffff',
+        backgroundColor: color,
+        borderColor: color,
+        dragBackgroundColor: color
+      };
+    })
+  ];
+
+  // Add tag calendars so `calendarId=tagId` is always a known calendar.
+  // This keeps ToastUI month/week DOM structure consistent (only color differs).
+  const existingIds = new Set(base.map(c => c.id));
+  const tagCalendars = flatTags
+    .filter(tag => tag?.id && !existingIds.has(tag.id))
+    .map(tag => {
+      const tagColor = isHexColor(tag?.color) ? tag.color : defaultColor;
+      return {
+        id: tag.id,
+        name: tag.displayName || tag.name || tag.id,
+        color: '#ffffff',
+        backgroundColor: tagColor,
+        borderColor: tagColor,
+        dragBackgroundColor: tagColor
+      };
+    });
+
+  return [...base, ...tagCalendars];
+}
+
+/**
  * 验证事件数据完整性
  * @param event 事件对象
  * @returns 是否有效
  */
 export function validateEvent(event: Partial<Event>): boolean {
-  if (!event.title || !event.title.simpleTitle?.trim()) {
-    console.error('❌ Event validation failed: title is required');
+  // Field contract: title/startTime/endTime can be optional.
+  // Only validate time ordering when both startTime and endTime are present.
+  const hasStart = !!event.startTime;
+  const hasEnd = !!event.endTime;
+
+  // One-sided time is almost always data corruption.
+  // Exception: tasks may store a planned endTime without startTime.
+  if (hasStart !== hasEnd) {
+    const isTask = (event as any).isTask === true;
+    if (isTask && hasEnd && !hasStart) return true;
+    console.error('❌ Event validation failed: startTime and endTime must either both exist or both be absent');
     return false;
   }
-  
-  if (!event.startTime || !event.endTime) {
-    console.error('❌ Event validation failed: startTime and endTime are required');
-    return false;
-  }
-  
+
+  // No-time events (e.g., tasks) are valid.
+  if (!hasStart && !hasEnd) return true;
+
   const start = parseLocalTimeString(event.startTime);
   const end = parseLocalTimeString(event.endTime);
-  
+
   if (start.getTime() >= end.getTime()) {
     console.error('❌ Event validation failed: endTime must be after startTime');
     return false;
   }
-  
+
   return true;
 }
 

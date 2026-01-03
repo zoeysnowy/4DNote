@@ -31,6 +31,51 @@ class EventHubClass {
   private cache: Map<string, EventSnapshot> = new Map();
   private subscribers: Map<string, Array<(data: any) => void>> = new Map();
 
+  // 保持单航道：避免同一 eventId 并发冷加载造成重复 IO
+  private inFlightLoads: Map<string, Promise<Event | null>> = new Map();
+
+  private async loadSnapshotFromEventService(eventId: string): Promise<Event | null> {
+    const existing = this.inFlightLoads.get(eventId);
+    if (existing) return existing;
+
+    const loadPromise = (async () => {
+      const event = await EventService.getEventById(eventId);
+      if (!event) return null;
+
+      this.cache.set(eventId, {
+        event: { ...event },
+        lastModified: Date.now()
+      });
+
+      return { ...event };
+    })();
+
+    this.inFlightLoads.set(eventId, loadPromise);
+    try {
+      return await loadPromise;
+    } finally {
+      this.inFlightLoads.delete(eventId);
+    }
+  }
+
+  private async getSnapshotOrLoad(eventId: string): Promise<Event | null> {
+    return this.getSnapshot(eventId) ?? (await this.loadSnapshotFromEventService(eventId));
+  }
+
+  /**
+   * 获取事件快照（异步版，缓存未命中会冷加载）
+   */
+  async getSnapshotAsync(eventId: string): Promise<Event | null> {
+    return await this.getSnapshotOrLoad(eventId);
+  }
+
+  /**
+   * 预加载事件到缓存（不关心返回值）
+   */
+  async prefetch(eventId: string): Promise<void> {
+    await this.loadSnapshotFromEventService(eventId);
+  }
+
   /**
    * 获取事件快照（从缓存或 EventService）
    */
@@ -42,22 +87,11 @@ class EventHubClass {
       return { ...cached.event }; // 返回副本，防止外部修改
     }
 
-    // 2. 从 EventService 冷加载（使用 Index 查询，避免全表扫描）
-    const event = EventService.getEventById(eventId);
-    
-    if (!event) {
-      console.warn('⚠️ [EventHub] 事件不存在', { eventId });
-      return null;
-    }
-
-    // 3. 缓存快照
-    this.cache.set(eventId, {
-      event: { ...event },
-      lastModified: Date.now()
-    });
-
-    dbg('📥 [EventHub] 冷加载快照', { eventId, title: event.title });
-    return { ...event };
+    // ⚠️ EventService.getEventById 已迁移为 async。
+    // 这里保持同步语义：缓存未命中先返回 null，同时触发后台预加载。
+    // 需要强一致读请使用 getSnapshotAsync。
+    void this.loadSnapshotFromEventService(eventId);
+    return null;
   }
 
   /**
@@ -82,9 +116,8 @@ class EventHubClass {
       skipSync
     });
     
-    // 🔍 [DEBUG-TIMER] 额外日志
     // 1. 🔧 [FIX] 始终从 EventService 读取最新数据，避免缓存导致的数据不一致
-    const currentEvent = EventService.getEventById(eventId);
+    const currentEvent = await this.loadSnapshotFromEventService(eventId);
     if (!currentEvent) {
       return { success: false, error: 'Event not found' };
     }
@@ -132,6 +165,14 @@ class EventHubClass {
 
     // 5. 持久化到 EventService
     const result = await EventService.updateEvent(eventId, updatedEvent, skipSync);
+
+    // 6. 用持久化结果刷新缓存（如果有）
+    if (result.success && result.event) {
+      this.cache.set(eventId, {
+        event: { ...result.event },
+        lastModified: Date.now()
+      });
+    }
 
     // ✅ 不触发 notify，避免 ActionBasedSyncManager 循环依赖
     // ActionBasedSyncManager 应该通过其他方式（如拦截 EventService）感知变化
@@ -223,7 +264,6 @@ class EventHubClass {
    * // Tab缩进：父子关系更新必须原子化
    * const result = await EventHub.batchUpdateTransaction([
    *   { eventId: 'child_1', updates: { parentEventId: 'new_parent' } },
-   *   { eventId: 'new_parent', updates: { childEventIds: [..., 'child_1'] } },
    * ]);
    * 
    * if (!result.success) {
@@ -251,7 +291,7 @@ class EventHubClass {
     try {
       // Phase 1: 收集快照 + 验证
       for (const { eventId, updates: eventUpdates } of updates) {
-        const snapshot = this.getSnapshot(eventId);
+        const snapshot = await this.getSnapshotOrLoad(eventId);
         
         if (!snapshot) {
           throw new Error(`Event not found: ${eventId}`);
@@ -263,7 +303,7 @@ class EventHubClass {
         const updatedEvent: Event = {
           ...snapshot,
           ...eventUpdates,
-          updatedAt: new Date().toISOString()
+          updatedAt: formatTimeForStorage(new Date())
         };
         
         toUpdate.push(updatedEvent);
@@ -348,7 +388,7 @@ class EventHubClass {
     this.invalidate(eventId);
 
     // 3. 返回更新后的事件
-    const updatedEvent = this.getSnapshot(eventId);
+    const updatedEvent = await this.loadSnapshotFromEventService(eventId);
     if (!updatedEvent) {
       return { success: false, error: 'Event not found after time update' };
     }
@@ -412,7 +452,7 @@ class EventHubClass {
     dbg('🗑️ [EventHub] 删除事件', { eventId });
 
     // 1. 缓存快照（用于触发事件）
-    const deletedEvent = this.cache.get(eventId)?.event || EventService.getEventById(eventId);
+    const deletedEvent = this.cache.get(eventId)?.event || (await EventService.getEventById(eventId));
 
     // 2. 清除缓存
     this.cache.delete(eventId);
@@ -519,6 +559,8 @@ export const EventHub = new EventHubClass();
 if (typeof window !== 'undefined') {
   (window as any).debugEventHub = {
     getSnapshot: (id: string) => EventHub.getSnapshot(id),
+    getSnapshotAsync: (id: string) => EventHub.getSnapshotAsync(id),
+    prefetch: (id: string) => EventHub.prefetch(id),
     getCacheStats: () => EventHub.getCacheStats(),
     invalidate: (id: string) => EventHub.invalidate(id),
     invalidateAll: () => EventHub.invalidateAll()

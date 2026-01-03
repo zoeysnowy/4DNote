@@ -1,8 +1,10 @@
-# Timelog 字段架构说明
+# EventLog 字段架构说明（历史命名：timelog）
 
 ## 概述
 
-为了支持 ReMarkable 内部的富文本描述（包括标签、图片等），同时保持与 Outlook Calendar 的兼容性，我们引入了 `timelog` 字段。
+为了支持 ReMarkable 内部的富文本描述（包括标签、图片等），同时保持与 Outlook Calendar 的兼容性，我们引入了 `eventlog` 字段。
+
+> 兼容说明：历史文档/讨论中可能称为 `timelog`，但当前代码与数据结构中实际字段名为 `eventlog`。
 
 ## 字段设计
 
@@ -44,7 +46,7 @@ EventService.getAllEvents() 从 localStorage 加载
     ↓
 planItemsToSlateNodes() 反序列化
     ↓
-优先使用 timelog || 回退到 description
+优先使用 eventlog || 回退到 description
     ↓
 htmlToSlateFragment() 解析 HTML 为 Slate 节点
     ↓
@@ -60,7 +62,7 @@ htmlToSlateFragment() 解析 HTML 为 Slate 节点
 
 ### 保存结果
 
-**timelog (富文本 HTML)**
+**eventlog (富文本 HTML)**
 ```html
 今天完成了 <span data-type="tag" data-tag-id="work-123" data-tag-name="工作" data-tag-emoji="💼" data-mention-only="true">💼工作</span> 项目，进展顺利 <span data-type="tag" data-tag-id="personal-456" data-tag-name="个人" data-tag-emoji="🏠" data-mention-only="true">🏠个人</span>
 ```
@@ -80,7 +82,7 @@ if (node.mode === 'title') {
   item.title = fragment ? extractPlainText(fragment) : '';
   item.tags = fragment ? extractTags(fragment) : [];
 } else {
-  // 🆕 v1.8: 描述行保存到 timelog (富文本) 和 description (纯文本)
+  // 🆕 v1.8: 描述行保存到 eventlog (富文本) 和 description (纯文本)
   item.eventlog = html; // 富文本，用于 ReMarkable 内部显示
   item.description = fragment ? extractPlainText(fragment) : ''; // 纯文本，用于 Outlook 同步
 }
@@ -89,7 +91,7 @@ if (node.mode === 'title') {
 ### planItemsToSlateNodes() - L87-95
 
 ```typescript
-// 🆕 v1.8: 优先使用 timelog (富文本)，回退到 description (纯文本)
+// 🆕 v1.8: 优先使用 eventlog (富文本)，回退到 description (纯文本)
 const descriptionContent = item.eventlog || item.description;
 if (descriptionContent) {
   const descNode: EventLineNode = {
@@ -113,17 +115,17 @@ if (descriptionContent) {
 
 ### 向后兼容
 
-- **旧数据**: 如果 `timelog` 不存在，自动回退到 `description`
-- **新数据**: 同时保存 `timelog` 和 `description`，确保与 Outlook 同步兼容
+- **旧数据**: 如果 `eventlog` 不存在，自动回退到 `description`
+- **新数据**: 同时保存 `eventlog` 和 `description`，确保与 Outlook 同步兼容
 
 ### Outlook Calendar 同步
 
 - **description**: 纯文本，直接同步到 Outlook
-- **timelog**: 不同步，仅 ReMarkable 内部使用
+- **eventlog**: 不同步，仅 ReMarkable 内部使用
 
 ## 优势
 
-1. **富文本支持**: `timelog` 支持标签、图片、格式化等富文本内容
+1. **富文本支持**: `eventlog` 支持标签、图片、格式化等富文本内容
 2. **同步兼容**: `description` 提供纯文本版本，确保与 Outlook 无缝同步
 3. **数据完整**: 不丢失富文本信息，ReMarkable 内部完整展示
 4. **向后兼容**: 旧数据自动回退，无需迁移
@@ -133,15 +135,15 @@ if (descriptionContent) {
 - [ ] 在 Description 编辑器中输入文本
 - [ ] 插入 mention-only 标签（使用 # 快捷键）
 - [ ] 保存后刷新页面，验证内容保留
-- [ ] 检查 localStorage，确认 `timelog` 包含 HTML，`description` 包含纯文本
+- [ ] 检查 localStorage，确认 `eventlog` 包含 HTML，`description` 包含纯文本
 - [ ] 同步到 Outlook，验证 `description` 正确显示
 
 ## 相关文件
 
 - `src/types.ts` - Event 接口定义
 - `src/components/PlanSlate/serialization.ts` - 序列化/反序列化逻辑
-- `src/services/ActionBasedSyncManager.ts` - Outlook 同步（需确保 `timelog` 不被同步）
+- `src/services/ActionBasedSyncManager.ts` - Outlook 同步（需确保 `eventlog` 不被同步）
 
 ## 版本历史
 
-- **v1.8** (2025-11-12): 初始实现 `timelog` 字段，支持富文本描述
+- **v1.8** (2025-11-12): 初始实现 `eventlog` 字段（历史命名：timelog），支持富文本描述

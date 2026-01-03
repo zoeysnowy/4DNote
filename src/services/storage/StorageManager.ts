@@ -183,11 +183,11 @@ export class StorageManager {
       
       // 初始化 SQLite（仅在 Electron 环境）
       // ⚠️ 注意：在 Web 环境中不导入 SQLiteService，因为 better-sqlite3 是 Node.js 原生模块
-      const hasElectronAPI = typeof window !== 'undefined' && (window as any).electronAPI;
+      const hasElectronAPI = typeof window !== 'undefined' && !!window.electronAPI;
       console.log('[StorageManager] 🔍 Electron check:', {
         hasWindow: typeof window !== 'undefined',
         hasElectronAPI,
-        electronAPIKeys: hasElectronAPI ? Object.keys((window as any).electronAPI) : []
+        electronAPIKeys: hasElectronAPI && window.electronAPI ? Object.keys(window.electronAPI) : []
       });
       
       if (hasElectronAPI) {
@@ -451,7 +451,7 @@ export class StorageManager {
 
       console.log('✅ [StorageManager] 批量更新成功:', {
         count: events.length,
-        cacheSize: this.eventCache.size
+        cacheSize: this.eventCache.getStats().count
       });
     } catch (error) {
       console.error('[StorageManager] ❌ 批量更新失败:', error);
@@ -1209,6 +1209,18 @@ export class StorageManager {
     console.log('[StorageManager] Cache cleared');
   }
 
+  // ==================== Metadata (Key-Value) ====================
+
+  async getMetadata<T = any>(key: string): Promise<T | null> {
+    await this.ensureInitialized();
+    return (await this.indexedDBService.getMetadata(key)) as T | null;
+  }
+
+  async setMetadata(key: string, value: any): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.setMetadata(key, value);
+  }
+
   // ==================== Event History Methods ====================
 
   /**
@@ -1493,6 +1505,46 @@ export class StorageManager {
   async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
     await this.ensureInitialized();
     await this.indexedDBService.updateEventStats(id, updates);
+  }
+
+  /**
+   * 获取单条 EventStats
+   */
+  async getEventStats(id: string): Promise<EventStats | null> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.getEventStats(id);
+  }
+
+  /**
+   * 获取某事件的直接子节点 stats（基于 parentEventId 索引）
+   */
+  async getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.getEventStatsByParentEventId(parentEventId);
+  }
+
+  /**
+   * 统计直接子节点数量
+   */
+  async countEventStatsByParentEventId(parentEventId: string): Promise<number> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.countEventStatsByParentEventId(parentEventId);
+  }
+
+  /**
+   * 统计子树节点总数（按 rootEventId 聚合）
+   */
+  async countEventStatsByRootEventId(rootEventId: string): Promise<number> {
+    await this.ensureInitialized();
+    return await this.indexedDBService.countEventStatsByRootEventId(rootEventId);
+  }
+
+  /**
+   * 批量 upsert EventStats
+   */
+  async bulkPutEventStats(statsList: EventStats[]): Promise<void> {
+    await this.ensureInitialized();
+    await this.indexedDBService.bulkPutEventStats(statsList);
   }
 
   /**

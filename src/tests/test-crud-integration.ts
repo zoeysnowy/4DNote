@@ -140,11 +140,12 @@ export async function testCRUDIntegration() {
             const stats = await indexedDBService.getStorageStats();
             console.log('   📊 IndexedDB 统计:', stats);
             
-            if (stats.events > 0) {
-              console.error(`   ❌ IndexedDB 中还有 ${stats.events} 个事件！清理失败！`);
+            const eventsCount = stats.indexedDB?.eventsCount || 0;
+            if (eventsCount > 0) {
+              console.error(`   ❌ IndexedDB 中还有 ${eventsCount} 个事件！清理失败！`);
               // 列出前 10 个事件
               const allEvents = await indexedDBService.queryEvents({ limit: 10 });
-              console.log('   📋 前 10 个事件:', allEvents.map(e => ({ id: e.id, title: e.title.simpleTitle })));
+              console.log('   📋 前 10 个事件:', allEvents.items.map(e => ({ id: e.id, title: e.title.simpleTitle })));
             } else {
               console.log('   ✅ IndexedDB 确实为空');
             }

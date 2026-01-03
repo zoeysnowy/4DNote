@@ -132,7 +132,7 @@ export const AttachmentViewModeSwitcher: React.FC<AttachmentViewModeSwitcherProp
         ))}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .attachment-view-mode-switcher {
           padding: 12px 16px;
           background: var(--bg-secondary, #f5f5f5);

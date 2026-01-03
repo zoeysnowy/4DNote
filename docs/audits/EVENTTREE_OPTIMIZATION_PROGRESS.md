@@ -99,7 +99,7 @@ async batchUpdate(
 - 无错误回滚
 
 **新实现优势**:
-- ✅ EventTreeAPI.reparent()自动维护双向关联
+- ✅ EventTreeAPI.reparent() 仅更新 parentEventId（childEventIds 不维护/不依赖）
 - ✅ **1次批量更新**（父子关系，bulletLevel自动派生）🆕
 - ✅ 自动环检测（TreeEngine内置）
 - ✅ 错误回滚机制（Slate状态回滚）

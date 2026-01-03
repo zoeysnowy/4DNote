@@ -74,7 +74,6 @@ export interface EventMetadata {
   
   // 🔥 EventTree 字段
   parentEventId?: string;
-  childEventIds?: string[];
   
   // 🔥 Position 和 BulletLevel（用于排序和层级显示）
   bulletLevel?: number;
@@ -103,6 +102,7 @@ export interface TextNode {
   italic?: boolean;
   underline?: boolean;
   strikethrough?: boolean;
+  code?: boolean;
   color?: string;
   backgroundColor?: string; // 🆕 背景颜色
 }
@@ -124,7 +124,7 @@ export interface TagNode {
  * DateMention - 日期提及元素
  */
 export interface DateMentionNode {
-  type: 'dateMention';
+  type: 'dateMention' | 'date-mention';
   startDate: string;      // ISO string - 用户插入时的时间
   endDate?: string;       // ISO string - 用户插入时的结束时间
   mentionOnly?: boolean;  // description 模式下的只读提及

@@ -7,10 +7,10 @@
 import React, { useMemo, useEffect } from 'react';
 import { RenderElementProps, useSelected, useFocused } from 'slate-react';
 import { TagService } from '../../../services/TagService';
-import { TagElement } from '../types';
+import { TagNode } from '../types';
 
 export const TagElementComponent: React.FC<RenderElementProps> = ({ attributes, children, element }) => {
-  const tagElement = element as TagElement;
+  const tagElement = element as TagNode;
   const selected = useSelected();
   const focused = useFocused();
   

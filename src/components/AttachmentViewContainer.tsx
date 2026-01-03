@@ -252,7 +252,7 @@ export const AttachmentViewContainer: React.FC<AttachmentViewContainerProps> = (
           <p>为此事件添加图片、视频、音频或文档</p>
         </div>
 
-        <style jsx>{`
+        <style>{`
           .attachment-view-container-empty {
             display: flex;
             align-items: center;
@@ -304,7 +304,7 @@ export const AttachmentViewContainer: React.FC<AttachmentViewContainerProps> = (
         {renderCurrentView()}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .attachment-view-container {
           display: flex;
           flex-direction: column;

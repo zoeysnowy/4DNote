@@ -22,6 +22,7 @@ import { logger as AppLogger } from '../../utils/logger';
 import { EventService } from '../EventService';
 import { TagService, FlatTag } from '../TagService';
 import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 
 // SVG 图标路径（直接使用路径字符串避免 Vite 转换为 data URL）
 const ICON_PATHS = {
@@ -545,7 +546,7 @@ class UnifiedSearchIndex {
     
     // 1. 时间信息
     if (event.startTime) {
-      const date = new Date(event.startTime);
+      const date = parseLocalTimeString(event.startTime);
       const now = new Date();
       const isToday = date.toDateString() === now.toDateString();
       const isTomorrow = date.toDateString() === new Date(now.getTime() + 86400000).toDateString();
@@ -559,7 +560,7 @@ class UnifiedSearchIndex {
       }
     } else if (event.createdAt) {
       // 没有开始时间，显示创建时间
-      const created = new Date(event.createdAt);
+      const created = parseLocalTimeString(event.createdAt);
       const daysAgo = Math.floor((Date.now() - created.getTime()) / 86400000);
       if (daysAgo === 0) {
         parts.push('🆕 今天创建');
@@ -582,7 +583,7 @@ class UnifiedSearchIndex {
     }
     
     // 3. 关联事件数量
-    const linkedCount = (event.linkedEventIds?.length || 0) + (event.childEventIds?.length || 0);
+    const linkedCount = (event.linkedEventIds?.length || 0);
     if (linkedCount > 0) {
       parts.push(`🔗 ${linkedCount}`);
     }

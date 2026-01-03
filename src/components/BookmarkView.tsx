@@ -547,7 +547,7 @@ export const BookmarkView: React.FC<BookmarkViewProps> = ({
         {layout === 'masonry' && renderMasonry()}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .bookmark-view {
           height: 100%;
           display: flex;

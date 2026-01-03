@@ -71,6 +71,16 @@ export const parseLocalTimeString = (timeString: string | Date): Date => {
       return date;
     }
   }
+
+  // 🔧 处理纯日期（本地日期，不受时区影响）：YYYY-MM-DD 或 YYYY/MM/DD
+  // ⚠️ 不要用 new Date('YYYY-MM-DD')，不同环境可能按 UTC 解析导致日期偏移
+  const dateOnlyPattern = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/;
+  const dateOnlyMatch = timeString.match(dateOnlyPattern);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0);
+    return isNaN(date.getTime()) ? new Date() : date;
+  }
   
   // 解析ISO格式的时间字符串，但作为本地时间处理
   if (timeString.includes('T')) {
@@ -99,6 +109,72 @@ export const parseLocalTimeString = (timeString: string | Date): Date => {
     return new Date();
   }
   return date;
+};
+
+// ✅ 严格解析：解析失败返回 null（不默认回填当前时间）
+// 用于：派生计算/同步/持久化前校验，避免把“无效/缺失时间”当成真实时间。
+export const parseLocalTimeStringOrNull = (
+  timeString?: string | Date | null
+): Date | null => {
+  if (timeString instanceof Date) {
+    return isNaN(timeString.getTime()) ? null : timeString;
+  }
+
+  if (!timeString) return null;
+  if (typeof timeString !== 'string') return null;
+
+  const trimmed = timeString.trim();
+  if (trimmed === '') return null;
+
+  // ISO 8601（带 Z 或时区）
+  if (trimmed.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    const date = new Date(trimmed);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // TimeSpec：YYYY-MM-DD HH:mm:ss（空格分隔符）
+  const timeSpecPattern =
+    /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})\s+(\d{2}):(\d{2}):(\d{2})$/;
+  const match = trimmed.match(timeSpecPattern);
+  if (match) {
+    const [, year, month, day, hours, minutes, seconds] = match;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds)
+    );
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // 纯日期（本地日期）：YYYY-MM-DD 或 YYYY/MM/DD
+  const dateOnlyPattern = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/;
+  const dateOnlyMatch = trimmed.match(dateOnlyPattern);
+  if (dateOnlyMatch) {
+    const [, year, month, day] = dateOnlyMatch;
+    const date = new Date(Number(year), Number(month) - 1, Number(day), 0, 0, 0);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // ISO-like（无时区）：YYYY-MM-DDTHH:mm(:ss)
+  if (trimmed.includes('T')) {
+    const [datePart, fullTimePart] = trimmed.split('T');
+    const [year, month, day] = datePart.split('-').map(Number);
+    if (!year || !month || !day) return null;
+
+    const timePart = fullTimePart.split('.')[0];
+    const [hours, minutes, seconds = 0] = timePart.split(':').map(Number);
+    if ([hours, minutes, seconds].some((v) => Number.isNaN(v))) return null;
+
+    const date = new Date(year, month - 1, day, hours, minutes, seconds);
+    return isNaN(date.getTime()) ? null : date;
+  }
+
+  // 其他格式：尽量解析，但失败返回 null
+  const date = new Date(trimmed);
+  return isNaN(date.getTime()) ? null : date;
 };
 
 // 🔧 格式化时间用于input[type="time"]控件

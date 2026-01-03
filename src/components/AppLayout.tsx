@@ -2,6 +2,8 @@ import React from 'react';
 import './AppLayout.css';
 import { icons } from '../assets/icons';
 import { formatTimeForStorage } from '../utils/timeUtils';
+import { AuthStore } from '../state/authStore';
+import { SyncStatusStore } from '../state/syncStatusStore';
 import PanelIconSvg from '../assets/icons/Panel.svg';
 
 // 页面类型定义
@@ -219,6 +221,8 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange, onPanelTog
 
 // 底部状态栏组件  
 const StatusBar: React.FC = () => {
+  const isAuthenticated = React.useSyncExternalStore(AuthStore.subscribe, AuthStore.getSnapshot);
+  const syncSnapshot = React.useSyncExternalStore(SyncStatusStore.subscribe, SyncStatusStore.getSnapshot);
   const [syncStatus, setSyncStatus] = React.useState({
     lastSync: null as Date | null,
     updatedEvents: 0,
@@ -234,77 +238,11 @@ const StatusBar: React.FC = () => {
   const statusTextRef = React.useRef<HTMLSpanElement>(null);
   const lastUpdateRef = React.useRef<number>(0);
 
-  // 🔧 [FIX] 优化：只在需要时加载初始状态（仅一次）
+  // 🔧 [FIX] 优化：只监听需要弹窗的事件（sync 状态由 SyncStatusStore 统一驱动）
   React.useEffect(() => {
-    const savedSyncTime = localStorage.getItem('lastSyncTime');
-    const savedEventCount = localStorage.getItem('lastSyncEventCount');
-    const savedSyncStats = localStorage.getItem('syncStats');
-    const isAuthenticated = localStorage.getItem('4dnote-outlook-authenticated') === 'true';
-    
-    // 📊 解析同步统计信息
-    let syncStats = { syncFailed: 0, calendarCreated: 0, syncSuccess: 0 };
-    if (savedSyncStats) {
-      try {
-        syncStats = JSON.parse(savedSyncStats);
-      } catch (e) {
-        console.error('Failed to parse sync stats:', e);
-      }
-    }
-    
-    if (savedSyncTime) {
-      setSyncStatus({
-        lastSync: new Date(savedSyncTime),
-        updatedEvents: savedEventCount ? parseInt(savedEventCount) : 0,
-        isConnected: isAuthenticated, // 🔧 从 localStorage 读取实际认证状态
-        isSyncing: false,
-        ...syncStats
-      });
-    } else {
-      // 没有同步记录，但仍需要设置认证状态
-      setSyncStatus(prev => ({
-        ...prev,
-        isConnected: isAuthenticated,
-        ...syncStats
-      }));
-    }
-    
-    // 监听同步完成事件，更新状态栏时间
-    const handleSyncCompleted = (event: any) => {
-      const { timestamp } = event.detail;
-      
-      // 更新localStorage（使用本地时间格式）
-      localStorage.setItem('lastSyncTime', formatTimeForStorage(timestamp));
-      
-      // 📊 重新读取同步统计信息
-      let syncStats = { syncFailed: 0, calendarCreated: 0, syncSuccess: 0 };
-      const savedSyncStats = localStorage.getItem('syncStats');
-      if (savedSyncStats) {
-        try {
-          syncStats = JSON.parse(savedSyncStats);
-        } catch (e) {
-          console.error('Failed to parse sync stats on sync complete:', e);
-        }
-      }
-      
-      // 更新状态
-      setSyncStatus(prev => ({
-        ...prev,
-        lastSync: timestamp,
-        isSyncing: false,
-        isConnected: true, // 🔧 同步成功说明已连接
-        ...syncStats
-      }));
-    };
-    
-    window.addEventListener('action-sync-completed', handleSyncCompleted);
-    
     // 监听认证过期事件
     const handleAuthExpired = (event: any) => {
       console.error('🔴 [StatusBar] Auth expired event received:', event.detail);
-      setSyncStatus(prev => ({
-        ...prev,
-        isConnected: false
-      }));
       
       // 显示通知
       if (event.detail?.message) {
@@ -313,6 +251,7 @@ const StatusBar: React.FC = () => {
     };
     
     window.addEventListener('auth-expired', handleAuthExpired);
+
     
     // 🔧 [NEW] 监听日历降级事件
     const handleCalendarFallback = (event: any) => {
@@ -328,11 +267,34 @@ const StatusBar: React.FC = () => {
     window.addEventListener('calendarFallback', handleCalendarFallback);
     
     return () => {
-      window.removeEventListener('action-sync-completed', handleSyncCompleted);
       window.removeEventListener('auth-expired', handleAuthExpired);
       window.removeEventListener('calendarFallback', handleCalendarFallback);
     };
   }, []); // 空依赖，只运行一次
+
+  // 认证状态变化：仅更新 UI 展示（auth-state-changed 的监听已在 App 统一处理）
+  React.useEffect(() => {
+    setSyncStatus(prev => ({ ...prev, isConnected: isAuthenticated }));
+  }, [isAuthenticated]);
+
+  React.useEffect(() => {
+    setSyncStatus(prev => ({
+      ...prev,
+      lastSync: syncSnapshot.lastSync,
+      updatedEvents: syncSnapshot.updatedEvents,
+      isSyncing: syncSnapshot.isSyncing,
+      syncFailed: syncSnapshot.syncStats.syncFailed,
+      calendarCreated: syncSnapshot.syncStats.calendarCreated,
+      syncSuccess: syncSnapshot.syncStats.syncSuccess
+    }));
+  }, [
+    syncSnapshot.lastSync,
+    syncSnapshot.updatedEvents,
+    syncSnapshot.isSyncing,
+    syncSnapshot.syncStats.syncFailed,
+    syncSnapshot.syncStats.calendarCreated,
+    syncSnapshot.syncStats.syncSuccess
+  ]);
 
   // 格式化同步状态：使用 useMemo 缓存，避免每次渲染都计算
   const formatSyncStatus = React.useCallback((

@@ -17,6 +17,8 @@
 /**
  * 测试 StorageManager
  */
+import { formatTimeForStorage } from '../utils/timeUtils';
+
 async function testStorageManager() {
   console.log('🧪 StorageManager Integration Test Started');
   console.log('═══════════════════════════════════════');
@@ -48,8 +50,8 @@ async function testStorageManager() {
     const testEvent = {
       id: 'evt-manager-test-001',
       title: { simpleTitle: 'StorageManager Test Event' },
-      startTime: new Date().toISOString(),
-      endTime: new Date(Date.now() + 3600000).toISOString(),
+      startTime: formatTimeForStorage(new Date()),
+      endTime: formatTimeForStorage(new Date(Date.now() + 3600000)),
       isAllDay: false,
       description: 'This event tests the dual-write strategy',
       location: 'Test Location',
@@ -57,8 +59,8 @@ async function testStorageManager() {
       isTimer: false,
       isPlan: true,
       tags: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
 
     const createdEvent = await storageManager.createEvent(testEvent);
@@ -70,15 +72,15 @@ async function testStorageManager() {
       id: `evt-batch-${i + 1}`,
       title: { simpleTitle: `Batch Event ${i + 1}` },
       description: `This is batch event number ${i + 1} for testing search`,
-      startTime: new Date(Date.now() + i * 3600000).toISOString(),
-      endTime: new Date(Date.now() + (i + 1) * 3600000).toISOString(),
+      startTime: formatTimeForStorage(new Date(Date.now() + i * 3600000)),
+      endTime: formatTimeForStorage(new Date(Date.now() + (i + 1) * 3600000)),
       isAllDay: false,
       isCompleted: false,
       isTimer: false,
       isPlan: true,
       tags: [],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     }));
 
     const batchResult = await storageManager.batchCreateEvents(batchEvents);
@@ -103,8 +105,8 @@ async function testStorageManager() {
     
     const filteredQuery = await storageManager.queryEvents({
       filters: {
-        startTime: now.toISOString(),
-        endTime: tomorrow.toISOString()
+        startTime: formatTimeForStorage(now),
+        endTime: formatTimeForStorage(tomorrow)
       },
       limit: 10
     });

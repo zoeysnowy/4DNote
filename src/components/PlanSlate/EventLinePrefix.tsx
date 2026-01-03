@@ -12,6 +12,7 @@ import { Transforms, Editor } from 'slate';
 import { EventLineNode } from './types';
 import { EventService } from '../../services/EventService';
 import { formatTimeForStorage } from '../../utils/timeUtils';
+import { resolveCheckState } from '../../utils/TimeResolver';
 
 export interface EventLinePrefixProps {
   element: EventLineNode;
@@ -24,15 +25,10 @@ const EventLinePrefixComponent: React.FC<EventLinePrefixProps> = ({ element, onS
   const metadata = element.metadata || {};
   
   // ✅ 直接从 metadata 计算 checked 状态，不调用 EventService
-  const lastChecked = metadata.checked && metadata.checked.length > 0 
-    ? metadata.checked[metadata.checked.length - 1] 
-    : null;
-  const lastUnchecked = metadata.unchecked && metadata.unchecked.length > 0 
-    ? metadata.unchecked[metadata.unchecked.length - 1] 
-    : null;
-  
-  // 比较最后的时间戳
-  const isCompleted = lastChecked && (!lastUnchecked || lastChecked > lastUnchecked);
+  const { isChecked: isCompleted } = resolveCheckState({
+    checked: (metadata as any).checked,
+    unchecked: (metadata as any).unchecked,
+  } as any);
   
   // 🆕 根据 checkType 判断是否显示 checkbox
   const checkType = metadata.checkType;

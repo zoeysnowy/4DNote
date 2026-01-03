@@ -155,13 +155,16 @@ const CalendarSync: React.FC<CalendarSyncProps> = ({
       }
       
       const tokens = await tokenResponse.json();
-      // 保存令牌到localStorage
       const expiresAt = Date.now() + (tokens.expires_in * 1000);
-      localStorage.setItem('ms-access-token', tokens.access_token);
-      if (tokens.refresh_token) {
-        localStorage.setItem('ms-refresh-token', tokens.refresh_token);
+
+      // ✅ 令牌持久化由 service 负责（IndexedDB metadata），UI 不直接写 localStorage
+      if (microsoftService && typeof (microsoftService as any).setAuthTokens === 'function') {
+        await (microsoftService as any).setAuthTokens({
+          accessToken: tokens.access_token,
+          refreshToken: tokens.refresh_token,
+          expiresAt
+        });
       }
-      localStorage.setItem('ms-token-expires', expiresAt.toString());
       
       // 同步到Electron主进程
       if ((window as any).electronAPI.setAuthTokens) {
@@ -173,11 +176,6 @@ const CalendarSync: React.FC<CalendarSyncProps> = ({
       }
       
       setSyncMessage('✅ 认证成功！正在加载数据...');
-      
-      // 重新加载MicrosoftCalendarService的令牌
-      if (microsoftService && typeof (microsoftService as any).reloadToken === 'function') {
-        await (microsoftService as any).reloadToken();
-      }
       
       // 加载用户信息
       await loadUserInfo();

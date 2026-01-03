@@ -33,6 +33,19 @@ export default defineConfig({
     tsconfigPaths(),
     ignoreBetterSqlite3(),
   ],
+  test: {
+    environment: 'jsdom',
+    globals: true,
+    setupFiles: ['src/test/vitest.setup.ts'],
+    // Keep Vitest defaults and also exclude vendored upstream tests under tui.calendar.
+    // (Some upstream tests rely on Jest globals / missing deps.)
+    exclude: [
+      '**/node_modules/**',
+      'build/**',
+      'dist/**',
+      'src/lib/tui.calendar/**',
+    ],
+  },
   server: {
     port: 3000,
     open: true,

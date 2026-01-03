@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
 import { TimeRange } from './TimeRangeSelector';
 import { EventService } from '../../services/EventService';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './ComparisonCard.css';
 
 export interface ComparisonCardProps {
@@ -76,6 +77,18 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
     const loadComparisonData = async () => {
       setLoading(true);
       try {
+        const getDurationMs = (stats: any): number => {
+          if (!stats?.startTime || !stats?.endTime) return 0;
+          try {
+            return (
+              parseLocalTimeString(stats.endTime).getTime() -
+              parseLocalTimeString(stats.startTime).getTime()
+            );
+          } catch {
+            return 0;
+          }
+        };
+
         const formatDate = (date: Date) => {
           const year = date.getFullYear();
           const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -92,10 +105,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
         let currentValue = 0;
         if (dimension === 'duration') {
           currentValue = currentStats.reduce((sum, stats) => {
-            if (stats.startTime && stats.endTime) {
-              return sum + (new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime());
-            }
-            return sum;
+            return sum + getDurationMs(stats);
           }, 0);
         } else if (dimension === 'count') {
           currentValue = currentStats.length;
@@ -103,10 +113,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
           // 简化的专注力计算
           const avgDuration = currentStats.length > 0
             ? currentStats.reduce((sum, stats) => {
-                if (stats.startTime && stats.endTime) {
-                  return sum + (new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime());
-                }
-                return sum;
+                return sum + getDurationMs(stats);
               }, 0) / currentStats.length / (1000 * 60)
             : 0;
           currentValue = Math.min(100, avgDuration * 0.5);
@@ -131,20 +138,14 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
           let compareValue = 0;
           if (dimension === 'duration') {
             compareValue = compareStats.reduce((sum, stats) => {
-              if (stats.startTime && stats.endTime) {
-                return sum + (new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime());
-              }
-              return sum;
+              return sum + getDurationMs(stats);
             }, 0);
           } else if (dimension === 'count') {
             compareValue = compareStats.length;
           } else if (dimension === 'focusScore') {
             const avgDuration = compareStats.length > 0
               ? compareStats.reduce((sum, stats) => {
-                  if (stats.startTime && stats.endTime) {
-                    return sum + (new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime());
-                  }
-                  return sum;
+                  return sum + getDurationMs(stats);
                 }, 0) / compareStats.length / (1000 * 60)
               : 0;
             compareValue = Math.min(100, avgDuration * 0.5);

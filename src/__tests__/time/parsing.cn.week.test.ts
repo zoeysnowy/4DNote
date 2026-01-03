@@ -12,9 +12,8 @@ describe('TimeParsingService - Chinese week windows', () => {
     expect(spec!.window).toBeTruthy();
     expect(spec!.window!.label).toBe('下周');
 
-    // formatTimeForStorage returns local naive string "YYYY-MM-DDTHH:mm:ss"
-    expect(spec!.window!.start).toBe('2025-11-10T00:00:00');
-    expect(spec!.window!.end).toBe('2025-11-16T23:59:59');
+    expect(spec!.window!.start).toBe('2025-11-10 00:00:00');
+    expect(spec!.window!.end).toBe('2025-11-16 23:59:59');
   });
 
   it('parses "本周" as current week [Mon..Sun] window', () => {
@@ -22,8 +21,8 @@ describe('TimeParsingService - Chinese week windows', () => {
     const spec = parseToTimeSpec('本周', now, policy);
     expect(spec).toBeTruthy();
     expect(spec!.kind).toBe('window');
-    expect(spec!.window!.start).toBe('2025-11-03T00:00:00');
-    expect(spec!.window!.end).toBe('2025-11-09T23:59:59');
+    expect(spec!.window!.start).toBe('2025-11-03 00:00:00');
+    expect(spec!.window!.end).toBe('2025-11-09 23:59:59');
   });
 
   it('parses "上周" as previous week [Mon..Sun] window', () => {
@@ -31,7 +30,7 @@ describe('TimeParsingService - Chinese week windows', () => {
     const spec = parseToTimeSpec('上周', now, policy);
     expect(spec).toBeTruthy();
     expect(spec!.kind).toBe('window');
-    expect(spec!.window!.start).toBe('2025-10-27T00:00:00');
-    expect(spec!.window!.end).toBe('2025-11-02T23:59:59');
+    expect(spec!.window!.start).toBe('2025-10-27 00:00:00');
+    expect(spec!.window!.end).toBe('2025-11-02 23:59:59');
   });
 });

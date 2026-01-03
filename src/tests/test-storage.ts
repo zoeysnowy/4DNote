@@ -5,6 +5,7 @@
 
 import { indexedDBService } from '../services/storage';
 import type { StorageEvent, Account, Calendar } from '../services/storage/types';
+import { formatTimeForStorage } from '../utils/timeUtils';
 
 export async function testStorageModule() {
   console.log('========================================');
@@ -25,8 +26,8 @@ export async function testStorageModule() {
       provider: 'outlook',
       displayName: 'Test User',
       syncEnabled: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
     
     await indexedDBService.createAccount(testAccount);
@@ -42,8 +43,8 @@ export async function testStorageModule() {
       name: 'Test Calendar',
       color: '#3B82F6',
       isDefault: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
     
     await indexedDBService.createCalendar(testCalendar);
@@ -57,14 +58,14 @@ export async function testStorageModule() {
       id: 'test-event-1',
       title: { simpleTitle: 'Test Event' },
       description: 'This is a test event',
-      startTime: new Date('2025-12-01T10:00:00').toISOString(),
-      endTime: new Date('2025-12-01T11:00:00').toISOString(),
+      startTime: formatTimeForStorage(new Date(2025, 11, 1, 10, 0, 0)),
+      endTime: formatTimeForStorage(new Date(2025, 11, 1, 11, 0, 0)),
       sourceAccountId: testAccount.id,
       sourceCalendarId: testCalendar.id,
       source: 'local',
       tags: ['test', 'demo'],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date())
     };
     
     await indexedDBService.createEvent(testEvent);
@@ -79,11 +80,11 @@ export async function testStorageModule() {
       batchEvents.push({
         id: `batch-event-${i}`,
         title: { simpleTitle: `Batch Event ${i}` },
-        startTime: new Date(Date.now() + i * 3600000).toISOString(),
-        endTime: new Date(Date.now() + (i + 1) * 3600000).toISOString(),
+        startTime: formatTimeForStorage(new Date(Date.now() + i * 3600000)),
+        endTime: formatTimeForStorage(new Date(Date.now() + (i + 1) * 3600000)),
         source: 'local',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        createdAt: formatTimeForStorage(new Date()),
+        updatedAt: formatTimeForStorage(new Date())
       });
     }
     

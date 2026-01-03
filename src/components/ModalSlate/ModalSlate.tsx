@@ -60,6 +60,9 @@ import {
   parseHTMLBullets,
   moveParagraphUp as slatMoveParagraphUp,
   moveParagraphDown as slateMoveParagraphDown,
+
+  // Enter 行为：段内换行（不创建新 paragraph）
+  insertSoftBreak,
   
   // 序列化
   jsonToSlateNodes as slateJsonToNodes,
@@ -82,6 +85,7 @@ type CustomText = TextNode;
 
 // 导入 EventHistoryService 获取创建时间
 import { EventHistoryService } from '../../services/EventHistoryService';
+import { EventService } from '../../services/EventService';
 import { formatTimeForStorage } from '../../utils/timeUtils';
 
 // 样式复用 PlanSlate 的样式
@@ -360,7 +364,7 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
       
       console.log('[ModalSlate] ✅ 解析成功:', {
         nodeCount: nodes.length,
-        firstNodeType: nodes[0]?.type,
+        firstNodeType: (nodes[0] as any)?.type,
         hasTimestamp: nodes.some((n: any) => n.type === 'paragraph' && n.createdAt)
       });
     
@@ -374,7 +378,7 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
         });
         
         // ✅ Block-Level: 检查第一个 paragraph 是否有 createdAt
-        const firstParagraph = nodes.find((node: any) => node.type === 'paragraph');
+        const firstParagraph = nodes.find((node: any) => node.type === 'paragraph') as any;
         const hasTimestamp = !!(firstParagraph && firstParagraph.createdAt);
         
         if (hasActualContent && !hasTimestamp) {
@@ -524,47 +528,53 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
       // 如果有内容但第一个 paragraph 没有 timestamp，添加 createdAt
       if (hasActualContent && !hasTimestamp && firstParagraph) {
         console.log('[ModalSlate] 有内容但无 Block-Level timestamp，添加 createdAt');
-        
-        // 从 EventHistoryService 或 event 获取创建时间
-        const createLogs = EventHistoryService.queryHistory({
-          eventId: parentEventId,
-          operations: ['create'],
-          limit: 1
-        });
-        
-        let createTime: Date | null = null;
-        
-        if (createLogs[0]) {
-          createTime = new Date(createLogs[0].timestamp);
-          console.log('[ModalSlate] 从 EventHistory 获取创建时间:', createTime);
-        } else {
-          // Fallback: 使用 event.createdAt
-          const event = EventService.getEventById(parentEventId);
-          if (event?.createdAt) {
-            createTime = new Date(event.createdAt);
-            console.log('[ModalSlate] 使用 event.createdAt:', event.createdAt);
-          } else if (event?.updatedAt) {
-            createTime = new Date(event.updatedAt);
-            console.log('[ModalSlate] fallback 到 event.updatedAt:', event.updatedAt);
-          }
-        }
-        
-        if (createTime) {
-          // ✅ 为第一个 paragraph 添加 createdAt
-          const path = ReactEditor.findPath(editor, firstParagraph);
-          Editor.withoutNormalizing(editor, () => {
-            Transforms.setNodes(
-              editor,
-              { createdAt: createTime!.getTime() } as any,
-              { at: path }
-            );
+
+        void (async () => {
+          // 从 EventHistoryService 或 event 获取创建时间
+          const createLogs = EventHistoryService.queryHistory({
+            eventId: parentEventId,
+            operations: ['create'],
+            limit: 1
           });
-          
-          // 更新 timestampService
-          timestampServiceRef.current.updateLastEditTime(parentEventId, createTime);
-          
-          console.log('[ModalSlate] Block-Level timestamp 初始化完成');
-        }
+
+          let createTime: Date | null = null;
+
+          if (createLogs[0]) {
+            createTime = new Date(createLogs[0].timestamp);
+            console.log('[ModalSlate] 从 EventHistory 获取创建时间:', createTime);
+          } else {
+            // Fallback: 使用 event.createdAt / event.updatedAt
+            try {
+              const event = await EventService.getEventById(parentEventId);
+              if (event?.createdAt) {
+                createTime = new Date(event.createdAt);
+                console.log('[ModalSlate] 使用 event.createdAt:', event.createdAt);
+              } else if (event?.updatedAt) {
+                createTime = new Date(event.updatedAt);
+                console.log('[ModalSlate] fallback 到 event.updatedAt:', event.updatedAt);
+              }
+            } catch (err) {
+              console.warn('[ModalSlate] 读取 event 创建时间失败:', err);
+            }
+          }
+
+          if (createTime) {
+            // ✅ 为第一个 paragraph 添加 createdAt
+            const path = ReactEditor.findPath(editor, firstParagraph);
+            Editor.withoutNormalizing(editor, () => {
+              Transforms.setNodes(
+                editor,
+                { createdAt: createTime.getTime() } as any,
+                { at: path }
+              );
+            });
+
+            // 更新 timestampService
+            timestampServiceRef.current?.updateLastEditTime(parentEventId, createTime);
+
+            console.log('[ModalSlate] Block-Level timestamp 初始化完成');
+          }
+        })();
       }
       // ✅ 如果已有 timestamp，更新 timestampService
       else if (hasTimestamp && firstParagraph) {
@@ -728,7 +738,8 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
             <div style={{ 
               paddingLeft: isBullet ? `${bulletLevel * 24 + 18}px` : '0',
               position: 'relative',
-              zIndex: 2
+              zIndex: 2,
+              whiteSpace: 'pre-wrap'
             }}>
               {props.children}
             </div>
@@ -921,7 +932,7 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
           
           if (paraMatch) {
             const [node, path] = paraMatch as [any, any];
-            const paraText = Node.string(node).trim();
+            const paraText = SlateNode.string(node).trim();
             
             // 用户输入了内容，为当前 paragraph 添加 createdAt
             if (paraText && !node.createdAt) {
@@ -1027,31 +1038,32 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
       });
     }
     
-    // ✅ Block-Level: Enter 键检查是否需要为新段落添加 timestamp
-    if (event.key === 'Enter' && !event.shiftKey && enableTimestamp && timestampServiceRef.current && parentEventId) {
-      // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
-      queueMicrotask(() => {
-        const shouldInsert = timestampServiceRef.current!.shouldInsertTimestamp({
-          contextId: parentEventId,
-          eventId: parentEventId
-        });
-        
-        if (shouldInsert) {
-          console.log('[ModalSlate] 回车后为新段落添加 Block-Level timestamp（距上次编辑 ≥ 5 分钟）');
-          
+    // ✅ ModalSlate EventLog：Enter 默认“段内换行”，避免换行就 split 成新 paragraph（新 node）
+    // - Ctrl/Meta+Enter：保留创建新段落（新时间块）的能力
+    // - Bullet 段落：仍按 bullet 规则处理（Enter 继承/空行取消）
+    if (event.key === 'Enter' && !event.shiftKey) {
+      const scheduleTimestampIfNeeded = () => {
+        if (!enableTimestamp || !timestampServiceRef.current || !parentEventId) return;
+
+        queueMicrotask(() => {
+          const shouldInsert = timestampServiceRef.current!.shouldInsertTimestamp({
+            contextId: parentEventId,
+            eventId: parentEventId,
+          });
+
+          if (!shouldInsert) return;
+
           const { selection } = editor;
           if (!selection) return;
-          
-          // 查找当前 paragraph
+
           try {
-            const [paraMatch] = Editor.nodes(editor, {
+            const [match] = Editor.nodes(editor, {
               at: selection,
               match: (n: any) => !Editor.isEditor(n) && SlateElement.isElement(n) && n.type === 'paragraph',
             });
-            
-            if (paraMatch) {
-              const [node, path] = paraMatch as [any, any];
-              // 如果当前 paragraph 还没有 createdAt，添加之
+
+            if (match) {
+              const [node, path] = match as [any, any];
               if (!node.createdAt) {
                 timestampServiceRef.current!.insertBlockLevelTimestamp(editor, path, parentEventId);
               }
@@ -1059,8 +1071,36 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
           } catch (error) {
             console.error('[ModalSlate] 添加 Block-Level timestamp 失败:', error);
           }
+        });
+      };
+
+      const [paraMatch] = Editor.nodes(editor, {
+        match: (n: any) => !Editor.isEditor(n) && SlateElement.isElement(n) && (n as any).type === 'paragraph',
+      });
+      const para = (paraMatch?.[0] as any) || null;
+      const isBullet = !!para?.bullet;
+
+      if (isBullet) {
+        // Bullet：保持 OneNote 风格 Enter 行为
+        const handled = handleBulletEnter(editor);
+        if (handled) {
+          event.preventDefault();
+          scheduleTimestampIfNeeded();
+          return;
         }
-      }, 0);
+        // 空 bullet 行：handleBulletEnter 会取消 bullet 并返回 false，这里交给默认 Enter 创建新行
+        scheduleTimestampIfNeeded();
+      } else {
+        // 普通段落：Enter = 软换行（不创建新段落）
+        if (!event.ctrlKey && !event.metaKey) {
+          event.preventDefault();
+          insertSoftBreak(editor);
+          return;
+        }
+
+        // Ctrl/Meta+Enter：创建新段落（允许新时间块），并按规则补 timestamp
+        scheduleTimestampIfNeeded();
+      }
     }
     
     // Shift+Alt+↑/↓ - 移动段落
@@ -1168,7 +1208,7 @@ const ModalSlateComponent: React.ForwardRefRenderFunction<ModalSlateRef, ModalSl
         type: 'eventMention',
         eventId: item.id,
         eventTitle: item.title,
-        eventEmoji: item.emoji,
+        eventEmoji: typeof item.icon === 'string' ? item.icon : undefined,
         children: [{ text: '' }]
       };
       

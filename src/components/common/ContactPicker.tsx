@@ -40,7 +40,7 @@ export const ContactPicker: React.FC<ContactPickerProps> = ({
   // 加载联系人
   useEffect(() => {
     if (visible) {
-      loadContacts();
+      void loadContacts();
       
       // 初始化已选中的联系人
       const selectedIds = new Set(
@@ -52,16 +52,16 @@ export const ContactPicker: React.FC<ContactPickerProps> = ({
     }
   }, [visible, searchQuery, filterSource]);
 
-  const loadContacts = () => {
+  const loadContacts = async () => {
     if (searchQuery.trim()) {
-      const results = ContactService.searchContacts(searchQuery, filterSource);
+      const results = await ContactService.searchContacts(searchQuery, filterSource);
       setContacts(results);
     } else {
-      const allContacts = ContactService.getAllContacts();
+      const allContacts = await ContactService.getAllContacts();
       const filtered = filterSource
         ? allContacts.filter(c => {
             switch (filterSource) {
-              case 'remarkable': return c.is4DNote;
+              case '4dnote': return c.is4DNote;
               case 'outlook': return c.isOutlook;
               case 'google': return c.isGoogle;
               case 'icloud': return c.isiCloud;
@@ -214,12 +214,12 @@ export const QuickAddContact: React.FC<QuickAddContactProps> = ({
     organization: '',
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.name && !formData.email) {
       return;
     }
 
-    const newContact = ContactService.addContact({
+    const newContact = await ContactService.addContact({
       ...formData,
       is4DNote: true,
     });

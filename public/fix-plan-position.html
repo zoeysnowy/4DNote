@@ -170,16 +170,7 @@
           
           event.parentEventId = expectedParentId;
           
-          // 同时修复父事件的 childIds
-          if (expectedParentId) {
-            const parentEvent = planEvents.find(e => e.id === expectedParentId);
-            if (parentEvent) {
-              parentEvent.childEventIds = parentEvent.childEventIds || [];
-              if (!parentEvent.childEventIds.includes(event.id)) {
-                parentEvent.childEventIds.push(event.id);
-              }
-            }
-          }
+          // ADR-001: 结构真相来自 parentEventId；不在此类修复工具里维护/写回 parent.childEventIds（legacy-only）
           
           fixedCount++;
         }
@@ -198,7 +189,7 @@
         
         await tx.complete;
         
-        updateStatus(`\n✅ 修复完成！共修复 ${fixedCount} 个事件的父子关系`, 'success');
+        updateStatus(`\n✅ 修复完成！共修复 ${fixedCount} 个事件的 parentEventId（结构真相）`, 'success');
         updateStatus(`   提示：请刷新页面查看效果`, 'info');
       } else {
         updateStatus('\n✅ 所有事件的父子关系都正确', 'success');

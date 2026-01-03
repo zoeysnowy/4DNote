@@ -129,7 +129,7 @@ await EventService.updateEvent('event-123', {
 
 ### 1. 定义
 
-**EventTree 是真实的父子事件关系**，不同的 Event 记录之间通过 `parentEventId` 和 `childEventIds` 建立层级关系。
+**EventTree 是真实的父子事件关系**：ADR-001 规定层级结构真相来自 `parentEventId`；`childEventIds` 为 legacy 兼容字段（不维护/不依赖其正确性）。
 
 ### 2. 数据结构
 
@@ -141,8 +141,8 @@ export interface Event {
   title: EventTitle;
   
   // ===== EventTree 父子关系 =====
-  parentEventId?: string;      // 父事件 ID（刚性骨架）
-  childEventIds?: string[];    // 子事件 ID 列表（所有类型子事件）
+  parentEventId?: string;      // 父事件 ID（结构真相）
+  childEventIds?: string[];    // legacy-only（不维护/不依赖；必要时仅兼容保留）
   
   // ===== 双向链接（柔性血管）=====
   linkedEventIds?: string[];   // 正向链接
@@ -176,8 +176,10 @@ const childEvent = await EventService.createEvent({
   isPlan: true
 });
 
-// 自动维护双向关联
-console.log(parentEvent.childEventIds); // ['child-1']
+// 通过 parentEventId 派生子列表（不依赖/不维护 childEventIds）
+const allEvents = [parentEvent, childEvent];
+const derivedChildren = allEvents.filter(e => e.parentEventId === parentEvent.id);
+console.log(derivedChildren.map(e => e.id)); // ['child-1']
 console.log(childEvent.parentEventId);  // 'parent-1'
 ```
 
@@ -187,8 +189,8 @@ console.log(childEvent.parentEventId);  // 'parent-1'
 -- 数据库存储（两条独立记录）
 
 -- 父事件
-INSERT INTO events (id, title, childEventIds) 
-VALUES ('parent-1', 'Project Ace', '["child-1"]');
+INSERT INTO events (id, title) 
+VALUES ('parent-1', 'Project Ace');
 
 -- 子事件
 INSERT INTO events (id, title, parentEventId) 
@@ -212,20 +214,17 @@ Project Ace (parent-1)
 **Canvas 渲染代码**:
 ```typescript
 // 绘制父子关系连接线
-function drawEventTree(ctx: CanvasRenderingContext2D, event: Event) {
-  if (event.childEventIds) {
-    event.childEventIds.forEach(childId => {
-      const child = EventService.getEventById(childId);
-      
-      // 绘制连接线（实线，刚性骨架）
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(event.x, event.y);
-      ctx.lineTo(child.x, child.y);
-      ctx.stroke();
-    });
-  }
+function drawEventTree(ctx: CanvasRenderingContext2D, event: Event, allEvents: Event[]) {
+  const children = allEvents.filter(e => e.parentEventId === event.id);
+  children.forEach(child => {
+    // 绘制连接线（实线，刚性骨架）
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(event.x, event.y);
+    ctx.lineTo(child.x, child.y);
+    ctx.stroke();
+  });
 }
 ```
 
@@ -402,7 +401,7 @@ item.eventlog = (item.eventlog || '') + paragraphHtml;
 
 ### EventTree 实现
 
-**文件**: `src/services/EventService.ts` (自动维护逻辑)
+**文件**: `src/services/EventService.ts`（父子关系以 `parentEventId` 为结构真相）
 
 ```typescript
 class EventService {
@@ -411,13 +410,7 @@ class EventService {
     // ✅ 创建新的 Event 记录
     const newEvent = { ...event, id: generateEventId() };
     await db.insert('events', newEvent);
-    
-    // ✅ 自动更新父事件的 childEventIds
-    if (newEvent.parentEventId) {
-      const parent = await this.getEventById(newEvent.parentEventId);
-      parent.childEventIds = [...(parent.childEventIds || []), newEvent.id];
-      await db.update('events', parent.id, { childEventIds: parent.childEventIds });
-    }
+    // ADR-001：不维护 childEventIds。需要子列表时应通过 parentEventId 派生/查询。
     
     return newEvent;
   }

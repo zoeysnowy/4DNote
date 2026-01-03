@@ -219,7 +219,8 @@ SystemTimezoneTest.args = {
           ]).format('YYYY-MM-DD HH:mm:ss'),
           timezoneNameForSystemTimezoneTest
         )
-        .toISOString();
+        .utc()
+        .format('YYYY-MM-DD[T]HH:mm:ss.SSS[Z]');
 
     cal.setDate('2022-03-09T00:00:00Z');
 

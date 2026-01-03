@@ -4,6 +4,8 @@ import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import './DashboardGrid.css';
 
+const AnyGridLayout = GridLayout as unknown as React.ComponentType<any>;
+
 export interface GridItem {
   id: string;
   component: React.ReactNode;
@@ -119,7 +121,7 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
 
   return (
     <div ref={containerRef} style={{ width: '100%' }}>
-      <GridLayout
+      <AnyGridLayout
         className={`dashboard-grid ${className}`}
         layout={layout}
         cols={columns}
@@ -139,7 +141,7 @@ export const DashboardGrid: React.FC<DashboardGridProps> = ({
             {item.component}
           </div>
         ))}
-      </GridLayout>
+      </AnyGridLayout>
     </div>
   );
 };

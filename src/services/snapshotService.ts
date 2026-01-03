@@ -3,6 +3,7 @@ import { encodeStateAsUpdate, applyUpdate, encodeStateVector } from 'yjs';
 import type { Event } from '../types';
 import dayjs from 'dayjs';
 import { formatTimeForStorage } from '../utils/timeUtils';
+import { StorageManager } from './storage/StorageManager';
 
 // ==================== 类型定义 ====================
 
@@ -40,7 +41,6 @@ interface DailySnapshot {
 const STORAGE_KEYS = {
   BASE_SNAPSHOTS: '4dnote-plan-base-snapshots',
   CHANGE_RECORDS: '4dnote-plan-change-records',
-  CURRENT_STATE: '4dnote-plan-items',
   DATE_INDEX: '4dnote-plan-date-index',
 } as const;
 
@@ -49,6 +49,7 @@ const STORAGE_KEYS = {
 class SnapshotService {
   private ydoc: Y.Doc; // Yjs CRDT 文档
   private yarray: Y.Array<Event>; // Event 数组
+  private storageManager = StorageManager.getInstance();
 
   constructor() {
     this.ydoc = new Y.Doc();
@@ -58,7 +59,7 @@ class SnapshotService {
   /**
    * 创建基准快照
    */
-  createBaseSnapshot(items: Event[], date?: string): BaseSnapshot {
+  async createBaseSnapshot(items: Event[], date?: string): Promise<BaseSnapshot> {
     const snapshotDate = date || formatTimeForStorage(new Date()).split(' ')[0];
     
     // 创建新的 Yjs 文档并同步数据
@@ -78,10 +79,10 @@ class SnapshotService {
       ydocState: encodeStateAsUpdate(ydoc), // 保存 CRDT 状态
     };
 
-    // 保存到 localStorage
-    const snapshots = this.getBaseSnapshots();
+    // 保存到 metadata
+    const snapshots = await this.getBaseSnapshots();
     snapshots.push(snapshot);
-    this.saveBaseSnapshots(snapshots);
+    await this.saveBaseSnapshots(snapshots);
 
     return snapshot;
   }
@@ -89,7 +90,7 @@ class SnapshotService {
   /**
    * 记录变化（使用 Yjs CRDT 比较差异）
    */
-  recordChange(oldItems: Event[], newItems: Event[]): ChangeRecord {
+  async recordChange(oldItems: Event[], newItems: Event[]): Promise<ChangeRecord> {
     // 创建两个 Yjs 文档
     const oldDoc = new Y.Doc();
     const newDoc = new Y.Doc();
@@ -117,13 +118,13 @@ class SnapshotService {
       stateVector: stateVector,
     };
 
-    // 保存到 localStorage
-    const records = this.getChangeRecords();
+    // 保存到 metadata
+    const records = await this.getChangeRecords();
     records.push(record);
-    this.saveChangeRecords(records);
+    await this.saveChangeRecords(records);
 
     // 更新日期索引
-    this.updateDateIndex(record.date, record.id);
+    await this.updateDateIndex(record.date, record.id);
 
     return record;
   }
@@ -131,9 +132,9 @@ class SnapshotService {
   /**
    * 恢复指定日期的快照
    */
-  restoreSnapshot(date: string): Event[] {
+  async restoreSnapshot(date: string): Promise<Event[]> {
     // 1. 找到最近的基准快照
-    const baseSnapshot = this.findNearestBaseSnapshot(date);
+    const baseSnapshot = await this.findNearestBaseSnapshot(date);
     if (!baseSnapshot) {
       return [];
     }
@@ -154,7 +155,7 @@ class SnapshotService {
     }
 
     // 3. 获取该日期的所有变化记录
-    const changeRecords = this.getChangeRecordsForDate(date);
+    const changeRecords = await this.getChangeRecordsForDate(date);
 
     // 4. 逐个应用增量更新
     for (const record of changeRecords) {
@@ -173,10 +174,10 @@ class SnapshotService {
   /**
    * 获取每日快照视图（包含变化分析）
    */
-  getDailySnapshot(date: string): DailySnapshot {
-    const items = this.restoreSnapshot(date);
+  async getDailySnapshot(date: string): Promise<DailySnapshot> {
+    const items = await this.restoreSnapshot(date);
     const prevDate = this.getPreviousDate(date);
-    const prevItems = prevDate ? this.restoreSnapshot(prevDate) : [];
+    const prevItems = prevDate ? await this.restoreSnapshot(prevDate) : [];
 
     // 分析变化
     const changes = this.analyzeChanges(prevItems, items);
@@ -236,16 +237,29 @@ class SnapshotService {
   /**
    * 获取所有基准快照
    */
-  private getBaseSnapshots(): BaseSnapshot[] {
-    const data = localStorage.getItem(STORAGE_KEYS.BASE_SNAPSHOTS);
-    if (!data) return [];
-    
+  private tryImportLegacyLocalStorage<T>(key: string): T | null {
     try {
-      const snapshots = JSON.parse(data);
-      // 反序列化 Uint8Array
-      return snapshots.map((s: any) => ({
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as T;
+      void this.storageManager.setMetadata(key, parsed);
+      localStorage.removeItem(key);
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  private async getBaseSnapshots(): Promise<BaseSnapshot[]> {
+    const rawSnapshots =
+      (await this.storageManager.getMetadata<any[]>(STORAGE_KEYS.BASE_SNAPSHOTS)) ??
+      this.tryImportLegacyLocalStorage<any[]>(STORAGE_KEYS.BASE_SNAPSHOTS) ??
+      [];
+
+    try {
+      return (rawSnapshots || []).map((s: any) => ({
         ...s,
-        ydocState: s.ydocState ? new Uint8Array(Object.values(s.ydocState)) : undefined,
+        ydocState: s.ydocState ? new Uint8Array(s.ydocState) : undefined,
       }));
     } catch (error) {
       console.error('❌ [Snapshot] 解析基准快照失败:', error);
@@ -256,14 +270,16 @@ class SnapshotService {
   /**
    * 保存所有基准快照
    */
-  private saveBaseSnapshots(snapshots: BaseSnapshot[]): void {
+  private async saveBaseSnapshots(snapshots: BaseSnapshot[]): Promise<void> {
     try {
       // 序列化 Uint8Array 为普通对象
       const serialized = snapshots.map((s) => ({
         ...s,
         ydocState: s.ydocState ? Array.from(s.ydocState) : undefined,
       }));
-      localStorage.setItem(STORAGE_KEYS.BASE_SNAPSHOTS, JSON.stringify(serialized));
+      await this.storageManager.setMetadata(STORAGE_KEYS.BASE_SNAPSHOTS, serialized);
+      // legacy cleanup
+      localStorage.removeItem(STORAGE_KEYS.BASE_SNAPSHOTS);
     } catch (error) {
       console.error('❌ [Snapshot] 保存基准快照失败:', error);
     }
@@ -272,17 +288,17 @@ class SnapshotService {
   /**
    * 获取所有变化记录
    */
-  private getChangeRecords(): ChangeRecord[] {
-    const data = localStorage.getItem(STORAGE_KEYS.CHANGE_RECORDS);
-    if (!data) return [];
-    
+  private async getChangeRecords(): Promise<ChangeRecord[]> {
+    const rawRecords =
+      (await this.storageManager.getMetadata<any[]>(STORAGE_KEYS.CHANGE_RECORDS)) ??
+      this.tryImportLegacyLocalStorage<any[]>(STORAGE_KEYS.CHANGE_RECORDS) ??
+      [];
+
     try {
-      const records = JSON.parse(data);
-      // 反序列化 Uint8Array
-      return records.map((r: any) => ({
+      return (rawRecords || []).map((r: any) => ({
         ...r,
-        update: new Uint8Array(Object.values(r.update)),
-        stateVector: r.stateVector ? new Uint8Array(Object.values(r.stateVector)) : undefined,
+        update: new Uint8Array(r.update),
+        stateVector: r.stateVector ? new Uint8Array(r.stateVector) : undefined,
       }));
     } catch (error) {
       console.error('❌ [Snapshot] 解析变化记录失败:', error);
@@ -293,7 +309,7 @@ class SnapshotService {
   /**
    * 保存所有变化记录
    */
-  private saveChangeRecords(records: ChangeRecord[]): void {
+  private async saveChangeRecords(records: ChangeRecord[]): Promise<void> {
     try {
       // 序列化 Uint8Array 为普通对象
       const serialized = records.map((r) => ({
@@ -301,7 +317,9 @@ class SnapshotService {
         update: Array.from(r.update),
         stateVector: r.stateVector ? Array.from(r.stateVector) : undefined,
       }));
-      localStorage.setItem(STORAGE_KEYS.CHANGE_RECORDS, JSON.stringify(serialized));
+      await this.storageManager.setMetadata(STORAGE_KEYS.CHANGE_RECORDS, serialized);
+      // legacy cleanup
+      localStorage.removeItem(STORAGE_KEYS.CHANGE_RECORDS);
     } catch (error) {
       console.error('❌ [Snapshot] 保存变化记录失败:', error);
     }
@@ -310,8 +328,8 @@ class SnapshotService {
   /**
    * 查找最近的基准快照
    */
-  private findNearestBaseSnapshot(date: string): BaseSnapshot | null {
-    const snapshots = this.getBaseSnapshots();
+  private async findNearestBaseSnapshot(date: string): Promise<BaseSnapshot | null> {
+    const snapshots = await this.getBaseSnapshots();
     
     // 按日期倒序排列
     const sorted = snapshots
@@ -324,24 +342,28 @@ class SnapshotService {
   /**
    * 获取指定日期的所有变化记录
    */
-  private getChangeRecordsForDate(date: string): ChangeRecord[] {
-    const allRecords = this.getChangeRecords();
+  private async getChangeRecordsForDate(date: string): Promise<ChangeRecord[]> {
+    const allRecords = await this.getChangeRecords();
     return allRecords.filter((r) => r.date === date);
   }
 
   /**
    * 更新日期索引
    */
-  private updateDateIndex(date: string, recordId: string): void {
-    const indexData = localStorage.getItem(STORAGE_KEYS.DATE_INDEX);
-    const index: Record<string, string[]> = indexData ? JSON.parse(indexData) : {};
+  private async updateDateIndex(date: string, recordId: string): Promise<void> {
+    const index =
+      (await this.storageManager.getMetadata<Record<string, string[]>>(STORAGE_KEYS.DATE_INDEX)) ??
+      this.tryImportLegacyLocalStorage<Record<string, string[]>>(STORAGE_KEYS.DATE_INDEX) ??
+      {};
 
     if (!index[date]) {
       index[date] = [];
     }
     index[date].push(recordId);
 
-    localStorage.setItem(STORAGE_KEYS.DATE_INDEX, JSON.stringify(index));
+    await this.storageManager.setMetadata(STORAGE_KEYS.DATE_INDEX, index);
+    // legacy cleanup
+    localStorage.removeItem(STORAGE_KEYS.DATE_INDEX);
   }
 
   /**
@@ -356,19 +378,19 @@ class SnapshotService {
   /**
    * 清理旧快照（保留最近 N 天）
    */
-  cleanupOldSnapshots(daysToKeep: number = 30): void {
+  async cleanupOldSnapshots(daysToKeep: number = 30): Promise<void> {
     // 🔧 修复：使用 dayjs 避免时区问题
     const cutoffStr = dayjs().subtract(daysToKeep, 'day').format('YYYY-MM-DD');
 
     // 清理基准快照
-    const snapshots = this.getBaseSnapshots();
+    const snapshots = await this.getBaseSnapshots();
     const filteredSnapshots = snapshots.filter((s) => s.date >= cutoffStr);
-    localStorage.setItem(STORAGE_KEYS.BASE_SNAPSHOTS, JSON.stringify(filteredSnapshots));
+    await this.saveBaseSnapshots(filteredSnapshots);
 
     // 清理变化记录
-    const records = this.getChangeRecords();
+    const records = await this.getChangeRecords();
     const filteredRecords = records.filter((r) => r.date >= cutoffStr);
-    localStorage.setItem(STORAGE_KEYS.CHANGE_RECORDS, JSON.stringify(filteredRecords));
+    await this.saveChangeRecords(filteredRecords);
 
   }
 }

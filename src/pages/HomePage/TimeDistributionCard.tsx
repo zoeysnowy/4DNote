@@ -3,6 +3,7 @@ import { DashboardCard } from './DashboardCard';
 import { EventService } from '../../services/EventService';
 import { getAvailableCalendarsForSettings } from '../../utils/calendarUtils';
 import { TimeRange } from './TimeRangeSelector';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './TimeDistributionCard.css';
 
 interface DistributionItem {
@@ -60,7 +61,12 @@ export const TimeDistributionCard: React.FC<TimeDistributionCardProps> = ({ time
 
           eventStats.forEach(stats => {
             if (stats.startTime && stats.endTime && stats.calendarIds && stats.calendarIds.length > 0) {
-              const duration = new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
+              let duration = 0;
+              try {
+                duration = parseLocalTimeString(stats.endTime).getTime() - parseLocalTimeString(stats.startTime).getTime();
+              } catch {
+                return;
+              }
               const calendarId = stats.calendarIds[0]; // 取第一个日历
               
               const calendar = calendars.find(c => c.id === calendarId);
@@ -95,7 +101,12 @@ export const TimeDistributionCard: React.FC<TimeDistributionCardProps> = ({ time
 
           eventStats.forEach(stats => {
             if (stats.startTime && stats.endTime && stats.tags && stats.tags.length > 0) {
-              const duration = new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
+              let duration = 0;
+              try {
+                duration = parseLocalTimeString(stats.endTime).getTime() - parseLocalTimeString(stats.startTime).getTime();
+              } catch {
+                return;
+              }
               stats.tags.forEach(tag => {
                 tagMap.set(tag, (tagMap.get(tag) || 0) + duration);
               });

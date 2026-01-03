@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
 import { EventService } from '../../services/EventService';
 import { TimeRange } from './TimeRangeSelector';
+import { parseLocalTimeString } from '../../utils/timeUtils';
 import './FocusScoreCard.css';
 
 interface FocusData {
@@ -63,14 +64,20 @@ export const FocusScoreCard: React.FC<FocusScoreCardProps> = ({ timeRange }) => 
 
     eventStats.forEach(stats => {
       if (stats.startTime && stats.endTime) {
-        const durationMs = new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
-        const durationMin = durationMs / (1000 * 60);
-        totalDuration += durationMin;
+        try {
+          const durationMs =
+            parseLocalTimeString(stats.endTime).getTime() -
+            parseLocalTimeString(stats.startTime).getTime();
+          const durationMin = durationMs / (1000 * 60);
+          totalDuration += durationMin;
 
-        if (durationMin < 15) {
-          shortEventCount++;
-        } else if (durationMin >= 60) {
-          longEventCount++;
+          if (durationMin < 15) {
+            shortEventCount++;
+          } else if (durationMin >= 60) {
+            longEventCount++;
+          }
+        } catch {
+          // ignore invalid time values
         }
       }
     });

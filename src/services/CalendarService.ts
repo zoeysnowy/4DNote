@@ -19,14 +19,8 @@
 import { Calendar, CalendarGroup, CalendarProvider, SPECIAL_CALENDAR_IDS } from '../types/calendar';
 import { getCalendarColor } from '../utils/calendarColorUtils';
 import { getCalendarDisplayName, getCalendarNameWithProvider } from '../utils/calendarNameUtils';
-
-/**
- * 存储键名常量
- */
-const STORAGE_KEYS = {
-  CALENDARS_CACHE: '4dnote-calendars-cache',
-  CALENDAR_GROUPS_CACHE: '4dnote-calendar-groups-cache',
-} as const;
+import { STORAGE_KEYS } from '../constants/storage';
+import { StorageManager } from './storage/StorageManager';
 
 /**
  * CalendarService 类
@@ -36,66 +30,92 @@ class CalendarServiceClass {
   private calendarGroups: Map<string, CalendarGroup> = new Map();
   private isInitialized: boolean = false;
   private microsoftService: any = null;
+  private initializePromise: Promise<void> | null = null;
+  private storageManager = StorageManager.getInstance();
 
   /**
    * 初始化服务
    */
   async initialize(microsoftService?: any): Promise<void> {
+    // 🔒 并发保护：避免多个调用方同时初始化
+    if (this.initializePromise) {
+      return this.initializePromise;
+    }
+
     if (this.isInitialized) {
       console.log('📅 [CalendarService] Already initialized');
       return;
     }
 
-    console.log('📅 [CalendarService] Initializing...');
-    
-    if (microsoftService) {
-      this.microsoftService = microsoftService;
-    } else {
-      // 尝试从全局获取
-      this.microsoftService = (window as any).microsoftCalendarService;
-    }
+    this.initializePromise = (async () => {
+      console.log('📅 [CalendarService] Initializing...');
 
-    // 从缓存加载
-    await this.loadFromCache();
-    
-    // 如果缓存为空，尝试从服务同步
-    if (this.calendars.size === 0 && this.microsoftService) {
-      await this.syncFromServices();
-    }
+      if (microsoftService) {
+        this.microsoftService = microsoftService;
+      } else {
+        // 尝试从全局获取
+        this.microsoftService = (window as any).microsoftCalendarService;
+      }
 
-    this.isInitialized = true;
-    console.log('✅ [CalendarService] Initialized with', this.calendars.size, 'calendars');
+      // 从缓存加载
+      await this.loadFromCache();
+
+      // 如果缓存为空（或仅部分为空），尝试从服务同步
+      if ((this.calendars.size === 0 || this.calendarGroups.size === 0) && this.microsoftService) {
+        await this.syncFromServices();
+      }
+
+      this.isInitialized = true;
+      console.log('✅ [CalendarService] Initialized with', this.calendars.size, 'calendars');
+    })().finally(() => {
+      this.initializePromise = null;
+    });
+
+    return this.initializePromise;
   }
 
   /**
-   * 从localStorage加载缓存
+   * 从缓存加载（优先 IndexedDB metadata；若为空则一次性导入 legacy localStorage）
    */
   private async loadFromCache(): Promise<void> {
     try {
-      // 加载日历列表
-      const calendarsCache = localStorage.getItem(STORAGE_KEYS.CALENDARS_CACHE);
-      if (calendarsCache) {
-        const calendars: any[] = JSON.parse(calendarsCache);
+      const calendars =
+        (await this.storageManager.getMetadata<any[]>(STORAGE_KEYS.CALENDARS_CACHE)) ??
+        this.tryImportLegacyLocalStorage<any[]>(STORAGE_KEYS.CALENDARS_CACHE);
+
+      if (Array.isArray(calendars) && calendars.length > 0) {
         console.log('📅 [CalendarService] Loading', calendars.length, 'calendars from cache');
-        
         calendars.forEach(cal => {
           const normalizedCalendar = this.normalizeCalendar(cal);
           this.calendars.set(normalizedCalendar.id, normalizedCalendar);
         });
       }
 
-      // 加载日历分组
-      const groupsCache = localStorage.getItem(STORAGE_KEYS.CALENDAR_GROUPS_CACHE);
-      if (groupsCache) {
-        const groups: any[] = JSON.parse(groupsCache);
+      const groups =
+        (await this.storageManager.getMetadata<any[]>(STORAGE_KEYS.CALENDAR_GROUPS_CACHE)) ??
+        this.tryImportLegacyLocalStorage<any[]>(STORAGE_KEYS.CALENDAR_GROUPS_CACHE);
+
+      if (Array.isArray(groups) && groups.length > 0) {
         console.log('📅 [CalendarService] Loading', groups.length, 'calendar groups from cache');
-        
         groups.forEach(group => {
           this.calendarGroups.set(group.id, group);
         });
       }
     } catch (error) {
       console.error('❌ [CalendarService] Failed to load from cache:', error);
+    }
+  }
+
+  private tryImportLegacyLocalStorage<T>(key: string): T | null {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as T;
+      void this.storageManager.setMetadata(key, parsed);
+      localStorage.removeItem(key);
+      return parsed;
+    } catch {
+      return null;
     }
   }
 
@@ -107,29 +127,56 @@ class CalendarServiceClass {
     
     try {
       // Microsoft Calendar Service
-      if (this.microsoftService && typeof this.microsoftService.getCachedCalendars === 'function') {
-        const msCalendars = this.microsoftService.getCachedCalendars();
-        console.log('📅 [CalendarService] Got', msCalendars.length, 'calendars from Microsoft');
-        
-        msCalendars.forEach((cal: any) => {
-          const normalizedCalendar = this.normalizeCalendar({
-            ...cal,
-            provider: 'outlook'
-          });
-          this.calendars.set(normalizedCalendar.id, normalizedCalendar);
-        });
+      if (this.microsoftService) {
+        const canUseRemote =
+          typeof this.microsoftService.getAllCalendarData === 'function' &&
+          typeof this.microsoftService.isSignedIn === 'function' &&
+          this.microsoftService.isSignedIn();
 
-        // 获取分组
-        if (typeof this.microsoftService.getCachedCalendarGroups === 'function') {
-          const msGroups = this.microsoftService.getCachedCalendarGroups();
-          console.log('📅 [CalendarService] Got', msGroups.length, 'calendar groups from Microsoft');
-          
-          msGroups.forEach((group: any) => {
+        if (canUseRemote) {
+          // ✅ 关键：缓存为空时会自动走远程同步，避免“首次同步全落默认分组”
+          const { groups, calendars } = await this.microsoftService.getAllCalendarData(true);
+          console.log('📅 [CalendarService] Got', calendars.length, 'calendars from Microsoft');
+          console.log('📅 [CalendarService] Got', groups.length, 'calendar groups from Microsoft');
+
+          calendars.forEach((cal: any) => {
+            const normalizedCalendar = this.normalizeCalendar({
+              ...cal,
+              provider: 'outlook'
+            });
+            this.calendars.set(normalizedCalendar.id, normalizedCalendar);
+          });
+
+          groups.forEach((group: any) => {
             this.calendarGroups.set(group.id, {
               ...group,
               provider: 'outlook'
             });
           });
+        } else if (typeof this.microsoftService.getCachedCalendars === 'function') {
+          // 回退：只用缓存（未登录/无远程能力时）
+          const msCalendars = this.microsoftService.getCachedCalendars();
+          console.log('📅 [CalendarService] Got', msCalendars.length, 'calendars from Microsoft (cache)');
+
+          msCalendars.forEach((cal: any) => {
+            const normalizedCalendar = this.normalizeCalendar({
+              ...cal,
+              provider: 'outlook'
+            });
+            this.calendars.set(normalizedCalendar.id, normalizedCalendar);
+          });
+
+          if (typeof this.microsoftService.getCachedCalendarGroups === 'function') {
+            const msGroups = this.microsoftService.getCachedCalendarGroups();
+            console.log('📅 [CalendarService] Got', msGroups.length, 'calendar groups from Microsoft (cache)');
+
+            msGroups.forEach((group: any) => {
+              this.calendarGroups.set(group.id, {
+                ...group,
+                provider: 'outlook'
+              });
+            });
+          }
         }
       }
 
@@ -144,15 +191,44 @@ class CalendarServiceClass {
   }
 
   /**
-   * 保存到localStorage缓存
+   * 确保 CalendarService 已完成初始化，并在“已登录但缓存为空/不完整”时补齐数据。
+   * 用于：首次同步前、清库后的首次启动。
+   */
+  async ensureReady(options?: { forceRemote?: boolean }): Promise<void> {
+    await this.initialize();
+
+    const shouldHydrate = this.calendars.size === 0 || this.calendarGroups.size === 0;
+    if (!shouldHydrate) return;
+
+    if (!this.microsoftService) return;
+
+    const isSignedIn =
+      typeof this.microsoftService.isSignedIn === 'function'
+        ? this.microsoftService.isSignedIn()
+        : false;
+
+    if (!isSignedIn) return;
+
+    // 目前 syncFromServices 内部会在缓存为空时走远程拉取；这里仅触发一次补齐。
+    if (options?.forceRemote || shouldHydrate) {
+      await this.syncFromServices();
+    }
+  }
+
+  /**
+   * 保存到缓存（IndexedDB metadata）
    */
   private saveToCache(): void {
+    void this.saveToCacheAsync();
+  }
+
+  private async saveToCacheAsync(): Promise<void> {
     try {
       const calendarsArray = Array.from(this.calendars.values());
-      localStorage.setItem(STORAGE_KEYS.CALENDARS_CACHE, JSON.stringify(calendarsArray));
+      await this.storageManager.setMetadata(STORAGE_KEYS.CALENDARS_CACHE, calendarsArray);
       
       const groupsArray = Array.from(this.calendarGroups.values());
-      localStorage.setItem(STORAGE_KEYS.CALENDAR_GROUPS_CACHE, JSON.stringify(groupsArray));
+      await this.storageManager.setMetadata(STORAGE_KEYS.CALENDAR_GROUPS_CACHE, groupsArray);
       
       console.log('💾 [CalendarService] Saved to cache:', calendarsArray.length, 'calendars');
     } catch (error) {

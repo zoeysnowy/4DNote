@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Event } from '../types';
 import { TagService } from '../services/TagService';
-import { EventService } from '../services/EventService';
 import './DailyStatsCard.css';
+import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
+import { parseLocalTimeStringOrNull } from '../utils/timeUtils';
 
 interface DailyStatsCardProps {
   selectedDate?: Date; // 选中的日期，默认为今天
@@ -27,9 +28,9 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
   const [currentDate, setCurrentDate] = useState<Date>(selectedDate);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
-  
-  // ✅ 自己维护 events state，从 EventService 初始化
-  const [events, setEvents] = useState<Event[]>([]);
+
+  // Epic 2 (Master Plan v2.22): subscription-backed snapshot view
+  const { events } = useEventHubSnapshot({ enabled: true });
   
   // 🆕 订阅 TagService 初始化状态
   const [tagsInitialized, setTagsInitialized] = useState(TagService.isInitialized());
@@ -54,49 +55,6 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
     };
   }, []);
 
-  // 异步加载初始事件数据
-  useEffect(() => {
-    const loadEvents = async () => {
-      const allEvents = await EventService.getAllEvents();
-      setEvents(allEvents);
-    };
-    loadEvents();
-  }, []);
-
-  useEffect(() => {
-    // ✅ 增量更新事件列表
-    const handleEventUpdated = async (e: any) => {
-      const { eventId, isDeleted, isNewEvent } = e.detail || {};
-      
-      if (isDeleted) {
-        // 增量删除
-        setEvents(prev => prev.filter(event => event.id !== eventId));
-      } else if (isNewEvent) {
-        // 增量添加
-        const newEvent = await EventService.getEventById(eventId);
-        if (newEvent) {
-          setEvents(prev => [...prev, newEvent]);
-        }
-      } else {
-        // 增量更新
-        const updatedEvent = await EventService.getEventById(eventId);
-        if (updatedEvent) {
-          setEvents(prev => 
-            prev.map(event => event.id === eventId ? updatedEvent : event)
-          );
-        }
-      }
-      
-      setRefreshKey(prev => prev + 1);
-    };
-
-    window.addEventListener('eventsUpdated', handleEventUpdated);
-    
-    return () => {
-      window.removeEventListener('eventsUpdated', handleEventUpdated);
-    };
-  }, []);
-
   // ❌ [REMOVED] prop sync useEffect - 不再从 props 接收 events
   
   // 格式化日期为输入框格式 YYYY-MM-DD
@@ -115,7 +73,9 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
     
     const targetDateStr = currentDate.toDateString();
     const dayEvents = events.filter(event => {
-      const eventDate = new Date(event.startTime);
+      if (!event.startTime) return false;
+      const eventDate = parseLocalTimeStringOrNull(event.startTime);
+      if (!eventDate) return false;
       return eventDate.toDateString() === targetDateStr;
     });
 
@@ -125,12 +85,19 @@ export const DailyStatsCard: React.FC<DailyStatsCardProps> = ({
     const now = new Date();
 
     dayEvents.forEach(event => {
+      if (!event.startTime) return;
       const tags = event.tags || [];
       
       tags.forEach((tagId: string) => {
-        const start = new Date(event.startTime).getTime();
-        const end = new Date(event.endTime).getTime();
+        const startDate = parseLocalTimeStringOrNull(event.startTime);
+        if (!startDate) return;
+        const start = startDate.getTime();
         const nowTime = now.getTime();
+
+        const endDate = event.endTime ? parseLocalTimeStringOrNull(event.endTime) : null;
+        if (event.endTime && !endDate) return;
+        const end = endDate ? endDate.getTime() : nowTime;
+        if (!Number.isFinite(start) || !Number.isFinite(end)) return;
         
         const effectiveEnd = Math.min(end, nowTime);
         

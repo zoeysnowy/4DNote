@@ -8,12 +8,15 @@ import {
   getTimeRange
 } from '../utils/upcomingEventsHelper';
 import { shouldShowCheckbox } from '../utils/eventHelpers';
+import { resolveCheckState } from '../utils/TimeResolver';
 import { EventService } from '../services/EventService';
 import { TagService } from '../services/TagService';
 import { formatRelativeDate, formatRelativeTimeDisplay } from '../utils/relativeDateFormatter';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../utils/timeUtils';
 import { getLocationDisplayText } from '../utils/locationUtils';
 import { slateNodesToHtml } from '../components/ModalSlate/serialization';
+import { ModalSlate } from '../components/ModalSlate';
+import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
 
 // 导入本地 SVG 图标
 import TimerStartIconSvg from '../assets/icons/timer_start.svg';
@@ -44,77 +47,9 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isVisible, setIsVisible] = useState(true);
   const [showExpired, setShowExpired] = useState(false); // 是否展开过期事件
-  // ✅ 性能优化：使用缓存，避免每次都全量加载
-  const [allEventsCache, setAllEventsCache] = useState<Event[]>([]); // 事件缓存
 
-  // ✅ 从 EventService 加载所有事件（只在组件挂载时执行一次）
-  useEffect(() => {
-    // 初始加载：只执行一次
-    const loadInitialEvents = async () => {
-      const initialEvents = await EventService.getAllEvents();
-      console.log('🔍 [UpcomingEventsPanel] 初始加载事件缓存:', {
-        count: initialEvents.length
-      });
-      setAllEventsCache(initialEvents);
-    };
-    
-    loadInitialEvents();
-
-    // ✅ 监听 eventsUpdated 增量更新缓存
-    const handleEventsUpdated = async (e: any) => {
-      const { eventId, isNewEvent, isDeleted } = e.detail || {};
-      
-      if (!eventId) {
-        // 没有 eventId，fallback 到全量重载
-        console.log('[UpcomingEventsPanel] 无 eventId，全量重载缓存');
-        const allEvents = await EventService.getAllEvents();
-        setAllEventsCache(allEvents);
-        return;
-      }
-      
-      console.log('[UpcomingEventsPanel] 收到 eventsUpdated 事件，增量更新缓存:', {
-        eventId: eventId.slice(-8),
-        isNewEvent,
-        isDeleted
-      });
-      
-      // ✅ 增量更新缓存
-      if (isDeleted) {
-        // 事件被删除
-        setAllEventsCache(prev => prev.filter(e => e.id !== eventId));
-      } else {
-        // 获取最新的事件数据
-        const updatedEvent = await EventService.getEventById(eventId);
-        
-        if (!updatedEvent) {
-          // 事件不存在，从缓存中移除
-          setAllEventsCache(prev => prev.filter(e => e.id !== eventId));
-        } else if (isNewEvent) {
-          // 新事件，添加到列表
-          setAllEventsCache(prev => [...prev, updatedEvent]);
-        } else {
-          // 更新现有事件
-          setAllEventsCache(prev => {
-            const existingIndex = prev.findIndex(e => e.id === eventId);
-            if (existingIndex >= 0) {
-              const updated = [...prev];
-              updated[existingIndex] = updatedEvent;
-              return updated;
-            } else {
-              // 事件不在缓存中，添加
-              return [...prev, updatedEvent];
-            }
-          });
-        }
-      }
-    };
-
-    window.addEventListener('eventsUpdated', handleEventsUpdated as EventListener);
-
-    return () => {
-      window.removeEventListener('eventsUpdated', handleEventsUpdated);
-    };
-  }, []); // ✅ 空依赖，只初始化一次
+  // Epic 2 (Master Plan v2.22): subscription-backed snapshot view
+  const { events: allEventsSnapshot, refresh } = useEventHubSnapshot({ enabled: isVisible });
 
   // ✅ 智能更新 currentTime：只在必要时更新
   useEffect(() => {
@@ -129,8 +64,8 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
   const { upcoming, expired } = useMemo(() => {
     const { start, end } = getTimeRange(activeFilter, currentTime);
     
-    // ✅ 从缓存中过滤，而不是重新加载
-    const filtered = allEventsCache.filter(event => {
+    // ✅ 从订阅快照中过滤，而不是自行维护缓存
+    const filtered = allEventsSnapshot.filter(event => {
       // 三步过滤公式
       // 1. 并集条件
       const matchesInclusionCriteria = 
@@ -148,33 +83,38 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
       // 3. 时间范围过滤
       if (!event.timeSpec?.resolved) return false;
       
-      const eventStart = new Date(event.timeSpec.resolved.start);
+      const eventStart = parseLocalTimeStringOrNull(event.timeSpec.resolved.start);
+      if (!eventStart) return false;
       return eventStart >= start && eventStart <= end;
     });
     
     // 分离过期和未过期
     const now = currentTime.getTime();
     const upcomingEvents = filtered.filter(e => {
-      const eventStart = new Date(e.timeSpec!.resolved!.start);
+      const eventStart = parseLocalTimeStringOrNull(e.timeSpec!.resolved!.start);
+      if (!eventStart) return false;
       return eventStart.getTime() >= now;
     });
     const expiredEvents = filtered.filter(e => {
-      const eventStart = new Date(e.timeSpec!.resolved!.start);
+      const eventStart = parseLocalTimeStringOrNull(e.timeSpec!.resolved!.start);
+      if (!eventStart) return false;
       return eventStart.getTime() < now;
     });
     
     // 排序
-    upcomingEvents.sort((a, b) => 
-      new Date(a.timeSpec!.resolved!.start).getTime() - 
-      new Date(b.timeSpec!.resolved!.start).getTime()
-    );
-    expiredEvents.sort((a, b) => 
-      new Date(b.timeSpec!.resolved!.start).getTime() - 
-      new Date(a.timeSpec!.resolved!.start).getTime()
-    );
+    upcomingEvents.sort((a, b) => {
+      const aStart = parseLocalTimeStringOrNull(a.timeSpec!.resolved!.start)?.getTime() ?? 0;
+      const bStart = parseLocalTimeStringOrNull(b.timeSpec!.resolved!.start)?.getTime() ?? 0;
+      return aStart - bStart;
+    });
+    expiredEvents.sort((a, b) => {
+      const aStart = parseLocalTimeStringOrNull(a.timeSpec!.resolved!.start)?.getTime() ?? 0;
+      const bStart = parseLocalTimeStringOrNull(b.timeSpec!.resolved!.start)?.getTime() ?? 0;
+      return bStart - aStart;
+    });
     
     return { upcoming: upcomingEvents, expired: expiredEvents };
-  }, [allEventsCache, activeFilter, currentTime]);
+  }, [allEventsSnapshot, activeFilter, currentTime]);
 
   const handleFilterChange = (filter: TimeFilter) => {
     setActiveFilter(filter);
@@ -191,33 +131,16 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
 
   const handleCheckboxChange = (eventId: string, checked: boolean) => {
     console.log('[UpcomingEventsPanel] handleCheckboxChange:', { eventId: eventId.slice(-10), checked });
-    
-    // ✅ 1. 立即更新本地 UI（乐观更新）
-    setAllEvents(prev => {
-      const updated = prev.map(e => {
-        if (e.id === eventId) {
-          // 更新本地 checked/unchecked 数组
-          const timestamp = new Date().toISOString();
-          if (checked) {
-            return { ...e, checked: [...(e.checked || []), timestamp] };
-          } else {
-            return { ...e, unchecked: [...(e.unchecked || []), timestamp] };
-          }
-        }
-        return e;
-      });
-      return updated;
-    });
-    
-    // ✅ 2. 调用 EventService 持久化
+
+    // ✅ 调用 EventService 持久化（eventsUpdated 将驱动快照刷新）
     if (checked) {
       EventService.checkIn(eventId);
     } else {
       EventService.uncheck(eventId);
     }
-    
-    // ✅ 3. EventService.dispatchEventUpdate 会触发 eventsUpdated 事件
-    //    useEffect 监听器会重新加载，确保和 localStorage 同步
+
+    // 小兜底：部分写路径可能不带 eventId detail，直接拉一次快照
+    void refresh();
   };
 
   const handleEventClick = (event: Event) => {
@@ -265,11 +188,13 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
     // 计算是否需要显示日期（仅过期事件需要）
     let dateDisplay: string | undefined;
     if (isExpired && (resolvedTime.start || resolvedTime.end)) {
-      const eventDate = new Date(resolvedTime.start || resolvedTime.end!);
-      const relativeDate = formatRelativeDate(eventDate, currentTime);
-      // 只有不是"今天"或"明天"时才显示
-      if (relativeDate !== '今天' && relativeDate !== '明天') {
-        dateDisplay = relativeDate;
+      const eventDate = parseLocalTimeStringOrNull(resolvedTime.start || resolvedTime.end!);
+      if (eventDate) {
+        const relativeDate = formatRelativeDate(eventDate, currentTime);
+        // 只有不是"今天"或"明天"时才显示
+        if (relativeDate !== '今天' && relativeDate !== '明天') {
+          dateDisplay = relativeDate;
+        }
       }
     }
 
@@ -291,15 +216,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
             <div className="event-header">
               {shouldShowCheckbox(event) && (() => {
                 // ✅ 直接从 event 对象计算 checked 状态，不调用 EventService
-                const lastChecked = event.checked && event.checked.length > 0 
-                  ? event.checked[event.checked.length - 1] 
-                  : null;
-                const lastUnchecked = event.unchecked && event.unchecked.length > 0 
-                  ? event.unchecked[event.unchecked.length - 1] 
-                  : null;
-                
-                // 比较最后的时间戳
-                const isChecked = lastChecked && (!lastUnchecked || lastChecked > lastUnchecked);
+                const { isChecked } = resolveCheckState(event);
                 
                 return (
                   <div className="event-checkbox">
@@ -374,7 +291,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
           )}
 
           {/* Event Log Preview */}
-          {event.eventlog?.slateJson && (
+          {typeof event.eventlog !== 'string' && event.eventlog?.slateJson && (
             <div className="event-log-preview">
               <RightIcon className="event-log-expand-icon" />
               <div className="event-log-text">

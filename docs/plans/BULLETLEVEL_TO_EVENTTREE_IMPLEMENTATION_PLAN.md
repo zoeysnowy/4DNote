@@ -448,8 +448,8 @@ const handleShiftTabKey = async (event: React.KeyboardEvent) => {
     await EventService.updateEvent(currentEventId, {
       parentEventId: undefined
     });
-    
-    // EventService 会自动从父事件的 childEventIds 中移除
+
+    // ADR-001：不维护 childEventIds；子列表通过 parentEventId 派生/查询获得
     
     await reloadEvents();
     

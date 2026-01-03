@@ -683,7 +683,7 @@ interface EventLineNode {
   level: number;                        // 🔥 视觉缩进层级（从 bulletLevel 计算得出）
   mode: 'title' | 'eventlog';          // 双模式
   children: ParagraphNode[];
-  metadata?: EventMetadata;             // 🆕 完整元数据（包含 parentEventId/childEventIds）
+  metadata?: EventMetadata;             // 🆕 完整元数据（结构真相：parentEventId；childEventIds 为 legacy-only）
 }
 
 // 🆕 v3.1: EventMetadata 包含 EventTree 字段
@@ -695,7 +695,7 @@ interface EventMetadata {
   
   // 🔥 EventTree 层级字段（v3.1 新增）
   parentEventId?: string;              // 父事件 ID（单一父节点）
-  childEventIds?: string[];            // 子事件 ID 列表（多个子节点）
+  childEventIds?: string[];            // legacy-only（不维护/不依赖；编辑器不应产出/更新，必要时仅做透传/清理）
 }
 ```
 
@@ -729,9 +729,9 @@ Slate metadata 设置: { parentEventId: '父事件ID' }  ⚡ 即时设置
     ↓ onChange 触发 → slateNodesToPlanItems
     ↓ 读取 metadata.parentEventId
     ↓ EventService.createEvent({ parentEventId: 'xxx' })
-数据库双向关联:
+数据库持久化（ADR-001）:
   - 新事件.parentEventId = 'xxx'  ✅
-  - 父事件.childEventIds.push(新事件ID)  ✅ 双向关系完整
+  - 子列表通过查询/派生获得（不维护/不依赖 childEventIds）
 
 【Tab 键增加缩进】🆕 v3.1.2
 User presses Tab at Level 0 → Level 1
@@ -741,9 +741,9 @@ Slate metadata 乐观更新: { parentEventId: 'xxx' }  ⚡ 乐观更新
     ↓ onChange (300ms 防抖)
     ↓ slateNodesToPlanItems (读取 metadata.parentEventId)
     ↓ EventService.updateEvent({ parentEventId: 'xxx' })
-数据库双向关联:
+数据库持久化（ADR-001）:
   - 当前事件.parentEventId = 'xxx'  ✅
-  - 父事件.childEventIds.push(当前事件ID)  ✅
+  - 子列表通过查询/派生获得（不维护/不依赖 childEventIds）
 
 【用户输入文本】
 User types text
@@ -863,9 +863,9 @@ interface PlanSlateEditorProps {
 1. ⚡ **智能查找父事件**: 在 Enter 键处理中调用 `findParentEventLineAtLevel(currentLevel - 1)` 向上查找最近的父级事件
 2. 📝 **即时设置元数据**: 将找到的父事件 ID 设置到新事件的 `metadata.parentEventId`
 3. 🔄 **序列化自动传递**: `slateNodesToPlanItems()` 读取 metadata 中的 parentEventId，传递给 EventService
-4. 💾 **数据库双向关联**: EventService 保存时自动维护双向关系：
-   - 新事件.parentEventId = 父事件ID ✅
-   - 父事件.childEventIds.push(新事件ID) ✅
+4. 💾 **数据库持久化**: EventService 只持久化单向结构真相：
+  - 新事件.parentEventId = 父事件ID ✅
+  - 子列表通过查询/派生获得（不维护/不依赖 childEventIds）
 
 **完整数据流**:
 ```typescript
@@ -900,13 +900,7 @@ EventService.createEvent(event) {
   // 保存事件到数据库
   await storageManager.createEvent(event);
   
-  // 自动维护双向关联
-  if (event.parentEventId) {
-    const parent = await this.getEventById(event.parentEventId);
-    await this.updateEvent(parent.id, {
-      childEventIds: [...parent.childEventIds, event.id]  // 🔥 双向关联
-    });
-  }
+  // ADR-001：不维护双向关联（childEventIds）。需要子列表时应通过 parentEventId 派生/查询。
 }
 ```
 
@@ -914,7 +908,7 @@ EventService.createEvent(event) {
 - ✅ **Enter 创建事件**: parentEventId 正确指向父事件
 - ✅ **Tab 增加缩进**: parentEventId 正确更新为新父事件
 - ✅ **Shift+Tab 减少缩进**: parentEventId 正确更新为祖父事件
-- ✅ **数据库持久化**: 双向关系完整保存（parentEventId ↔ childEventIds）
+- ✅ **数据库持久化**: 结构真相可恢复（以 parentEventId 为准）
 - ✅ **刷新页面验证**: 层级关系正确恢复
 
 **核心代码位置**:
@@ -927,7 +921,7 @@ EventService.createEvent(event) {
 
 - ⚡ **乐观更新**: 立即更新 Slate metadata (`parentEventId`)，视觉缩进即时生效（< 1ms）
 - 📡 **后台持久化**: 异步调用 `EventService.updateEvent()` 保存到数据库
-- 🔗 **双向同步**: 自动更新父事件的 `childEventIds` 列表（EventTree 双向关联）
+- 🔗 **结构真相**: 仅更新 `parentEventId`；子列表通过派生获得
 - 🛡️ **数据安全**: metadata 作为缓存，即使断网也能在下次 onChange 时恢复
 
 #### 🔥 v3.1.1 Shift+Tab 修复
@@ -1507,7 +1501,7 @@ EventHub.eventsUpdated (触发更新事件)
 - ✅ **渐进式重构**: 不破坏现有功能
 - ✅ **编辑状态管理**: 统一的输入缓存和保存机制
 - ✅ **性能优化**: itemsHash 记忆化，减少 60-75% 不必要的重渲染（v2.15.1）
-- ✅ **数据完整性**: 父子关系双向关联，metadata 作为可靠缓存（v3.2.1）
+- ✅ **数据完整性**: 以 parentEventId 为结构真相，metadata 作为可靠缓存（v3.2.1）
 - ✅ **状态分类原则**: useState分类（UI临时态/会话态/领域数据/派生/管线），合理选择容器（v3.3.0）🆕
 - ✅ **原子更新模式**: 成组变化使用reducer，一次action完成多状态变更（v3.3.0）🆕
 
@@ -1519,7 +1513,7 @@ EventHub.eventsUpdated (触发更新事件)
 4. **数据持久化链路** - 完整的从编辑器到数据库的保存流程
 5. **编辑器对比分析** - 清晰对比 5 个 Slate 编辑器的特性和保存策略
 6. **PlanSlate 性能优化** - itemsHash 记忆化机制，输入响应速度提升 60-75%（v2.15.1）
-7. **EventTree 双向关联** - Enter/Tab/Shift+Tab 键完整支持父子关系，数据库双向同步（v3.2.1）
+7. **EventTree 父子关系** - Enter/Tab/Shift+Tab 键完整支持 parentEventId，结构可恢复（v3.2.1）
 8. **会话态管理重构** - PlanSlate useState → useReducer，消除成组变化一致性问题（v3.3.0）🆕
 
 ### 10.4 v3.3.0 会话态管理重构总结（2025-12-23）🆕
@@ -1601,15 +1595,15 @@ sessionActions.openMention('time', anchorEl, new Date(), undefined);
    - 已有乐观更新机制，现在与 Enter 键逻辑统一
    - metadata 作为可靠缓存，确保数据传递不丢失
 
-3. **EventService 双向关联**:
-   - `createEvent()`: 保存时自动维护父事件的 `childEventIds`
-   - `updateEvent()`: 父事件变化时自动维护双向关系
-   - 完整的日志输出，便于问题排查
+3. **EventService 父子关系（ADR-001）**:
+  - `createEvent()`: 持久化 `parentEventId`（不维护/不依赖 `childEventIds`）
+  - `updateEvent()`: 仅更新 `parentEventId`；子列表通过派生/查询获得
+  - 完整的日志输出，便于问题排查
 
 **验证工具**:
 - 创建了 `verify-parent-child-db.html` 诊断工具
 - 直接从 StorageManager 读取数据库数据
-- 验证双向关系一致性（parentEventId ↔ childEventIds）
+- 验证层级可恢复（以 parentEventId 为准）
 
 **修复效果**:
 - ✅ Enter 键: parentEventId 正确设置

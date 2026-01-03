@@ -7,7 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **EventService 审阅与重构审计文档** (2025-12-29):
+  - 新增审阅文档：`docs/audits/EVENTSERVICE_REVIEW_AND_REFACTOR_2025-12-28.md`
+  - 聚焦 `normalizeEvent/normalizeEventLog` 一致性、签名系统分叉风险、CompleteMeta V2 闭环缺口
+  - 明确本地 ID 策略（本地 `event.id`=数据库 eventID；Outlook/远端 ID 走 `externalId`），并给出最小可实施 Checklist（meta.id/meta.signature 回填与同步侧不覆盖本地 ID）
+  - 解释并定位 TimeCalendar 新建事件“空 eventlog → 空段落 JSON”的根因（`jsonToSlateNodes('[]')` 默认返回空段落），并给出存储语义/编辑器语义拆分建议
+
+- **EventEditModalV2 架构健康审计文档** (2025-12-29):
+  - 新增审计文档：`docs/audits/EVENTEDITMODAL_V2_ARCH_REVIEW_2025-12-29.md`
+  - 聚焦入口契约（eventId-only）、保存语义事实、组件过载风险与最小重构路线
+
+- **EventEditModalV2 PRD 与实现对齐** (2025-12-29):
+  - PRD 保存章节对齐当前实现：编辑过程更新 `formData`，点击“保存”才持久化；关闭/遮罩视为取消
+  - 补充入口现状：TimeCalendar/TimeLog/LogTab
+  - File:
+    - `docs/PRD/EVENTEDITMODAL_V2_PRD.md`
+
 ### Fixed
+- **TimeLog TimeGap：新建事件时间语义修复** (2025-12-29):
+  - TimeGap 悬停/建议时间改为 **15 分钟吸附**（避免出现 38/42/54 分钟等随机分钟）
+  - 从 TimeGap 新建事件时，`createdAt/updatedAt` 对齐到用户选择的 `startTime`（避免创建时间与时间轴选择不一致）
+  - Files:
+    - `src/components/TimeLog/TimeGap.tsx`
+    - `src/pages/TimeLog.tsx`
+
+- **TimeLog → EventEditModalV2：新建入口契约修复** (2025-12-29):
+  - 新建入口改为“先落库创建事件，再打开 Modal”，满足 EventEditModalV2 的 **eventId-only** 契约
+  - 取消/关闭时自动删除刚创建但未保存的事件，避免列表残留“空事件”
+  - Files:
+    - `src/pages/TimeLog.tsx`
+
+- **EventEditModalV2：按副作用边界抽离 Draft Hook（无 UX 变化）** (2025-12-29):
+  - 把 formData 初始化/重置、titleRef、initialSnapshot/isAutoSaving 等 refs 统一抽离到 hook，降低单文件过载
+  - 修复/收敛若干类型边界：syncStatus 类型、ES5 target 下 emoji 正则兼容、LogTab location 归一化
+  - Files:
+    - `src/components/EventEditModal/EventEditModalV2.tsx`
+    - `src/components/EventEditModal/hooks/useEventEditDraft.ts`
+    - `src/components/EventEditModal/types.ts`
+    - `src/pages/LogTab.tsx`
+
+- **EventEditModal 新建事件：eventlog 乱码 & location 保存失败修复** (2025-12-29):
+  - 修复 eventlog 被二次 `JSON.stringify` 导致的“带引号 JSON 乱码”（保存时区分 string/array，并兼容历史二次 stringify 数据）
+  - 修复填写 location 后事件写入失败导致“事件消失”（SQLite 写入边界将 location 统一序列化为 TEXT：优先取 `displayName`）
+  - Files:
+    - `src/components/EventEditModal/EventEditModalV2.tsx`
+    - `src/services/storage/SQLiteService.ts`
+
 - **Block-Level Timestamp Outlook 同步修复** (2025-12-03):
   - 🐛 修复添加 calendarIds 同步到 Outlook 后，Block-Level Timestamp 全部崩溃的问题
   - **根因**: 

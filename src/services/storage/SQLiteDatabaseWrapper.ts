@@ -16,7 +16,7 @@ export class SQLiteDatabaseWrapper {
   }
 
   async initialize(): Promise<void> {
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
     if (!electronAPI?.sqlite) {
       throw new Error('SQLite IPC not available');
     }
@@ -35,7 +35,8 @@ export class SQLiteDatabaseWrapper {
       throw new Error('Database not initialized');
     }
     
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite) throw new Error('SQLite IPC not available');
     await electronAPI.sqlite.exec(this.dbId, sql);
   }
 
@@ -44,7 +45,8 @@ export class SQLiteDatabaseWrapper {
       throw new Error('Database not initialized');
     }
 
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite) throw new Error('SQLite IPC not available');
     return await electronAPI.sqlite.pragma(this.dbId, pragma);
   }
 
@@ -58,7 +60,8 @@ export class SQLiteDatabaseWrapper {
 
   close(): void {
     if (this.dbId) {
-      const electronAPI = (window as any).electronAPI;
+      const electronAPI = window.electronAPI;
+      if (!electronAPI?.sqlite) throw new Error('SQLite IPC not available');
       electronAPI.sqlite.close(this.dbId);
       this.dbId = null;
     }
@@ -76,7 +79,8 @@ class SQLiteStatementWrapper {
       return;
     }
 
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite) throw new Error('SQLite IPC not available');
     // preload.js 中的 prepare 直接返回 stmtId 字符串
     this.stmtId = await electronAPI.sqlite.prepare(this.dbId, this.sql);
     this.initialized = true;
@@ -85,7 +89,8 @@ class SQLiteStatementWrapper {
   async run(...params: any[]): Promise<{ changes: number; lastInsertRowid: number }> {
     await this.ensureInitialized();
     
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite || !this.stmtId) throw new Error('SQLite statement not initialized');
     // preload.js 已经解包了结果，直接返回 { changes, lastInsertRowid }
     return await electronAPI.sqlite.run(this.stmtId, params);
   }
@@ -93,7 +98,8 @@ class SQLiteStatementWrapper {
   async get(...params: any[]): Promise<any> {
     await this.ensureInitialized();
     
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite || !this.stmtId) throw new Error('SQLite statement not initialized');
     // preload.js 已经解包了结果，直接返回数据
     return await electronAPI.sqlite.get(this.stmtId, params);
   }
@@ -101,7 +107,8 @@ class SQLiteStatementWrapper {
   async all(...params: any[]): Promise<any[]> {
     await this.ensureInitialized();
     
-    const electronAPI = (window as any).electronAPI;
+    const electronAPI = window.electronAPI;
+    if (!electronAPI?.sqlite || !this.stmtId) throw new Error('SQLite statement not initialized');
     // preload.js 已经解包了结果，直接返回数据数组
     return await electronAPI.sqlite.all(this.stmtId, params);
   }

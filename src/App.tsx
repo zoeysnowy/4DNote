@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MicrosoftCalendarService } from './services/MicrosoftCalendarService';
 import { CalendarService } from './services/CalendarService'; // 🆕 v2.0: 统一日历服务
 import { ActionBasedSyncManager } from './services/ActionBasedSyncManager';
+import { AuthStore } from './state/authStore';
+import { SyncStatusStore } from './state/syncStatusStore';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
 import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用
@@ -12,7 +14,7 @@ import { TimerCard } from './components/TimerCard'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
 import { HomePage } from './pages/HomePage'; // 🆕 HomePage with stats dashboard
 import { TimerSession, Event } from './types';
-import { formatTimeForStorage } from './utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
 import { STORAGE_KEYS, CacheManager } from './constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from './utils/persistentStorage';
@@ -34,8 +36,6 @@ import TimeLog from './pages/TimeLog';
 import { logger } from './utils/logger';
 
 // 🧪 导入存储测试模块（开发环境）
-import './tests/test-storage-indexeddb';
-import './tests/debug-storage-env';
 
 const AppLogger = logger.module('App');
 // 🚀 性能优化：生产环境禁用 AppLogger.log
@@ -101,30 +101,6 @@ function App() {
         await EventHistoryService.initialize(storageManager);
         console.log('✅ [App] EventHistoryService initialized');
         
-        // 🔄 数据迁移：localStorage → StorageManager
-        const { needsMigration, migrateFromLocalStorage } = await import('./utils/dataMigration');
-        const shouldMigrate = await needsMigration();
-        
-        if (shouldMigrate) {
-          console.log('🔄 [App] Starting data migration...');
-          const migrationResult = await migrateFromLocalStorage();
-          
-          if (migrationResult.success) {
-            console.log('✅ [App] Migration completed:', {
-              migratedCount: migrationResult.migratedCount,
-              duration: `${migrationResult.duration}ms`
-            });
-          } else {
-            console.error('❌ [App] Migration failed:', {
-              failedCount: migrationResult.failedCount,
-              errors: migrationResult.errors
-            });
-            // 迁移失败不阻止应用启动，继续使用 localStorage 作为降级方案
-          }
-        } else {
-          console.log('ℹ️  [App] No migration needed');
-        }
-        
         // 🚀 [PERFORMANCE] 一次性迁移：Event → EventStats
         console.log('📊 [App] Checking EventStats migration...');
         await storageManager.migrateToEventStats();
@@ -164,13 +140,6 @@ function App() {
       // 🎯 UUID 迁移完成 (v2.17)
       // 不再需要 EventIdPool 初始化，ID 生成器直接使用 UUID v4
       console.log('✅ [App] Using UUID v4 for event ID generation (no pool needed)');
-      
-      // 🧪 动态加载 SQLite 测试模块（仅 Electron 环境）
-      if (typeof window !== 'undefined' && (window as any).electronAPI) {
-        import('./tests/test-storage-sqlite').catch(err => {
-          console.warn('⚠️  SQLite tests not available:', err);
-        });
-      }
       
       // 🆕 v1.8.1: EventLog 数据迁移已完成，不需要重复执行
       
@@ -486,7 +455,7 @@ function App() {
    * 3. STOP: 计算最终时长，更新事件状态为 'pending' 以触发同步
    * 
    * 🆕 独立 Timer 二次计时自动升级机制：
-   * - 检测独立 Timer 事件（isTimer=true + 无 parentEventId + 有 timerLogs）
+  * - 检测独立 Timer 事件（isTimer=true + 无 parentEventId + 已存在子事件/历史计时段）
    * - 自动创建父事件，继承所有元数据
    * - 将原 Timer 转为子事件
    * - 为父事件启动新 Timer
@@ -506,16 +475,20 @@ function App() {
       // 从 EventService 读取单个事件（自动规范化 title）
       const existingEvent = await EventService.getEventById(eventIdOrParentId);
       
-      // 检测条件：isTimer=true + 无 parentEventId + 有 childEventIds（说明已完成至少一次计时）
-      if (existingEvent && 
-          existingEvent.isTimer === true && 
-          !existingEvent.parentEventId && 
-          existingEvent.childEventIds && 
-          existingEvent.childEventIds.length > 0) {
+      // 检测条件：isTimer=true + 无 parentEventId + 已存在子事件（说明已完成至少一次计时）
+      // ADR-001: 结构真相来自 parentEventId；子节点通过查询派生
+      const existingTimerChildren = (existingEvent && existingEvent.isTimer === true && !existingEvent.parentEventId)
+        ? await EventService.getChildEvents(existingEvent.id)
+        : [];
+
+      if (existingEvent &&
+          existingEvent.isTimer === true &&
+          !existingEvent.parentEventId &&
+          existingTimerChildren.length > 0) {
         
         AppLogger.log('🔄 [Timer] 检测到独立 Timer 二次计时，自动升级为父子结构', {
           timerId: existingEvent.id,
-          childEventsCount: existingEvent.childEventIds.length
+          childEventsCount: existingTimerChildren.length
         });
         
         // Step 1: 创建父事件（继承原 Timer 的所有元数据）
@@ -529,7 +502,6 @@ function App() {
           source: 'local',
           isTimer: false,           // ✅ 不再是 Timer
           isTimeCalendar: true,     // 标记为 TimeCalendar 创建
-          childEventIds: [existingEvent.id], // 将原 Timer 作为第一个子事件
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'pending' as const,
@@ -948,59 +920,7 @@ function App() {
       
       if (result.success) {
         AppLogger.log('💾 [Timer Stop] Event saved via EventService:', timerEventId);
-        
-        // 🆕 Issue #12: 更新父事件的 childEventIds
-        if (globalTimer.parentEventId) {
-          const parentEvent = await EventService.getEventById(globalTimer.parentEventId);
-          console.log('📝 [Timer Stop] 准备更新父事件 childEventIds:', {
-            parentEventId: globalTimer.parentEventId,
-            parentEventFound: !!parentEvent,
-            currentChildEventIds: parentEvent?.childEventIds,
-            timerEventId,
-            hasParentEventId: !!globalTimer.parentEventId,
-            globalTimer
-          });
-          if (parentEvent) {
-            // 🔧 避免重复添加：检查 timerEventId 是否已存在
-            const currentChildEventIds = parentEvent.childEventIds || [];
-            if (currentChildEventIds.includes(timerEventId)) {
-              console.log('⚠️ [Timer Stop] timerEventId 已存在于 childEventIds，跳过添加:', timerEventId);
-            } else {
-              const updatedChildEventIds = [...currentChildEventIds, timerEventId];
-              console.log('📝 [Timer Stop] 调用 EventService.updateEvent 前:', {
-                parentId: globalTimer.parentEventId,
-                oldChildEventIds: parentEvent.childEventIds,
-                newChildEventIds: updatedChildEventIds,
-                updatePayload: {
-                  childEventIds: updatedChildEventIds,
-                  updatedAt: formatTimeForStorage(new Date())
-                }
-              });
-            
-              const updateResult = await EventService.updateEvent(globalTimer.parentEventId, {
-                childEventIds: updatedChildEventIds,
-                updatedAt: formatTimeForStorage(new Date())
-              } as Partial<Event>);
-              
-              console.log('📝 [Timer Stop] EventService.updateEvent 返回:', updateResult);
-              
-              // 验证更新是否成功
-              const verifyParent = await EventService.getEventById(globalTimer.parentEventId);
-              console.log('✅ [Timer Stop] 验证父事件 childEventIds:', {
-                parentId: globalTimer.parentEventId,
-                childEventIds: verifyParent?.childEventIds,
-                updateSuccessful: updateResult.success,
-                expectedCount: updatedChildEventIds.length,
-                actualCount: verifyParent?.childEventIds?.length || 0
-              });
-            }
-          } else {
-            console.error('❌ [Timer Stop] 找不到父事件:', globalTimer.parentEventId);
-          }
-        } else {
-          console.log('⚠️ [Timer Stop] 没有 parentEventId，跳过 childEventIds 更新');
-        }
-        
+
         // ✅ 不需要手动 setAllEvents，storage 监听器会自动更新
         // EventService.updateEvent 内部会触发 storage 变化事件
       } else {
@@ -1008,7 +928,7 @@ function App() {
       }
 
       // ✅立即切换到时间页面
-      setCurrentPage('time');
+      setCurrentPage('timecalendar');
     } catch (error) {
       AppLogger.error('💾 [Timer Stop] 保存事件失败:', error);
     }
@@ -1117,9 +1037,10 @@ function App() {
       const confirmTime = new Date(); // 用户点击确定的时刻
       
       // ✅ v1.8: 处理 startTime 可能为 undefined
-      const eventStartTime = updatedEvent.startTime 
-        ? new Date(updatedEvent.startTime) 
-        : confirmTime;
+      const parsedEventStartTime = updatedEvent.startTime
+        ? parseLocalTimeStringOrNull(updatedEvent.startTime)
+        : null;
+      const eventStartTime = parsedEventStartTime ?? confirmTime;
       
       const timeDiff = Math.abs(confirmTime.getTime() - eventStartTime.getTime());
       const useEventTime = timeDiff > 60000; // 超过1分钟认为用户手动修改了时间
@@ -1343,8 +1264,44 @@ function App() {
     };
   }, [globalTimer]);
 
+  // 💾 [NEW] 启动时冲刷 beforeunload 的同步落盘（localStorage bridge → StorageManager）
+  // 目的：避免把整个 events 列表当作 localStorage 真值来源，只保留“待写入补丁”。
+  useEffect(() => {
+    const PENDING_EVENT_UPSERTS_KEY = '4dnote-pending-event-upserts';
+
+    const flushPendingEventUpserts = async () => {
+      try {
+        const raw = localStorage.getItem(PENDING_EVENT_UPSERTS_KEY);
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw);
+        const pending: Event[] = Array.isArray(parsed)
+          ? parsed
+          : (Array.isArray((parsed as any)?.upserts) ? (parsed as any).upserts : []);
+
+        if (!Array.isArray(pending) || pending.length === 0) {
+          localStorage.removeItem(PENDING_EVENT_UPSERTS_KEY);
+          return;
+        }
+
+        for (const e of pending) {
+          await EventService.createEvent(e, true, { originComponent: 'Timer' });
+        }
+
+        localStorage.removeItem(PENDING_EVENT_UPSERTS_KEY);
+        AppLogger.log('💾 [PendingUpserts] Flushed pending event upserts:', pending.length);
+      } catch (error) {
+        AppLogger.error('💾 [PendingUpserts] Failed to flush pending event upserts:', error);
+      }
+    };
+
+    void flushPendingEventUpserts();
+  }, []);
+
   // 🔧 [NEW] 断点保护 - 页面关闭/刷新时保✅Timer
   useEffect(() => {
+    const PENDING_EVENT_UPSERTS_KEY = '4dnote-pending-event-upserts';
+
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (globalTimer && globalTimer.isRunning && !globalTimer.isPaused) {
         // 保存最后一次状态
@@ -1387,21 +1344,34 @@ function App() {
             fourDNoteSource: true
           };
 
-          // ⚠️ 使用 localStorage 直接保存（因为 beforeunload 不支持 async）
-          // StorageManager 会在下次应用启动时读取并迁移到 IndexedDB
+          // ⚠️ beforeunload 不支持 async：用 localStorage 作为“待写入补丁队列”
+          // 下次启动时会冲刷到 StorageManager（IndexedDB/SQLite）。
           try {
-            const rawEvents = localStorage.getItem(STORAGE_KEYS.EVENTS);
-            const events: Event[] = rawEvents ? JSON.parse(rawEvents) : [];
-            const eventIndex = events.findIndex(e => e.id === timerEventId);
-            
-            if (eventIndex === -1) {
-              events.push(timerEvent);
+            const rawPending = localStorage.getItem(PENDING_EVENT_UPSERTS_KEY);
+
+            const pending: Event[] = (() => {
+              if (!rawPending) return [];
+              try {
+                const parsed = JSON.parse(rawPending);
+                return Array.isArray(parsed)
+                  ? parsed
+                  : (Array.isArray((parsed as any)?.upserts) ? (parsed as any).upserts : []);
+              } catch {
+                return [];
+              }
+            })();
+
+            const existingIndex = pending.findIndex(e => e.id === timerEventId);
+            if (existingIndex === -1) {
+              pending.push(timerEvent);
             } else {
-              events[eventIndex] = timerEvent;
+              pending[existingIndex] = timerEvent;
             }
-            
-            localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(events));
-            AppLogger.log('💾 [Timer] Saved timer event before unload (sync):', timerEventId);
+
+            // 防止 localStorage 过大：只保留最近的少量补丁
+            const trimmed = pending.length > 20 ? pending.slice(pending.length - 20) : pending;
+            localStorage.setItem(PENDING_EVENT_UPSERTS_KEY, JSON.stringify(trimmed));
+            AppLogger.log('💾 [Timer] Saved pending timer event upsert before unload (sync):', timerEventId);
           } catch (lsError) {
             AppLogger.error('💾 [Timer] localStorage save failed:', lsError);
           }
@@ -1550,14 +1520,6 @@ function App() {
       });
     }
     
-    // 💾 同步认证状态到 localStorage（供 Widget 读取）
-    try {
-      localStorage.setItem('4dnote-outlook-authenticated', currentAuthState.toString());
-      AppLogger.log('💾 [AUTH] Saved auth status to localStorage:', currentAuthState);
-    } catch (error) {
-      AppLogger.error('❌ [AUTH] Failed to save auth status:', error);
-    }
-    
     // 🔧 修复：无论状态是否变化，只要已登录且没有 syncManager，就初始化
     if (currentAuthState && !syncManager) {
       // ✨ 防止 React 严格模式下重复创建
@@ -1640,6 +1602,60 @@ function App() {
     };
   }, [microsoftService, lastAuthState, syncManager]);  // 🔧 [HMR FIX] 保留 syncManager 依赖，但通过标志位避免重复创建
 
+  // 💾 UI 桥接：同步认证状态到 localStorage（供 DesktopCalendarWidget 跨窗口读取）
+  useEffect(() => {
+    const currentAuthState = microsoftService?.isSignedIn() || false;
+    AuthStore.setAuthenticated(currentAuthState);
+    try {
+      localStorage.setItem('4dnote-outlook-authenticated', currentAuthState.toString());
+      AppLogger.log('💾 [AUTH] Saved auth status to localStorage:', currentAuthState);
+    } catch (error) {
+      AppLogger.error('❌ [AUTH] Failed to save auth status:', error);
+    }
+  }, [microsoftService]);
+
+  // 💾 UI 桥接：同步状态栏/Widget 的同步信息（localStorage 仅作为跨窗口桥接层）
+  useEffect(() => {
+    SyncStatusStore.hydrateFromLocalStorageBridge();
+
+    const handleSyncStarted = () => {
+      SyncStatusStore.setSyncing(true);
+    };
+
+    const handleSyncCompleted = (event: any) => {
+      const { timestamp, eventCount, syncStats } = event?.detail || {};
+
+      // ✅ UI 层负责持久化状态栏/桌面组件所需的 localStorage 键
+      try {
+        if (timestamp) {
+          localStorage.setItem('lastSyncTime', formatTimeForStorage(timestamp));
+        }
+        if (typeof eventCount === 'number') {
+          localStorage.setItem('lastSyncEventCount', String(eventCount));
+        }
+        if (syncStats) {
+          localStorage.setItem('syncStats', JSON.stringify(syncStats));
+        }
+      } catch {
+        // ignore
+      }
+
+      SyncStatusStore.setCompleted({ timestamp, eventCount, syncStats });
+
+      // ✅ 供 TimeCalendar 等旧接口使用：用事件 payload 更新 lastSyncTime（避免轮询）
+      if (timestamp) {
+        setLastSyncTime(timestamp);
+      }
+    };
+
+    window.addEventListener('action-sync-started', handleSyncStarted as any);
+    window.addEventListener('action-sync-completed', handleSyncCompleted as any);
+    return () => {
+      window.removeEventListener('action-sync-started', handleSyncStarted as any);
+      window.removeEventListener('action-sync-completed', handleSyncCompleted as any);
+    };
+  }, []);
+
   // 🔐 监听全局认证状态变化事件（登录成功后触发）
   useEffect(() => {
     const handleAuthChange = (event: globalThis.Event) => {
@@ -1647,41 +1663,28 @@ function App() {
       const { isAuthenticated } = customEvent.detail;
       
       console.log('🔍 [App] auth-state-changed event:', isAuthenticated);
+
+      // 💾 UI 桥接：只在认证事件变化时写 localStorage
+      try {
+        localStorage.setItem('4dnote-outlook-authenticated', String(isAuthenticated));
+        AppLogger.log('💾 [AUTH] Saved auth status to localStorage (event):', isAuthenticated);
+      } catch (error) {
+        AppLogger.error('❌ [AUTH] Failed to save auth status (event):', error);
+      }
+      AuthStore.setAuthenticated(!!isAuthenticated);
       
+      // 强制更新 lastAuthState，触发上面的 useEffect（会同步 localStorage 给 Widget）
+      setLastAuthState(prev => !prev);
+      queueMicrotask(() => setLastAuthState(isAuthenticated));
+
       if (isAuthenticated && !syncManager) {
-        // 强制更新 lastAuthState，触发上面的 useEffect
-        setLastAuthState(prev => !prev); // 切换状态强制触发
-        // ✅ v2.21.1: 使用 queueMicrotask 替代 setTimeout(0)
-        queueMicrotask(() => setLastAuthState(isAuthenticated));
+        // 登录成功且尚未创建 syncManager：触发初始化
+        //（初始化逻辑在另一个 useEffect 内根据 lastAuthState/syncManager 处理）
       }
     };
     
     window.addEventListener('auth-state-changed', handleAuthChange);
     return () => window.removeEventListener('auth-state-changed', handleAuthChange);
-  }, [syncManager]);
-
-  // 🔄 定期更新 lastSyncTime（与 DesktopCalendarWidget 保持一致）
-  useEffect(() => {
-    if (!syncManager) return;
-    
-    const updateSyncTime = () => {
-      try {
-        const time = syncManager.getLastSyncTime?.();
-        if (time) {
-          setLastSyncTime(time);
-        }
-      } catch (error) {
-        AppLogger.error('🔧 [App] 获取同步时间:失败:', error);
-      }
-    };
-    
-    // 立即更新一✅
-    updateSyncTime();
-    
-    // ✅0秒更新一✅
-    const syncTimeInterval = setInterval(updateSyncTime, 10000);
-    
-    return () => clearInterval(syncTimeInterval);
   }, [syncManager]);
 
   // 保存事件更改
@@ -1943,7 +1946,7 @@ function App() {
 
       case 'ai-demo':
         // 懒加载 AIDemo 组件
-        const AIDemo = React.lazy(() => import('./components/AIDemo.tsx'));
+        const AIDemo = React.lazy(() => import('./components/AIDemo'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo"><div>加载中...</div></PageContainer>}>
             <AIDemo />
@@ -1953,7 +1956,7 @@ function App() {
         
       case 'ai-demo-v2':
         // 懒加载 AIDemoV2 组件
-        const AIDemoV2 = React.lazy(() => import('./components/AIDemoV2.tsx'));
+        const AIDemoV2 = React.lazy(() => import('./components/AIDemoV2'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo V2"><div>加载中...</div></PageContainer>}>
             <AIDemoV2 />
@@ -1963,7 +1966,7 @@ function App() {
 
       case 'rag-demo':
         // 懒加载 RAGDemo 组件
-        const RAGDemo = React.lazy(() => import('./components/RAGDemo.tsx'));
+        const RAGDemo = React.lazy(() => import('./components/RAGDemo'));
         content = (
           <React.Suspense fallback={<PageContainer title="RAG Demo"><div>加载中...</div></PageContainer>}>
             <RAGDemo />

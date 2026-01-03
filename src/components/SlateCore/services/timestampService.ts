@@ -9,7 +9,7 @@
  * @version 1.0.0
  */
 
-import { Editor, Transforms, Range, Node, Element as SlateElement } from 'slate';
+import { Editor, Transforms, Range, Node, Element as SlateElement, Text as SlateText } from 'slate';
 import { TimestampDividerElement } from '../types';
 
 /**
@@ -175,10 +175,14 @@ export class EventLogTimestampService {
       console.log('[TimestampService] 编辑器状态:', { hasSelection: !!selection, childrenCount });
       
       // 检查是否为空编辑器（只有一个空段落）
-      const isEmptyEditor = childrenCount === 1 
-        && editor.children[0].type === 'paragraph'
-        && editor.children[0].children.length === 1
-        && (editor.children[0].children[0] as any).text === '';
+      const firstChild = editor.children[0];
+      const isEmptyEditor = childrenCount === 1
+        && SlateElement.isElement(firstChild)
+        && (firstChild as any).type === 'paragraph'
+        && Array.isArray((firstChild as any).children)
+        && (firstChild as any).children.length === 1
+        && SlateText.isText((firstChild as any).children[0])
+        && ((firstChild as any).children[0] as any).text === '';
       
       console.log('[TimestampService] 是否为空编辑器:', isEmptyEditor);
       

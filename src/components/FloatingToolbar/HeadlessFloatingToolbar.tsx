@@ -22,6 +22,15 @@ import { BackgroundColorPicker } from './pickers/BackgroundColorPicker'; // 🆕
 import { icons } from '../../assets/icons'; // 🆕 导入图标资源
 import './HeadlessFloatingToolbar.css';
 
+type ToolbarButtonConfig = {
+  icon: string;
+  label: string;
+  command?: string;
+  color?: string;
+  iconSrc?: string;
+  iconSrcActive?: string;
+};
+
 export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: FloatingBarMode }> = ({
   position,
   config,
@@ -93,7 +102,7 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
     : (config.features.some(f => menuFloatingbarFeatures.includes(f)) ? config.features : menuFloatingbarFeatures);
 
   // 功能按钮配置（提前定义，供 useEffect 使用）
-  const textFeatureConfig = {
+  const textFeatureConfig: Partial<Record<ToolbarFeatureType, ToolbarButtonConfig>> = {
     bold: { icon: '𝐁', label: '粗体', command: 'bold' },
     italic: { icon: '𝑰', label: '斜体', command: 'italic' },
     underline: { icon: '𝐔', label: '下划线', command: 'underline' },
@@ -513,7 +522,7 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
 
   if (!position.show) return null;
 
-  const actionFeatureConfig = {
+  const actionFeatureConfig: Partial<Record<ToolbarFeatureType, ToolbarButtonConfig>> = {
     tag: { icon: '#', label: '添加标签', color: '#3b82f6' },
     emoji: { icon: 'svg', iconSrc: icons.emoji, label: '添加表情', color: '#f59e0b' },
     dateRange: { icon: 'svg', iconSrc: icons.datetime, label: '选择日期', color: '#10b981' },

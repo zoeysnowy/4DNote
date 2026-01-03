@@ -5,6 +5,7 @@
 
 import { EventExtractionWorkflow } from '../ai/workflows/EventExtractionWorkflow';
 import { QRCodeInfo } from '../types';
+import { formatTimeForStorage } from '../utils/timeUtils';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -154,8 +155,8 @@ function convertToEventLog(result: any) {
       imageData: qr.imageData,
       extractedAt: qr.extractedAt
     })),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
+    createdAt: formatTimeForStorage(new Date()),
+    updatedAt: formatTimeForStorage(new Date())
   };
 
   return eventLog;

@@ -48,39 +48,10 @@ const DesktopCalendarWidget: React.FC = () => {
 
   // 生成唯一的存�?key
   const storageKey = `remarkable-widget-settings-${widgetId}`;
-  
-  // 🔧 Widget 不应该有自己的服务实例，只使用全局实例
-  const [microsoftService, setMicrosoftService] = useState<any>(null);
-  
-  // 🔧 持续检查全局服务，直到主应用初始化完�?
-  useEffect(() => {
-    const checkGlobalService = () => {
-      if (typeof window !== 'undefined' && (window as any).microsoftCalendarService) {
-        const globalService = (window as any).microsoftCalendarService;
-        widgetLogger.log('�?[Widget] 找到全局 microsoftCalendarService');
-        setMicrosoftService(globalService);
-        return true; // 找到�?
-      }
-      widgetLogger.log('�?[Widget] 等待全局 microsoftCalendarService...');
-      return false; // 还没找到
-    };
-    
-    // 立即检查一�?
-    if (checkGlobalService()) {
-      return; // 如果找到了就不需要后续检�?
-    }
-    
-    // 每秒检查一次，直到找到为止
-    const intervalId = setInterval(() => {
-      if (checkGlobalService()) {
-        clearInterval(intervalId);
-      }
-    }, 1000);
-    
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []); // 空依赖数组，只在挂载时执行一�?
+
+  // 🔧 Widget window 与主应用是独立 renderer：不要尝试复用主应用的 service 实例。
+  // Widget 只通过 localStorage bridge 获取认证/同步状态。
+  const microsoftService = null;
   
   const [lastSyncTime, setLastSyncTime] = useState<Date | null>(null);
   const [updatedEventCount, setUpdatedEventCount] = useState(0); // 🔧 追踪同步更新的事件数�?
@@ -274,7 +245,7 @@ const DesktopCalendarWidget: React.FC = () => {
       } else {
         widgetLogger.error('�?[Renderer] Drag bar NOT found!');
       }
-    }, 500);
+    });
     
     return () => {
       document.body.classList.remove('widget-mode');
@@ -285,68 +256,48 @@ const DesktopCalendarWidget: React.FC = () => {
     };
   }, []);
 
-  // 🔄 使用全局同步管理器，确保与主应用数据一�?
+  // 🔄 Widget bridge：认证 + 同步状态都从 localStorage 读取（跨窗口通信），事件驱动为主，低频兜底
   useEffect(() => {
-    const checkAuthAndInitSync = () => {
-      // 🔧 只使�?localStorage 中的认证状态（主应用会更新这个标记�?
-      const storedAuthState = localStorage.getItem('4dnote-outlook-authenticated') === 'true';
-      
-      widgetLogger.log('🔍 [Widget] 检查认证状�?', {
-        storedAuthState,
-        hasMicrosoftService: !!microsoftService
-      });
-      
-      // 更新认证状�?
-      setIsAuthenticated(storedAuthState);
-      
-      // 🔧 �?Electron 环境中，Widget 和主应用是独立的 window 对象
-      // 不需要尝试获取全局 syncManager，直接从 localStorage 读取即可
-    };
-    
-    // 只有�?microsoftService 存在时才检�?
-    if (microsoftService) {
-      checkAuthAndInitSync();
-    } else {
-      widgetLogger.log('�?[Widget] 等待 microsoftService 初始�?..');
-    }
-    
-    // 🔧 监听 localStorage 变化（实时响应主应用的认证状态更新）
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === '4dnote-outlook-authenticated') {
-        widgetLogger.log('🔔 [Widget] 检测到认证状态变�?', e.newValue);
-        checkAuthAndInitSync();
+    const lastBridgeSnapshotRef = {
+      current: {
+        isAuthenticated: null as boolean | null,
+        lastSyncTimeRaw: null as string | null,
+        lastSyncEventCount: null as number | null,
+        syncStatsRaw: null as string | null
       }
     };
-    
-    window.addEventListener('storage', handleStorageChange);
-    
-    // 定期检查认证状态（�?0秒）
-    const authCheckInterval = setInterval(checkAuthAndInitSync, 30000);
-    
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      clearInterval(authCheckInterval);
-    };
-  }, [microsoftService]);
 
-  // 🔄 定期更新 lastSyncTime �?updatedEventCount（只�?localStorage 读取�?
-  useEffect(() => {
-    const updateSyncStatus = () => {
+    const updateAuthFromBridge = () => {
+      const storedAuthState = localStorage.getItem('4dnote-outlook-authenticated') === 'true';
+      const prev = lastBridgeSnapshotRef.current.isAuthenticated;
+      if (prev === null || prev !== storedAuthState) {
+        widgetLogger.log('🔔 [Widget] 认证状态变更:', storedAuthState);
+        lastBridgeSnapshotRef.current.isAuthenticated = storedAuthState;
+      }
+      setIsAuthenticated(storedAuthState);
+    };
+
+    const updateSyncStatusFromBridge = () => {
       try {
         // 🔧 �?localStorage 读取同步时间（Electron 窗口间通信方式�?
         const storedTime = localStorage.getItem('lastSyncTime');
         if (storedTime) {
+          const prevRaw = lastBridgeSnapshotRef.current.lastSyncTimeRaw;
+          const shouldUpdate = prevRaw === null || prevRaw !== storedTime;
           try {
             const parsedTime = new Date(storedTime);
             if (!isNaN(parsedTime.getTime())) {
-              widgetLogger.log('🕐 [Widget] �?localStorage 读取同步时间:', parsedTime.toLocaleString('zh-CN'));
-              setLastSyncTime(parsedTime);
+              if (shouldUpdate) {
+                widgetLogger.log('✅ [Widget] 同步完成时间更新:', parsedTime.toLocaleString('zh-CN'));
+                lastBridgeSnapshotRef.current.lastSyncTimeRaw = storedTime;
+              }
+              if (shouldUpdate) {
+                setLastSyncTime(parsedTime);
+              }
             }
           } catch (parseError) {
             widgetLogger.error('❌ [Widget] 解析同步时间失败:', parseError);
           }
-        } else {
-          widgetLogger.log('⚠️ [Widget] localStorage 中暂无同步时间');
         }
 
         // 🔧 �?localStorage 读取更新事件数量
@@ -354,18 +305,27 @@ const DesktopCalendarWidget: React.FC = () => {
         if (storedEventCount) {
           const count = parseInt(storedEventCount, 10);
           if (!isNaN(count)) {
-            widgetLogger.log('📊 [Widget] �?localStorage 读取事件数量:', count);
-            setUpdatedEventCount(count);
+            const prevCount = lastBridgeSnapshotRef.current.lastSyncEventCount;
+            if (prevCount === null || prevCount !== count) {
+              widgetLogger.log('📈 [Widget] 同步更新事件数变更:', count);
+              lastBridgeSnapshotRef.current.lastSyncEventCount = count;
+              setUpdatedEventCount(count);
+            }
           }
         }
         
         // 📊 �?localStorage 读取同步统计信息
         const storedSyncStats = localStorage.getItem('syncStats');
         if (storedSyncStats) {
+          const prevRaw = lastBridgeSnapshotRef.current.syncStatsRaw;
+          const shouldUpdate = prevRaw === null || prevRaw !== storedSyncStats;
           try {
             const stats = JSON.parse(storedSyncStats);
-            widgetLogger.log('📊 [Widget] �?localStorage 读取同步统计:', stats);
-            setSyncStats(stats);
+            if (shouldUpdate) {
+              widgetLogger.log('📊 [Widget] 同步统计更新:', stats);
+              lastBridgeSnapshotRef.current.syncStatsRaw = storedSyncStats;
+              setSyncStats(stats);
+            }
           } catch (e) {
             widgetLogger.error('�?[Widget] 解析同步统计失败:', e);
           }
@@ -374,27 +334,34 @@ const DesktopCalendarWidget: React.FC = () => {
         widgetLogger.error('�?[Widget] 获取同步状态失�?', error);
       }
     };
-    
-    // 立即更新一�?
-    widgetLogger.log('🔄 [Widget] 开始监听同步状态更�?..');
-    updateSyncStatus();
-    
-    // 监听 localStorage 变化（实时响应主应用的同步完成）
+
+    const updateAllFromBridge = () => {
+      updateAuthFromBridge();
+      updateSyncStatusFromBridge();
+    };
+
+    updateAllFromBridge();
+
+    // 监听 localStorage 变化（实时响应主应用的桥接数据更新）
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'lastSyncTime' || e.key === 'lastSyncEventCount' || e.key === 'syncStats') {
-        widgetLogger.log('🔔 [Widget] 检测到同步状态变�?', e.key, '=', e.newValue);
-        updateSyncStatus();
+      if (
+        e.key === '4dnote-outlook-authenticated' ||
+        e.key === 'lastSyncTime' ||
+        e.key === 'lastSyncEventCount' ||
+        e.key === 'syncStats'
+      ) {
+        updateAllFromBridge();
       }
     };
     
     window.addEventListener('storage', handleStorageChange);
-    
-    // �?0秒轮询一次（兜底�?
-    const syncStatusInterval = setInterval(updateSyncStatus, 10000);
+
+    // 低频兜底：防止极端情况下错过 storage event
+    const fallbackInterval = setInterval(updateAllFromBridge, 60000);
     
     return () => {
       window.removeEventListener('storage', handleStorageChange);
-      clearInterval(syncStatusInterval);
+      clearInterval(fallbackInterval);
     };
   }, []); // 🔧 不依赖任何状态，只依�?localStorage
 
@@ -757,11 +724,9 @@ const DesktopCalendarWidget: React.FC = () => {
     pendingMoveRef.current = null;
     
     // 通知主进程拖动结束，重置目标尺寸
-    if ((window.electronAPI as any)?.widgetDragEnd) {
-      (window.electronAPI as any).widgetDragEnd().catch((err: Error) => {
-        widgetLogger.error('�?[Renderer] widgetDragEnd 失败:', err);
-      });
-    }
+    window.electronAPI?.widgetDragEnd?.().catch((err: Error) => {
+      widgetLogger.error('�?[Renderer] widgetDragEnd 失败:', err);
+    });
   }, []);
 
   // 监听拖动
