@@ -21,7 +21,7 @@ import { withHistory } from 'slate-history';
 import { ChevronRight, ChevronDown, Circle, Link as LinkIcon } from 'lucide-react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/EventTree';
+import { EventTreeAPI } from '../../services/eventTree';
 import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 import { LinkedCard } from './LinkedCard';
 import Tippy from '@tippyjs/react';

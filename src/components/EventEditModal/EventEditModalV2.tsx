@@ -81,7 +81,7 @@ import data from '@emoji-mart/data';
 
 import { TagService } from '../../services/TagService';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/EventTree';
+import { EventTreeAPI } from '../../services/eventTree';
 import { EventHub } from '../../services/EventHub';
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';

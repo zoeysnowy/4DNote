@@ -24,7 +24,7 @@ import { EventService } from '../../../services/EventService'; // 🔧 仅用于
 import { EventHistoryService } from '../../../services/EventHistoryService'; // 🆕 用于事件历史快照
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
 import { generateEventId } from '../../../utils/calendarUtils';
-import { EventTreeAPI } from '../../../services/EventTree'; // 🆕 v2.20.0: EventTree Engine
+import { EventTreeAPI } from '../../../services/eventTree'; // 🆕 v2.20.0: EventTree Engine
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
 import { icons } from '../../../assets/icons';
 import { useEventTime } from '../../../hooks/useEventTime';

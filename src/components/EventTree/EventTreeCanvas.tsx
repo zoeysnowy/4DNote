@@ -27,7 +27,7 @@ import 'reactflow/dist/style.css';
 import { Event } from '../../types';
 import { CustomEventNode, EventNodeData } from './CustomEventNode';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/EventTree';
+import { EventTreeAPI } from '../../services/eventTree';
 import './EventTree.css';
 
 interface EventTreeCanvasProps {

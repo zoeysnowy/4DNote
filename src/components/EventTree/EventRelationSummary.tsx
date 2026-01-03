@@ -14,7 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/EventTree';
+import { EventTreeAPI } from '../../services/eventTree';
 import { EventTreeCanvas } from '../EventTree/EventTreeCanvas';
 import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 

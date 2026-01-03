@@ -29,7 +29,7 @@ import { cleanupOutlookHtml as cleanupOutlookHtmlExternal } from './eventlogProc
 import { resolveDisplayTitle } from '../utils/TitleResolver';
 import { resolveCheckState } from '../utils/TimeResolver';
 import { updateSubtreeRootEventIdUsingStatsIndex } from './eventTreeStats';
-import { EventTreeAPI } from './EventTree'; // 🆕 EventTree Engine 集成
+import { EventTreeAPI } from './eventTree'; // 🆕 EventTree Engine 集成
 
 const eventLogger = logger.module('EventService');
 

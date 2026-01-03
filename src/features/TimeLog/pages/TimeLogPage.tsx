@@ -6,7 +6,7 @@ import ContentSelectionPanel from '../../../components/ContentSelectionPanel';
 import { EventService } from '../../../services/EventService';
 import { EventHub } from '../../../services/EventHub';
 import { TagService } from '../../../services/TagService';
-import { EventTreeAPI } from '../../../services/EventTree/TreeAPI';
+import { EventTreeAPI } from '../../../services/eventTree/TreeAPI';
 import { ModalSlate } from '../../../components/ModalSlate/ModalSlate';
 import { LogSlate } from '../../../components/LogSlate/LogSlate';
 import { HierarchicalTagPicker } from '../../../components/HierarchicalTagPicker/HierarchicalTagPicker';
