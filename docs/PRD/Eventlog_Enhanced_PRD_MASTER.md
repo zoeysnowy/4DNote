@@ -1,105 +1,186 @@
-# Eventlog Enhanced — Master PRD（开发主文档）
+---
+title: Eventlog Enhanced — Master PRD
+purpose: Development-facing, MECE integrated PRD
+status: Active
+last_updated: 2026-01-03
+---
 
-> 目的：把分散的 Eventlog Enhanced PRD 合并为一份“可直接落地开发”的主文档。
->
-> 本文不是简单搬运：
-> - 统一术语/对象/事件命名，消除冲突与歧义
-> - 把 Daily Narrative × Granola Signals × Takeaways Capture 融合为一套证据链驱动（Evidence-driven）的生成体系
-> - 对缺失部分补上工程可执行的接口契约（IDs、evidence_refs、timezone、MVP 聚类/权重、删除归档策略、隐私边界）
->
+# Eventlog Enhanced — Master PRD（开发主文档 / MECE 整合版）
 
-## 0. 范围与原则
+> 本文将以下分散 PRD 的内容**完整、MECE**地整合为一份“可开发实践”的主文档，并补齐原文未覆盖/冲突/可改进之处：
+> - 叙事回顾 + Resonance + 分形卡片 + 全息目录 + Signal Tag
+> - 增补：Daily Narrative × Granola Signals × 全交互 Takeaways 聚合
+> - 补充：Granola 风格重点标注与分层整理输出
+> - 相关依赖接口：RECNote（音频锚点）、智能定帧快照（截图证据链）
 
-### 0.1 产品愿景
-让用户“低门槛记录碎碎念”，并持续获得**可回顾、可检索、可总结、可共鸣（可开关）**的成长轨迹。
-
-### 0.2 设计原则（用于裁剪需求与解决冲突）
-1) **Evidence-first（证据优先）**：任何总结/回顾/Takeaway 必须能回链到可定位的证据（note/node/card/event/session…）。
-2) **Origin-based labeling（来源即标签）**：默认不依赖语义猜测做强分类；用户不标记也能用。
-3) **Low friction capture（低摩擦记录）**：默认折叠卡片；Signals 用快捷键/轻入口；会话重点用时间戳。
-4) **Local-first & privacy-first（本地优先/隐私优先）**：行为信号默认最小化；可选项必须可关闭。
-5) **成本可控**：优先“即时轻量结算 + 日终重聚合”，避免对全文反复高成本总结。
-
-### 0.3 非目标（本阶段明确不做）
-- Notion 式数据库全能系统
-- 多人协作/权限系统
-- 实时、全自动、完全正确的语义分类（仅做辅助/回溯标注）
-- 强依赖停留时长等敏感行为数据（MVP 不做或默认关闭）
+本文重点是“开发可执行”：明确背景、目标、范围、功能与用途；统一术语/数据结构/事件；给出管线与验收；并提供来源覆盖矩阵以便审计。
 
 
-## 1. 核心对象与术语（统一版）
+## 1. 背景与问题（Why）
 
-> 说明：原文中“Signal Tag（段落类型）”与“Signals（会话时间戳信号）”容易混淆。本文做**强制区分**：
-> - **Paragraph SignalTag**：段落/块的来源标签（Body/Thought/AI_Conversation/Reference）
-> - **Session Signal**：会话里的带时间戳意图（HIGHLIGHT/QUESTION/…）用于 focus windows
+### 1.1 用户痛点（来自主 PRD）
+- 想写日记/笔记，但维护成本高，常常只剩“碎碎念”。
+- 信息碎片化（工作/学习/生活/研究/会议混杂），难以回顾与检索。
+- 情绪/困境重复出现时，传统关键词搜索无法定位相似时刻。
+- 与 AI 的长对话产出很多内容，但沉淀困难，难以复用。
 
-### 1.1 Document Layer（文档层）
-- **Note**：一篇笔记文档（ProseMirror/Tiptap JSON）。
-- **Node**：文档内块节点（paragraph/heading/card 等），每个 node 必须有稳定 `node_id`。
-- **Anchor**：定位信息。
-  - **Block anchor（MVP 推荐）**：仅绑定到 `node_id`（最稳定）。
-  - **Range anchor（可选增强）**：在 `node_id` 内附带 `{startOffset,endOffset}`（更精确但对编辑敏感）。
+### 1.2 机会点（来自主 PRD + 增补）
+- 以“事件（Event）+ 段落（Node）+ 卡片（Card）”为基本单元，建立可追溯（anchored）与可折叠（toggle）的知识结构。
+- 通过叙事体回顾（Daily/Weekly/Monthly/Yearly）降低回顾门槛，提高阅读意愿。
+- 引入 Granola 式“时间戳重点”机制，用极低成本捕捉高信息密度片段，实现“重点分明、懂我”。
+- 引入 Takeaway Capture（结算层）：将每次重要交互即时结算为 micro-takeaways，日终再聚合，降低 token 成本并提升稳定性。
 
-### 1.2 Card Layer（卡片层）
-- **Card**：挂载在 Note 中的 block node（NodeView），支持折叠/展开与递归嵌套。
-- **CardType（统一枚举）**：
-  - `ai_answer`：Ask AI 的回答卡（含 question/answer/refs）
-  - `summary`：多卡集成总结卡 / Daily Review Summary 卡
-  - `resonance`：历史共振卡（可选/可关闭）
-  - `reference`：Web clip/引用摘要卡
-  - `session_summary`：会话分层整理输出（Executive Summary / Key Moments / Supporting Notes）
+### 1.3 核心价值主张（来自增补 21）
+- Daily Narrative 提供时间轴叙事（Timeline）。
+- Signals/权重让总结重点分明（Focus）。
+- 全部交互产物被结算为 takeaways（Assetization）。
+- 周/月总结基于每日结算复利增长（Compounding）。
 
-> 备注：`session_summary` 可以实现为 `summary` 的子类型（attrs.meta.kind），但对 UI/管线建议保留显式类型，减少混淆。
 
-### 1.3 Evidence Layer（证据层，生成输入）
-Daily/Weekly 不再读“整篇笔记”，而是读可解释的证据。
+## 2. 目标、范围与非目标（What / What not）
 
-**Evidence Types（统一）**
+### 2.1 目标（汇总三份 PRD）
+1) 低门槛记录：段落标签 + 卡片折叠 + 事件轨道，让“碎碎念”也可长期累积。
+2) 可回顾：Daily/Weekly/Monthly/Yearly 叙事体回顾。
+3) 可追溯：回顾输出必须能回链到 evidence_refs（MVP 可不展示但必须存储）。
+4) 重点分明：Granola 风格 focus windows + 分层输出（Key Moments 更细、Supporting Notes 更简）。
+5) 可沉淀：TakeawayCandidates（micro）→ Daily Top Takeaways（macro）。
+6) 可共鸣（可选）：Resonance 历史共振卡，基于“困境/心境/过程”匹配。
+
+### 2.2 非目标（来自主 PRD + 增补风险）
+- 不做 Notion 式全能数据库。
+- 不做复杂权限协作/多人实时协作。
+- 不承诺完全自动化正确分类（SignalTag 默认以来源即标签为准）。
+- MVP 不依赖停留时长等敏感行为数据；如启用必须可关闭并有说明。
+
+### 2.3 成功标准（Success Metrics，补全）
+- 日回顾可读性：Top Takeaways 数量受控（<=7），且能覆盖当日关键结论。
+- 可追溯性：Top Takeaways/Open Loops/Action Items 100% 具备 evidence_refs。
+- 成本：日终聚合不需要反复全文总结（优先复用即时结算产物）。
+- Granola 体验：有 HIGHLIGHT 时重点更细、无 HIGHLIGHT 时仍可用。
+
+
+## 3. 目标用户与典型场景（Who / Use cases）
+
+### 3.1 目标用户（来自增补 21）
+- 工作繁忙：需要“我今天做了什么”的安心感（时间骨架）。
+- 知识工作者/研究者：需要“我今天理解了什么”的认知资产。
+- 深度 AI 交互用户：需要把长对话结算为可追溯的 takeaways。
+
+### 3.2 核心用户故事（MECE 划分）
+U1. 记录与沉淀：选中文本发起 Ask AI → 生成回答卡 → 折叠可读 → 产生 micro-takeaway。
+U2. 组织与导航：双栏目录 + 全息事件轨道定位 “AI/问题/总结”。
+U3. 日终回顾：基于 evidence 聚合生成 Daily Review（叙事 + takeaways + loops + actions + 可选 resonance）。
+U4. 会话重点：会议/录音过程中用快捷键/语音 cue 打点 → focus windows → 会后生成分层 Session Summary。
+U5. 长期复利：Weekly/Monthly/Yearly 基于每日结算聚合，输出主题/进展/阻塞/决策。
+
+
+## 4. 功能总览（MECE）
+
+> 说明：下面的功能分组满足互斥且完备（MECE），每一组都能对应到 EventLog 与数据结构。
+
+F1. 笔记结构与卡片（Fractal Cards）
+F2. 段落 SignalTag（来源即标签）
+F3. 目录与导航（全息地图 + 标题地图 + 过滤器）
+F4. EventLog 与 Evidence（可追溯基础设施）
+F5. Takeaway Capture（交互即时结算）
+F6. Reviews（Daily/Weekly/Monthly/Yearly 叙事回顾）
+F7. Resonance（历史共振卡，可选）
+F8. Sessions & Granola Signals（重点窗口 + 分层输出）
+F9. 外部依赖接口（RECNote 音频锚点 / Snapshotting 截图证据链）
+
+
+## 5. 统一术语与对象模型（Glossary / Data model overview）
+
+> 冲突修复：原文的“Signal Tag（段落类型）”与“Signals（会话时间戳信号）”必须强制区分。
+
+### 5.1 Document Layer（文档层）
+- Note：一篇笔记文档（ProseMirror/Tiptap JSON）。
+- Node：文档内块节点（paragraph/heading/card 等），每个 node 必须有稳定 node_id。
+- Anchor：定位信息。
+  - Block anchor（MVP 推荐）：仅绑定到 node_id。
+  - Range anchor（可选增强）：node_id + start/end offset。
+
+### 5.2 Card Layer（卡片层）
+- Card：挂载在 Note 中的 block node（NodeView），支持折叠/展开与递归嵌套。
+- CardType（统一枚举）：ai_answer / summary / resonance / reference / session_summary。
+
+### 5.3 SignalTag（段落标签，来源标签）
+- Body / Thought / AI_Conversation / Reference。
+
+### 5.4 Session Signals（会话信号，带时间戳意图）
+- HIGHLIGHT / CONFIRM / QUESTION / ACTION_ITEM / OBJECTION / TOPIC_SHIFT / BOOKMARK。
+
+### 5.5 Evidence（证据输入统一模型，来自增补 22）
 1) Timeline Evidence（时间骨架）
-- 日程块（可选）
-- Session 时间轴（started/ended）
-- 关键时间点（Signal timestamps、image_id timestamps 等）
-
 2) Interaction Evidence（交互证据）
-- `AI_ASKED` / `AI_ANSWERED`
-- `CARD_TOGGLED`
-- `SUMMARY_GENERATED`
-- `REFERENCE_CLIPPED`
-- `SIGNALTAG_CHANGED`
-- `OPEN_LOOP_MARKED` / `ACTION_ITEM_MARKED`
-- `TAKEAWAY_PINNED`
-
 3) Outcome Evidence（产物证据）
-- AI Answer cards
-- Summary cards（含 session_summary、daily_review）
-- Resonance cards
-- Web clips
-- 用户手写结论段落（Body/Thought）
 
-### 1.4 Review & Takeaway Layer（回顾与结算层）
-- **TakeawayCandidate（micro-takeaway）**：交互即时结算出的“一句话收获”。
-- **DailyReview（daily aggregation）**：日终把 candidates + timeline + signals 聚合成 Narrative + Top Takeaways + Open Loops + Actions + Resonance。
-- **Weekly/Monthly/Yearly Review（compounding）**：基于每日结算复利聚合，产出 Themes/Progress/Repeated Blockers/Decisions/Next Focus。
-
-### 1.5 Session Layer（会话层，可选但与 Granola 强相关）
-- **Session**：一段连续记录过程（会议/学习/散步碎碎念）。
-- **Session Signal**：会话内的时间戳意图（HIGHLIGHT/QUESTION/…）。
-- **Focus Window**：由 HIGHLIGHT 等信号生成的重点时间窗口（用于差异化转写/总结）。
-- **Transcript Segment**：转写分段（可标记 `is_focus`）。
+### 5.6 Takeaway & Review
+- TakeawayCandidate：micro-takeaway（交互即时结算）。
+- DailyReview：日终聚合产物。
+- Weekly/Monthly/Yearly：基于每日结算复利聚合。
 
 
-## 2. IDs、时间与可追溯性（补全工程契约）
+## 6. 功能规格（详细 / Requirements）
 
-### 2.1 ID 规范
-- `note_id`, `node_id`, `card_id`, `event_id`, `session_id`, `signal_id`, `takeaway_id` 均使用 UUID（推荐 v4/v7）。
-- Snapshotting 的 `image_id` 可使用可读时间戳或 Unix ms（PRD 推荐 `YYYYMMDDHHmmssSSS`）。
+### F1. 笔记结构与卡片（Fractal Cards）
 
-### 2.2 日期与时区
-- **所有聚合（日/周/月/年）必须以 user timezone 为准**。
-- TakeawayCandidate 的 `date` 字段使用 `YYYY-MM-DD`（用户时区），避免跨日漂移。
+#### F1.1 Ask AI → AI Answer Card（来自主 PRD 功能 2）
+- 选中文本 → Ask AI → 生成 ai_answer 卡片挂载在锚点位置。
+- 卡片默认折叠，显示 1 行摘要；展开显示 question/answer/来源。
+- 卡片内允许再次提问并生成子卡片（递归），保持父子关系可追溯。
 
-### 2.3 Evidence Refs（必须落库）
-所有生成输出（takeaway、open loop、action、resonance连接句）必须携带 `evidence_refs`：
+#### F1.2 多卡集成总结卡（来自主 PRD 功能 2 + 增补 23）
+- 用户多选卡片 → Summarize selection → 生成 summary 卡片。
+- summary 必须记录输入 card_ids，并为每条要点提供 evidence_refs。
+- summary 生成后拆分 3–5 条 TakeawayCandidate（见 F5）。
+
+#### F1.3 性能约束（来自主 PRD 风险）
+- 默认折叠惰性渲染；展开时按需加载。
+- 嵌套深度可无限，但渲染层可做软限制/虚拟化。
+
+
+### F2. 段落 SignalTag（来源即标签）（来自主 PRD 功能 4）
+
+#### F2.1 类型与默认赋值
+- Body：用户键盘输入段落。
+- Thought：Whisper Mode 或特定入口创建。
+- AI_Conversation：Ask AI / Resonance / 系统生成段落。
+- Reference：Web clip / 引用摘要 / RAG 引用块。
+
+#### F2.2 手动修正
+- gutter 图标循环切换（Body→Thought→Reference→Body）。
+- 修改必须写 EventLog（SIGNALTAG_CHANGED）。
+
+#### F2.3 AI 辅助（可选，来自主 PRD 7.3）
+- 仅在 Daily Review 生成时做后台回溯标注；不强制改变前台 UI。
+
+
+### F3. 目录与导航（来自主 PRD 功能 3）
+
+#### F3.1 双栏目录结构
+- 左：全息地图（Holographic Map）事件轨道
+- 右：标题地图（Title Map）H1-Hn
+- 顶部过滤器：结构/AI/问题/总结（可后续加 ⭐重点、🧠takeaway）
+
+#### F3.2 行为规则
+- 过滤器建议“叠加高亮”而非完全隐藏。
+- 点击事件标记：滚动到 anchor；若关联卡片则自动展开。
+
+#### F3.3 工程要点
+- 事件轨道需要 anchor→DOM top 映射；变更节流更新。
+
+
+### F4. EventLog 与 Evidence（可追溯基础设施，来自主 PRD 功能 8 + 增补 22）
+
+#### F4.1 EventLog 作用
+- 渲染全息地图事件轨道。
+- 作为 Reviews/Takeaways 的可解释输入。
+- 支持“回顾输出→证据链”调试与审计。
+
+#### F4.2 EvidenceRefs（必须落库）
+所有生成输出（takeaway/open loop/action/resonance连接句）必须携带 evidence_refs。
 
 ```ts
 type EvidenceRef =
@@ -112,37 +193,212 @@ type EvidenceRef =
   | { type: "image"; id: string };
 ```
 
-MVP 可以不在 UI 展示 refs，但**必须存储**以满足可解释性与调试。
+
+### F5. Takeaway Capture（交互即时结算层，来自增补 23）
+
+#### F5.1 TakeawayCandidate 对象
+- 存储方式：建议独立表；也可先放 cards.meta.takeaway，但会影响聚合与查询效率。
+
+#### F5.2 触发时机（低摩擦、自动化优先）
+1) AI_ANSWERED → 生成 1 条 candidate（来自 answer 的 takeaway_sentence）。
+2) SUMMARY_GENERATED → 拆分 3–5 条 candidates（来自 key_points）。
+3) SESSION_ENDED → focus windows 的每个 Key Moment 生成 1 条候选（高权重）。
+4) 用户手动⭐ → 生成/提升 candidate（权重最高）。
+
+#### F5.3 权重模型（来自增补 24，补足实现约束）
+- weight = manual_signal + system_signal + behavior_signal + recency_signal。
+- MVP 建议仅启用 manual_signal + system_signal + minimal behavior（展开次数）。
 
 
-## 3. 数据结构（建议 Schema，统一并补全）
+### F6. Reviews：Daily/Weekly/Monthly/Yearly（来自主 PRD 功能 1 + 增补 25/26）
 
-### 3.1 Note / Node（ProseMirror/Tiptap）
-- `paragraph` attrs：`id`, `signalTag?: SignalTag`
-- `heading` attrs：`id`, `level`
-- `card` attrs：`id`, `cardType`, `collapsed`, `meta`, `parentCardId?`, `anchor`（至少 `node_id`）
+#### F6.1 Daily Review 输出模板（融合版）
+1) Narrative Summary（时间骨架）：按 Timeline Evidence 分镜，每段 1–3 句。
+2) Top Takeaways（3–7 条，强制上限 7）：来自 candidates 聚类与排序。
+3) Open Loops（问题）：来自 QUESTION signals + AI 抽取 + 用户标记。
+4) Action Items（待办）：来自 ACTION_ITEM signals + summary 抽取。
+5) Resonance（可选）：短、具体、有来源。
 
+#### F6.2 Weekly/Monthly/Yearly 输出结构
+- Themes / Progress / Repeated Blockers / Decisions / Next Focus。
+
+
+### F7. Resonance（历史共振卡，可选，来自主 PRD 4.4）
+
+#### F7.1 目标
+匹配“困境/心境/过程”，不是匹配“成就”。
+
+#### F7.2 检索与内容格式
+- 轶事库（Anecdote DB）：每条包含人物/主题/情绪/困境标签、短摘录或事实性转述、来源信息。
+- Query：由当日最高权重 takeaway 主题或最强 open loop 构建。
+- 输出：1–2 句轶事 + 1 句连接（必须引用用户当日具体证据）+ 可选 1 句建议。
+
+#### F7.3 版权与风险（必须）
+- 避免存储受版权保护的长文本。
+- 优先公版/授权素材；或短摘录+出处；或事实性转述。
+
+
+### F8. Sessions & Granola Signals（来自 Granola 补充 + 增补融合）
+
+#### F8.1 Signals 类型与来源
+- Signals：HIGHLIGHT/QUESTION/ACTION_ITEM/…（带 timestamp）。
+- 来源：全局快捷键 / 语音提示词 / UI 按钮。
+
+#### F8.2 Focus Windows 生成（来自补充 17.2）
+- 默认窗口：[t-20s, t+60s]；相邻窗口 gap < 15s 合并；最大 5min。
+- TOPIC_SHIFT 可强制切段。
+
+#### F8.3 分层输出（Session Summary）
+- Executive Summary（3–7 条）
+- Key Moments（重点片段，带时间范围 + quotes/actions/questions）
+- Supporting Notes（非重点强压缩）
+- Open Loops & Action Items
+
+
+### F9. 外部依赖接口（RECNote / Snapshotting）
+
+#### F9.1 RECNote（来自 RECNote PRD 2.2）
+- 编辑器 block meta 注入 audioAnchor：recordingId + offsetMs。
+- 点击 block 可 seek 音频回放；可作为 Timeline Evidence。
+
+#### F9.2 智能定帧快照（来自 Snapshotting PRD）
+- 不录屏，只在变化时截图；每条要点可引用 image_id。
+- highlight 必须绑定 audio_offset_ms + image_id。
+- OCR 作为 Outcome Evidence，并保持 image_id 可回链。
+
+
+## 7. 数据结构与事件（统一枚举）
+
+### 7.1 ID、时间与时区（补全）
+- note_id/node_id/card_id/event_id/session_id/signal_id/takeaway_id：UUID（推荐 v4/v7）。
+- image_id：推荐可读时间戳（YYYYMMDDHHmmssSSS）或 Unix ms。
+- 所有日/周/月聚合必须以 user timezone 为准；TakeawayCandidate.date 使用 YYYY-MM-DD。
+
+### 7.2 EventLog（字段最小集合，来自主 PRD 8.2）
 ```ts
-type SignalTag = "Body" | "Thought" | "AI_Conversation" | "Reference";
-
-type Anchor = {
-  node_id: string;
-  range?: { start: number; end: number }; // 可选增强
-};
-
-type CardMeta = {
-  createdByEventId?: string;
-  question?: string;
-  answer_markdown?: string;
-  takeaway_sentence?: string;
-  key_points?: string[];
-  open_loops?: string[];
-  sources?: Array<{ title?: string; url?: string; ref?: EvidenceRef }>; // ref 可回链
-  relatedCardIds?: string[];
-  evidence_refs?: EvidenceRef[];
-  kind?: "multi_card" | "daily_review" | "session";
+type EventLog = {
+  event_id: string;
+  user_id: string;
+  timestamp_ms: number;
+  note_id?: string;
+  anchor?: { node_id: string; range?: { start: number; end: number } };
+  event_type: string;
+  payload?: Record<string, unknown>;
 };
 ```
+
+### 7.3 事件类型（合并与命名冲突修复）
+- NOTE_CREATED / PARAGRAPH_CREATED
+- SIGNALTAG_ASSIGNED / SIGNALTAG_CHANGED
+- AI_ASKED / AI_ANSWERED
+- CARD_CREATED / CARD_TOGGLED / REFERENCE_CLIPPED
+- SUMMARY_GENERATED
+- OPEN_LOOP_MARKED / ACTION_ITEM_MARKED
+- TAKEAWAY_CANDIDATE_CREATED / TAKEAWAY_CANDIDATE_UPDATED / TAKEAWAY_PINNED
+- DAILY_REVIEW_GENERATED / WEEKLY_REVIEW_GENERATED / MONTHLY_REVIEW_GENERATED / YEARLY_REVIEW_GENERATED
+- SESSION_STARTED / SESSION_ENDED / SESSION_SIGNAL_CREATED
+
+
+## 8. 生成管线（Pipelines，来自主 PRD 9.4 + 增补 28）
+
+### 8.1 Pipeline A：交互后即时结算（轻量）
+- On AI_ANSWERED：写入 card + 生成 1 条 TakeawayCandidate。
+- On SUMMARY_GENERATED：拆分 3–5 条 candidates，evidence_refs=输入 card_ids。
+
+### 8.2 Pipeline B：Session 重点窗口与分层输出
+- Focus windows → 标记 transcript segments → 生成 session_summary。
+- Key Moments 生成高权重 candidates。
+
+### 8.3 Pipeline C：日终聚合（重）
+1) Load：当天 candidates + timeline + signals + open loops/actions。
+2) Cluster：MVP 用规则聚类（topic/关键词/来源分组）；增强用 embedding 聚类。
+3) Rank：按 weight，每簇取 top-1（最多 top-2），强制总数<=7。
+4) Compose：生成 Daily Review 五段式。
+5) Persist：写入 daily_review 记录 + summary card（kind=daily_review）。
+
+
+## 9. 验收标准（汇总并增强）
+
+### 9.1 可追溯性（硬标准）
+- Daily Review 中每条 Top Takeaway/Open Loop/Action Item 都有 evidence_refs（至少 1 条）。
+
+### 9.2 AI 深交互日（来自增补 29）
+- 当天与 AI 连续对话 ≥ 20 分钟并生成多张卡片：
+  - Top Takeaways 出现结论类条目
+  - 每条可追溯到 card_ids
+  - Top Takeaways 总数<=7
+
+### 9.3 Granola 重点窗口（来自补充 20）
+- 触发 ≥1 次 HIGHLIGHT：输出包含 Key Moments，且明显更细；Supporting Notes 更短。
+- 0 次 HIGHLIGHT：输出仍可用，并提示可用 ⭐ 标注重点。
+
+### 9.4 目录与过滤（来自主 PRD 11.3）
+- H1-Hn 渲染与跳转正确。
+- 开启 ✨/❓/🧊：事件轨道高亮；点击可跳转并展开。
+
+### 9.5 SignalTag（来自主 PRD 11.4）
+- 不同入口创建段落自动赋值；手动切换写入 EventLog。
+
+
+## 10. 里程碑（与原文一致，结构化重述）
+
+MVP-1
+1) 基础编辑器（Tiptap）+ 段落 id + H1-Hn
+2) AI card + 块级锚定 + toggle
+3) EventLog + 全息地图轨道（最小标记）
+4) SignalTag（来源即标签）+ 目录过滤
+5) Daily Review（无 Resonance 或简版）
+
+MVP-2
+6) 多卡集成总结卡 + TakeawayCandidate（即时结算）
+7) Resonance（轶事库 + 向量检索 + 卡片生成，可开关）
+
+MVP-3
+8) Session + Signals + Focus Windows + 分层 Session Summary
+9) Weekly/Monthly/Yearly（模式洞察）
+
+
+## 11. 来源覆盖矩阵（确保 MECE 整合）
+
+> 目的：逐条证明“分散 PRD 的内容都被纳入主文档”。
+
+### 11.1 Eventlog Enhanced PRD（叙事回顾+Resonance+分形卡片+全息目录+Signal Tag）
+- 背景/问题/机会点 → 本文 1.1/1.2
+- Daily/Weekly/Monthly/Yearly + Resonance → 本文 F6/F7
+- 分形卡片 + 多卡总结卡 → 本文 F1
+- 双栏目录 + 过滤器 + 全息地图 → 本文 F3
+- SignalTag（段落标签）→ 本文 F2
+- EventLog（事件模型/字段/用途）→ 本文 F4 + 7.2/7.3
+- 风险/验收/里程碑 → 本文 9/10
+
+### 11.2 增补：Daily Narrative × Granola Signals × 全交互 Takeaways 聚合
+- Evidence Types + 可追溯要求 → 本文 5.5 + F4.2
+- TakeawayCandidate schema + 触发时机 → 本文 F5
+- Weight Model → 本文 F5.3
+- Daily Review 融合模板 + 约束（<=7）→ 本文 F6.1 + 9.2
+- Weekly/Monthly/Yearly 基于每日结算复利 → 本文 F6.2
+- 新事件类型（TAKEAWAY/DAILY_REVIEW）→ 本文 7.3
+- 聚类策略（MVP vs 增强）→ 本文 8.3
+
+### 11.3 补充：Granola 风格重点标注与分层整理输出
+- Session/Signals 概念模型 → 本文 5.4 + F8
+- 快捷键/语音 cues 设计与误触策略 → 本文 F8.1
+- Focus Windows 算法与参数 → 本文 F8.2
+- 差异化转写/总结与分层输出模板 → 本文 F8.3 + 8.2
+- 目录轨道新增标记与集成点 → 本文 F3 + F8
+- 验收标准（有/无 HIGHLIGHT）→ 本文 9.3
+
+### 11.4 相关依赖（接口）
+- RECNote 音频锚点 → 本文 F9.1
+- 智能定帧快照（image_id 证据链）→ 本文 F9.2
+
+
+## 12. 原始来源链接（溯源）
+- 主 PRD：../features/Eventlog Enhanced PRD（叙事回顾+Resonance+分形卡片+全息目录+Signal Tag）.md
+- 增补：../features/Eventlog Enhanced PRD（增补：Daily Narrative × Granola Signals × 全交互 Takeaways 聚合）.md
+- Granola 补充：../features/Eventlog Enhanced PRD（补充：Granola 风格重点标注与分层整理输出）.md
+- 依赖：../features/PRD_ RECNote - Intelligent Audio Sync Module.md
+- 依赖：../features/PRD 增补：智能定帧快照（会议截图 + 本地录音回溯 + OCR 证据链笔记）.md
 
 ### 3.2 EventLog（统一事件模型）
 
