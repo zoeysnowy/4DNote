@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
-import ColorPicker from '@frontend/components/ColorPicker';
+import ColorPicker from '@frontend/components/common/ColorPicker';
 import CalendarMappingPicker from '@frontend/features/Calendar/components/CalendarMappingPicker';
 import { STORAGE_KEYS } from '@frontend/constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from '@frontend/utils/persistentStorage';
