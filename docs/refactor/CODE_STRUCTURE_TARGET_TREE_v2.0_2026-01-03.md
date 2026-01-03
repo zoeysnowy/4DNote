@@ -565,7 +565,7 @@ Feature/
 - [x] 创建 `pages/Event/` 并移入 EventEditorWindow.tsx (重命名为 EditorWindow.tsx) (b4bdf4f, 656b5ce)
 - [x] 创建 `pages/Calendar/` 并移入 DesktopCalendarWidget.tsx (重命名为 WidgetWindow.tsx) (ac23942)
 - [x] 创建 `pages/Calendar/` 并移入 WidgetSettings.tsx (1108318)
-- [ ] 创建 `pages/Home/` 并移入 HomePage
+- [x] 创建 `pages/Home/` 并移入 HomePage (ff20db4 + 30bd75f)
 
 ### P2 - Features 完善
 - [ ] 创建 `features/Event/` 并迁移 EventEditModal + EventTree 组件
