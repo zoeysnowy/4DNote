@@ -4,6 +4,18 @@
 **状态**: ✅ 进行中（唯一实施口径）  
 **位置**: `docs/refactor/`（执行入口）
 
+---
+
+## 开发约定（防 OOM 丢进度）
+
+**目标**：任何时候 VS Code OOM/崩溃，都不影响代码进度；主干（master）始终可恢复。
+
+- 开始开发：`git switch master` → `git pull`
+- 小步提交：每完成一段可独立回滚的改动就 `git add -A` → `git commit -m "..."`
+- 及时推送：结束前（或每小时）`git push`
+- 需要清理历史备份：`npm run prune-history`（保留 14 天）
+- OOM 排查入口：Process Explorer / 禁用扩展启动对照（`code --disable-extensions`）
+
 > 目的：把“审计结论 / 实施步骤 / 执行日志”分离，但统一口径。
 >
 > - 本文档 = **唯一实施口径**（术语、API 命名、Epic 顺序、验收标准）。

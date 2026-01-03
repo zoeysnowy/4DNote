@@ -5,7 +5,7 @@
  * 
  * 功能：
  * - 过滤系统事件（isTimer/isOutsideApp/isTimeLog）
- * - 父子关系可视化（刚性骨架 - parentEventId）
+ * - 父子关系可视化（刚性骨架 - parentEventId/childEventIds）
  * - 双向链接堆叠卡片（柔性血管 - linkedEventIds/backlinks）
  * - 自动布局（使用 dagre 算法）
  * - 交互：拖拽、缩放、点击节点打开 EventEditModal
@@ -27,7 +27,6 @@ import 'reactflow/dist/style.css';
 import { Event } from '../../types';
 import { CustomEventNode, EventNodeData } from './CustomEventNode';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/eventTree';
 import './EventTree.css';
 
 interface EventTreeCanvasProps {
@@ -55,22 +54,10 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
 
   // 构建节点数据
   const initialNodes: Node<EventNodeData>[] = useMemo(() => {
-    const eventsById = new Map(filteredEvents.map(e => [e.id!, e]));
-    const tree = EventTreeAPI.buildTree(filteredEvents, {
-      validateStructure: false,
-      computeBulletLevels: false,
-      sortSiblings: true,
-    });
-
     return filteredEvents.map((event, index) => {
       // 获取双向链接的事件（outgoing + incoming）
       // 注意：getLinkedEvents 是异步的，这里使用空数组，实际应该在组件 mount 时异步加载
       const linkedEvents: Event[] = [];
-
-      const childIds = tree.childrenMap.get(event.id!) || [];
-      const childEvents = childIds
-        .map(id => eventsById.get(id))
-        .filter((e): e is Event => !!e);
 
       return {
         id: event.id,
@@ -79,7 +66,6 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
         data: {
           event,
           linkedEvents,
-          childEvents,
           onEventClick,
           onCheckboxChange,
         },
@@ -90,20 +76,20 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
   // 构建边数据（父子关系）
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
-
-    // ADR-001: 结构真相来自 parentEventId
-    const visibleIds = new Set(filteredEvents.map(e => e.id));
+    
     filteredEvents.forEach(event => {
-      const parentId = event.parentEventId;
-      if (!parentId) return;
-      if (!visibleIds.has(parentId)) return;
-
-      edges.push({
-        id: `${parentId}-${event.id}`,
-        source: parentId,
-        target: event.id,
-        type: 'smoothstep',
-        animated: false,
+      // 为每个子事件创建一条边
+      event.childEventIds?.forEach(childId => {
+        // 检查子事件是否在过滤后的事件列表中
+        if (filteredEvents.some(e => e.id === childId)) {
+          edges.push({
+            id: `${event.id}-${childId}`,
+            source: event.id,
+            target: childId,
+            type: 'smoothstep',
+            animated: false,
+          });
+        }
       });
     });
     

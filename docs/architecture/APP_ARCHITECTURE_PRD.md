@@ -6,6 +6,17 @@
 
 ---
 
+## 开发约定（防 OOM 丢进度）
+
+**目标**：VS Code OOM/崩溃不影响代码进度；主干（master）始终可恢复。
+
+- 开始开发：`git switch master` → `git pull`
+- 小步提交：`git add -A` → `git commit -m "..."`（尽量别堆太久）
+- 及时推送：`git push`（至少每天/每阶段一次）
+- 本地历史清理：`npm run prune-history`（保留 14 天）
+
+---
+
 ## 文档概述
 
 本文档通过逆向工程分析 `src/App.tsx` 组件，记录其架构设计、状态管理、渲染机制、性能优化策略及已知问题。

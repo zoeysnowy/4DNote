@@ -9,7 +9,7 @@
  * - Enter 创建新事件
  * 
  * 架构：
- * - 基于 parentEventId 派生树形结构
+ * - 基于 parentEventId/childEventIds 构建树形结构
  * - 每个节点独立的 Slate 编辑器实例
  * - 递归渲染子节点
  */
@@ -21,8 +21,6 @@ import { withHistory } from 'slate-history';
 import { ChevronRight, ChevronDown, Circle, Link as LinkIcon } from 'lucide-react';
 import { Event } from '../../types';
 import { EventService } from '../../services/EventService';
-import { EventTreeAPI } from '../../services/eventTree';
-import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
 import { LinkedCard } from './LinkedCard';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
@@ -189,92 +187,105 @@ export const EditableEventTree: React.FC<EditableEventTreeProps> = ({
 }) => {
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { events: allEventsSnapshot, ensureLoaded } = useEventHubSnapshot({ enabled: true });
 
-  // 构建树形结构（ADR-001：基于 parentEventId 结构真相；避免 N+1 查询）
-  const buildTree = useCallback((rootEventId: string, events: Event[]): TreeNode | null => {
-    const visibleEvents = events.filter(e => EventService.shouldShowInEventTree(e));
-    const subtree = EventTreeAPI.getSubtree(rootEventId, visibleEvents);
-    if (subtree.length === 0) return null;
-
-    const tree = EventTreeAPI.buildTree(subtree, {
-      validateStructure: false,
-      computeBulletLevels: false,
-      sortSiblings: true,
+  // 构建树形结构（递归加载所有层级）
+  const buildTree = useCallback(async (event: Event, depth: number = 0): Promise<TreeNode> => {
+    console.log(`📊 [EventTree] 构建节点 (深度${depth}):`, {
+      id: event.id.slice(-8),
+      title: event.title?.simpleTitle,
+      childEventIds: event.childEventIds,
+      childCount: event.childEventIds?.length || 0,
+      hasChildEventIds: !!event.childEventIds,
+      isArrayType: Array.isArray(event.childEventIds)
     });
-    const eventsById = new Map(subtree.map(e => [e.id, e]));
 
-    const visiting = new Set<string>();
-    const buildNode = (id: string): TreeNode => {
-      const event = eventsById.get(id);
-      if (!event) {
-        // fallback: should not happen within subtree
-        return { event: { id } as any, children: [], isOpen: true };
+    const children: TreeNode[] = [];
+    
+    if (event.childEventIds && event.childEventIds.length > 0) {
+      console.log(`🔄 [EventTree] 开始加载 ${event.childEventIds.length} 个子事件 (深度${depth})`);
+      
+      for (const childId of event.childEventIds) {
+        console.log(`  ↳ [EventTree] 加载子事件 (深度${depth + 1}):`, childId.slice(-8));
+        
+        const child = await EventService.getEventById(childId);
+        if (child && EventService.shouldShowInEventTree(child)) {
+          console.log(`  ✅ [EventTree] 子事件有效，递归加载 (深度${depth + 1}):`, {
+            id: childId.slice(-8),
+            title: child.title?.simpleTitle,
+            hasOwnChildren: !!child.childEventIds,
+            ownChildCount: child.childEventIds?.length || 0
+          });
+          
+          // 🔥 递归加载子事件的子事件（三级、四级等）
+          const childNode = await buildTree(child, depth + 1);
+          children.push(childNode);
+        } else if (child) {
+          console.log(`⏭️ [EventTree] 跳过系统事件 (深度${depth + 1}):`, child.id.slice(-8));
+        } else {
+          console.warn(`⚠️ [EventTree] 子事件不存在 (深度${depth + 1}):`, childId.slice(-8));
+        }
       }
-
-      if (visiting.has(id)) {
-        return { event, children: [], isOpen: true };
-      }
-      visiting.add(id);
-
-      const childIds = tree.childrenMap.get(id) || [];
-      const children = childIds
-        .filter(childId => eventsById.has(childId))
-        .map(childId => buildNode(childId));
-
-      visiting.delete(id);
-      return { event, children, isOpen: true };
-    };
-
-    return buildNode(rootEventId);
-  }, []);
-
-  // 初次确保事件已加载（后续由 eventsUpdated 驱动 refresh）
-  useEffect(() => {
-    let cancelled = false;
-    const run = async () => {
-      try {
-        setIsLoading(true);
-        await ensureLoaded();
-      } catch (error) {
-        if (!cancelled) console.error('❌ [EventTree] 初次加载事件失败:', error);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
-    };
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [ensureLoaded]);
-
-  // 事件快照变化时重建树（ADR-001：基于 parentEventId）
-  useEffect(() => {
-    if (isLoading) return;
-
-    console.log('🌲 [EventTree] 开始构建事件树，根事件:', rootEventId);
-    const tree = buildTree(rootEventId, allEventsSnapshot);
-    if (!tree) {
-      console.error('❌ [EventTree] 根事件不存在或无可见子树:', rootEventId);
-      setTreeData(null);
-      return;
+    } else {
+      console.log(`📭 [EventTree] 无子事件 (深度${depth}):`, {
+        id: event.id.slice(-8),
+        childEventIds: event.childEventIds
+      });
     }
 
-    const totalNodes = countTreeNodes(tree);
-    console.log('🎉 [EventTree] 事件树构建完成:', {
-      rootId: rootEventId,
-      totalNodes,
-      structure: JSON.stringify(
-        tree,
-        (key, value) => {
+    console.log(`✅ [EventTree] 节点完成 (深度${depth}):`, {
+      id: event.id,
+      title: event.title?.simpleTitle,
+      loadedChildren: children.length
+    });
+
+    return {
+      event,
+      children,
+      isOpen: true, // 默认展开
+    };
+  }, []);
+
+  // 加载事件树
+  const loadEventTree = useCallback(async () => {
+    try {
+      console.log('🌲 [EventTree] 开始加载事件树，根事件:', rootEventId);
+      
+      const rootEvent = await EventService.getEventById(rootEventId);
+      if (!rootEvent) {
+        console.error('❌ [EventTree] 根事件不存在:', rootEventId);
+        setIsLoading(false);
+        return;
+      }
+
+      console.log('✅ [EventTree] 根事件加载成功:', {
+        id: rootEvent.id,
+        title: rootEvent.title?.simpleTitle,
+        directChildren: rootEvent.childEventIds?.length || 0
+      });
+
+      const tree = await buildTree(rootEvent);
+      const totalNodes = countTreeNodes(tree);
+      
+      console.log('🎉 [EventTree] 事件树构建完成:', {
+        rootId: rootEvent.id,
+        totalNodes,
+        structure: JSON.stringify(tree, (key, value) => {
           if (key === 'event') return { id: value.id, title: value.title?.simpleTitle };
           return value;
-        },
-        2
-      ),
-    });
-    setTreeData(tree);
-  }, [isLoading, rootEventId, allEventsSnapshot, buildTree]);
+        }, 2)
+      });
+      
+      setTreeData(tree);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('❌ [EventTree] 加载事件树失败:', error);
+      setIsLoading(false);
+    }
+  }, [rootEventId, buildTree]);
+
+  useEffect(() => {
+    loadEventTree();
+  }, [loadEventTree]);
 
   // 切换节点展开/折叠
   const handleToggle = useCallback((eventId: string) => {
