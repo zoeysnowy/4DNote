@@ -109,6 +109,7 @@
 | 2026-01-03 | EventTree: move `eventTreeStats` under `services/eventTree/stats` (shim) | Keep EventTree stats helpers grouped under `eventTree` while avoiding import churn | Low | `npm run typecheck`; `npm test -- --run` | 52a0c6b | New home: `src/services/eventTree/stats/eventTreeStats.ts`; compat shim: `src/services/eventTreeStats.ts` |
 | 2026-01-03 | Sync: move ActionBasedSyncManager into services/sync (shim) | Keep sync orchestration grouped under `services/sync` while avoiding a repo-wide import churn | Low | `npm run typecheck`; `npm test -- --run` | 29cc0f1 | New home: `src/services/sync/ActionBasedSyncManager.ts`; compat shim: `src/services/ActionBasedSyncManager.ts` |
 | 2026-01-03 | TimeLog: move pages/components into feature folder (shims) | Continue codebase feature-boundary cleanup; keep old import paths working while relocating TimeLog domain UI | Low | `npm run typecheck`; `npm test -- --run` | 8d13a61 | New home: `src/features/TimeLog/pages/*`, `src/features/TimeLog/components/*`; compat shims: `src/pages/TimeLog*.tsx`, `src/components/TimeLog/*` |
+| 2026-01-03 | Pages: move DesktopCalendarWidget into `pages/Calendar` (shim) | Reduce `src/pages` clutter by moving the desktop calendar widget window page into `src/pages/Calendar/WidgetWindow.tsx` while keeping legacy imports working via a shim | Low | `npx tsc --noEmit`; `npm test -- --run` | ac23942 | New home: `src/pages/Calendar/WidgetWindow.tsx`; compat shim: `src/pages/DesktopCalendarWidget.tsx` |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
