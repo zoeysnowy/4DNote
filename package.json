@@ -83,6 +83,8 @@
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest",
+    "prune-history": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-local-history.ps1 -Days 14",
+    "prune-oom-logs": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prune-oom-logs.ps1 -Days 14",
     "stop": "taskkill /F /IM node.exe /T & taskkill /F /IM electron.exe /T",
     "electron": "cd electron && npm start",
     "electron-dev": "cd electron && npm run electron-dev",
