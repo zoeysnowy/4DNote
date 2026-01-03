@@ -31,7 +31,7 @@ import './App.css';
 import TagManager from './components/TagManager';
 import TimeCalendar from './features/Calendar/TimeCalendar';
 import PlanManager from '@frontend/features/Plan/components/PlanManager';
-import TimeLog from './pages/TimeLog';
+import TimeLog from '@frontend/features/TimeLog/pages/TimeLogPage';
 
 import { logger } from './utils/logger';
 
