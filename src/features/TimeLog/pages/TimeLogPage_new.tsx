@@ -7,7 +7,7 @@
 
 import React from 'react';
 import './TimeLogPage_new.css';
-import { GlassIconBar } from '../../../components/GlassIconBar';
+import { GlassIconBar } from '@frontend/components/shared/GlassIconBar';
 
 const TimeLog_new: React.FC = () => {
   return (

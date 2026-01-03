@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { unifiedSearchIndex, MentionItem, SearchResult } from '../services/search/UnifiedSearchIndex';
+import { unifiedSearchIndex, MentionItem, SearchResult } from '@backend/search/UnifiedSearchIndex';
 import './UnifiedMentionMenu.css';
 
 interface UnifiedMentionMenuProps {

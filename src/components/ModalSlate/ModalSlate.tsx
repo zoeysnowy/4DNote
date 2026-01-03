@@ -76,7 +76,7 @@ import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
 // TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // UnifiedMentionMenu
-import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
+import { UnifiedMentionMenu } from '@frontend/components/shared/UnifiedMentionMenu';
 import { MentionItem } from '../../services/search/UnifiedSearchIndex';
 
 // 类型兼容

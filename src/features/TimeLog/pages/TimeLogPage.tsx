@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import GlassIconBar from '../../../components/GlassIconBar';
+import GlassIconBar from '@frontend/components/shared/GlassIconBar';
 import ContentSelectionPanel from '../../../components/ContentSelectionPanel';
 import { EventService } from '../../../services/EventService';
 import { EventHub } from '../../../services/EventHub';

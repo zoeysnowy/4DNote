@@ -62,7 +62,7 @@ import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePic
 
 // 🆕 v2.20.0: EventTree Engine for Tab/Shift+Tab optimization
 import { EventTreeAPI } from '@backend/eventTree';
-import { UnifiedMentionMenu } from '../UnifiedMentionMenu';
+import { UnifiedMentionMenu } from '@frontend/components/shared/UnifiedMentionMenu';
 import { SlateErrorBoundary } from './ErrorBoundary';
 import { EventService } from '../../services/EventService';
 import { EventHub } from '../../services/EventHub';
