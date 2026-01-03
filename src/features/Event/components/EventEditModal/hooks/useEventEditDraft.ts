@@ -1,5 +1,5 @@
 import * as React from 'react';
-import type { Event } from '../../../types';
+import type { Event } from '@frontend/types';
 import type { MockEvent } from '../types';
 
 type LocationDisplayFn = (location: unknown) => string;

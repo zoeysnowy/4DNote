@@ -9,8 +9,8 @@
 
 import React, { useState, useCallback, useRef } from 'react';
 import './EventTabManager.css';
-import type { Event } from '../../types';
-import { EventEditModalV2 } from '../EventEditModal/EventEditModalV2';
+import type { Event } from '@frontend/types';
+import { EventEditModalV2 } from '@frontend/features/Event';
 
 export interface EventTab {
   id: string;

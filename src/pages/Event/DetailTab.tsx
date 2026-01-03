@@ -92,8 +92,8 @@ import UnifiedDateTimePicker from '../../components/FloatingToolbar/pickers/Unif
 import { AttendeeDisplay } from '../../components/common/AttendeeDisplay';
 import { LocationInput } from '../../components/common/LocationInput';
 import { CalendarPicker } from '../../features/Calendar/components/CalendarPicker';
-import { SimpleCalendarDropdown } from '../../components/EventEditModalV2Demo/SimpleCalendarDropdown';
-import { SyncModeDropdown } from '../../components/EventEditModalV2Demo/SyncModeDropdown';
+import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
+import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../../utils/calendarUtils';
 import { getLocationDisplayText } from '../../utils/locationUtils';
 // TimeLog 相关导入

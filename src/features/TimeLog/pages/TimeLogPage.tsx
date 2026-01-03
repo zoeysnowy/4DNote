@@ -16,8 +16,8 @@ import UnifiedDateTimePicker from '../../../components/FloatingToolbar/pickers/U
 import { TimeGap } from '../components/TimeGap';
 import { CompressedDateRange } from '../components/CompressedDateRange';
 import { EventEditModalV2 } from '@frontend/features/Event';
-import { SimpleCalendarDropdown } from '../../../components/EventEditModalV2Demo/SimpleCalendarDropdown';
-import { SyncModeDropdown } from '../../../components/EventEditModalV2Demo/SyncModeDropdown';
+import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
+import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
 import EventTabManager from '../../../components/EventTabManager';
 import { LogTab } from '@frontend/pages/Event/DetailTab';
 import { getAvailableCalendarsForSettings } from '../../../utils/calendarUtils';

@@ -1,4 +1,4 @@
-import type { Contact } from '../../types';
+import type { Contact } from '@frontend/types';
 
 export interface MockEvent {
   id: string;

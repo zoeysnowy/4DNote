@@ -87,21 +87,21 @@ import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
 import { Event, Contact, EventTitle, type SyncStatusType } from '@frontend/types';
 import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
-import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
-import { AttendeeDisplay } from '../common/AttendeeDisplay';
-import { LocationInput } from '../common/LocationInput';
+import UnifiedDateTimePicker from '@frontend/components/FloatingToolbar/pickers/UnifiedDateTimePicker';
+import { AttendeeDisplay } from '@frontend/components/common/AttendeeDisplay';
+import { LocationInput } from '@frontend/components/common/LocationInput';
 import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
 import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
-import { ModalSlate } from '../ModalSlate';
-import { TitleSlate } from '../ModalSlate/TitleSlate';
-import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '../ModalSlate/serialization';
-import { HeadlessFloatingToolbar } from '../FloatingToolbar/HeadlessFloatingToolbar';
-import { useFloatingToolbar } from '../FloatingToolbar/useFloatingToolbar';
-import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../PlanSlate/helpers';
+import { ModalSlate } from '@frontend/components/ModalSlate';
+import { TitleSlate } from '@frontend/components/ModalSlate/TitleSlate';
+import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '@frontend/components/ModalSlate/serialization';
+import { HeadlessFloatingToolbar } from '@frontend/components/FloatingToolbar/HeadlessFloatingToolbar';
+import { useFloatingToolbar } from '@frontend/components/FloatingToolbar/useFloatingToolbar';
+import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '@frontend/components/PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../PlanSlate/serialization';
 import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
@@ -109,7 +109,7 @@ import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/E
 import { extractImagesFromHTML, extractedImagesToBlobs } from '@frontend/utils/htmlImageExtractor';
 import { EventExtractionWorkflow } from '@frontend/ai/workflows/EventExtractionWorkflow';
 import type { QRCodeInfo } from '@frontend/types';
-import { QRCodeDisplay } from '../common/QRCodeDisplay';
+import { QRCodeDisplay } from '@frontend/components/common/QRCodeDisplay';
 import './EventEditModalV2.css';
 
 // Import SVG icons
