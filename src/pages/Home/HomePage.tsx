@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TimerCard } from '@frontend/features/Timer';
-import UpcomingEventsPanel from '../../components/UpcomingEventsPanel';
+import { UpcomingEventsPanel } from '@frontend/features/Dashboard';
 import { DashboardGridStack, GridItem } from './DashboardGridStack';
 import { TodayStatsCard } from './TodayStatsCard';
 import { FocusScoreCard } from './FocusScoreCard';

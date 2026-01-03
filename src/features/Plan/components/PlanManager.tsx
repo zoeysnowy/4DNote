@@ -36,7 +36,7 @@ import { formatRelativeTimeDisplay } from '../../../utils/relativeDateFormatter'
 import TimeHoverCard from '../../../components/TimeHoverCard';
 import { calculateFixedPopupPosition } from '../../../utils/popupPositionUtils';
 import ContentSelectionPanel from '../../../components/ContentSelectionPanel';
-import UpcomingEventsPanel from '../../../components/UpcomingEventsPanel';
+import { UpcomingEventsPanel } from '@frontend/features/Dashboard';
 import { isEventExpired } from '../../../utils/upcomingEventsHelper'; // ✅ TIME_ARCHITECTURE 规范的工具函数
 // 🆕 v2.21.0: 会话态管理 Hook
 import { usePlanManagerSession } from '../../../components/hooks/usePlanManagerSession';

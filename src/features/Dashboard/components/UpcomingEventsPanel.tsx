@@ -1,30 +1,30 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import './UpcomingEventsPanel.css';
-import { Event } from '../types';
-import { 
-  TimeFilter, 
-  filterAndSortEvents, 
+import '../styles/UpcomingEventsPanel.css';
+import { Event } from '@frontend/types';
+import {
+  TimeFilter,
+  filterAndSortEvents,
   formatCountdown,
   getTimeRange
-} from '../utils/upcomingEventsHelper';
-import { shouldShowCheckbox } from '../utils/eventHelpers';
-import { resolveCheckState } from '../utils/TimeResolver';
-import { EventService } from '../services/EventService';
-import { TagService } from '../services/TagService';
-import { formatRelativeDate, formatRelativeTimeDisplay } from '../utils/relativeDateFormatter';
-import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../utils/timeUtils';
-import { getLocationDisplayText } from '../utils/locationUtils';
-import { slateNodesToHtml } from '../components/ModalSlate/serialization';
-import { ModalSlate } from '../components/ModalSlate';
-import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
+} from '@frontend/utils/upcomingEventsHelper';
+import { shouldShowCheckbox } from '@frontend/utils/eventHelpers';
+import { resolveCheckState } from '@frontend/utils/TimeResolver';
+import { EventService } from '@backend/EventService';
+import { TagService } from '@backend/TagService';
+import { formatRelativeDate, formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
+import { getLocationDisplayText } from '@frontend/utils/locationUtils';
+import { slateNodesToHtml } from '@frontend/components/ModalSlate/serialization';
+import { ModalSlate } from '@frontend/components/ModalSlate';
+import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 
 // 导入本地 SVG 图标
-import TimerStartIconSvg from '../assets/icons/timer_start.svg';
-import TaskGrayIconSvg from '../assets/icons/task_gray.svg';
-import AttendeeIconSvg from '../assets/icons/Attendee.svg';
-import LocationIconSvg from '../assets/icons/Location.svg';
-import RightIconSvg from '../assets/icons/right.svg';
-import HideIconSvg from '../assets/icons/hide.svg';
+import TimerStartIconSvg from '@frontend/assets/icons/timer_start.svg';
+import TaskGrayIconSvg from '@frontend/assets/icons/task_gray.svg';
+import AttendeeIconSvg from '@frontend/assets/icons/Attendee.svg';
+import LocationIconSvg from '@frontend/assets/icons/Location.svg';
+import RightIconSvg from '@frontend/assets/icons/right.svg';
+import HideIconSvg from '@frontend/assets/icons/hide.svg';
 
 // 图标组件
 const TimerStartIcon = ({ className }: { className?: string }) => <img src={TimerStartIconSvg} alt="Timer Start" className={className} style={{ width: '20px', height: '20px' }} />;
@@ -39,7 +39,7 @@ interface UpcomingEventsPanelProps {
   onEventClick?: (event: Event) => void; // 点击事件卡片
 }
 
-const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({ 
+const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
   onTimeFilterChange,
   onEventClick
 }) => {
@@ -68,8 +68,8 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
     const filtered = allEventsSnapshot.filter(event => {
       // 三步过滤公式
       // 1. 并集条件
-      const matchesInclusionCriteria = 
-        event.isPlan === true || 
+      const matchesInclusionCriteria =
+        event.isPlan === true ||
         (event.checkType && event.checkType !== 'none') ||
         event.isTimeCalendar === true;
       
@@ -199,8 +199,8 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
     }
 
     return (
-      <div 
-        key={event.id} 
+      <div
+        key={event.id}
         className="event-card"
         onClick={() => handleEventClick(event)}
       >
@@ -220,9 +220,9 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
                 
                 return (
                   <div className="event-checkbox">
-                    <input 
-                      type="checkbox" 
-                      checked={!!isChecked} 
+                    <input
+                      type="checkbox"
+                      checked={!!isChecked}
                       onChange={(e) => {
                         e.stopPropagation(); // 阻止触发卡片点击
                         handleCheckboxChange(event.id, e.target.checked);
@@ -231,7 +231,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
                   </div>
                 );
               })()}
-              <h4 
+              <h4
                 className="event-title"
                 dangerouslySetInnerHTML={{ __html: displayTitle }}
               />
@@ -255,7 +255,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
               <div
                 className="event-countdown"
                 style={{
-                  background: `linear-gradient(to right, #22d3ee, #3b82f6)`,
+                  background: `linear-gradient(to right, #22d3ee, #3b82f6)` ,
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                 }}
@@ -368,7 +368,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
             <span className="expired-label">
               已过期 ({expired.length})
             </span>
-            <RightIcon 
+            <RightIcon
               className={`expired-expand-icon ${showExpired ? 'expanded' : ''}`}
             />
           </div>

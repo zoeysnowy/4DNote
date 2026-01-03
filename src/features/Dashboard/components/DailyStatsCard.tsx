@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Event } from '../types';
-import { TagService } from '../services/TagService';
-import './DailyStatsCard.css';
-import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
-import { parseLocalTimeStringOrNull } from '../utils/timeUtils';
+import { Event } from '@frontend/types';
+import { TagService } from '@backend/TagService';
+import '../styles/DailyStatsCard.css';
+import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
+import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 interface DailyStatsCardProps {
   selectedDate?: Date; // 选中的日期，默认为今天
