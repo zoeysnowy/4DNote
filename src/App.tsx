@@ -13,6 +13,10 @@ import DesktopCalendarWidget from '@frontend/pages/Calendar/WidgetWindow';
 import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
 import { HomePage } from '@frontend/pages/Home'; // 🆕 HomePage with stats dashboard
+import CalendarPage from '@frontend/pages/Calendar';
+import TimeLogPage from '@frontend/pages/TimeLog';
+import TagPage from '@frontend/pages/Tag';
+import PlanPage from '@frontend/pages/Plan';
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
@@ -28,10 +32,6 @@ import { SyncNotification } from './components/SyncNotification';
 import './App.css';
 
 // 🔧 暂时禁用懒加载，测试性能
-import TagManager from './components/TagManager';
-import TimeCalendar from './features/Calendar/TimeCalendar';
-import PlanManager from '@frontend/features/Plan/components/PlanManager';
-import TimeLog from '@frontend/features/TimeLog/pages/TimeLogPage';
 
 import { logger } from './utils/logger';
 
@@ -1833,88 +1833,41 @@ function App() {
 
       case 'timecalendar':
         content = (
-          <PageContainer title="时光" subtitle="时光日志与我的日历" className="time-calendar">
-            <TimeCalendar 
-              microsoftService={microsoftService}
-              syncManager={syncManager}
-              lastSyncTime={lastSyncTime}
-              availableTags={hierarchicalTags}
-              globalTimer={globalTimer}
-              onTimerStart={handleTimerStart}
-              onTimerPause={handleTimerPause}
-              onTimerResume={handleTimerResume}
-              onTimerStop={handleTimerStop}
-              onTimerCancel={handleTimerCancel}
-            />
-          </PageContainer>
+          <CalendarPage
+            microsoftService={microsoftService}
+            syncManager={syncManager}
+            lastSyncTime={lastSyncTime}
+            availableTags={hierarchicalTags}
+            globalTimer={globalTimer}
+            onTimerStart={handleTimerStart}
+            onTimerPause={handleTimerPause}
+            onTimerResume={handleTimerResume}
+            onTimerStop={handleTimerStop}
+            onTimerCancel={handleTimerCancel}
+          />
         );
         break;
 
       case 'timelog':
         content = (
-          <PageContainer title="时间轴" subtitle="事件时间轴与历史记录" className="timelog-container">
-            <TimeLog isPanelVisible={isPanelVisible} onPanelVisibilityChange={setIsPanelVisible} />
-          </PageContainer>
+          <TimeLogPage
+            isPanelVisible={isPanelVisible}
+            onPanelVisibilityChange={setIsPanelVisible}
+          />
         );
         break;
 
       case 'tag':
         content = (
-          <PageContainer title="标签" subtitle="标签管理与专注表盘配置" className="tag-management">
-            <div className="tag-management-layout">
-              {/* 左侧标签设置区域 */}
-              <div className="tag-setting-section">
-                <div className="section-header">
-                  <div className="title-indicator"></div>
-                  <h3>标签管理</h3>
-                </div>
-                
-                <div className="tag-management-hint">
-                  <p>子标签删除，事件默认使用父标签及其映射的日历</p>
-                  <p>父标签删除，事件默认同步至原先日历</p>
-                </div>
-
-                {/* TagManager 组件 - 使用 emoji-mart 的新版本 */}
-                <TagManager 
-                  microsoftService={microsoftService}
-                  globalTimer={globalTimer}
-                  onTimerStart={handleTimerStart}
-                  onTimerPause={handleTimerPause}
-                  onTimerResume={handleTimerResume}
-                  onTimerStop={handleTimerStop}
-                  onTagsChange={handleTagsChange}
-                />
-              </div>
-
-              {/* 右侧专注表盘配置区域 */}
-              <div className="focus-setting-section">
-                <div className="section-header">
-                  <div className="title-indicator"></div>
-                  <h3>配置专注表盘</h3>
-                </div>
-                
-                <div className="focus-hint">
-                  <p>点击表盘拖曳标签编辑</p>
-                  <p>在时✅gt;&gt;专注面板享用</p>
-                </div>
-
-                <div className="focus-dials">
-                  <div className="dial-item">
-                    <span>🧐开学啦</span>
-                  </div>
-                  <div className="dial-item">
-                    <span>😍假期假期</span>
-                  </div>
-                  <div className="dial-item">
-                    <span>🐶实习狗</span>
-                  </div>
-                  <div className="dial-item add-dial">
-                    <span>➕点击添加</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </PageContainer>
+          <TagPage
+            microsoftService={microsoftService}
+            globalTimer={globalTimer}
+            onTimerStart={handleTimerStart}
+            onTimerPause={handleTimerPause}
+            onTimerResume={handleTimerResume}
+            onTimerStop={handleTimerStop}
+            onTagsChange={handleTagsChange}
+          />
         );
         break;
 
@@ -1923,7 +1876,7 @@ function App() {
         // PlanManager 现在自己监听 eventsUpdated，不需要通过 props 接收 items
         
         content = (
-          <PlanManager
+          <PlanPage
             isPanelVisible={isPanelVisible}
             onPanelVisibilityChange={setIsPanelVisible}
             availableTags={availableTagsForEdit.map(t => t.name)}
