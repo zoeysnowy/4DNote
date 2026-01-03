@@ -7,7 +7,7 @@ import 'tippy.js/dist/tippy.css';
 import type { Event } from '../../../types';
 import { PlanSlate } from '../../../components/PlanSlate/PlanSlate';
 import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '../../../components/PlanSlate/helpers';
-import { StatusLineContainer, StatusLineSegment } from '../../../components/StatusLineContainer';
+import { StatusLineContainer, StatusLineSegment } from '@frontend/components/shared/StatusLineContainer';
 import { useFloatingToolbar } from '../../../components/FloatingToolbar/useFloatingToolbar';
 import { HeadlessFloatingToolbar } from '../../../components/FloatingToolbar/HeadlessFloatingToolbar';
 import { ToolbarConfig } from '../../../components/FloatingToolbar/types';

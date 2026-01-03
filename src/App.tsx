@@ -28,7 +28,7 @@ import { EventHub } from './services/EventHub'; // 🔧 同步导入 EventHub（
 import { TimeHub } from './services/TimeHub'; // 🔧 同步导入 TimeHub
 import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
 import SettingsModal from './components/SettingsModal';
-import { SyncNotification } from './components/SyncNotification';
+import { SyncNotification } from '@frontend/components/shared/SyncNotification';
 import './App.css';
 
 // 🔧 暂时禁用懒加载，测试性能
