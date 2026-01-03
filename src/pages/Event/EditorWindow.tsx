@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { EventEditModalV2 } from '../../components/EventEditModal/EventEditModalV2';
+import { EventEditModalV2 } from '@frontend/features/Event';
 import { EventService } from '../../services/EventService';
 import { getAvailableCalendarsForSettings } from '../../utils/calendarUtils';
 import type { Event } from '../../types';

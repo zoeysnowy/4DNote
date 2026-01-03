@@ -26,7 +26,7 @@ import { TagService } from './services/TagService';
 import { EventService } from './services/EventService';
 import { EventHub } from './services/EventHub'; // 🔧 同步导入 EventHub（避免异步挂载延迟）
 import { TimeHub } from './services/TimeHub'; // 🔧 同步导入 TimeHub
-import { EventEditModalV2 } from './components/EventEditModal/EventEditModalV2'; // v2 - 新版本
+import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
 import SettingsModal from './components/SettingsModal';
 import { SyncNotification } from './components/SyncNotification';
 import './App.css';

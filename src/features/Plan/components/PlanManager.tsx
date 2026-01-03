@@ -16,7 +16,7 @@ import UnifiedDateTimePicker from '../../../components/FloatingToolbar/pickers/U
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
 import { formatDateDisplay } from '../../../utils/dateParser';
-import { EventEditModalV2 } from '../../../components/EventEditModal/EventEditModalV2'; // v2 - 新版本
+import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
 import { EventHub } from '../../../services/EventHub'; // 🎯 使用 EventHub 而不是 EventService
 import { shouldShowInPlanManager, filterPlanEvents, isEmptyEvent } from '@frontend/features/Plan/helpers/planManagerFilters';
 import { extractCalendarIds, buildEventForSave, detectChanges } from '@frontend/features/Plan/helpers/planManagerHelpers';

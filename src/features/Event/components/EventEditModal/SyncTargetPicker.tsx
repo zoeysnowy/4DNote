@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Event } from '../../types';
-import '../../features/Calendar/styles/CalendarPicker.css'; // 🎨 复用 CalendarPicker 样式
+import { Event } from '@frontend/types';
+import '@frontend/features/Calendar/styles/CalendarPicker.css'; // 🎨 复用 CalendarPicker 样式
 import './SyncTargetPicker.css';
 
 // 🎨 将 Microsoft 颜色名称转换为十六进制颜色（参考 CalendarMappingPicker）

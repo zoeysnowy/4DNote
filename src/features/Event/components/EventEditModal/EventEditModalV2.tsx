@@ -79,22 +79,22 @@ import { createPortal } from 'react-dom';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
-import { TagService } from '../../services/TagService';
-import { EventService } from '../../services/EventService';
-import { EventHub } from '../../services/EventHub';
-import { useEventHubCache, useEventSubscription } from '../../hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
-import { ContactService } from '../../services/ContactService';
-import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact, EventTitle, type SyncStatusType } from '../../types';
+import { TagService } from '@backend/TagService';
+import { EventService } from '@backend/EventService';
+import { EventHub } from '@backend/EventHub';
+import { useEventHubCache, useEventSubscription } from '@frontend/hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
+import { ContactService } from '@backend/ContactService';
+import { EventHistoryService } from '@backend/EventHistoryService';
+import { Event, Contact, EventTitle, type SyncStatusType } from '@frontend/types';
 import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { AttendeeDisplay } from '../common/AttendeeDisplay';
 import { LocationInput } from '../common/LocationInput';
-import { CalendarPicker } from '../../features/Calendar/components/CalendarPicker';
+import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../../utils/calendarUtils';
-import { getLocationDisplayText } from '../../utils/locationUtils';
+import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
+import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '../ModalSlate';
 import { TitleSlate } from '../ModalSlate/TitleSlate';
@@ -103,34 +103,34 @@ import { HeadlessFloatingToolbar } from '../FloatingToolbar/HeadlessFloatingTool
 import { useFloatingToolbar } from '../FloatingToolbar/useFloatingToolbar';
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../PlanSlate/serialization';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
 import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/EventTreeViewer';
-import { extractImagesFromHTML, extractedImagesToBlobs } from '../../utils/htmlImageExtractor';
-import { EventExtractionWorkflow } from '../../ai/workflows/EventExtractionWorkflow';
-import type { QRCodeInfo } from '../../types';
+import { extractImagesFromHTML, extractedImagesToBlobs } from '@frontend/utils/htmlImageExtractor';
+import { EventExtractionWorkflow } from '@frontend/ai/workflows/EventExtractionWorkflow';
+import type { QRCodeInfo } from '@frontend/types';
 import { QRCodeDisplay } from '../common/QRCodeDisplay';
 import './EventEditModalV2.css';
 
 // Import SVG icons
-import timerStartIcon from '../../assets/icons/timer_start.svg';
-import pauseIcon from '../../assets/icons/pause.svg';
-import stopIcon from '../../assets/icons/stop.svg';
-import cancelIcon from '../../assets/icons/cancel.svg';
-import rotationColorIcon from '../../assets/icons/rotation_color.svg';
-import attendeeIcon from '../../assets/icons/Attendee.svg';
-import datetimeIcon from '../../assets/icons/datetime.svg';
-import locationIcon from '../../assets/icons/Location.svg';
-import arrowBlueIcon from '../../assets/icons/Arrow_blue.svg';
-import timerCheckIcon from '../../assets/icons/timer_check.svg';
-import addTaskColorIcon from '../../assets/icons/Add_task_color.svg';
-import ddlAddIcon from '../../assets/icons/ddl_add.svg';
-import ddlCheckedIcon from '../../assets/icons/ddl_checked.svg';
-import taskGrayIcon from '../../assets/icons/task_gray.svg';
-import ddlWarnIcon from '../../assets/icons/ddl_warn.svg';
-import linkColorIcon from '../../assets/icons/link_color.svg';
-import backIcon from '../../assets/icons/back.svg';
-import remarkableLogo from '../../assets/icons/LOGO.svg';
+import timerStartIcon from '@frontend/assets/icons/timer_start.svg';
+import pauseIcon from '@frontend/assets/icons/pause.svg';
+import stopIcon from '@frontend/assets/icons/stop.svg';
+import cancelIcon from '@frontend/assets/icons/cancel.svg';
+import rotationColorIcon from '@frontend/assets/icons/rotation_color.svg';
+import attendeeIcon from '@frontend/assets/icons/Attendee.svg';
+import datetimeIcon from '@frontend/assets/icons/datetime.svg';
+import locationIcon from '@frontend/assets/icons/Location.svg';
+import arrowBlueIcon from '@frontend/assets/icons/Arrow_blue.svg';
+import timerCheckIcon from '@frontend/assets/icons/timer_check.svg';
+import addTaskColorIcon from '@frontend/assets/icons/Add_task_color.svg';
+import ddlAddIcon from '@frontend/assets/icons/ddl_add.svg';
+import ddlCheckedIcon from '@frontend/assets/icons/ddl_checked.svg';
+import taskGrayIcon from '@frontend/assets/icons/task_gray.svg';
+import ddlWarnIcon from '@frontend/assets/icons/ddl_warn.svg';
+import linkColorIcon from '@frontend/assets/icons/link_color.svg';
+import backIcon from '@frontend/assets/icons/back.svg';
+import remarkableLogo from '@frontend/assets/icons/LOGO.svg';
 
 interface MockEvent {
   id: string;
@@ -1089,7 +1089,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       let endTimeForStorage = formData.endTime;
       
       if (formData.startTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeString } = await import('@frontend/utils/timeUtils');
         try {
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const startDate = parseLocalTimeString(formData.startTime);
@@ -1110,7 +1110,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       }
       
       if (formData.endTime) {
-        const { formatTimeForStorage, parseLocalTimeString } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeString } = await import('@frontend/utils/timeUtils');
         try {
           // ✅ 先尝试解析为 Date 对象（支持多种格式）
           const endDate = parseLocalTimeString(formData.endTime);
@@ -1294,7 +1294,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       });
 
       // 🔧 提前导入 EventHub
-      const { EventHub } = await import('../../services/EventHub');
+  const { EventHub } = await import('@backend/EventHub');
 
       // 🔧 Step 7: 统一保存路径（已移除 Timer 特殊处理）
       // 说明：所有事件创建/更新都通过 EventHub 统一处理，确保架构一致性
@@ -3286,7 +3286,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                 // 子模式：实时同步到父事件
                                 if (parentEvent) {
                                   console.log('🔗 [EventEditModalV2] 子事件模式：同步calendarIds到父事件:', parentEvent.id);
-                                  const { EventHub } = await import('../../services/EventHub');
+                                  const { EventHub } = await import('@backend/EventHub');
                                   await EventHub.updateFields(parentEvent.id, {
                                     calendarIds: calendarIds,
                                   }, {
@@ -3556,7 +3556,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                       calendarIds
                                     });
                                     
-                                    const { EventHub } = await import('../../services/EventHub');
+                                    const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
                                       if (childEvent.isTimer) {
                                         await EventHub.updateFields(childEvent.id, {
@@ -3675,7 +3675,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                         calendarIds: allCalendarIds
                                       });
                                       
-                                      const { EventHub } = await import('../../services/EventHub');
+                                      const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
                                         if (childEvent.isTimer) {
                                           await EventHub.updateFields(childEvent.id, {

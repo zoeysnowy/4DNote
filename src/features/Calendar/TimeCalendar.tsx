@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import ToastUIReactCalendar, { ToastUIReactCalendarType } from './components/ToastUIReactCalendar';
 // import { EventEditModal } from '../../components/EventEditModal'; // v1 - 已替换为 v2
-import { EventEditModalV2 } from '../../components/EventEditModal/EventEditModalV2';
+import { EventEditModalV2 } from '@frontend/features/Event';
 import CalendarSettingsPanel, { CalendarSettings } from './components/CalendarSettingsPanel';
 import type { EventObject } from '../../lib/tui.calendar/apps/calendar';
 import '../../lib/tui.calendar/apps/calendar/dist/toastui-calendar.css'; // 使用本地打包的 TUI Calendar

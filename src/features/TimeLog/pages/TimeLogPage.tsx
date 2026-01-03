@@ -15,7 +15,7 @@ import { AttendeeDisplay } from '../../../components/common/AttendeeDisplay';
 import UnifiedDateTimePicker from '../../../components/FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { TimeGap } from '../components/TimeGap';
 import { CompressedDateRange } from '../components/CompressedDateRange';
-import { EventEditModalV2 } from '../../../components/EventEditModal/EventEditModalV2';
+import { EventEditModalV2 } from '@frontend/features/Event';
 import { SimpleCalendarDropdown } from '../../../components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '../../../components/EventEditModalV2Demo/SyncModeDropdown';
 import EventTabManager from '../../../components/EventTabManager';
