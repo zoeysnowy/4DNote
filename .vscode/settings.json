@@ -6,17 +6,23 @@
   
   // 排除不必要的文件监控
   "files.watcherExclude": {
-    "**/node_modules/**": true
+    "**/node_modules/**": true,
+    "**/.history/**": true,
+    "**/src/lib/tui.calendar/**": true
   },
   
   // 排除搜索范围
   "search.exclude": {
-    "**/node_modules/**": true
+    "**/node_modules/**": true,
+    "**/.history/**": true,
+    "**/src/lib/tui.calendar/**": true
   },
   
   // 文件排除
   "files.exclude": {
-    "**/node_modules": true
+    "**/node_modules": true,
+    "**/.history": true,
+    "src/lib/tui.calendar": true
   },
   
   // ESLint 优化
