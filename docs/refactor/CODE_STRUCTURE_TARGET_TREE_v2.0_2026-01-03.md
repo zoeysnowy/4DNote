@@ -607,6 +607,51 @@ Feature/
 
 ---
 
+## ✅ 每次“代码搬运/目录迁移”后的必要检查项目（强制）
+
+> 目标：让项目可以安全重构，IDE 可以正确跳转到定义；尽量做到“编译错误 = 运行时错误（提前暴露问题）”。
+
+### A. 类型声明卫生检查（禁止 shim / 通配符）
+
+检查项目中是否出现 `shim.d.ts` 或类似“通配符类型声明”。
+
+如果发现 `declare module ...`：
+1. 列出所有 `declare module` 语句（逐条列出模块名与所在文件）
+2. 对每个声明判断是否必要：
+   - 如果是为了**已有 @types** 的库补声明 → 删除（优先装/修正对应 `@types/*` 或升级依赖）
+   - 如果是**通配符路径**（例如 `declare module '*/something'`）→ 删除（必须改成真实可解析的模块路径/别名导入）
+   - 如果是把类型“糊成 any”来通过编译 → 重写为精确类型，或删除并在调用点做显式类型收敛
+3. 保留的唯一例外：**扩展全局类型**（例如 `process.env`、`ImportMetaEnv`、`Window` 等）
+
+备注：像 `declare module 'slate'` 这类**明确模块名**的第三方库“增量补类型/修补类型”不属于通配符声明，但也必须有明确理由；能通过升级依赖/替换 API 解决的，优先删除该补丁。
+
+### B. Path Alias 与导入路径（强制显式）
+
+1. 在 `tsconfig.json` 配置 TypeScript Path Alias（本仓库单体结构推荐如下；如未来拆分 monorepo，再调整映射）：
+
+```jsonc
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@shared/*": ["src/shared/*"],
+      "@backend/*": ["src/services/*"],
+      "@frontend/*": ["src/*"]
+    }
+  }
+}
+```
+
+2. 更新所有导入路径为明确别名：`@shared/*` / `@backend/*` / `@frontend/*`
+   - 禁止使用旧路径兼容层（re-export/CSS @import 转发等）
+
+3. 运行 `npm run typecheck`，确保无 TypeScript 错误（本仓库等价于 `tsc --noEmit`）
+
+补充（避免“TS 能过但运行找不到模块”）：
+- 如果使用 Vite/打包器，还必须在对应构建配置里同步 alias（例如 Vite `resolve.alias` 或使用 `vite-tsconfig-paths`）。
+
+---
+
 ## 📚 参考文档
 
 - `docs/architecture/APP_ARCHITECTURE_PRD.md` - App 架构设计
