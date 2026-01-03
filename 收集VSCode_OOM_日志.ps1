@@ -57,8 +57,8 @@ foreach ($p in $profiles) {
 
 # Also capture isolated profiles if they exist in the workspace
 $isolatedRoots = @(
-  Join-Path $PSScriptRoot '.vscode\_oom_test_user_data',
-  Join-Path $PSScriptRoot '.vscode\_oom_test_user_data_empty'
+  (Join-Path $PSScriptRoot '.vscode\_oom_test_user_data'),
+  (Join-Path $PSScriptRoot '.vscode\_oom_test_user_data_empty')
 )
 foreach ($r in $isolatedRoots) {
   if (Test-Path -LiteralPath $r) {
