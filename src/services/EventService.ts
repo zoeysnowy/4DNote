@@ -25,7 +25,7 @@ import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
 import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
 import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
-import { cleanupOutlookHtml as cleanupOutlookHtmlExternal } from './eventlogProcessing/outlookHtmlCleanup';
+import { cleanOutlookXmlTags, processMsoLists, sanitizeInlineStyles } from './eventlogProcessing/outlookHtmlPipeline';
 import { resolveDisplayTitle } from '../utils/TitleResolver';
 import { resolveCheckState } from '../utils/TimeResolver';
 import { updateSubtreeRootEventIdUsingStatsIndex, EventTreeAPI } from './eventTree'; // 🆕 EventTree Engine 集成
@@ -3000,13 +3000,13 @@ export class EventService {
         let cleanedHtml = eventlogInput;
         
         // Step 1: 移除 Outlook XML 遗留物（P2）
-        cleanedHtml = this.cleanOutlookXmlTags(cleanedHtml);
+        cleanedHtml = cleanOutlookXmlTags(cleanedHtml);
         
         // Step 2: MsoList 伪列表识别与转换（P0）
-        cleanedHtml = this.processMsoLists(cleanedHtml);
+        cleanedHtml = processMsoLists(cleanedHtml);
         
         // Step 3: 样式白名单清洗（P0 - 防止黑底黑字）
-        cleanedHtml = this.sanitizeInlineStyles(cleanedHtml);
+        cleanedHtml = sanitizeInlineStyles(cleanedHtml);
         
         // 📌 [CRITICAL FIX] 先从 HTML 中移除签名元素，再提取文本
         // 问题：如果先提取文本，签名会作为纯文本保留下来
@@ -6339,223 +6339,7 @@ export class EventService {
     return true; // Task、文档、Plan 事件、TimeCalendar 事件等
   }
 
-  // ========================================
-  // Outlook 深度规范化私有方法 (v2.20.0)
-  // ========================================
-
-  /**
-   * 清理 Outlook XML 遗留物（P2）
-   * 移除 <o:p>, <w:sdtPr>, xmlns 等 Office/Word 特有标签
-   */
-  private static cleanOutlookXmlTags(html: string): string {
-    return html
-      .replace(/<o:p>[\s\S]*?<\/o:p>/gi, '')           // Office XML 段落标签
-      .replace(/<w:sdtPr>[\s\S]*?<\/w:sdtPr>/gi, '')  // Word 结构化文档属性
-      .replace(/xmlns:o="[^"]*"/gi, '')                // Office 命名空间声明
-      .replace(/xmlns:w="[^"]*"/gi, '');               // Word 命名空间声明
-  }
-
-  /**
-   * MsoList 伪列表识别与转换（P0）
-   * 将 Outlook 的 <p class="MsoListParagraph"> 转换为标准 <ul>/<ol>
-   */
-  private static processMsoLists(html: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const msoElements = Array.from(doc.querySelectorAll('p.MsoListParagraph, p[style*="mso-list"]'));
-    
-    if (msoElements.length === 0) return html;
-    
-    console.log('[processMsoLists] 发现', msoElements.length, '个 MsoList 段落');
-    
-    // 识别连续的列表段落
-    const listGroups: HTMLElement[][] = [];
-    let currentGroup: HTMLElement[] = [];
-    
-    for (const element of msoElements) {
-      if (this.isMsoListParagraph(element as HTMLElement)) {
-        currentGroup.push(element as HTMLElement);
-      } else if (currentGroup.length > 0) {
-        listGroups.push(currentGroup);
-        currentGroup = [];
-      }
-    }
-    if (currentGroup.length > 0) listGroups.push(currentGroup);
-    
-    console.log('[processMsoLists] 识别到', listGroups.length, '个列表组');
-    
-    // 转换每个列表组为 <ul> 或 <ol>
-    for (const group of listGroups) {
-      const listType = this.extractMsoListType(group[0]);
-      const listElement = doc.createElement(listType === 'numbered' ? 'ol' : 'ul');
-      
-      for (const p of group) {
-        const li = doc.createElement('li');
-        li.innerHTML = this.cleanMsoListText(p);
-        
-        // 提取缩进层级
-        const level = this.extractMsoListLevel(p);
-        if (level > 1) {
-          li.setAttribute('data-bullet-level', String(level - 1));
-          li.style.marginLeft = `${(level - 1) * 20}px`;
-        }
-        
-        listElement.appendChild(li);
-      }
-      
-      // 替换原始段落
-      group[0].replaceWith(listElement);
-      for (let i = 1; i < group.length; i++) {
-        group[i].remove();
-      }
-    }
-    
-    return doc.body.innerHTML;
-  }
-
-  private static isMsoListParagraph(element: HTMLElement): boolean {
-    const className = element.className || '';
-    const style = element.getAttribute('style') || '';
-    return className.includes('MsoListParagraph') || style.includes('mso-list:');
-  }
-
-  private static extractMsoListLevel(element: HTMLElement): number {
-    const style = element.getAttribute('style') || '';
-    const match = style.match(/mso-list:.*?level(\d+)/);
-    return match ? parseInt(match[1], 10) : 1;
-  }
-
-  private static extractMsoListType(element: HTMLElement): 'numbered' | 'bullet' {
-    const ignoreSpan = element.querySelector('[style*="mso-list:Ignore"]');
-    if (ignoreSpan) {
-      const text = (ignoreSpan.textContent || '').trim();
-      // 数字、字母开头 → 有序列表
-      if (/^[\d\w]+\.$/.test(text)) {
-        return 'numbered';
-      }
-    }
-    return 'bullet';
-  }
-
-  private static cleanMsoListText(element: HTMLElement): string {
-    const clone = element.cloneNode(true) as HTMLElement;
-    
-    // 移除 mso-list:Ignore 标记
-    clone.querySelectorAll('[style*="mso-list:Ignore"]').forEach(el => el.remove());
-    
-    // 移除条件注释 <![if !supportLists]>
-    let html = clone.innerHTML;
-    html = html.replace(/<!\[if !supportLists\]>[\s\S]*?<!\[endif\]>/gi, '');
-    
-    return html.trim();
-  }
-
-  /**
-   * 样式白名单清洗（P0）
-   * 强制剔除 color, font-family, font-size，防止黑底黑字
-   */
-  private static sanitizeInlineStyles(html: string): string {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    
-    // 遍历所有带 style 属性的元素
-    const allElements = doc.querySelectorAll('[style]');
-    allElements.forEach(element => {
-      this.sanitizeElementStyle(element as HTMLElement);
-    });
-    
-    return doc.body.innerHTML;
-  }
-
-  private static sanitizeElementStyle(element: HTMLElement): void {
-    const style = element.style;
-    const cleanedStyles: Record<string, string> = {};
-    
-    // 样式白名单
-    const ALLOWED_STYLES: Record<string, string[] | boolean> = {
-      'font-weight': ['bold', '700', '800', '900'],
-      'font-style': ['italic'],
-      'text-decoration': ['underline', 'line-through'],
-      'background-color': true  // 需额外校验
-    };
-    
-    const ALLOWED_HIGHLIGHT_COLORS = [
-      '#ffff00', '#00ff00', '#ff00ff', '#ffa500',  // 黄、绿、紫、橙
-      'yellow', 'lime', 'cyan', 'magenta'
-    ];
-    
-    for (let i = 0; i < style.length; i++) {
-      const prop = style[i];
-      const value = style.getPropertyValue(prop);
-      
-      if (ALLOWED_STYLES[prop]) {
-        if (Array.isArray(ALLOWED_STYLES[prop])) {
-          // 检查值是否在允许列表中
-          if ((ALLOWED_STYLES[prop] as string[]).includes(value)) {
-            cleanedStyles[prop] = value;
-          }
-        } else if (prop === 'background-color') {
-          // 高亮色特殊处理
-          const normalized = this.normalizeColor(value);
-          if (ALLOWED_HIGHLIGHT_COLORS.includes(normalized) &&
-              normalized !== '#000000' && 
-              normalized !== '#ffffff') {
-            cleanedStyles[prop] = value;
-            
-            // 🆕 为浅色高亮背景自动添加深色文字（防止深色模式黄底白字）
-            const isLight = this.isLightColor(normalized);
-            if (isLight) {
-              cleanedStyles['color'] = '#000000';  // 强制黑色文字
-            }
-          }
-        }
-      }
-    }
-    
-    // 清空并应用白名单样式
-    element.removeAttribute('style');
-    Object.entries(cleanedStyles).forEach(([prop, value]) => {
-      element.style.setProperty(prop, value);
-    });
-  }
-
-  private static isLightColor(hex: string): boolean {
-    // 判断颜色是否为浅色（需要深色文字）
-    // 使用 YIQ 亮度公式
-    const rgb = this.hexToRgb(hex);
-    if (!rgb) return false;
-    
-    const yiq = ((rgb.r * 299) + (rgb.g * 587) + (rgb.b * 114)) / 1000;
-    return yiq >= 128;  // 亮度 >= 128 为浅色
-  }
-
-  private static hexToRgb(hex: string): { r: number; g: number; b: number } | null {
-    hex = hex.replace('#', '');
-    if (hex.length === 3) {
-      hex = hex.split('').map(c => c + c).join('');
-    }
-    if (hex.length !== 6) return null;
-    
-    return {
-      r: parseInt(hex.substring(0, 2), 16),
-      g: parseInt(hex.substring(2, 4), 16),
-      b: parseInt(hex.substring(4, 6), 16)
-    };
-  }
-
-  private static normalizeColor(color: string): string {
-    // rgb(0,0,0) → #000000
-    if (color.startsWith('rgb')) {
-      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-      if (match) {
-        const r = parseInt(match[1]).toString(16).padStart(2, '0');
-        const g = parseInt(match[2]).toString(16).padStart(2, '0');
-        const b = parseInt(match[3]).toString(16).padStart(2, '0');
-        return `#${r}${g}${b}`;
-      }
-    }
-    return color.toLowerCase();
-  }
+  // Outlook HTML 深度规范化 helpers 已提取到 services/eventlogProcessing/outlookHtmlPipeline
 
   /**
    * 空行去噪（P2）
