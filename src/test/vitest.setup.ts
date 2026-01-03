@@ -1,6 +1,7 @@
+/// <reference types="vitest/globals" />
+
 import 'fake-indexeddb/auto';
 import '@testing-library/jest-dom/vitest';
-import { afterEach, vi } from 'vitest';
 
 // Global test isolation helpers.
 // We keep this minimal to avoid surprising tests; currently the repo only uses
