@@ -1,0 +1,22 @@
+/* Widget Settings Window - 专用样式 */
+
+/* 🎨 让整个窗口背景透明，并裁剪圆角 */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+  overflow: hidden;
+  background: transparent;
+  border-radius: 12px; /* 与面板圆角一致 */
+}
+
+/* 🎨 确保 Widget Settings 窗口完全透明，只有面板有背景 */
+html, body {
+  background: transparent !important;
+}
