@@ -571,7 +571,7 @@ Feature/
 - [ ] 创建 `features/Event/` 并迁移 EventEditModal + EventTree 组件
 - [ ] 创建 `features/Tag/` 并迁移 TagManager
 - [ ] 创建 `features/Contact/` 并迁移 ContactModal
-- [ ] 创建 `features/Timer/` 并迁移 TimerCard
+- [x] 创建 `features/Timer/` 并迁移 TimerCard
 - [ ] 创建 `features/Dashboard/` 并迁移 DailyStatsCard + UpcomingEventsPanel
 
 ### P3 - Services 优化
