@@ -9,7 +9,7 @@ import { TagService } from '../../../services/TagService';
 import { EventTreeAPI } from '../../../services/eventTree/TreeAPI';
 import { ModalSlate } from '../../../components/ModalSlate/ModalSlate';
 import { LogSlate } from '../../../components/LogSlate/LogSlate';
-import { HierarchicalTagPicker } from '../../../components/HierarchicalTagPicker/HierarchicalTagPicker';
+import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
 import { LocationInput } from '../../../components/common/LocationInput';
 import { AttendeeDisplay } from '../../../components/common/AttendeeDisplay';
 import UnifiedDateTimePicker from '../../../components/FloatingToolbar/pickers/UnifiedDateTimePicker';

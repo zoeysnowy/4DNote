@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
-import ColorPicker from './ColorPicker';
-import CalendarMappingPicker from '../features/Calendar/components/CalendarMappingPicker';
-import { STORAGE_KEYS } from '../constants/storage';
-import { PersistentStorage, PERSISTENT_OPTIONS } from '../utils/persistentStorage';
-import { icons } from '../assets/icons';
-import './TagManager.css';
+import ColorPicker from '@frontend/components/ColorPicker';
+import CalendarMappingPicker from '@frontend/features/Calendar/components/CalendarMappingPicker';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { PersistentStorage, PERSISTENT_OPTIONS } from '@frontend/utils/persistentStorage';
+import { icons } from '@frontend/assets/icons';
+import '../styles/TagManager.css';
 
-import { logger } from '../utils/logger';
-import { generateTagId } from '../utils/idGenerator';
+import { logger } from '@frontend/utils/logger';
+import { generateTagId } from '@frontend/utils/idGenerator';
 
 const TagManagerLogger = logger.module('TagManager');
 // 标签数据持久化工具函数
@@ -19,7 +19,7 @@ const saveTagsToStorage = async (tags: ExtendedHierarchicalTag[]) => {
     PersistentStorage.setItem(STORAGE_KEYS.HIERARCHICAL_TAGS, tags, PERSISTENT_OPTIONS.TAGS);
     
     // 🔧 同步到 TagService（保存到 StorageManager/IndexedDB）
-    const { TagService } = await import('../services/TagService');
+    const { TagService } = await import('@backend/TagService');
     TagService.updateTags(tags);
     TagManagerLogger.log('✅ [TagManager] Synced tags to TagService');
   } catch (error) {

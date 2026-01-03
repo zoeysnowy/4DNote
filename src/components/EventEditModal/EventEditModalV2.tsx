@@ -86,7 +86,7 @@ import { useEventHubCache, useEventSubscription } from '../../hooks/useEventHubS
 import { ContactService } from '../../services/ContactService';
 import { EventHistoryService } from '../../services/EventHistoryService';
 import { Event, Contact, EventTitle, type SyncStatusType } from '../../types';
-import { HierarchicalTagPicker } from '../HierarchicalTagPicker/HierarchicalTagPicker';
+import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { AttendeeDisplay } from '../common/AttendeeDisplay';
 import { LocationInput } from '../common/LocationInput';
