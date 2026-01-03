@@ -561,7 +561,7 @@ Feature/
 - [x] TimeLog 迁移 (8d13a61)
 
 ### P1 - Pages 重组（推荐下一步）
-- [ ] 创建 `pages/Event/` 并移入 LogTab.tsx (重命名为 DetailTab.tsx)
+- [x] 创建 `pages/Event/` 并移入 LogTab.tsx (重命名为 DetailTab.tsx) (80f0f38, 65e5b81)
 - [x] 创建 `pages/Event/` 并移入 EventEditorWindow.tsx (重命名为 EditorWindow.tsx) (b4bdf4f, 656b5ce)
 - [x] 创建 `pages/Calendar/` 并移入 DesktopCalendarWidget.tsx (重命名为 WidgetWindow.tsx) (ac23942)
 - [x] 创建 `pages/Calendar/` 并移入 WidgetSettings.tsx (1108318)
