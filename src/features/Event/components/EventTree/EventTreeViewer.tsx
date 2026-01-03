@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { EventTreeSlate } from './EventTreeSlate';
-import { Event } from '../../types';
+import { Event } from '@frontend/types';
 import './EventTreeViewer.css';
 
 interface EventTreeViewerProps {

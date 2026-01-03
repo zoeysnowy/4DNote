@@ -18,8 +18,8 @@ import { ChevronDown, ChevronRight, Circle, LinkIcon } from 'lucide-react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 
-import { EventService } from '../../services/EventService';
-import { Event } from '../../types';
+import { EventService } from '@backend/EventService';
+import { Event } from '@frontend/types';
 import { LinkedCard } from './LinkedCard';
 import './EventTree.css';
 

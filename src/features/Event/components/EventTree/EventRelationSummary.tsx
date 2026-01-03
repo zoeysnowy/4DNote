@@ -12,8 +12,8 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Event } from '../../types';
-import { EventService } from '../../services/EventService';
+import { Event } from '@frontend/types';
+import { EventService } from '@backend/EventService';
 import { EventTreeCanvas } from '../EventTree/EventTreeCanvas';
 
 interface EventRelationSummaryProps {

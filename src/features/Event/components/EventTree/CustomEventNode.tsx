@@ -15,7 +15,7 @@
 
 import React, { useState, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Event } from '../../types';
+import { Event } from '@frontend/types';
 import { LinkedCard } from './LinkedCard';
 import './EventTree.css';
 

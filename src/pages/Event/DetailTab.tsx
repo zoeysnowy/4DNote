@@ -105,8 +105,8 @@ import { useFloatingToolbar } from '../../components/FloatingToolbar/useFloating
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../../components/PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../components/PlanSlate/serialization';
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
-import { EventRelationSummary } from '../../components/EventTree/EventRelationSummary';
-import { EventTreeViewer } from '../../components/EventTree/EventTreeViewer';
+import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
+import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/EventTreeViewer';
 import './DetailTab.css';
 
 // Import SVG icons

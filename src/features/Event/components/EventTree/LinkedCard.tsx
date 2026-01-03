@@ -14,8 +14,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Event } from '../../types';
-import { TagService, type FlatTag } from '../../services/TagService';
+import { Event } from '@frontend/types';
+import { TagService, type FlatTag } from '@backend/TagService';
 import './EventTree.css';
 
 /**
