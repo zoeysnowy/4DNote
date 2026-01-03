@@ -12,26 +12,50 @@
     "**/build/**": true,
     "**/dist/**": true,
     "**/.cache/**": true,
-    "**/tui.calendar-main/**": true
+    "**/coverage/**": true,
+    "**/electron/node_modules/**": true,
+    "**/.history/**": true,
+    "**/.vscode/_oom_logs_capture/**": true,
+    "**/.vscode/_oom_test_user_data/**": true,
+    "**/.vscode/_oom_test_extensions/**": true,
+    "**/.git/**": true,
+    "**/tui.calendar-main/**": true,
+    "**/src/lib/tui.calendar/**": true
   },
   
   // 排除搜索范围
   "search.exclude": {
-    "**/node_modules": true,
-    "**/build": true,
-    "**/dist": true,
-    "**/.git": true,
-    "**/tui.calendar-main": true,
-    "**/package-lock.json": true
+    "**/node_modules/**": true,
+    "**/electron/node_modules/**": true,
+    "**/.history/**": true,
+    "**/.vscode/_oom_logs_capture/**": true,
+    "**/.vscode/_oom_test_user_data/**": true,
+    "**/.vscode/_oom_test_extensions/**": true,
+    "**/.git/**": true,
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/coverage/**": true,
+    "**/.cache/**": true,
+    "**/tui.calendar-main/**": true,
+    "**/package-lock.json": true,
+    "**/src/lib/tui.calendar/**": true
   },
   
   // 文件排除
   "files.exclude": {
+    "**/node_modules": true,
+    "**/electron/node_modules": true,
+    "**/.history": true,
     "**/.git": true,
     "**/.DS_Store": true,
-    "**/node_modules": false,
     "**/build": true,
-    "**/.cache": true
+    "**/.cache": true,
+    ".vscode/_oom_logs_capture": true,
+    ".vscode/_oom_test_user_data": true,
+    ".vscode/_oom_test_extensions": true,
+    "dist": true,
+    "coverage": true,
+    "src/lib/tui.calendar": true
   },
   
   // ESLint 优化
