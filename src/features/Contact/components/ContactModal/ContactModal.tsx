@@ -13,9 +13,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import { Contact } from '../../types';
-import { ContactService } from '../../services/ContactService';
-import './ContactModal.css';
+import { Contact } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
+import '../../styles/ContactModal.css';
 
 export type ContactModalMode = 'create' | 'edit' | 'view';
 

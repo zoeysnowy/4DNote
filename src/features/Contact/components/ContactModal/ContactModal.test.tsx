@@ -4,13 +4,13 @@
 
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { ContactModal } from '../ContactModal';
-import { ContactService } from '../../services/ContactService';
-import { Contact } from '../../types';
+import { ContactModal } from './ContactModal';
+import { ContactService } from '@backend/ContactService';
+import { Contact } from '@frontend/types';
 import { vi } from 'vitest';
 
 // Mock ContactService
-vi.mock('../../services/ContactService', () => {
+vi.mock('@backend/ContactService', () => {
   return {
     ContactService: {
       addContact: vi.fn(),
