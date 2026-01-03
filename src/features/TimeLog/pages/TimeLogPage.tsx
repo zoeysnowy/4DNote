@@ -18,7 +18,7 @@ import { CompressedDateRange } from '../components/CompressedDateRange';
 import { EventEditModalV2 } from '@frontend/features/Event';
 import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
-import EventTabManager from '../../../components/EventTabManager';
+import EventTabManager from '@frontend/features/Event/components/EventTabManager';
 import { LogTab } from '@frontend/pages/Event/DetailTab';
 import { getAvailableCalendarsForSettings } from '../../../utils/calendarUtils';
 import { supportsMultiWindow, openEventInWindow } from '../../../utils/electronUtils';
