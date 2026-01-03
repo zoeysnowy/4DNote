@@ -29,6 +29,7 @@
 - **字段契约（canonical vs derived / time/title 等硬规则）**：[docs/refactor/EVENT_FIELD_CONTRACT.md](EVENT_FIELD_CONTRACT.md)
 - **执行记录**：[docs/refactor/REFACTOR_EXECUTION_LOG_v2.22.md](REFACTOR_EXECUTION_LOG_v2.22.md)
 - **Refactor 文档入口索引**：[docs/refactor/REFRACTOR_DOCS_INDEX_v2.22.md](REFRACTOR_DOCS_INDEX_v2.22.md)
+- **ToastUI Calendar 简化审计（TimeCalendar）**：[docs/refactor/TUI_CALENDAR_SIMPLIFICATION_AUDIT_2026-01-03.md](TUI_CALENDAR_SIMPLIFICATION_AUDIT_2026-01-03.md)
 - **代码结构/命名诊断（迁移路线图）**：[docs/refactor/CODE_STRUCTURE_AND_NAMING_DIAGNOSIS_2026-01-02.md](CODE_STRUCTURE_AND_NAMING_DIAGNOSIS_2026-01-02.md)
 - **整理后的全量目标目录树（执行用）**：[docs/refactor/CODE_STRUCTURE_TARGET_TREE_2026-01-02.md](CODE_STRUCTURE_TARGET_TREE_2026-01-02.md)
 - **useState 诊断（问题清单/分类法）**：[docs/refactor/USE_STATE_DIAGNOSIS_v2.22.md](USE_STATE_DIAGNOSIS_v2.22.md)
