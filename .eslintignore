@@ -1,9 +1,13 @@
 # Dependencies
 node_modules/
+**/node_modules/**
+electron/node_modules/
+ai-proxy/node_modules/
 
 # Build outputs
 build/
 dist/
+electron/dist/
 
 # TUI Calendar dist (third-party build)
 src/lib/tui.calendar/
@@ -11,8 +15,22 @@ src/lib/tui.calendar/
 # Test coverage
 coverage/
 
+# Vendor and backups
+vendor/
+_archive/
+
+# Python
+.venv/
+
+# History and logs
+.history/
+.vscode/_oom_logs_capture/
+.vscode/_oom_test_user_data/
+.vscode/_oom_test_extensions/
+
 # Logs
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+vitest_verbose.txt

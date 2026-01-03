@@ -1,0 +1,197 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "maintenance: prune .history (14d)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\prune-local-history.ps1",
+				"-Days",
+				"14"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "maintenance: prune oom logs (14d)",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-File",
+				"${workspaceFolder}\\scripts\\prune-oom-logs.ps1",
+				"-Days",
+				"14"
+			],
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "copilot: git status",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"status",
+				"-sb"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: git branch",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"branch",
+				"--show-current"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: git remote",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"remote",
+				"-v"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest run",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test",
+				"--",
+				"--run"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest verbose",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"vitest",
+				"run",
+				"--reporter",
+				"verbose"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest verbose to file",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"Set-Location \"c:\\Users\\Zoey\\4DNote\"; npx vitest run --reporter verbose *>&1 | Out-File -Encoding utf8 \"c:\\Users\\Zoey\\4DNote\\vitest_verbose.txt\"; exit $LASTEXITCODE"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest to file (cmd)",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d c:\\Users\\Zoey\\4DNote & npx vitest run --reporter verbose > vitest_verbose.txt 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest run (after indexeddb)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test",
+				"--",
+				"--run"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest verbose to file",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d c:\\Users\\Zoey\\4DNote & npx vitest run --reporter verbose > vitest_verbose.txt 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest verbose to file (cmd2)",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d c:\\Users\\Zoey\\4DNote & npx vitest run --reporter verbose > vitest_verbose.txt 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest run (after setup polyfills)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test",
+				"--",
+				"--run"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest verbose to file (cmd3)",
+			"type": "shell",
+			"command": "cmd",
+			"args": [
+				"/c",
+				"cd /d c:\\Users\\Zoey\\4DNote & npx vitest run --reporter verbose > vitest_verbose.txt 2>&1"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: vitest run (globals)",
+			"type": "shell",
+			"command": "npm",
+			"args": [
+				"test",
+				"--",
+				"--run"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: git add all",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"add",
+				"-A"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "copilot: unstage vitest_verbose",
+			"type": "shell",
+			"command": "git",
+			"args": [
+				"restore",
+				"--staged",
+				"vitest_verbose.txt"
+			],
+			"isBackground": false
+		}
+	]
+}

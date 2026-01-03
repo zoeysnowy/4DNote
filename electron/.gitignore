@@ -19,4 +19,6 @@ pids
 coverage/
 
 # Electron
-electron/dist/
+electron/dist/node_modules/
+dist/
+build/
