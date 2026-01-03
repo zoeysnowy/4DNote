@@ -12,7 +12,7 @@ import { LogSlate } from '../../../components/LogSlate/LogSlate';
 import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
 import { LocationInput } from '../../../components/common/LocationInput';
 import { AttendeeDisplay } from '../../../components/common/AttendeeDisplay';
-import UnifiedDateTimePicker from '../../../components/FloatingToolbar/pickers/UnifiedDateTimePicker';
+import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { TimeGap } from '../components/TimeGap';
 import { CompressedDateRange } from '../components/CompressedDateRange';
 import { EventEditModalV2 } from '@frontend/features/Event';

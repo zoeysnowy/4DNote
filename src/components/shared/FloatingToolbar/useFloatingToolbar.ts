@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, RefObject } from 'react';
-import { logger } from '../../utils/logger';
+import { logger } from '@frontend/utils/logger';
 import { FloatingBarMode } from './types';
 
 const FloatingToolbarLogger = logger.module('FloatingToolbar');

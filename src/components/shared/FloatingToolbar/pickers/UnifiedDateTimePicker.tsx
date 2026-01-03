@@ -5,13 +5,13 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter';
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore';
 import 'dayjs/locale/zh-cn';
 import './UnifiedDateTimePicker.css';
-import { useEventTime } from '../../../hooks/useEventTime';
-import { formatTimeForStorage, parseLocalTimeString } from '../../../utils/timeUtils';
-import { dbg, warn, error } from '../../../utils/debugLogger';
+import { useEventTime } from '@frontend/hooks/useEventTime';
+import { formatTimeForStorage, parseLocalTimeString } from '@frontend/utils/timeUtils';
+import { dbg, warn, error } from '@frontend/utils/debugLogger';
 import { SearchIcon } from './icons/Search';
 import { TaskGrayIcon } from './icons/TaskGray';
 import { TaskColorIcon } from './icons/TaskColor';
-import { parseNaturalLanguage } from '../../../utils/naturalLanguageTimeDictionary';
+import { parseNaturalLanguage } from '@frontend/utils/naturalLanguageTimeDictionary';
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(isSameOrBefore);
@@ -691,7 +691,7 @@ const UnifiedDateTimePicker: React.FC<UnifiedDateTimePickerProps> = ({
         });
         // 写入后触发 onApplied，供外层插入可视化及保存其它字段
         try {
-          const { TimeHub } = await import('../../../services/TimeHub');
+          const { TimeHub } = await import('@backend/TimeHub');
           await TimeHub.setEventTime(eventId, {
             start: startIso,
             end: endIso,

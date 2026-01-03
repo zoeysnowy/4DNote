@@ -20,7 +20,7 @@ import { calculateTimeDiff, isDateMentionOutdated } from '../../../utils/timeDif
 import { Button, Space } from 'antd';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import UnifiedDateTimePicker from '../../FloatingToolbar/pickers/UnifiedDateTimePicker';
+import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
 import { formatTimeForStorage } from '../../../utils/timeUtils';
 import datetimeIcon from '../../../assets/icons/datetime.svg';
 import { EventService } from '../../../services/EventService';

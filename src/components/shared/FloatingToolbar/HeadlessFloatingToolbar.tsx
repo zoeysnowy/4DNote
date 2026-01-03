@@ -19,7 +19,7 @@ import { PriorityPicker } from './pickers/PriorityPicker';
 import { ColorPicker } from './pickers/ColorPicker';
 import { TextColorPicker } from './pickers/TextColorPicker'; // 🆕 文本颜色选择器
 import { BackgroundColorPicker } from './pickers/BackgroundColorPicker'; // 🆕 背景颜色选择器
-import { icons } from '../../assets/icons'; // 🆕 导入图标资源
+import { icons } from '@frontend/assets/icons'; // 🆕 导入图标资源
 import './HeadlessFloatingToolbar.css';
 
 type ToolbarButtonConfig = {

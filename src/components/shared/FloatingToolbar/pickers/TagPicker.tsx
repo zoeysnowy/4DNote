@@ -5,9 +5,9 @@
 
 import React, { useRef, useCallback } from 'react';
 import { Editor } from 'slate';
-import { HierarchicalTagPicker, HierarchicalTag } from '../../shared';
-import { insertTag } from '../../PlanSlate/helpers';
-import { TagService } from '../../../services/TagService';
+import { HierarchicalTagPicker, HierarchicalTag } from '@frontend/components/shared';
+import { insertTag } from '@frontend/components/PlanSlate/helpers';
+import { TagService } from '@backend/TagService';
 
 interface TagPickerProps {
   availableTags: HierarchicalTag[];

@@ -58,7 +58,7 @@ import {
   parseHTMLBullets,
 } from '../SlateCore/operations/clipboardHelpers';
 
-import UnifiedDateTimePicker from '../FloatingToolbar/pickers/UnifiedDateTimePicker';
+import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
 
 // 🆕 v2.20.0: EventTree Engine for Tab/Shift+Tab optimization
 import { EventTreeAPI } from '@backend/eventTree';
