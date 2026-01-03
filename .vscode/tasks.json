@@ -192,6 +192,17 @@
 				"vitest_verbose.txt"
 			],
 			"isBackground": false
+		},
+		{
+			"label": "Typecheck (fail fast)",
+			"type": "shell",
+			"command": "npx",
+			"args": [
+				"tsc",
+				"--noEmit"
+			],
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

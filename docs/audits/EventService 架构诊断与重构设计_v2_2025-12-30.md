@@ -11,7 +11,42 @@
 > 但执行顺序、术语与对外 API 命名必须与 Master Plan 对齐，避免多文档各写一套口径。
 
 ---
+## 🎯 架构对齐声明（v2.22 + APP_ARCHITECTURE）
 
+**关键架构约束**（执行时必须遵守）：
+
+1. **ADR-001（树结构真相）**：`parentEventId` 为唯一真相，`childEventIds` 为 legacy 字段
+   - ✅ 本文档设计已对齐：三层匹配只需关注 `parentEventId` 恢复
+
+2. **状态分类法（A/B/C/D/E）**：
+   - (C) 领域数据真相 → EventService/EventHub
+   - (E) 持久化管线态 → 自建 pipeline
+   - ⚠️ **DocumentModel/IR 不得作为新的全局状态层**
+
+3. **Slate 编辑器正确性优先**（Epic 1）：
+   - ❌ 禁止在编辑器 onChange 中调用 normalize
+   - ✅ normalize 仅在写入时（save/sync）
+   - ✅ 读取时轻量处理
+
+4. **小步提交 + 可回滚**：
+   - 每步改动必须独立验证
+   - 不允许"大爆炸式合并"
+
+5. **EventHub 订阅视图**（Epic 2 正在推进）：
+   - UI 使用 `useEventHubEvent/useEventHubQuery`
+   - 不在 UI 维护第二份真相缓存
+
+6. **同步状态机**：
+   - `syncStatus: local-only/pending/synced/failed`
+   - local-only 事件不受 Meta 体积限制
+
+**与本文档的集成点**：
+- ✅ EventLogCodec 作为**内部转换层**，不暴露 IR 为全局状态
+- ✅ normalize 时机：仅在 Write Path（`EventService.saveEvent/syncToOutlook`）
+- ✅ 分级 Meta 与 syncStatus 集成（local-only 无限制，需同步事件受 32KB 约束）
+- ✅ 数据迁移无需处理 ID 格式（v2.17 已统一 UUID）
+
+---
 ## 目的
 
 在不引入 Redux 的前提下，逐步修正 `EventService` 及其相关模块的架构问题，降低耦合与竞态，提升：
@@ -151,9 +186,11 @@
 
 ### B. 文档模型与元素体系（新增）
 
-- `DocumentModel`（IR）
-  - 目标：定义“4DNote 内部 canonical 文档结构”，不与 HTML/Slate 强耦合。
-  - Slate 仍可作为主要编辑器，但 IR 负责“版本/元素 payload 的稳定契约”。
+- `DocumentModel`（IR - 内部转换层）
+  - ⚠️ **架构约束**：IR 仅作为 EventLogCodec 内部的编解码中间格式，**不暴露为全局状态层**
+  - 目标：在 HTML ↔ Slate JSON 转换时提供统一的中间表示（类似编译器 AST）
+  - 对外接口仍然是 Slate JSON（与现有架构无缝对接）
+  - **禁止**：UI 组件直接依赖 IR / 在 EventHub 中存储 IR
 
 - `ElementRegistry`（元素注册表）
   - 每个元素以 descriptor 注册：
@@ -164,14 +201,18 @@
     - `fallbackDecode(htmlChunk, ctx)`（Meta 缺失/损坏时兜底）
 
 - `DocumentNormalizer`（纯函数优先）
+  - ⚠️ **调用时机约束**：仅在 Write Path 调用（`EventService.saveEvent/syncToOutlook`），**禁止在编辑器 onChange 中调用**
   - 输入：任意 Slate/IR 节点（可能来自 UI、Outlook 回读、旧数据）
   - 输出：canonical IR（或 canonical Slate JSON）
-  - 不依赖 DOM，不访问全局状态。
+  - 不依赖 DOM，不访问全局状态
+  - **架构对齐**：符合 Epic 1（Slate 编辑器单一状态源），编辑器内部状态不做 normalize
 
 - `EventLogCodec`（编解码）
-  - `encode(eventlog) -> { html, meta }`
+  - `encode(eventlog, options?) -> { html, meta }`
+    - options 包含 `syncStatus`（用于分级 Meta 策略）
   - `decode({ html, meta }) -> eventlog`
-  - 负责三层匹配、锚点对齐、降级策略（unknown-block）。
+  - 负责三层匹配、锚点对齐、降级策略（unknown-block）
+  - **EventHub 集成**：decode 完成后触发 `eventlogNormalized` 事件，UI 通过 `useEventlogVersion()` 订阅更新（类似 `tagsVersion` 机制）
 
 - `UnknownBlockHandler`（安全阀）
   - 任何无法识别/无法可靠恢复的块 → `unknown-block`
@@ -459,13 +500,18 @@ export interface MetaNodeV2 {
 
 1) 建 `ElementRegistry`（先覆盖现有元素：paragraph/list/timestamp-divider/mention/attachments 等）。
 2) 将 `normalizeEventLog()` 的“识别分支”改为 registry 驱动。
-3) 以最小改动保持现有数据格式兼容（Slate JSON 仍可作为主存）。
-
+3) 以最小改动保持现有数据格式兼容（Slate JSON 仍可作为主存）。4) **架构对齐**：
+   - ⚠️ normalize 仅在 Write Path 调用（saveEvent/syncToOutlook），**禁止在编辑器 onChange 中调用**
+   - 与 EventHub 订阅模式集成（触发 `eventlogNormalized` 事件，UI 通过 `useEventlogVersion()` 订阅）
 ### Phase 2：抽离 EventLogCodec + HtmlAdapter（P1）
 
 1) 从 `EventService` 抽 `EventLogHtmlAdapter`（DOM 清洗、Outlook 特化）。
 2) 抽 `EventLogCodec`（encode/decode、三层匹配、锚点对齐）。
 3) `EventService` 仅编排：写入前调用 codec/normalizer，存储与广播不直接处理 DOM。
+4) **架构对齐**：
+   - ⚠️ IR 仅在 codec 内部使用，**不暴露为全局状态层**
+   - encode 时根据 `syncStatus` 决定 Meta 策略（local-only 无限制，需同步受 32KB 约束）
+   - 对外接口仍然是 Slate JSON（与现有架构无缝对接）
 
 ### Phase 3：契约测试与 fuzz（P1）
 
@@ -478,10 +524,29 @@ export interface MetaNodeV2 {
 ### Phase 4：新增 Notion 级元素（P2）
 
 按 Tier A→B 顺序实现：
-- heading（目录可由派生视图生成，不必写回 storage）
-- code-block
-- property/metric（用户自定义字段）
-- table（先只读或有限编辑，保证可回读）
+- **Week 1**: heading（目录可由派生视图生成，不必写回 storage）
+- **Week 2**: code-block
+- **Week 3**: property/metric（用户自定义字段）
+- **Week 4**: table（先只读或有限编辑，保证可回读）
+
+每个元素都需要：
+- 实现 `normalize + encodeToHtml + decodeFromHtml + fallbackDecode`
+- 通过契约测试
+- 不破坏现有同步功能
+
+---
+
+## 里程碑时间线（小步迭代）
+
+| Phase | 目标 | 时长 | 验收标准 |
+|---|---|---|---|
+| Phase 0 | 永不崩底座 | 1 周 | Outlook 回读不崩、unknown-block 机制 |
+| Phase 1 | 元素注册机制 | 1 周 | registry 驱动 normalize、EventHub 集成 |
+| Phase 2 | 解耦 Codec | 1 周 | DOM 清洗抽离、分级 Meta 支持 |
+| Phase 3 | 契约测试 | 1 周 | 幂等性、encode/decode 往返、fuzz 测试 |
+| Phase 4 | 富元素扩展 | 2-3 周 | heading/code/property/table 逐步上线 |
+
+**总时长**：6-7 周（每周一个可验证里程碑）
 
 ---
 
