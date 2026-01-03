@@ -30,7 +30,7 @@ import './App.css';
 // 🔧 暂时禁用懒加载，测试性能
 import TagManager from './components/TagManager';
 import TimeCalendar from './features/Calendar/TimeCalendar';
-import PlanManager from './components/PlanManager';
+import PlanManager from '@frontend/features/Plan/components/PlanManager';
 import TimeLog from './pages/TimeLog';
 
 import { logger } from './utils/logger';

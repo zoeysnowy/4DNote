@@ -18,8 +18,8 @@ import 'dayjs/locale/zh-cn';
 import { formatDateDisplay } from '../../../utils/dateParser';
 import { EventEditModalV2 } from '../../../components/EventEditModal/EventEditModalV2'; // v2 - 新版本
 import { EventHub } from '../../../services/EventHub'; // 🎯 使用 EventHub 而不是 EventService
-import { shouldShowInPlanManager, filterPlanEvents, isEmptyEvent } from '../../../utils/planManagerFilters';
-import { extractCalendarIds, buildEventForSave, detectChanges } from '../../../utils/planManagerHelpers';
+import { shouldShowInPlanManager, filterPlanEvents, isEmptyEvent } from '@frontend/features/Plan/helpers/planManagerFilters';
+import { extractCalendarIds, buildEventForSave, detectChanges } from '@frontend/features/Plan/helpers/planManagerHelpers';
 import { EventService } from '../../../services/EventService'; // 🔧 仅用于查询（getEventById）
 import { EventHistoryService } from '../../../services/EventHistoryService'; // 🆕 用于事件历史快照
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
