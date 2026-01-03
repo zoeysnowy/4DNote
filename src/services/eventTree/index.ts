@@ -24,6 +24,9 @@ export { EventTreeCache, treeCache } from './TreeCache';
 // Performance Monitor (Phase 3)
 export { EventTreePerformanceMonitor, perfMonitor } from './PerformanceMonitor';
 
+// EventNode Service
+export { EventNodeService } from './EventNodeService';
+
 // Types
 export type {
   EventNode,
