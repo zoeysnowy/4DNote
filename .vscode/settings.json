@@ -1,48 +1,78 @@
 {
   // TypeScript 服务器优化
-  "typescript.tsserver.maxTsServerMemory": 8192,
+  "typescript.tsserver.maxTsServerMemory": 2048,
   "typescript.disableAutomaticTypeAcquisition": true,
   "typescript.suggest.autoImports": true,
   
   // 排除不必要的文件监控
   "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
     "**/node_modules/**": true,
+    "**/build/**": true,
+    "**/dist/**": true,
+    "**/.cache/**": true,
+    "**/coverage/**": true,
     "**/electron/node_modules/**": true,
+    "**/ai-proxy/node_modules/**": true,
     "**/.history/**": true,
     "**/.vscode/_oom_logs_capture/**": true,
     "**/.vscode/_oom_test_user_data/**": true,
     "**/.vscode/_oom_test_extensions/**": true,
     "**/.git/**": true,
-    "**/dist/**": true,
-    "**/coverage/**": true,
-    "**/src/lib/tui.calendar/**": true
+    "**/.venv/**": true,
+    "**/tui.calendar-main/**": true,
+    "**/src/lib/tui.calendar/**": true,
+    "**/vendor/**": true,
+    "**/_archive/**": true,
+    "**/electron/dist/**": true,
+    "**/package-lock.json": true
   },
   
   // 排除搜索范围
   "search.exclude": {
     "**/node_modules/**": true,
     "**/electron/node_modules/**": true,
+    "**/ai-proxy/node_modules/**": true,
     "**/.history/**": true,
     "**/.vscode/_oom_logs_capture/**": true,
     "**/.vscode/_oom_test_user_data/**": true,
     "**/.vscode/_oom_test_extensions/**": true,
     "**/.git/**": true,
+    "**/build/**": true,
     "**/dist/**": true,
     "**/coverage/**": true,
-    "**/src/lib/tui.calendar/**": true
+    "**/.cache/**": true,
+    "**/.venv/**": true,
+    "**/tui.calendar-main/**": true,
+    "**/package-lock.json": true,
+    "**/src/lib/tui.calendar/**": true,
+    "**/vendor/**": true,
+    "**/_archive/**": true,
+    "**/electron/dist/**": true,
+    "**/vitest_verbose.txt": true
   },
   
   // 文件排除
   "files.exclude": {
     "**/node_modules": true,
     "**/electron/node_modules": true,
+    "**/ai-proxy/node_modules": true,
     "**/.history": true,
+    "**/.git": true,
+    "**/.DS_Store": true,
+    "**/build": true,
+    "**/.cache": true,
+    "**/.venv": true,
     ".vscode/_oom_logs_capture": true,
     ".vscode/_oom_test_user_data": true,
     ".vscode/_oom_test_extensions": true,
     "dist": true,
     "coverage": true,
-    "src/lib/tui.calendar": true
+    "src/lib/tui.calendar": true,
+    "vendor": true,
+    "_archive": true,
+    "vitest_verbose.txt": true
   },
   
   // ESLint 优化
@@ -91,7 +121,39 @@
   // 终端优化
   "terminal.integrated.rendererType": "dom",
   "terminal.integrated.gpuAcceleration": "off",
+  
+  // MCP Figma配置
   "mcpFigma.aiAssistant": "github-copilot",
   "mcpFigma.autoStartWebSocket": false,
-  "mcpFigma.websocketPort": 3845
+  "mcpFigma.websocketPort": 3845,
+  
+  // 额外性能优化
+  "extensions.autoUpdate": false,
+  "extensions.autoCheckUpdates": false,
+  "search.followSymlinks": false,
+  "search.maintainFileSearchCache": false,
+  "files.associations": {},
+  "typescript.surveys.enabled": false,
+  "workbench.enableExperiments": false,
+  "telemetry.telemetryLevel": "off",
+  
+  // Local History 扩展优化（如果安装了）
+  "local-history.enabled": 0,
+  "local-history.maxDisplay": 10,
+  "local-history.daysLimit": 7,
+  "local-history.saveDelay": 60,
+  "local-history.exclude": [
+    "**/node_modules/**",
+    "**/.history/**",
+    "**/.vscode/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/vendor/**",
+    "**/_archive/**",
+    "**/electron/**",
+    "**/ai-proxy/**",
+    "**/.venv/**",
+    "**/*.log",
+    "**/package-lock.json"
+  ]
 }
