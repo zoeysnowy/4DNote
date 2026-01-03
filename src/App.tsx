@@ -1899,7 +1899,7 @@ function App() {
 
       case 'ai-demo':
         // 懒加载 AIDemo 组件
-        const AIDemo = React.lazy(() => import('./components/AIDemo'));
+        const AIDemo = React.lazy(() => import('@frontend/components/demos/AIDemo'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo"><div>加载中...</div></PageContainer>}>
             <AIDemo />
@@ -1909,7 +1909,7 @@ function App() {
         
       case 'ai-demo-v2':
         // 懒加载 AIDemoV2 组件
-        const AIDemoV2 = React.lazy(() => import('./components/AIDemoV2'));
+        const AIDemoV2 = React.lazy(() => import('@frontend/components/demos/AIDemoV2'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo V2"><div>加载中...</div></PageContainer>}>
             <AIDemoV2 />
@@ -1919,7 +1919,7 @@ function App() {
 
       case 'rag-demo':
         // 懒加载 RAGDemo 组件
-        const RAGDemo = React.lazy(() => import('./components/RAGDemo'));
+        const RAGDemo = React.lazy(() => import('@frontend/components/demos/RAGDemo'));
         content = (
           <React.Suspense fallback={<PageContainer title="RAG Demo"><div>加载中...</div></PageContainer>}>
             <RAGDemo />

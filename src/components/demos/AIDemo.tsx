@@ -14,13 +14,13 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { AIService } from '../services/ai/AIService';
-import { AIConfigManager, APIPreset } from '../services/ai/AIConfig';
-import { ExtractedEventInfo } from '../services/ai/AIProvider.interface';
-import { EventService } from '../services/EventService';
-import { Event } from '../types';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { checkProxyHealth } from '../utils/proxyHelper';
+import { AIService } from '@backend/ai/AIService';
+import { AIConfigManager, APIPreset } from '@backend/ai/AIConfig';
+import { ExtractedEventInfo } from '@backend/ai/AIProvider.interface';
+import { EventService } from '@backend/EventService';
+import { Event } from '@frontend/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { checkProxyHealth } from '@frontend/utils/proxyHelper';
 import './AIDemo.css';
 
 export const AIDemo: React.FC = () => {
@@ -354,7 +354,7 @@ export const AIDemo: React.FC = () => {
 
     try {
       // 动态导入 EventHub
-      const { EventHub } = await import('../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
 
       // 构建 Event 对象（仿照 EventEditModal）
       const newEvent: Event = {

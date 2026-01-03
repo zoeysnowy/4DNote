@@ -13,10 +13,10 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { AIService } from '../services/ai/AIService';
-import { AIConfigManager, APIPreset } from '../services/ai/AIConfig';
-import { ExtractedEventInfo } from '../services/ai/AIProvider.interface';
-import { checkProxyHealth } from '../utils/proxyHelper';
+import { AIService } from '@backend/ai/AIService';
+import { AIConfigManager, APIPreset } from '@backend/ai/AIConfig';
+import { ExtractedEventInfo } from '@backend/ai/AIProvider.interface';
+import { checkProxyHealth } from '@frontend/utils/proxyHelper';
 import './AIDemoV2.css';
 
 // 批处理任务接口

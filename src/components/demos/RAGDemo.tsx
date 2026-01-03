@@ -15,11 +15,11 @@
 
 import React, { useState, useEffect } from 'react';
 import './RAGDemo.css';
-import { processTranscriptFromURL, TranscriptSegment } from '../utils/transcriptProcessor';
-import type { Event as EventType } from '../types';
-import { EventService } from '../services/EventService';
-import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
-import { formatDateForStorage } from '../utils/timeUtils';
+import { processTranscriptFromURL, TranscriptSegment } from '@frontend/utils/transcriptProcessor';
+import type { Event as EventType } from '@frontend/types';
+import { EventService } from '@backend/EventService';
+import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
+import { formatDateForStorage } from '@frontend/utils/timeUtils';
 
 interface TimestampNode {
   timestamp: string;
@@ -369,7 +369,7 @@ export const RAGDemo: React.FC = () => {
           pastDate.setDate(pastDate.getDate() - transcriptConfig.daysAgo);
 
           // 解析并生成事件
-          const { parseTranscript, transcriptToEvents } = await import('../utils/transcriptProcessor');
+          const { parseTranscript, transcriptToEvents } = await import('@frontend/utils/transcriptProcessor');
           const segments = parseTranscript(text);
           
           console.log('[RAGDemo] 解析出片段数:', segments.length);
