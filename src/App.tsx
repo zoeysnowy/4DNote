@@ -9,10 +9,10 @@ import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用
 import AppLayout, { PageType } from './components/AppLayout';
 import PageContainer from './components/PageContainer';
-import DesktopCalendarWidget from './pages/DesktopCalendarWidget';
+import DesktopCalendarWidget from '@frontend/pages/Calendar/WidgetWindow';
 import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from './components/DailyStatsCard'; // 今日统计卡片组件
-import { HomePage } from './pages/HomePage'; // 🆕 HomePage with stats dashboard
+import { HomePage } from '@frontend/pages/Home'; // 🆕 HomePage with stats dashboard
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
@@ -2125,7 +2125,7 @@ export default function AppWrapper() {
   // 如果是 Widget Settings 模式，渲染设置页面
   if (isWidgetSettings) {
     // 动态导入 WidgetSettings 组件
-    const WidgetSettings = React.lazy(() => import('./pages/WidgetSettings'));
+    const WidgetSettings = React.lazy(() => import('@frontend/pages/Calendar/WidgetSettings'));
     return (
       <React.Suspense fallback={<div>Loading...</div>}>
         <WidgetSettings />

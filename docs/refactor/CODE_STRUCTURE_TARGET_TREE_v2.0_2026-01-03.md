@@ -97,14 +97,14 @@ src/
     
     Calendar/
       index.tsx                          # Calendar 主页入口
-      WidgetWindow.tsx                   # Desktop Widget 窗口（原 DesktopCalendarWidget.tsx）
+      WidgetWindow.tsx                   # Desktop Widget 窗口（原 DesktopCalendarWidget.tsx；已删除旧路径 shim）
       WidgetSettings.tsx                 # Widget 设置页
     
     TimeLog/
       index.tsx                          # TimeLog 页面入口
     
     Event/
-      DetailTab.tsx                      # 事件详情页（原 LogTab.tsx，4181 行大文件）
+      DetailTab.tsx                      # 事件详情页（原 LogTab.tsx，4181 行大文件；已删除旧路径 shim）
       EditorWindow.tsx                   # 独立编辑器窗口（Electron 多窗口）
     
     Tag/
@@ -225,7 +225,7 @@ src/
         ContactModal.css
       index.ts
 
-    Timer/                               # 建议新增：计时器
+    Timer/                               # ✅ 已迁移：计时器
       components/
         TimerCard.tsx                    # 计时器卡片
         TimeHoverCard/
