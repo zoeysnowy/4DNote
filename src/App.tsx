@@ -7,8 +7,8 @@ import { SyncStatusStore } from './state/syncStatusStore';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
 import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用
-import AppLayout, { PageType } from './components/AppLayout';
-import PageContainer from './components/PageContainer';
+import AppLayout, { PageType } from '@frontend/components/layout/AppLayout';
+import PageContainer from '@frontend/components/common/PageContainer';
 import DesktopCalendarWidget from '@frontend/pages/Calendar/WidgetWindow';
 import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from '@frontend/features/Dashboard'; // 今日统计卡片组件

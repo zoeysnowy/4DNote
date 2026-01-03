@@ -1,6 +1,6 @@
 import React from 'react';
 
-import PageContainer from '@frontend/components/PageContainer';
+import PageContainer from '@frontend/components/common/PageContainer';
 import { TimeCalendar } from '@frontend/features/Calendar/TimeCalendar';
 
 export type CalendarPageProps = React.ComponentProps<typeof TimeCalendar>;

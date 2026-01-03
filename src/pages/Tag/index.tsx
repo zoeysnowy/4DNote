@@ -1,6 +1,6 @@
 import React from 'react';
 
-import PageContainer from '@frontend/components/PageContainer';
+import PageContainer from '@frontend/components/common/PageContainer';
 import TagManager from '@frontend/features/Tag/components/TagManager';
 
 export type TagPageProps = React.ComponentProps<typeof TagManager>;

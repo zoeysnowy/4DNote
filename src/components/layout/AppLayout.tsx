@@ -1,10 +1,10 @@
 import React from 'react';
 import './AppLayout.css';
-import { icons } from '../assets/icons';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { AuthStore } from '../state/authStore';
-import { SyncStatusStore } from '../state/syncStatusStore';
-import PanelIconSvg from '../assets/icons/Panel.svg';
+import { icons } from '@frontend/assets/icons';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { AuthStore } from '@frontend/state/authStore';
+import { SyncStatusStore } from '@frontend/state/syncStatusStore';
+import PanelIconSvg from '@frontend/assets/icons/Panel.svg';
 
 // 页面类型定义
 export type PageType = 'home' | 'timecalendar' | 'timelog' | 'tag' | 'plan' | 'sync' | 'ai-demo' | 'ai-demo-v2' | 'rag-demo';
