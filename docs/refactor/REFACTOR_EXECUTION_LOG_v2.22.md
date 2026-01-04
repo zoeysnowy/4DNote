@@ -147,6 +147,7 @@
 | 2026-01-04 | P3-15: hooks alias-only imports | Convert cross-directory relative imports in `src/hooks/**` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 03316c7 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-16: time tests alias-only imports | Convert cross-directory relative imports in `src/__tests__/time/*` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 79ed0ca | Import-only changes; no behavior change |
 | 2026-01-04 | P3-17: calendar widget pages alias-only imports | Convert cross-directory relative imports in `src/pages/Calendar/WidgetWindow.tsx` + `WidgetSettings.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 7180b29 | Import-only changes; no behavior change |
+| 2026-01-04 | P3-18: event editor window alias-only imports | Convert cross-directory relative imports in `src/pages/Event/EditorWindow.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | de1997d | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
