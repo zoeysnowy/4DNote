@@ -25,7 +25,14 @@ import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
 import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
 import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
 import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
-import { cleanOutlookXmlTags, processMsoLists, sanitizeInlineStyles } from './eventlogProcessing/outlookHtmlPipeline';
+import { 
+  cleanOutlookXmlTags, 
+  decodeHtmlEntitiesRecursively, 
+  extractPlainTextPreservingBreaks, 
+  processMsoLists, 
+  removeOutlookSignatureFromHtml, 
+  sanitizeInlineStyles 
+} from '@backend/eventlogProcessing/outlookHtmlPipeline';
 import { resolveDisplayTitle } from '../utils/TitleResolver';
 import { resolveCheckState } from '../utils/TimeResolver';
 import { updateSubtreeRootEventIdUsingStatsIndex, EventTreeAPI } from './eventTree'; // 🆕 EventTree Engine 集成
@@ -3013,11 +3020,7 @@ export class EventService {
         cleanedHtml = eventlogInput;
         
         // 1. 移除 Outlook/4DNote 签名段落（<p> 或 <div> 包含签名）
-        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<br\s*\/?>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi, '');
-        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi, '');
-        
-        // 2. 移除分隔线段落
-        cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<\/(p|div)>/gi, '');
+        cleanedHtml = removeOutlookSignatureFromHtml(cleanedHtml);
         
         console.log('[EventService] 🧹 清理 HTML 签名:', {
           原长度: eventlogInput.length,
@@ -3028,18 +3031,7 @@ export class EventService {
         // 🆕 [CRITICAL FIX] 递归解码多层 HTML 实体编码
         // 问题：Outlook 同步回来的 HTML 可能被多层转义（&amp;lt;br&amp;gt; → &lt;br&gt; → <br>）
         // 解决：递归解码，直到没有 HTML 实体为止
-        let decodedHtml = cleanedHtml;
-        let previousHtml = '';
-        let iterations = 0;
-        const maxIterations = 10; // 防止无限循环
-        
-        while (decodedHtml !== previousHtml && iterations < maxIterations) {
-          previousHtml = decodedHtml;
-          const tempDiv = document.createElement('div');
-          tempDiv.innerHTML = decodedHtml;
-          decodedHtml = tempDiv.innerHTML;
-          iterations++;
-        }
+        const { decodedHtml, iterations } = decodeHtmlEntitiesRecursively(cleanedHtml, 10);
         
         console.log('[EventService] 🔓 递归解码 HTML 实体:', {
           迭代次数: iterations,
@@ -3048,24 +3040,7 @@ export class EventService {
         });
         
         // 🔧 从解码后的 HTML 提取纯文本（保留换行）
-        // Step 1: 将 <br> 和 </p> 转换为换行符
-        let htmlForExtraction = decodedHtml
-          .replace(/<br\s*\/?>/gi, '\n')
-          .replace(/<\/p>/gi, '\n')
-          .replace(/<\/div>/gi, '\n');
-        
-        // Step 2: 提取纯文本
-        const tempDiv2 = document.createElement('div');
-        tempDiv2.innerHTML = htmlForExtraction;
-        
-        // 优先从 <body> 提取，如果没有则从整个内容提取
-        const bodyElement = tempDiv2.querySelector('body');
-        let textContent = (bodyElement || tempDiv2).textContent || '';
-        
-        // Step 3: 清理多余换行
-        textContent = textContent
-          .replace(/\n{3,}/g, '\n\n')  // 最多保留两个连续换行
-          .trim();
+        const textContent = extractPlainTextPreservingBreaks(decodedHtml);
         
         // 🔍 检查提取的文本是否包含时间戳分隔符
         // 支持 YYYY-MM-DD HH:mm:ss 和 YYYY/MM/DD HH:mm:ss

@@ -103,6 +103,56 @@ export function sanitizeInlineStyles(html: string): string {
   return doc.body.innerHTML;
 }
 
+export function removeOutlookSignatureFromHtml(html: string): string {
+  let cleanedHtml = html;
+
+  cleanedHtml = cleanedHtml.replace(
+    /<(p|div)[^>]*>\s*---\s*<br\s*\/?>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi,
+    ''
+  );
+  cleanedHtml = cleanedHtml.replace(
+    /<(p|div)[^>]*>\s*由\s+(?:🔮|📧|🟣)?\s*(?:4DNote|Outlook|ReMarkable)\s*(?:创建于|编辑于|最后(?:修改|编辑)于)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}[\s\S]*?<\/(p|div)>/gi,
+    ''
+  );
+
+  cleanedHtml = cleanedHtml.replace(/<(p|div)[^>]*>\s*---\s*<\/(p|div)>/gi, '');
+
+  return cleanedHtml;
+}
+
+export function decodeHtmlEntitiesRecursively(html: string, maxIterations = 10): { decodedHtml: string; iterations: number } {
+  let decodedHtml = html;
+  let previousHtml = '';
+  let iterations = 0;
+
+  while (decodedHtml !== previousHtml && iterations < maxIterations) {
+    previousHtml = decodedHtml;
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = decodedHtml;
+    decodedHtml = tempDiv.innerHTML;
+    iterations++;
+  }
+
+  return { decodedHtml, iterations };
+}
+
+export function extractPlainTextPreservingBreaks(html: string): string {
+  let htmlForExtraction = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>/gi, '\n')
+    .replace(/<\/div>/gi, '\n');
+
+  const tempDiv = document.createElement('div');
+  tempDiv.innerHTML = htmlForExtraction;
+
+  const bodyElement = tempDiv.querySelector('body');
+  let textContent = (bodyElement || tempDiv).textContent || '';
+
+  textContent = textContent.replace(/\n{3,}/g, '\n\n').trim();
+
+  return textContent;
+}
+
 function sanitizeElementStyle(element: HTMLElement): void {
   const style = element.style;
   const cleanedStyles: Record<string, string> = {};
