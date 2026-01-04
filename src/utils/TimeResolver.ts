@@ -1,6 +1,6 @@
 
 import type { Event } from '@frontend/types';
-import { formatTimeForStorage, parseLocalTimeString } from './timeUtils';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from './timeUtils';
 
 export interface CheckState {
 	isChecked: boolean;
@@ -13,14 +13,59 @@ function lastOf(values: string[] | undefined): string | undefined {
 	return values[values.length - 1];
 }
 
+function latestOf(values: string[] | undefined): string | undefined {
+	if (!Array.isArray(values) || values.length === 0) return undefined;
+
+	let best = values[0];
+	let bestTime = parseLocalTimeStringOrNull(best)?.getTime() ?? null;
+
+	for (let i = 1; i < values.length; i++) {
+		const value = values[i];
+		if (typeof value !== 'string' || value.trim() === '') continue;
+
+		const valueTime = parseLocalTimeStringOrNull(value)?.getTime() ?? null;
+		if (valueTime !== null) {
+			if (bestTime === null || valueTime > bestTime) {
+				best = value;
+				bestTime = valueTime;
+			}
+			continue;
+		}
+
+		// Both are unparsable: fallback to lexicographic max (best effort).
+		if (bestTime === null && value > best) {
+			best = value;
+		}
+	}
+
+	return best;
+}
+
 /**
  * Resolve current check state from checked/unchecked timestamp arrays.
  * Pure function; does not write back.
  */
 export function resolveCheckState(event: Pick<Event, 'checked' | 'unchecked'>): CheckState {
-	const lastChecked = lastOf(event.checked);
-	const lastUnchecked = lastOf(event.unchecked);
-	const isChecked = !!lastChecked && (!lastUnchecked || lastChecked > lastUnchecked);
+	// The arrays are append-only in most flows, but can be reordered by merges/imports.
+	const lastChecked = latestOf(event.checked ?? undefined) ?? lastOf(event.checked);
+	const lastUnchecked = latestOf(event.unchecked ?? undefined) ?? lastOf(event.unchecked);
+
+	let isChecked = false;
+	if (lastChecked) {
+		if (!lastUnchecked) {
+			isChecked = true;
+		} else {
+			const checkedTime = parseLocalTimeStringOrNull(lastChecked)?.getTime() ?? null;
+			const uncheckedTime = parseLocalTimeStringOrNull(lastUnchecked)?.getTime() ?? null;
+			if (checkedTime !== null && uncheckedTime !== null) {
+				isChecked = checkedTime > uncheckedTime;
+			} else {
+				// Best-effort fallback for legacy strings.
+				isChecked = lastChecked > lastUnchecked;
+			}
+		}
+	}
+
 	return { isChecked, lastChecked, lastUnchecked };
 }
 
@@ -76,7 +121,11 @@ export function resolveCalendarDateRange(
 	const hasStart = !!event.startTime;
 	const hasEnd = !!event.endTime;
 
-	if ((!hasStart || !hasEnd) && event.isTask) {
+	// Task date-only rendering: tasks without explicit startTime are anchored to a day.
+	// This includes:
+	// - no-time tasks: {startTime: undefined, endTime: undefined}
+	// - deadline tasks: {startTime: undefined, endTime: '...'}
+	if (!hasStart && event.isTask) {
 		const anchor = resolveTaskAnchorTimestamp(event, {
 			preferCompletionDayWhenChecked: true,
 			fallbackToNow: true
@@ -88,9 +137,13 @@ export function resolveCalendarDateRange(
 		return { start, end, kind: 'task-date-only' };
 	}
 
+	// Time-based events (and tasks with startTime): fill missing side with the other side
+	// before falling back to createdAt/now.
 	const fallback = formatTimeForStorage(new Date());
-	const start = parseLocalTimeString(event.startTime || event.createdAt || fallback);
-	const end = parseLocalTimeString(event.endTime || event.createdAt || fallback);
+	const startSource = event.startTime || event.endTime || event.createdAt || fallback;
+	const endSource = event.endTime || event.startTime || event.createdAt || fallback;
+	const start = parseLocalTimeString(startSource);
+	const end = parseLocalTimeString(endSource);
 	return { start, end, kind: 'time-based' };
 }
 
