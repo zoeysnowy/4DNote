@@ -1638,7 +1638,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 🆕 处理日历选择变更
   const handleCalendarChange = async (eventId: string, calendarIds: string[]) => {
     try {
-      const { EventHub } = await import('../../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       await EventHub.updateFields(eventId, { calendarIds }, { source: 'TimeLog-CalendarChange' });
       setShowCalendarPicker(null);
     } catch (error) {
@@ -1649,7 +1649,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
   // 🆕 处理同步模式变更
   const handleSyncModeChange = async (eventId: string, syncMode: string) => {
     try {
-      const { EventHub } = await import('../../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       await EventHub.updateFields(eventId, { syncMode }, { source: 'TimeLog-SyncModeChange' });
       setShowSyncModePicker(null);
     } catch (error) {
