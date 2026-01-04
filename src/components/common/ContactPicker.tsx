@@ -10,8 +10,8 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Input, List, Checkbox, Button, Tag, Space, Empty } from 'antd';
 import { SearchOutlined, UserAddOutlined } from '@ant-design/icons';
-import { Contact, ContactSource } from '../../types';
-import { ContactService } from '../../services/ContactService';
+import { Contact, ContactSource } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
 import { Avatar } from './Avatar';
 
 interface ContactPickerProps {
