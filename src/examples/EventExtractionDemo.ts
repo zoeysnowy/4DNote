@@ -3,9 +3,9 @@
  * 演示如何使用 EventExtractionWorkflow 从活动海报中提取信息
  */
 
-import { EventExtractionWorkflow } from '../ai/workflows/EventExtractionWorkflow';
-import { QRCodeInfo } from '../types';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { EventExtractionWorkflow } from '@frontend/ai/workflows/EventExtractionWorkflow';
+import { QRCodeInfo } from '@frontend/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import * as fs from 'fs';
 import * as path from 'path';
 
