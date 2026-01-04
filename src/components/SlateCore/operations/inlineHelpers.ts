@@ -10,7 +10,7 @@
 
 import { Editor, Transforms, Range, Text as SlateText } from 'slate';
 import { ReactEditor } from 'slate-react';
-import { TagNode, DateMentionNode } from '../types';
+import { TagNode, DateMentionNode } from '@frontend/components/SlateCore/types';
 
 /**
  * 插入 Tag 元素
