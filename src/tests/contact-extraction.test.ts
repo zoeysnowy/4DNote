@@ -4,11 +4,11 @@
  * 测试目的：验证从事件中自动提取联系人到联系人库的功能
  */
 
-import { ContactService } from '../services/ContactService';
-import { Event } from '../types';
+import { ContactService } from '@backend/ContactService';
+import { Event } from '@frontend/types';
 import { describe, it, expect } from 'vitest';
-import { EventHub } from '../services/EventHub';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { EventHub } from '@backend/EventHub';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 describe('Contact extraction (smoke)', () => {
   it('extracts organizer/attendees when saving an event', async () => {
