@@ -158,6 +158,7 @@
 | 2026-01-04 | P3-26: SyncModeSelector alias-only imports | Convert cross-directory relative imports in `src/components/common/SyncModeSelector.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | f4097b1 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-27: TagInput alias-only imports | Convert cross-directory relative imports in `src/components/common/TagInput.tsx` to `@backend/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | af6f4c3 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-28: TimeCalendar alias-only imports | Convert cross-directory relative imports (including dynamic imports and CSS) in `src/features/Calendar/TimeCalendar.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | af4372c | Import-only changes; no behavior change |
+| 2026-01-04 | P3-29: CalendarGroupManager alias-only imports | Convert cross-directory relative imports in `src/features/Calendar/components/CalendarGroupManager.tsx` to `@backend/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | 866f441 | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
