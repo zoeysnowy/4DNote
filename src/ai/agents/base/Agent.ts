@@ -12,9 +12,9 @@ import {
   AgentResponse,
   Features,
   QualityAssessment
-} from '../../../types/ai/agent.types';
-import { ITool } from '../../../types/ai/tool.types';
-import { IMemory } from '../../../types/ai/memory.types';
+} from '@frontend/types/ai/agent.types';
+import { ITool } from '@frontend/types/ai/tool.types';
+import { IMemory } from '@frontend/types/ai/memory.types';
 import { Memory } from './Memory';
 
 /**
