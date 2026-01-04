@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { MicrosoftCalendarService } from './services/MicrosoftCalendarService';
 import { CalendarService } from './services/CalendarService'; // 🆕 v2.0: 统一日历服务
 import { ActionBasedSyncManager } from '@backend/sync/ActionBasedSyncManager';
-import { AuthStore } from './state/authStore';
-import { SyncStatusStore } from './state/syncStatusStore';
+import { AuthStore } from '@frontend/state/authStore';
+import { SyncStatusStore } from '@frontend/state/syncStatusStore';
 // ❌ [REMOVED] TaskManager - 从未使用的组件
 import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用

@@ -1,4 +1,4 @@
-import { parseLocalTimeStringOrNull } from '../utils/timeUtils';
+import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 export type SyncStats = {
   syncFailed: number;
