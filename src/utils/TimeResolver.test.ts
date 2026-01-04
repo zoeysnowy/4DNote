@@ -37,6 +37,19 @@ describe('TimeResolver', () => {
         lastUnchecked: '2025-12-02 09:00:00',
       });
     });
+
+		it('当数组无序时，仍能正确取最新操作', () => {
+			expect(
+				resolveCheckState({
+					checked: ['2025-12-01 10:00:00', '2025-12-05 10:00:00', '2025-12-03 10:00:00'],
+					unchecked: ['2025-12-04 09:00:00'],
+				})
+			).toEqual({
+				isChecked: true,
+				lastChecked: '2025-12-05 10:00:00',
+				lastUnchecked: '2025-12-04 09:00:00',
+			});
+		});
   });
 
   describe('resolveTaskAnchorTimestamp', () => {
@@ -149,6 +162,21 @@ describe('TimeResolver', () => {
       expect(start.getMinutes()).toBe(0);
 
       vi.useRealTimers();
+    });
+
+    it('仅 startTime 的 task：按 time-based 渲染（end 回填为 start）', () => {
+      const { start, end, kind } = resolveCalendarDateRange({
+        isTask: true,
+        startTime: '2025-12-01 09:00:00',
+        endTime: undefined,
+        createdAt: '2025-12-01 08:00:00',
+        checked: [],
+        unchecked: [],
+      });
+
+      expect(kind).toBe('time-based');
+      expect(start.getHours()).toBe(9);
+      expect(end.getTime()).toBe(start.getTime());
     });
 
     it('有明确时间段：使用 startTime/endTime（time-based）', () => {
