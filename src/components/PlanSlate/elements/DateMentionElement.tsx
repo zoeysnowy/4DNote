@@ -13,17 +13,17 @@ import React, { useMemo, useState, useRef, useEffect, useCallback, memo } from '
 import { createPortal } from 'react-dom';
 import { RenderElementProps, useSelected, useFocused, ReactEditor } from 'slate-react';
 import { Transforms, Editor, Path } from 'slate';
-import { DateMentionNode } from '../types';
-import { useEventTime } from '../../../hooks/useEventTime';
-import { formatRelativeDate, formatRelativeTimeDisplay } from '../../../utils/relativeDateFormatter';
-import { calculateTimeDiff, isDateMentionOutdated } from '../../../utils/timeDiffCalculator';
+import { DateMentionNode } from '@frontend/components/PlanSlate/types';
+import { useEventTime } from '@frontend/hooks/useEventTime';
+import { formatRelativeDate, formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
+import { calculateTimeDiff, isDateMentionOutdated } from '@frontend/utils/timeDiffCalculator';
 import { Button, Space } from 'antd';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
-import { formatTimeForStorage } from '../../../utils/timeUtils';
-import datetimeIcon from '../../../assets/icons/datetime.svg';
-import { EventService } from '../../../services/EventService';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import datetimeIcon from '@frontend/assets/icons/datetime.svg';
+import { EventService } from '@backend/EventService';
 
 const DateMentionElementComponent: React.FC<RenderElementProps> = ({ attributes, children, element }) => {
   const dateMentionElement = element as DateMentionNode;
