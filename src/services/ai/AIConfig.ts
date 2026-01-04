@@ -7,7 +7,7 @@
  * @version 1.0.0
  */
 
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 export interface AIConfig {
   /** 提供商类型 */

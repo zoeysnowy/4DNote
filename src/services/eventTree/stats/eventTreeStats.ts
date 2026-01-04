@@ -1,6 +1,6 @@
-import { logger } from '../../../utils/logger';
-import { storageManager } from '../../storage/StorageManager';
-import type { EventStats } from '../../storage/types';
+import { logger } from '@frontend/utils/logger';
+import { storageManager } from '@backend/storage/StorageManager';
+import type { EventStats } from '@backend/storage/types';
 
 export interface EventStatsIndexStorage {
   getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]>;

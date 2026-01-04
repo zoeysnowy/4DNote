@@ -1,11 +1,11 @@
 ﻿import { PublicClientApplication } from '@azure/msal-browser';
-import { MICROSOFT_GRAPH_CONFIG } from '../config/calendar';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { STORAGE_KEYS } from '../constants/storage';
-import { StorageManager } from './storage/StorageManager';
-import { Contact } from '../types';
+import { MICROSOFT_GRAPH_CONFIG } from '@frontend/config/calendar';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { StorageManager } from '@backend/storage/StorageManager';
+import type { Contact } from '@frontend/types';
 
-import { logger } from '../utils/logger';
+import { logger } from '@frontend/utils/logger';
 
 const MSCalendarLogger = logger.module('MSCalendar');
 

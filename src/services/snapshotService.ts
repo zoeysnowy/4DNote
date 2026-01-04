@@ -1,9 +1,9 @@
 import * as Y from 'yjs';
 import { encodeStateAsUpdate, applyUpdate, encodeStateVector } from 'yjs';
-import type { Event } from '../types';
+import type { Event } from '@frontend/types';
 import dayjs from 'dayjs';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { StorageManager } from './storage/StorageManager';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { StorageManager } from '@backend/storage/StorageManager';
 
 // ==================== 类型定义 ====================
 

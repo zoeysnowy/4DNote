@@ -35,7 +35,7 @@ import type {
   EventStats
 } from './types';
 
-import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 const DB_NAME = '4DNoteDB';
 const DB_VERSION = 4; // v4: event_stats adds parentEventId/rootEventId indexes for tree context

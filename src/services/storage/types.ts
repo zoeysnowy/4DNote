@@ -4,7 +4,7 @@
  * @date 2025-12-01
  */
 
-import type { Event, Contact } from '../../types';
+import type { Event, Contact } from '@frontend/types';
 
 // Re-export types for internal use
 export type { Event, Contact };

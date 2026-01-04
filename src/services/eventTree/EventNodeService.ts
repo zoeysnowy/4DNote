@@ -14,9 +14,9 @@
  * @author Zoey Gong
  */
 
-import { EventNode, CreateEventNodeInput, UpdateEventNodeInput, QueryEventNodesInput } from '../../types/EventNode';
-import { Event, EventLog } from '../../types';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import type { EventNode, CreateEventNodeInput, UpdateEventNodeInput, QueryEventNodesInput } from '@frontend/types/EventNode';
+import type { Event, EventLog } from '@frontend/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 /**
  * 临时内存存储（后续集成到 StorageManager）

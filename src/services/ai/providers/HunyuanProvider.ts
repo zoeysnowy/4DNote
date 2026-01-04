@@ -1,4 +1,4 @@
-import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 /**
  * Tencent Hunyuan AI Provider
  * 
@@ -21,7 +21,7 @@ import { formatTimeForStorage, parseLocalTimeStringOrNull } from '../../../utils
  */
 
 import { AIProvider, ExtractedEventInfo, AIProviderTestResult } from '../AIProvider.interface';
-import { checkProxyHealth, getProxyStartInstructions } from '../../../utils/proxyHelper';
+import { checkProxyHealth, getProxyStartInstructions } from '@frontend/utils/proxyHelper';
 
 export interface HunyuanConfig {
   secretId: string;

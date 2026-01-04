@@ -39,7 +39,7 @@ import type {
 } from './types';
 
 import { SQLiteDatabaseWrapper } from './SQLiteDatabaseWrapper';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 export class SQLiteService {
   private db: SQLiteDatabaseWrapper | null = null;

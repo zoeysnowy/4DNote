@@ -1,7 +1,7 @@
-import { defaultTimePolicy } from '../config/time.config';
-import { TimePolicy, TimeSpec } from '../types/time';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { parseNaturalDate } from '../utils/dateParser';
+import { defaultTimePolicy } from '@frontend/config/time.config';
+import type { TimePolicy, TimeSpec } from '@frontend/types/time';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { parseNaturalDate } from '@frontend/utils/dateParser';
 
 // Compute start/end of the week window (local), weekStart: 0=Sun,1=Mon
 function getWeekWindow(now: Date, offsetWeeks: number, weekStart: 0 | 1) {

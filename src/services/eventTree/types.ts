@@ -7,7 +7,7 @@
  * 创建日期: 2025-12-23
  */
 
-import { Event } from '../../types';
+import type { Event } from '@frontend/types';
 
 /**
  * 事件节点（内存表示）

@@ -12,8 +12,8 @@ import { OllamaProvider } from './providers/OllamaProvider';
 import { DashScopeProvider } from './providers/DashScopeProvider';
 import { HunyuanProvider } from './providers/HunyuanProvider';
 import { AIConfigManager } from './AIConfig';
-import { PDFParserService } from '../PDFParserService';
-import { EVENT_EXTRACTION_PROMPT } from '../../constants/ai/prompts';
+import { PDFParserService } from '@backend/PDFParserService';
+import { EVENT_EXTRACTION_PROMPT } from '@frontend/constants/ai/prompts';
 
 /**
  * AI 服务

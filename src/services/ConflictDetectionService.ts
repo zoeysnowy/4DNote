@@ -7,9 +7,9 @@
  * - 提供冲突警告和建议
  */
 
-import { Event, Contact } from '../types';
-import { EventService } from './EventService';
-import { parseLocalTimeString } from '../utils/timeUtils';
+import type { Event, Contact } from '@frontend/types';
+import { EventService } from '@backend/EventService';
+import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import dayjs from 'dayjs';
 
 export interface ConflictInfo {

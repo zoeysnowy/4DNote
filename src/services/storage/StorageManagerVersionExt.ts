@@ -11,7 +11,7 @@
  * @date 2025-12-02
  */
 
-import type { EventLog } from '../../types';
+import type { EventLog } from '@frontend/types';
 import type { QueryResult, StorageEvent } from './types';
 import { 
   generateDelta, 
@@ -19,8 +19,8 @@ import {
   compressFullEventLog,
   decompressFullEventLog,
   type DeltaResult 
-} from '../../utils/versionDiff';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+} from '@frontend/utils/versionDiff';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 /**
  * 版本信息接口

@@ -25,10 +25,10 @@ import type {
 } from './types';
 
 import { SyncStatus } from './types';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 import StorageManagerVersionExt from './StorageManagerVersionExt';
-import type { EventLog } from '../../types';
+import type { EventLog } from '@frontend/types';
 
 /**
  * LRU 缓存实现（简化版）

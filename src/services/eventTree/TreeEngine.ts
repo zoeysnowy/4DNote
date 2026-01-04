@@ -13,7 +13,7 @@
  * 创建日期: 2025-12-23
  */
 
-import type { Event } from '../../types';
+import type { Event } from '@frontend/types';
 import type {
   EventNode,
   EventTreeResult,

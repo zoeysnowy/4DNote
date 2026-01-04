@@ -12,11 +12,11 @@
  * @date 2025-12-02
  */
 
-import { generateAttachmentId } from '../utils/idGenerator';
-import type { Attachment } from '../types';
+import { generateAttachmentId } from '@frontend/utils/idGenerator';
+import type { Attachment } from '@frontend/types';
 
-import { AttachmentType } from '../types';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { AttachmentType } from '@frontend/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 /**
  * 支持的文件类型配置
