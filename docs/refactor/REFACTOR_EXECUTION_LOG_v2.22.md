@@ -154,6 +154,7 @@
 | 2026-01-04 | P3-22: ContactPicker alias-only imports | Convert cross-directory relative imports in `src/components/common/ContactPicker.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 2d2c50e | Import-only changes; no behavior change |
 | 2026-01-04 | P3-23: ContactPreviewCard alias-only imports | Convert cross-directory relative imports in `src/components/common/ContactPreviewCard.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 42d2717 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-24: FullContactModal alias-only imports | Convert cross-directory relative imports in `src/components/common/FullContactModal.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 5d32b51 | Import-only changes; no behavior change |
+| 2026-01-04 | P3-25: QRCodeDisplay alias-only imports | Convert cross-directory relative imports in `src/components/common/QRCodeDisplay.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 172c523 | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
