@@ -22,7 +22,7 @@ async function rebuildSQLiteDatabase() {
   }
   
   try {
-    const { sqliteService } = await import('../services/storage/SQLiteService');
+    const { sqliteService } = await import('@backend/storage/SQLiteService');
     await sqliteService.rebuildDatabase();
     console.log('✅ Database rebuilt successfully');
     console.log('💡 Please run testCRUDIntegration() again');
@@ -50,7 +50,7 @@ async function testSQLiteModule() {
 
   try {
     // 动态导入 SQLiteService（仅在 Electron 环境）
-    const { sqliteService } = await import('../services/storage/SQLiteService');
+    const { sqliteService } = await import('@backend/storage/SQLiteService');
 
     // Test 0: 清理旧数据
     console.log('\n0️⃣  Cleaning up old test data...');
