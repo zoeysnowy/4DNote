@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CalendarGroup, Calendar } from '@backend/MicrosoftCalendarService';
-import '../styles/CalendarGroupManager.css';
+import '@frontend/features/Calendar/styles/CalendarGroupManager.css';
 
 interface CalendarGroupManagerProps {
   microsoftService: any; // MicrosoftCalendarService实例
