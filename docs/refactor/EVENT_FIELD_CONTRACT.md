@@ -75,6 +75,427 @@
 
 ---
 
+### 4.5 Filtering & Classification（全量过滤字段口径）
+
+> 目的：把“用于过滤/路由/展示分组”的字段一次性收敛到统一口径，避免：
+> - 同一字段在不同模块语义漂移（例如把 `isTimeLog` 当作“系统事件”还是“模块来源”）；
+> - 不同模块各自发明过滤规则，导致数据在 A 模块可见、在 B 模块消失。
+
+#### 4.5.1 两类“分类字段”必须区分
+
+1) **模块来源类（module-origin flags）**：表示“这个事件从哪个模块/入口产生”，用于 UI 分流、默认展示与快捷入口。
+   - 例：`isPlan/isTimeCalendar/isTimer`。
+2) **系统轨迹/记录类（system-trajectory / record）**：表示“这是系统自动产生的轨迹/记录/附属事件”，通常应从大多数用户任务视图中默认隐藏。
+   - 现状：用 `isTimer/isTimeLog/isOutsideApp` 作为 *subordinate* 判定（见 `EventService.isSubordinateEvent`）。
+   - 目标：后续应引入 **Signal 模型**（见下文 4.5.3）承载“信号/证据/轨迹”，避免用布尔字段混载不同语义。
+
+> 说明：`isTimer` 在当前实现中是一个“交叉字段”——它既体现“Time 模块产生的 timer 事件”，又被 `isSubordinateEvent` 视为默认应隐藏的附属记录。
+
+> 强约束：**任何“默认时间/虚拟时间”逻辑都必须先判定 task-like（`isPlan/isTask/type/checkType`）并排除。**
+
+#### 4.5.2 Event（现有）过滤字段清单 + 各模块行为
+
+| 字段/字段组 | 语义归类 | PlanManager | TimeCalendar | Dashboard（Upcoming/面板） | EventTree | Search/Index | Sync Router |
+|---|---|---|---|---|---|---|---|
+| `deletedAt` | 生命周期 | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** |
+| `isPlan` | 模块来源 | **纳入**（并集条件之一） | 不作为核心筛选（可显示/编辑） | 可作为“待办/计划”入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） |
+| `isTimeCalendar` | 模块来源 | **纳入**（并集条件之一） | **核心模块**（TimeCalendar 创建/管理） | 可作为入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） |
+| `isTask` | 业务类型 | **隐式纳入**（多数 Plan 事件应是 task） | 可显示，但“无时间 task”需特殊处理 | 可能用于任务统计/筛选 | 用于任务计数/完成态 | 影响索引语义 | **决定 target=todo** |
+| `type` (`todo|task|event`) | 兼容字段 | **辅助**（不要单独依赖） | 辅助 | 辅助 | 辅助 | 辅助 | 辅助（仅用于 task-like 兜底） |
+| `checkType/checked/unchecked` | 任务/签到过滤 | **纳入**（并集条件之一：`checkType!==none`） | 可显示/用于签到 UI | Upcoming 面板用作主过滤条件之一 | 可显示 | 可索引 | 不决定 target |
+| `isCompleted` | 完成态 | 正常模式可隐藏（`showCompleted=false`） | 可显示 | 可隐藏/排序 | 影响样式/计数 | 可索引 | ToDo 同步映射字段 |
+| `dueDateTime` + `isDeadline` | 截止语义 | 用于过期过滤（示例：>7天未完成） | 用于展示/排序 | 用于范围过滤/倒计时 | 可显示 | 可索引 | ToDo 字段映射；不等价于 `endTime` |
+| `startTime/endTime/isAllDay` | 时间存在性/展示 | Snapshot 模式会用 `resolveCalendarDateRange` 做范围过滤 | **核心筛选**（按日期范围、全天/时间块） | Upcoming 按时间范围筛选（依赖 `isEventInRange`） | 用于渲染位置/时间线 | 可索引 | `start+end` 决定 calendar 可同步；**task 时间允许空** |
+| `tags` | 标签过滤 | 非核心（Plan 里更多是结构/状态） | **核心筛选**（`visibleTags`；支持 `no-tag` 特殊选项） | 非核心 | 非核心 | 可索引 | 不决定 target |
+| `category` | 兼容/展示分类 | 视产品口径 | TimeCalendar 内部会推导类别；此字段更多用于 legacy/调试 | 视产品口径 | 视产品口径 | 可索引 | 不决定 target |
+| `syncMode` | 同步策略 | 仅展示/编辑 | 仅展示/编辑 | 仅展示/编辑 | - | - | `receive-only` 必须不推送 |
+| `calendarIds/todoListIds` | 同步目标选择 | Plan save/编辑可写“用户意图” | TimeCalendar 视图会用于日历筛选 | - | - | - | Sync 层映射与分流 |
+| `externalId` | 外部映射 | - | TimeCalendar 支持 `not-synced`（无 `externalId` 或无 `calendarIds`）筛选 | - | - | - | Sync 合并/映射写入 |
+| `source/fourDNoteSource` | 来源/本地创建 | - | TimeCalendar 支持 `local-created`（`source=local` 或 `fourDNoteSource=true`）筛选 | - | - | - | Sync 合并/映射写入 |
+| `syncStatus` | 同步状态 | 展示/诊断 | 展示/诊断 | - | - | - | Sync 合并/映射写入 |
+| `isTimer/isTimeLog/isOutsideApp` | 系统轨迹/记录（subordinate） | **排除**（`EventService.isSubordinateEvent`） | Timer 可能参与 TimeCalendar 视图（视产品口径） | **排除**（面板明确排除） | **排除**（EventTree 明确排除） | 通常不作为主结果 | 通常不推送（除非专门映射） |
+| `isNote` | 快速访问/标记 | 视产品口径（一般不作为 Plan 条件） | 视产品口径 | 视产品口径 | 视产品口径 | 可能影响 icon/召回 | 不决定 target |
+| `parentEventId/position` | 结构与排序 | Plan 结构/缩进/排序（间接影响展示） | 非核心 | 非核心 | **核心**（树结构与同级排序） | 非核心 | 不决定 target |
+
+> 备注（为什么看起来“复杂”）：PlanManager 的“并集条件”本质是一个 **plan-scope（计划域）** 判定，用于兼容历史数据与不同入口：
+> - `isPlan===true`：明确由 Plan 域创建/维护的任务；
+> - `checkType && checkType!=='none'`：历史/部分入口只设置了 checkType（签到/任务语义），但未可靠设置 `isPlan/isTask`；
+> - `isTimeCalendar===true`：TimeCalendar 创建的事件也要在 PlanManager 的某些视图中可见。
+> - 然后统一排除 subordinate：`EventService.isSubordinateEvent`（`isTimer/isTimeLog/isOutsideApp`）。
+
+> `isTask` 的判定口径（代码现状）：它是 **显式布尔字段**，但为避免 flags 丢失，部分“task-like”逻辑会用 `isPlan/type/checkType` 做兜底（例如 `normalizeEvent` 的 task-like 判定）。字段契约推荐：**创建入口应直接写 `isTask=true`（Plan/Task），不要依赖兜底推断。**
+
+> `isDeadline` 不是“没用”：它会影响 TimeCalendar/PlanSlate 的时间展示语义（单一时间显示“开始/截止”）以及类别推导；同时参与 ToDo/截止相关映射。
+
+> `source` vs `fourDNoteSource` 不是完全重复（现状是冗余但有历史价值）：
+> - `source`: 枚举（`local/outlook/...`），表达“事件来源系统”；
+> - `fourDNoteSource`: legacy bool，表达“是否由 4DNote 创建”，并被签名/同步识别逻辑广泛使用。
+> 未来可考虑以 `source` 为主、逐步弱化/迁移 `fourDNoteSource`，但在迁移完成前两者会共存。
+
+#### 4.5.3 Signal（规划：Eventlog Enhanced 的“重点信号/证据”模型）
+
+本项目的 PRD（Eventlog Enhanced v2.0）定义了 **Signal（重点信号）**，它是“证据/意图”的一等实体，**不是 Event 的布尔字段**：
+
+- Signal 类型示例：`HIGHLIGHT` / `QUESTION` / `ACTION_ITEM` / `OBJECTION` / `CONFIRM` / `BOOKMARK` / `TOPIC_SHIFT`
+- 典型用途：
+  - 目录/大纲按 Signal 过滤（⭐/❓/✅）
+  - Focus Window 生成（Signal 时间戳周边）
+  - Reviews/Takeaways 的权重输入（manual_signal/system_signal/behavior_signal/...）
+- EvidenceRefs 允许引用 signal：`{ type: 'signal', id: string }`
+
+**规划 Schema（PRD 摘要）**
+- `signal_id` / `signal_type`
+- `note_id`（必需） / `paragraph_id`（可选）
+- `created_at`（Unix ms）
+- `audio_offset_ms`（可选） / `image_id`（可选）
+- `metadata`（可选）
+
+**契约建议（落地到本仓库的字段规则）**
+1) Signal 作为独立实体（表/集合）存储与查询；Event 仅通过 evidence_refs 或关联 ID 引用。
+2) 不要用 `isTimeLog/isOutsideApp/isTimer` 去“模拟 Signal”——这些字段当前用于 subordinate/系统轨迹过滤，语义不同。
+3) 若需要在 `Event` 上做“信号索引”以便快速过滤，只允许写入 *derived* 的摘要字段（例如 `signalSummary`），不得把 Signal 细节拆散成一堆 `isXxx` 布尔回写到 Event。
+
+---
+
+### 4.6 Module/Page Dataflow（按模块/页面维度：创建/保存/同步/二次加载）
+
+> 目的：把“字段从哪里来、在哪里被写、如何触发同步、刷新/二次加载如何拿到最新值”按模块收敛到一个可执行口径。
+>
+> 说明：这里描述的是“当前代码事实 + 契约约束”，不是理想化架构图。
+
+#### 4.6.1 通用链路（所有页面共享）
+
+- **创建/保存（推荐主链路）**：UI/Feature → `EventHub.createEvent/updateFields` → `EventService.createEvent/updateEvent` → `normalizeEvent()` → `StorageManager.createEvent/updateEvent`
+- **删除（Soft Delete）**：UI/Feature → `EventHub.deleteEvent(id)` → `EventService.deleteEvent(id)` → `updateEvent(id, { deletedAt })`（`skipSync=true`，避免生成 UPDATE action）→ `StorageManager.updateEvent` 落库
+- **删除同步（Delete → Sync）**：
+  - `EventService.deleteEvent(skipSync=false)` **在满足条件时**会额外调用 `ActionBasedSyncManager.recordLocalAction('delete', 'event', eventId, null, oldEvent)` 入队（代码事实：通常要求 syncManager 已初始化，且该事件不是 `syncStatus: 'local-only'`）
+  - `ActionBasedSyncManager` 在 apply 时会：
+    - 把本地 `eventId` 写入持久化 tombstone 集合 `deletedEventIds`（防止队列/远端回流导致“复活”）
+    - 若存在 `externalId` 且 `syncMode !== 'receive-only'`：调用远端 `deleteEvent(externalId)`
+    - 若 `syncMode==='receive-only'`：只保留本地 tombstone，不推送远端删除
+  - 读路径的“已删除不可见”：依赖 `EventService.getAllEvents()` / 模块过滤器排除 `deletedAt`；Snapshot/Review 例外会用 **ghost**（派生）显示“已删除痕迹”，但不得写回 canonical
+  - **本地-only 删除**：若事件本身是 `syncStatus: 'local-only'`（或调用方显式 `skipSync=true`），删除仅是本地 soft-delete，不入同步队列；也不需要写入 `deletedEventIds`（因为不存在远端回流/外部合并带来的“复活风险”）
+- **同步触发**：`EventService` 在本地 create/update/delete 成功后调用 `ActionBasedSyncManager.recordLocalAction()` 入队（除非 `skipSync=true`）
+- **远端回写**：`ActionBasedSyncManager` 拉取远端事件后 `recordRemoteAction()` 入队，后续把远端变更合并回本地事件（写入 `externalId/syncStatus/...` 等），再经由 `EventService.updateEvent()` 落库
+- **二次加载（读最新）**：页面需要避免闭包/缓存脏读时，应直接 `await EventService.getEventById(id)`（TimeCalendar 已采用）；EventHub 的同步 `getSnapshot()` 可能返回 `null`，强一致读使用 `getSnapshotAsync()`。
+
+#### 4.6.2 Plan 页面（PlanManager / PlanSlate）
+
+代码入口：
+- 构建保存对象：[src/features/Plan/helpers/planManagerHelpers.ts](../../src/features/Plan/helpers/planManagerHelpers.ts)
+- 批量保存/更新：[src/features/Plan/components/PlanManager.tsx](../../src/features/Plan/components/PlanManager.tsx)
+
+**创建（Create）**
+- PlanSlate 的 editor 把业务字段透传在 `updatedItem`（含 title/eventlog/tags/结构字段等）。
+- 时间来源遵循“TimeHub 单一真相”：`buildEventForSave()` 会读取 `TimeHub.getSnapshot(updatedItem.id)`，并以 snapshot 的 `start/end/timeSpec` 覆盖写入。
+
+**保存（Save / Update）**
+- `buildEventForSave()` 会做“契约友好”的 undefined 保留：
+  - `tags`: 只有用户明确置空且原值不是 `undefined/null` 才写 `[]`；否则尽量保持 `undefined`。
+  - `isAllDay`: 只有用户显式写入时才写布尔；避免把 `undefined` 默认写成 `false`。
+- Plan 的“Plan-origin / Task 语义”当前在构建时直接写入（事实）：
+  - `isPlan=true`、`isTask=true`、`isTimeCalendar=false`
+  - `type='todo'`（兼容字段）
+  - `source='local'`、`fourDNoteSource=true`
+  - `isCompleted` 默认 `false`（注意：这属于“默认值注入”，但在 Plan 作为创建入口时是可接受的；关键是不要影响非 Plan 的事件）
+- 更新路径：PlanManager 在 `EventHub.updateFields()` 前会把 `updates` 里显式的 `undefined` 删除，避免“用 undefined 清空 canonical 值”。
+
+**同步（Sync）**
+- Plan 保存时会从 `tags` 里提取 `calendarIds`（TagService 的 calendarMapping）。
+- `syncStatus` 的写入策略（事实）：
+  - 若有 `calendarIds`：倾向写 `pending`
+  - 若无 `calendarIds` 且旧值不存在：保持 `undefined`（避免注入 `local-only`）
+- 同步分流由 [src/utils/syncRouter.ts](../../src/utils/syncRouter.ts) 决定：
+  - `isTask===true` → To Do
+  - `startTime && endTime` → Outlook Calendar
+  - 无时间 → 不推送
+
+**二次加载（Reload / Second Load）**
+- PlanManager 在“是否应该 create”时会额外 `await EventService.getEventById(id)` 防止异步创建导致重复 create。
+- Plan 的列表状态更多来自本地 itemsMap/editor metadata；如需“读库真相”，仍应以 `EventService.getEventById` 为准。
+
+#### 4.6.3 TimeCalendar 页面（时间日历）
+
+代码入口：[src/features/Calendar/TimeCalendar.tsx](../../src/features/Calendar/TimeCalendar.tsx)
+
+**创建（Create）**
+- 用户框选时间段：立即构造 Event 并 `EventHub.createEvent(newEvent)` 先落库，再打开编辑模态框。
+- 当前写入字段（事实）：
+  - `startTime/endTime/isAllDay`（来自选择）
+  - `tags: []`，`calendarIds: []`（表示“未选择日历/不触发同步”）
+  - `syncStatus: 'local-only'`
+  - `fourDNoteSource: true`
+  - 注意：这里没有显式写 `isTimeCalendar=true`（如果产品希望“模块来源”可追踪，需要在契约层明确由该入口写入）。
+    - ⚠️ 契约建议：TimeCalendar 的创建入口应显式写 `isTimeCalendar=true`（模块来源），否则依赖“plan-scope 并集条件”的页面（PlanManager / Upcoming Panel）可能漏召回部分日历事件。
+
+**保存（Save / Update）**
+- 拖拽/编辑通过 `EventHub.updateFields()` 增量更新：
+  - 时间块事件：更新 `startTime/endTime/isAllDay/title/location` 等。
+  - “无时间 task”拖拽语义（代码明确）：不写 `startTime`，只写一个“计划完成时间”到 `endTime`（设置为当天 23:59:59.999）。
+
+**同步（Sync）**
+- 新建默认 `local-only`；当用户在编辑模态框里选择标签/日历后，`syncStatus` 会被更新为 `pending`（由 EventEditModal 的逻辑决定）。
+- 同步目标仍由 `syncRouter` 决定：task → todo；有完整 start+end → calendar。
+
+**二次加载（Reload / Second Load）**
+- 点击日历事件打开编辑时，TimeCalendar 会 `await EventService.getEventById(eventId)` 读取最新事件，避免闭包拿到旧对象。
+- 新建事件如果用户取消，会删除刚刚创建的 event（通过 `EventHub.deleteEvent(newlyCreatedEventId)`）。
+
+#### 4.6.4 TimeLog 页面（时间流 / 日记流）
+
+代码入口：[src/features/TimeLog/pages/TimeLogPage.tsx](../../src/features/TimeLog/pages/TimeLogPage.tsx)
+
+**创建（Create）**
+- TimeGap 点击“创建事件”：构造带时间段的事件（默认 30 分钟）并先 `EventHub.createEvent()`，再打开编辑模态框。
+  - `createdAt/updatedAt` 对齐到用户选择的 startTime（用于排序/显示一致性）。
+- TimeLog 的“创建笔记（纯 eventlog）”路径（事实）会直接调用 `EventService.createEvent(newEvent)`（绕过 EventHub）：
+  - 默认 **不写入时间字段**；若来自 TimeGap 则写一个 `startTime` 作为锚点（但仍可能无 `endTime`）。
+  - 明确写 `isPlan=false/isTimeCalendar=false/isTask=false`，避免被 Plan/Calendar 过滤误收。
+  - 写入一个空的 `eventlog` Slate JSON 结构作为正文容器。
+
+**保存（Save / Update）**
+- TimeLog 的 create/edit modal 保存统一走 `EventHub.updateFields()`（若数据库已有该事件），否则走 `EventHub.createEvent()`。
+
+**同步（Sync）**
+- 默认 `syncStatus: 'local-only'`；只有用户在编辑模态框中添加 `calendarIds/tags/syncMode` 才会进入可同步态。
+- TimeLog 不应该通过“默认时间注入”让无时间笔记变成可同步 calendar 事件（契约硬约束）。
+
+**二次加载（Reload / Second Load）**
+- TimeLog 列表对“刚创建的 note”采用本地增量插入（避免全量 reload 导致日期范围过滤问题）。
+- 再次打开编辑时，应以 `EventService.getEventById` 为准，避免 state 中缓存事件字段落后于落库结果。
+
+**一致性注意（TimeResolver 口径）**
+- TimeLog 的“排序/按天分组”使用 `resolveCalendarDateRange(event).start` 作为 anchor（兼容 no-time / end-only task）。
+- 这是一种“派生时间锚点”，与其他视图可能使用的 `timeSpec.resolved`（严格时间）或 `dueDateTime`（deadline 语义）不是同一个口径。
+- 因此需要把 TimeLog 归类为：**timeline/chronological 视图（允许派生 anchor）**，避免误以为它和 Upcoming（即将开始、严格时间）应该展示完全一致。
+
+#### 4.6.5 通用编辑入口（EventEditModalV2）
+
+代码入口：[src/features/Event/components/EventEditModal/EventEditModalV2.tsx](../../src/features/Event/components/EventEditModal/EventEditModalV2.tsx)
+
+**创建/保存（Create/Save）**
+- `handleSave()` 会统一构造 `updatedEvent` 并交给 EventHub：
+  - `title`: 保存为 Slate JSON（colorTitle）；`EventService.normalizeTitle` 负责生成 `EventTitle` 三层结构。
+  - `eventlog`: 保存为 Slate JSON 字符串；同时将 `description: undefined`，让 `EventService` 从 eventlog 派生并做签名（避免 UI 自己维护两套内容）。
+  - 时间字段：在 UI 内做格式化/降级解析，写入 `startTime/endTime/isAllDay`。
+  - 同步字段：写入 `calendarIds/syncMode/subEventConfig` 等。
+- syncStatus 决策（事实）：
+  - Timer 运行中强制 `local-only`
+  - 有 tags 或 calendarIds 则 `pending`
+  - 否则保留原值或 `local-only`
+
+**注意（契约风险点，需要持续约束）**
+- EventEditModal 当前在“更新时间不完整”时会自动把 `isTask=true`（把事件变成 task）。这属于“强语义注入”，需要与字段契约的 `checkType`/`isTask` 口径对齐，避免把纯笔记/计划误变成 task。
+
+**二次加载（Reload / Second Load）**
+- 取消（Cancel）不会调用 update，下一次打开会从 `EventService` 重新加载最新数据。
+
+#### 4.6.6 同步模块（ActionBasedSyncManager）
+
+代码入口：[src/services/sync/ActionBasedSyncManager.ts](../../src/services/sync/ActionBasedSyncManager.ts)
+
+**本地变更入队（Local → Queue）**
+- `recordLocalAction(create|update|delete, entityType, entityId, data, oldData)`：
+  - 将动作写入队列并持久化（IndexedDB 的 syncQueue）
+  - delete 时会清理同一 event 的历史待处理动作（避免对已删除事件重复 update）
+
+**路由（Queue → Remote Target）**
+- 同步目标由 [src/utils/syncRouter.ts](../../src/utils/syncRouter.ts) 决定：
+  - `syncMode='receive-only'`：不推送
+  - `isTask===true`：推送 ToDo
+  - `startTime && endTime`：推送 Outlook Calendar
+  - 否则不推送
+
+**远端拉取与回写（Remote → Local）**
+- 远端拉取按“逐日历拉取”实现，确保每个远端事件带准确的 `calendarId`；随后根据 `externalId/IndexMap` 匹配本地事件。
+- 远端变更会转换为 `recordRemoteAction(create|update|delete)` 入队，然后合并回本地事件（写入/更新 `externalId/syncStatus/updatedAt/...` 等），最终仍通过 `EventService.updateEvent()` 落库并触发 UI 更新。
+
+#### 4.6.7 存储层（StorageManager）
+
+代码入口：[src/services/storage/StorageManager.ts](../../src/services/storage/StorageManager.ts)
+
+- `initialize()`：IndexedDB 必需；Electron 环境可启用 SQLite。
+- `queryEvents()`：
+  - 单 ID 查询优先命中 LRU cache（避免频繁读库）
+  - 结果会缓存回内存
+- **契约硬约束**：StorageManager 只做被动持久化与查询，不得擅自改写业务字段（尤其是 `updatedAt/startTime/endTime/syncStatus`）。
+
+#### 4.6.8 Plan Snapshot（Review 模式）
+
+代码入口：
+- Snapshot 过滤口径封装：[src/features/Plan/helpers/planManagerFilters.ts](../../src/features/Plan/helpers/planManagerFilters.ts)
+- Snapshot 数据/ghost 组装（核心）：[src/features/Plan/components/PlanManager.tsx](../../src/features/Plan/components/PlanManager.tsx)
+- 历史服务：[src/services/EventHistoryService.ts](../../src/services/EventHistoryService.ts)
+
+**模式定义（Mode）**
+- `mode: 'normal' | 'snapshot'`（见 `shouldShowInPlanManager()`）。
+- Snapshot 模式的时间范围来自 UI 的日期范围选择（通常由 ContentSelectionPanel 驱动）。
+
+**创建/保存（Create/Save）**
+- Snapshot 模式本身不引入新写路径：用户编辑仍走 Plan 的正常保存链路（`EventHub.updateFields` → `EventService.updateEvent`）。
+
+**二次加载/组装（Reload / Assemble for Review）**
+- Snapshot 的“列表内容”不是简单 `events.filter(dateRange)`：PlanManager 会从 `EventHistoryService` 得到两个集合并合成：
+  - `existingAtStart = getExistingEventsAtTime(startTime)`：起点时刻“已存在”的事件集合
+  - `createdInRange`：时间段内 `operation==='create'` 的 eventId 集合
+  - 最终展示集合：`existingAtStart ∪ createdInRange`（并对“完全空白事件”做过滤）
+
+**删除字段走向（Delete Field in Snapshot）**
+- 常规视图：`deletedAt` 一律视为“不可见”（`shouldShowInPlanManager()` 首行直接排除）。
+- Snapshot/Review 的“删除痕迹”通过 **ghost 事件**实现：
+  - 从 `EventHistoryService.queryHistory({ startTime, endTime })` 拿到 `operation==='delete'` 且 `before` 存在的记录
+  - 满足“起点存在或范围内创建”的删除才会被纳入（避免无关 tombstone 噪音）
+  - 以 `before` 为基底 push 一个派生对象：`{ ...before, _isDeleted: true, _deletedAt: log.timestamp }`
+  - 这些 `_isDeleted/_deletedAt` 是 **UI 派生字段**：不得写回 `Event` canonical；也不应影响 Sync Router
+
+**过滤约束（Contract）**
+- ghost 事件仍会走一组“plan-scope 过滤”以减少噪音：
+  - `checkType` 必须有效且不为 `'none'`
+  - 排除 subordinate（`EventService.isSubordinateEvent`）
+  - 受 `hiddenTags` 影响
+
+#### 4.6.9 Dashboard（Upcoming Panel / UpcomingEventsPanel）
+
+代码入口：[src/features/Dashboard/components/UpcomingEventsPanel.tsx](../../src/features/Dashboard/components/UpcomingEventsPanel.tsx)
+
+**数据来源（Read）**
+- 面板不自己“全量加载 + 缓存维护”，而是订阅式拿快照：`useEventHubSnapshot({ enabled })`。
+- 事件范围筛选使用 `timeSpec.resolved`（TIME_ARCHITECTURE）：没有 `timeSpec.resolved` 的事件直接不展示。
+
+**过滤口径（Filter）**
+- 并集条件（面板内实现）：`isPlan===true` OR (`checkType && checkType!=='none'`) OR `isTimeCalendar===true`
+- 排除 subordinate（面板内显式排除）：`isTimer===true || isOutsideApp===true || isTimeLog===true`
+- 时间范围：按 `getTimeRange(activeFilter, now)`，并对 `timeSpec.resolved.start` 做区间筛选
+- `deletedAt`：契约口径应排除（通常由上游事件快照/`getAllEvents` 已过滤）；如未来切换为 includeDeleted 快照，面板必须显式排除 `deletedAt`
+
+**一致性检查（避免口径漂移）**
+- 当前仓库同时存在两套“Upcoming 事件过滤公式”：
+  - 面板内（订阅快照 + plan-scope 并集条件 + subordinate 排除 + `timeSpec.resolved` 时间范围）
+  - `upcomingEventsHelper.filterAndSortEvents()`（偏 `checkType` 单条件 + 时间范围 + subordinate 排除）
+- 建议收敛到单一的 `plan-scope` 过滤函数（可复用 Plan 的 `shouldShowInPlanManager` / 抽出 shared predicate），并让 helper 与面板共用，避免未来修 bug 时只改一处导致“同一事件在不同入口可见性不一致”。
+
+**写入（Write）**
+- 面板的 checkbox 直接调用 `EventService.checkIn/uncheck(eventId)`（不是 `EventHub.updateFields`）。
+- 写入结果依赖订阅驱动刷新；有兜底 `refresh()`（避免部分写路径不触发快照更新）。
+
+#### 4.6.10 TimeVisual（状态竖线 / StatusLine）
+
+代码入口：
+- 竖线容器组件：[src/components/shared/StatusLineContainer.tsx](../../src/components/shared/StatusLineContainer.tsx)
+- 状态计算与 segments 生成：[src/features/Plan/components/PlanManager.tsx](../../src/features/Plan/components/PlanManager.tsx)
+- 日期范围选择（驱动 Snapshot/竖线范围）：[src/components/ContentSelectionPanel.tsx](../../src/components/ContentSelectionPanel.tsx)
+
+**定位（What it is）**
+- TimeVisual 是一个“按时间范围回放”的可视化层：把 `EventHistoryService` 的操作历史（create/update/checkin/delete）映射为每个事件行的多个状态段（segments），由 `StatusLineContainer` 统一渲染“多列并行竖线”。
+
+**数据来源与生命周期（Read/Compute）**
+- PlanManager 会并行查询 editorItems 内每个事件的状态：`getEventStatuses(eventId)` → `EventHistoryService.queryHistory({ eventId, startTime, endTime })`。
+- Snapshot ghost（`_isDeleted`）会强制加入 `deleted` 状态（即使该 eventId 在 history 里没有 delete 记录），作为“Review 显示策略”。
+
+#### 4.6.11 Cross-Module Consistency Checks（跨模块冲突检查清单）
+
+> 目的：把“类似 TimeResolver 使用口径冲突”的问题制度化检查，避免只看字段写入点却漏掉“派生/过滤口径漂移”。
+
+**检查 1：每个页面必须声明并遵守 1 种 Time Anchor 口径**
+- 严格时间口径：仅使用 `timeSpec.resolved`（例如 Upcoming 倒计时/即将开始）
+- 派生锚点口径：使用 `resolveCalendarDateRange()`（例如 TimeLog 排序/按天分组、Plan Snapshot 范围过滤）
+- Deadline 口径：使用 `dueDateTime`（例如 Plan 的“过期/截止”业务规则）
+- 要求：同一页面不要“过滤用 A、排序用 B”混搭；如果必须混搭，必须写清楚“为什么”。
+
+**检查 2：task-like 事件的 flags 必须保证（否则派生锚点会漂移）**
+- `resolveCalendarDateRange()` 的 task-date-only 分支依赖 `isTask && !startTime`。
+- 若某类事件是 task-like 但 `isTask` 丢失，则会走 time-based 分支，并可能落到 `createdAt(now)` 的 time-of-day，造成：
+  - TimeLog/TimeCalendar/Plan Snapshot 的日期落位与 Plan 视图的任务语义不一致
+- 结论：创建入口必须直接写 `isTask=true`（Plan/Task），normalize 的兜底推断只能当救急。
+
+**检查 3：deadline-only 事件的落位语义是否一致（最容易漏）**
+- Plan 的过期过滤依赖 `dueDateTime`；但当前 `resolveTaskAnchorTimestamp/resolveCalendarDateRange` **不考虑 `dueDateTime`**。
+- 这意味着：一个“只有 `dueDateTime`、没有 `startTime/endTime`”的任务，可能在 Plan 被视为“有明确截止”，但在 TimeLog（按 `resolveCalendarDateRange`）仍按 `createdAt` 落位。
+- 若产品希望 deadline-only 任务在 TimeLog/Calendar 按截止日落位，需要：
+  - 要么在写入侧把 deadline 写入 `endTime`（计划完成时间）并保持 `dueDateTime` 仅做 deadline 展示/过滤
+  - 要么扩展 TimeResolver，把 `dueDateTime` 纳入派生 anchor（需要显式决策，避免行为变化）
+
+**检查 4：TimeHub 空字符串清空语义必须全局一致**
+- Plan 当前把 `''` 视为 `undefined`（避免 `Date('')`/错误显示）。
+- 任何读取 `startTime/endTime` 的页面都必须把空字符串当作“无时间”，否则会出现：
+  - 显示上有时间但排序/过滤把它当无时间（或反之）
+
+**检查 5：TIME_ARCHITECTURE 与 legacy 字段的边界**
+- 若页面宣称遵守 TIME_ARCHITECTURE（如 Upcoming），则必须满足：
+  - 数据来源保证 `timeSpec.resolved` 可用（或明确“缺失则不显示”）
+  - 不允许改用 `startTime/endTime/createdAt` 偷偷兜底，否则会导致跨视图可见性不一致且难以调试。
+
+**检查 6：每个页面必须声明并遵守 1 种 Title Resolver 口径（展示 vs 同步）**
+- 展示标题（UI list/card/tooltip）：必须统一使用 `resolveDisplayTitle(event)`（默认偏好 `colorTitle`，并具备 tags/eventlog/fallback 的兜底策略）。
+- 同步标题（外部 subject/title）：必须统一使用 `resolveSyncTitle(event)`（严格偏好 `simpleTitle`，必要时 tags/eventlog/fallback 兜底；不回写）。
+- 禁止：页面内手写 `event.title?.simpleTitle || event.title?.colorTitle || event.title?.fullTitle` 作为展示口径。
+  - 原因：`colorTitle/fullTitle` 可能是 Slate JSON 或历史/损坏形态，直接展示会出现“泄露 JSON/时间戳 divider/HTML 标签”等问题；同时不同页面写法不同会导致标题显示不一致。
+- 要求：列表/面板的截断策略必须集中（例如统一由 resolver 的 `maxLength` 控制），不要每个页面各自 `slice(0, N)`。
+- 要求：任何“从 tags/eventlog 派生出来的标题”都必须是只读派生值，**不得**回写到 `event.title.*`（避免默认值注入导致 Sync/冲突检测被污染）。
+
+**契约约束（Contract）**
+- 竖线状态（segments / statusMap）全部是 **派生数据**：
+  - 不得写回 `Event` canonical（不写入 `status`/`isDeleted`/`bulletLevel` 等作为真相）
+  - 不得参与 Sync Router 决策（同步分流仍只看 canonical 字段：`syncMode/isTask/startTime/endTime` 等）
+- UI 可以为了性能做缓存（例如 segments hash / matrix 算法），但缓存不得反向污染存储层。
+
+#### 4.6.12 EventHistory（事件变更历史 / 版本日志）
+
+代码入口：[src/services/EventHistoryService.ts](../../src/services/EventHistoryService.ts)
+
+> 定位：EventHistory 是一套**审计/回放/派生索引**能力。
+> - 主要用途：Plan Snapshot / TimeVisual 复盘、诊断变更来源、临时ID映射追踪、以及“是否存在于某时刻”的推导。
+> - 强约束：它不是 `Event` 的真相来源，不能反向驱动业务写入逻辑。
+
+**存储与 Schema（Write/Store）**
+- 存储后端通过 `StorageManager.createEventHistory()` 写入（IndexedDB + 可选 SQLite 双写，取决于环境）。
+- 数据形态（见 [src/types/eventHistory.ts](../../src/types/eventHistory.ts)）：
+  - `id` / `eventId` / `operation: 'create'|'update'|'delete'|'checkin'` / `timestamp`
+  - `source: string`（变更来源）
+  - `before?: Partial<Event>` / `after?: Partial<Event>`（快照）
+  - `changes?: ChangeDetail[]`（字段差异摘要）
+  - `metadata?: Record<string, any>`（扩展：如 bestSnapshot、删除上下文）
+  - `tempIdMapping?`（`line-xxx → event_xxx` 的映射追踪）
+
+**写入入口（Where logs are produced）**
+- Create：`EventService.createEvent()` 在写入成功后调用 `EventHistoryService.logCreate(finalEvent, source)`（会跳过池化占位事件）。
+- Update：`EventService.updateEvent()` 在 normalize 后调用 `EventHistoryService.logUpdate(eventId, beforeNormalized, afterNormalized, source)`。
+  - 关键联动：`updateEvent` 只有在 `logUpdate` 判定“有实质变更”时才更新 `updatedAt`，避免 `updatedAt → description签名 → history噪音` 的链式爆炸。
+- Delete：`EventService.deleteEvent()` 软删除后，按“是否曾经非空”决定是否写 delete history；若写入则使用 `logDeleteWithSnapshot(event, bestSnapshot, source)` 把 bestSnapshot 放入 `metadata.bestSnapshot`。
+- Checkin/Uncheck：`EventService.checkIn/uncheck()` 会写 `operation='checkin'` 的日志（注意：当前 title 兜底仍用 `simpleTitle || 'Untitled Event'`，这属于 UI/日志展示层，不应回写 Event）。
+- TempId：创建时若发生临时ID解析，会额外 `recordTempIdMapping(tempId, realId)`。
+
+**版本/变更判定规则（Diff / “为什么会爆炸”）**
+> 这里的“版本”指 EventHistory 的“是否记录一条 update”，不是 `Event` schema 的版本号。
+
+- `logUpdate` 只有在 `extractChanges(before, afterPatch)` 返回非空时才记录。
+- `extractChanges` 的关键策略（代码事实）：
+  - 只遍历 `after` 中出现的字段（`Object.keys(after)`），避免把“patch 未包含的字段”误判为被删除。
+  - 忽略字段（不计入变化）：`updatedAt/position/fourDNoteSource/_isVirtualTime/localVersion/lastLocalChange/lastSyncTime` 等。
+  - `title`：走专用深比较（防止结构化 title 误判）。
+  - `tags`：规范化后比较（避免 `undefined ↔ []` 噪音）。
+  - `description`：直接跳过（视为 `eventlog` 的派生 + 外部同步字段）。
+  - `eventlog`：用 `countBlockLevelParagraphs()`（Block-Level paragraph 数量）判断变化；这会带来一个契约风险：
+    - 内容变更但 block 数不变 → 可能漏记；
+    - 结构/序列化差异导致 block 数变 → 可能产生噪音。
+
+**可靠性与清理（Retention / Cleanup）**
+- `saveLog()` 当前是 fire-and-forget：写库失败只打日志，调用方不可感知；若 `StorageManager` 尚未初始化，日志会直接丢弃（典型“漏记”来源）。
+- 内置自动清理：`startPeriodicCleanup()`（每小时）+ `autoCleanup()`（删除无意义变更/删除 backfill）；并提供 `healthCheck()` 统计来源分布与清理建议。
+
+**契约约束（Contract）**
+- EventHistory 的 `before/after/changes/metadata` 全部视为 **派生/审计数据**：
+  - 禁止把 history 回放结果写回 `Event` canonical（除非明确的 repair/迁移工具路径）。
+  - 禁止业务逻辑把“history 是否存在/是否记录到”当作必然成立的条件（因为初始化窗口期/写入失败会导致缺失）。
+- `source` 必须可控且稳定：
+  - 调用方必须传入可追踪的来源（例如 `user-edit/outlook-sync/batch-import/backfill-from-timestamp`）；否则按字符串自由发挥会导致诊断困难。
+  - 若某类来源属于“同步回流/内部修复”，应在契约层默认 **不作为用户变更历史** 使用（否则容易造成 history 爆量）。
+- EventHistory 的比较规则必须与字段契约对齐：
+  - `description` 不作为业务真相字段，因此不应成为 history 的核心触发字段。
+  - `tags` 的 `undefined ↔ []` 互转属于契约明确禁止的“默认值注入”，若出现应优先修复写入侧而不是靠清理补救。
+
+---
+
 ## 5. 推荐的“字段规则入口”
 
 - **规则定义（本文）**：字段契约 + hard rules。
