@@ -4,7 +4,7 @@
 
 import { Editor, Transforms, Node, Element, Path, Range, Text as SlateText } from 'slate';
 import { ReactEditor } from 'slate-react';
-import { TagNode, DateMentionNode, TextNode, EventLineNode } from './types';
+import { TagNode, DateMentionNode, TextNode, EventLineNode } from '@frontend/components/PlanSlate/types';
 
 /**
  * 插入 Tag 元素
@@ -211,7 +211,7 @@ export function insertEventMention(
     
     // 🔥 创建双向链接（如果提供了 currentEventId）
     if (currentEventId && currentEventId !== eventId) {
-      import('../../services/EventService').then(({ EventService }) => {
+      import('@backend/EventService').then(({ EventService }) => {
         EventService.addLink(currentEventId, eventId).then(result => {
           if (result.success) {
             console.log('✅ [insertEventMention] 双向链接已创建:', {
