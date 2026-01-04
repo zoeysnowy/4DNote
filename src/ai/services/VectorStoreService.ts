@@ -3,7 +3,7 @@
  * 向量存储服务（基于内存的简单实现）
  */
 
-import { IVectorStore, VectorMemoryEntry } from '../../types/ai/memory.types';
+import { IVectorStore, VectorMemoryEntry } from '@frontend/types/ai/memory.types';
 import { EmbeddingService } from './EmbeddingService';
 
 /**
