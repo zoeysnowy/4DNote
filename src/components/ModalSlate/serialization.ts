@@ -10,8 +10,8 @@ import {
   TimestampDividerElement,
   TagNode,
   DateMentionNode
-} from '../PlanSlate/types';
-import { parseLocalTimeStringOrNull } from '../../utils/timeUtils';
+} from '@frontend/components/PlanSlate/types';
+import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 /**
  * 将 Slate JSON（字符串或对象）转换为 Slate nodes
