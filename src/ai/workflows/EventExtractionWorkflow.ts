@@ -5,11 +5,11 @@
  * 注意：移除了 LangGraph 依赖以支持浏览器环境
  */
 
-import { OCRTool } from '../tools/ocr/OCRTool';
-import { QRCodeTool, QRCodeInfo } from '../tools/qrcode/QRCodeTool';
-import { LLMService } from '../services/LLMService';
-import { llmConfig } from '../../config/ai.config';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { OCRTool } from '@frontend/ai/tools/ocr/OCRTool';
+import { QRCodeTool, QRCodeInfo } from '@frontend/ai/tools/qrcode/QRCodeTool';
+import { LLMService } from '@frontend/ai/services/LLMService';
+import { llmConfig } from '@frontend/config/ai.config';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 /**
  * 工作流状态
@@ -240,7 +240,7 @@ export class EventExtractionWorkflow {
 
       // 提醒任务（提前一天）
       if (state.extractedEvent?.startTime) {
-        const { parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const { parseLocalTimeStringOrNull } = await import('@frontend/utils/timeUtils');
         const startDate = parseLocalTimeStringOrNull(state.extractedEvent.startTime);
         if (!startDate) {
           console.warn('[GenerateTasks] startTime 无法解析，跳过提醒任务:', state.extractedEvent.startTime);
