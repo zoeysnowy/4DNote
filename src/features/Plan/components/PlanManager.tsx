@@ -1,45 +1,45 @@
-import { resolveCheckState } from '../../../utils/TimeResolver';
+import { resolveCheckState } from '@frontend/utils/TimeResolver';
 import React, { useState, useRef, useEffect, useMemo, useCallback, useLayoutEffect } from 'react';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import type { Event } from '../../../types';
-import { PlanSlate } from '../../../components/PlanSlate/PlanSlate';
-import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '../../../components/PlanSlate/helpers';
+import type { Event } from '@frontend/types';
+import { PlanSlate } from '@frontend/components/PlanSlate/PlanSlate';
+import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '@frontend/components/PlanSlate/helpers';
 import { StatusLineContainer, StatusLineSegment } from '@frontend/components/shared/StatusLineContainer';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { ToolbarConfig } from '@frontend/components/shared/FloatingToolbar/types';
-import { TagService } from '../../../services/TagService';
+import { TagService } from '@backend/TagService';
 import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
 import dayjs from 'dayjs';
 import 'dayjs/locale/zh-cn';
-import { formatDateDisplay } from '../../../utils/dateParser';
+import { formatDateDisplay } from '@frontend/utils/dateParser';
 import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
-import { EventHub } from '../../../services/EventHub'; // 🎯 使用 EventHub 而不是 EventService
+import { EventHub } from '@backend/EventHub'; // 🎯 使用 EventHub 而不是 EventService
 import { shouldShowInPlanManager, filterPlanEvents, isEmptyEvent } from '@frontend/features/Plan/helpers/planManagerFilters';
 import { extractCalendarIds, buildEventForSave, detectChanges } from '@frontend/features/Plan/helpers/planManagerHelpers';
-import { EventService } from '../../../services/EventService'; // 🔧 仅用于查询（getEventById）
-import { EventHistoryService } from '../../../services/EventHistoryService'; // 🆕 用于事件历史快照
+import { EventService } from '@backend/EventService'; // 🔧 仅用于查询（getEventById）
+import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 用于事件历史快照
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
-import { generateEventId } from '../../../utils/calendarUtils';
-import { EventTreeAPI } from '../../../services/eventTree'; // 🆕 v2.20.0: EventTree Engine
-import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
-import { icons } from '../../../assets/icons';
-import { useEventTime } from '../../../hooks/useEventTime';
-import { TimeHub } from '../../../services/TimeHub';
-import { getEventTime, setEventTime, isTask as isTaskByTime } from '../../../utils/timeManager'; // 🆕 统一时间管理
+import { generateEventId } from '@frontend/utils/calendarUtils';
+import { EventTreeAPI } from '@backend/eventTree'; // 🆕 v2.20.0: EventTree Engine
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
+import { icons } from '@frontend/assets/icons';
+import { useEventTime } from '@frontend/hooks/useEventTime';
+import { TimeHub } from '@backend/TimeHub';
+import { getEventTime, setEventTime, isTask as isTaskByTime } from '@frontend/utils/timeManager'; // 🆕 统一时间管理
 import './PlanManager.css';
-import { dbg, warn, error } from '../../../utils/debugLogger';
-import { formatRelativeTimeDisplay } from '../../../utils/relativeDateFormatter';
-import TimeHoverCard from '../../../components/TimeHoverCard';
-import { calculateFixedPopupPosition } from '../../../utils/popupPositionUtils';
-import ContentSelectionPanel from '../../../components/ContentSelectionPanel';
+import { dbg, warn, error } from '@frontend/utils/debugLogger';
+import { formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
+import TimeHoverCard from '@frontend/components/TimeHoverCard';
+import { calculateFixedPopupPosition } from '@frontend/utils/popupPositionUtils';
+import ContentSelectionPanel from '@frontend/components/ContentSelectionPanel';
 import { UpcomingEventsPanel } from '@frontend/features/Dashboard';
-import { isEventExpired } from '../../../utils/upcomingEventsHelper'; // ✅ TIME_ARCHITECTURE 规范的工具函数
+import { isEventExpired } from '@frontend/utils/upcomingEventsHelper'; // ✅ TIME_ARCHITECTURE 规范的工具函数
 // 🆕 v2.21.0: 会话态管理 Hook
-import { usePlanManagerSession } from '../../../components/hooks/usePlanManagerSession';
+import { usePlanManagerSession } from '@frontend/components/hooks/usePlanManagerSession';
 
 // � 初始化调试标志 - 在模块加载时立即从 localStorage 读取
 if (typeof window !== 'undefined') {
