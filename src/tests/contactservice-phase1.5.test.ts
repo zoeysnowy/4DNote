@@ -3,8 +3,8 @@
  * 测试批量获取、多来源去重、扩展字段解析等功能
  */
 
-import { ContactService } from '../services/ContactService';
-import { Contact } from '../types';
+import { ContactService } from '@backend/ContactService';
+import { Contact } from '@frontend/types';
 
 // 清空 localStorage
 beforeEach(async () => {
