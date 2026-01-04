@@ -13,8 +13,8 @@
  * @date 2025-11-08
  */
 
-import { TimeHub } from '../services/TimeHub';
-import { EventHub } from '../services/EventHub';  // 🎯 使用 EventHub
+import { TimeHub } from '@backend/TimeHub';
+import { EventHub } from '@backend/EventHub';  // 🎯 使用 EventHub
 import { dbg } from './debugLogger';
 
 /**
