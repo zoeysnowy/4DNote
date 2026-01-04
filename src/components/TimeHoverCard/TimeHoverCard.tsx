@@ -9,8 +9,8 @@
  */
 
 import React from 'react';
-import { formatFullDate, formatCountdown } from '../../utils/relativeDateFormatter';
-import { icons } from '../../assets/icons';
+import { formatFullDate, formatCountdown } from '@frontend/utils/relativeDateFormatter';
+import { icons } from '@frontend/assets/icons';
 import './TimeHoverCard.css';
 
 export interface TimeHoverCardProps {
