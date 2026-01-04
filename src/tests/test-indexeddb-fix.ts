@@ -91,7 +91,7 @@ export async function testIndexedDBFix() {
     // 步骤 5: 验证 IndexedDB 中的数据
     console.log('\n5️⃣  验证 IndexedDB 数据...');
     try {
-      const { indexedDBService } = await import('../services/storage/IndexedDBService');
+      const { indexedDBService } = await import('@backend/storage/IndexedDBService');
       const indexedDBResult = await indexedDBService.queryEvents({ limit: 10 });
       console.log('   ✅ IndexedDB 包含', indexedDBResult.items.length, '个事件');
     } catch (error) {
@@ -102,7 +102,7 @@ export async function testIndexedDBFix() {
     if ((window as any).electronAPI?.sqlite) {
       console.log('\n6️⃣  验证 SQLite 数据...');
       try {
-        const { sqliteService } = await import('../services/storage/SQLiteService');
+        const { sqliteService } = await import('@backend/storage/SQLiteService');
         const sqliteResult = await sqliteService.queryEvents({ limit: 10 });
         console.log('   ✅ SQLite 包含', sqliteResult.items.length, '个事件');
       } catch (error) {
