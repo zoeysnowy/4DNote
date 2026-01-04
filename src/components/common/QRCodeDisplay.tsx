@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import type { QRCodeInfo } from '../../types';
+import type { QRCodeInfo } from '@frontend/types';
 import './QRCodeDisplay.css';
 
 interface QRCodeDisplayProps {
