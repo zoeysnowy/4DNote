@@ -10,7 +10,7 @@
  * @author Zoey Gong
  */
 
-import { Event } from '../types';
+import { Event } from '@frontend/types';
 import { formatTimeForStorage } from './timeUtils';
 
 /**
