@@ -4,12 +4,12 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Contact, Event } from '../../types';
-import { ContactService } from '../../services/ContactService';
-import { EventService } from '../../services/EventService';
+import { Contact, Event } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
+import { EventService } from '@backend/EventService';
 import { ContactPreviewCard } from './ContactPreviewCard';
 import { FullContactModal } from './FullContactModal';
-import AttendeeIcon from '../../assets/icons/Attendee.svg';
+import AttendeeIcon from '@frontend/assets/icons/Attendee.svg';
 import './AttendeeDisplay.css';
 
 interface AttendeeDisplayProps {

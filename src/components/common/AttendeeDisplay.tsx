@@ -14,11 +14,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import { Contact, Event } from '../../types';
-import { ContactService } from '../../services/ContactService';
-import { EventService } from '../../services/EventService';
-import AttendeeIcon from '../../assets/icons/Attendee.svg';
-import EditIcon from '../../assets/icons/Edit.svg';
+import { Contact, Event } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
+import { EventService } from '@backend/EventService';
+import AttendeeIcon from '@frontend/assets/icons/Attendee.svg';
+import EditIcon from '@frontend/assets/icons/Edit.svg';
 import './AttendeeDisplay.css';
 
 interface AttendeeDisplayProps {
