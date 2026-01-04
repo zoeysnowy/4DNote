@@ -4,10 +4,10 @@
  */
 
 // ============ 类型定义 ============
-export * from '../types/ai/agent.types';
-export * from '../types/ai/tool.types';
-export * from '../types/ai/memory.types';
-export * from '../types/ai/workflow.types';
+export * from '@frontend/types/ai/agent.types';
+export * from '@frontend/types/ai/tool.types';
+export * from '@frontend/types/ai/memory.types';
+export * from '@frontend/types/ai/workflow.types';
 
 // ============ 基础类 ============
 export { BaseAgent } from './agents/base/Agent';
@@ -31,4 +31,4 @@ export {
   vectorStoreConfig,
   agentConfig,
   toolConfig
-} from '../config/ai.config';
+} from '@frontend/config/ai.config';
