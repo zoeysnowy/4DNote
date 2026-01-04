@@ -103,7 +103,7 @@ import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '@frontend/
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '@frontend/components/PlanSlate/helpers';
-// import { parseExternalHtml, slateNodesToRichHtml } from '../components/PlanSlate/serialization';
+// import { parseExternalHtml, slateNodesToRichHtml } from '@frontend/components/PlanSlate/serialization';
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
 import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/EventTreeViewer';
