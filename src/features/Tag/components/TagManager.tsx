@@ -2330,8 +2330,12 @@ const TagManager: React.FC<TagManagerProps> = ({
                   borderRadius: '3px',
                   transition: 'background-color 0.2s'
                 }}
-                contentEditable
-                suppressContentEditableWarning
+                onMouseDown={(e) => {
+                  // Prevent the placeholder itself from receiving focus/caret.
+                  // The caret should go to the newly created tag row.
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   
@@ -2374,17 +2378,6 @@ const TagManager: React.FC<TagManagerProps> = ({
                     } else {
                       createNewTag(0);
                     }
-                    
-                    // 保存当前元素的引用，避免在setTimeout中访问null
-                    const currentElement = e.currentTarget;
-                    setTimeout(() => {
-                      if (currentElement && currentElement.textContent === '点击新增标签，Tab/Shift+Tab切换层级，Shift+Alt+↑/↓上下移动标签') {
-                        currentElement.textContent = '';
-                      }
-                      if (currentElement) {
-                        currentElement.focus();
-                      }
-                    }, 0);
                   }
                 }}
                 onFocus={(e) => {
