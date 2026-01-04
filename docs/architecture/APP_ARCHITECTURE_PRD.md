@@ -1,7 +1,8 @@
 # App 组件架构文档 (PRD)
 
 **版本**: v1.9  
-**最后更新**: 2025-12-23  
+**最后更新**: 2025-12-23（主体内容）  
+**补充更新**: 2026-01-04（目录结构 / Path Alias 口径对齐）
 **文档类型**: 架构设计文档（逆向工程）
 
 ---
@@ -20,6 +21,53 @@
 ## 文档概述
 
 本文档通过逆向工程分析 `src/App.tsx` 组件，记录其架构设计、状态管理、渲染机制、性能优化策略及已知问题。
+
+---
+
+## 🧭 代码目录结构（v2.22 对齐）
+
+本节用于回答“最新代码目录架构是什么”，并与重构执行口径保持一致：
+
+- 全量目标目录树（执行用 / 方案）：`docs/refactor/CODE_STRUCTURE_TARGET_TREE_v2.0_2026-01-03.md`
+- 本文只给出 **src/ 目录的稳定分层口径**，避免 PRD 与代码结构漂移。
+
+### TypeScript Path Alias（强制口径）
+
+本仓库的导入路径以 alias 为主（跨目录引用优先使用 alias，避免深层相对路径）：
+
+- `@frontend/*` → `src/*`（UI + 产品层：pages/features/components/hooks/utils/assets/styles/types…）
+- `@backend/*` → `src/services/*`（领域/数据服务层）
+- `@shared/*` → `src/shared/*`（跨层共享纯模块；若目录尚在演进，以 tsconfig 为准）
+
+### 目录分层（当前主干口径）
+
+```text
+src/
+  App.tsx                 # 根组件：路由编排 + 服务初始化 + 全局协调
+  index.tsx               # 应用入口
+
+  pages/                  # 页面入口（薄编排：路由/窗口/Tab）
+    Home/ Calendar/ Plan/ TimeLog/ Event/ Tag/ Settings/
+
+  features/               # 功能模块包（业务逻辑 + 领域组件）
+    Plan/ Calendar/ TimeLog/ Event/ Tag/ Contact/ Timer/ Dashboard/
+
+  components/             # 跨 feature 可复用 UI（不承载跨域业务编排）
+    common/ layout/ shared/ attachments/ demos/
+    SlateCore/ PlanSlate/ ModalSlate/ LogSlate/ TimeHoverCard/
+
+  services/               # 领域服务层（EventService/EventHub/TimeHub 为核心）
+    eventTree/ sync/ storage/ search/ eventlogProcessing/
+    (其余服务按职责拆分于 services/ 根目录或子包中)
+
+  state/                  # 全局状态（Zustand stores）
+  hooks/                  # 跨功能 hooks
+  utils/                  # 纯工具函数（无副作用）
+  types/                  # 类型定义（逐步向 shared/types 收敛）
+  assets/ styles/ config/ constants/ lib/ …
+```
+
+> 备注：历史遗留/迁移过程中的空目录可能仍存在，但不作为对外口径；以 `pages/`、`features/`、`components/`、`services/` 的稳定入口与 alias 规则为准。
 
 ---
 
