@@ -4104,7 +4104,7 @@ export class ActionBasedSyncManager {
       } else if (action.type === 'create') {
         // 对于 create，需要检查是否是多日历同步的远程副本
         // 通过 remoteEventId 查找对应的本地事件
-        const { EventService } = await import('../EventService');
+        const { EventService } = await import('@backend/EventService');
         localEvent = EventService.findLocalEventByRemoteId(
           action.data.id || action.entityId,
           events,
@@ -4122,7 +4122,7 @@ export class ActionBasedSyncManager {
       
       // 检查 syncMode 是否允许接收远程更新
       if (eventSyncMode) {
-        const { EventService } = await import('../EventService');
+        const { EventService } = await import('@backend/EventService');
         const canReceive = EventService.canReceiveFromRemote(eventSyncMode);
         
         if (!canReceive) {
