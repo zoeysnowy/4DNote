@@ -583,15 +583,15 @@ Feature/
 - [x] 创建 `pages/Home/` 并移入 HomePage (ff20db4 + 30bd75f)
 
 ### P2 - Features 完善
-- [ ] 创建 `features/Event/` 并迁移 EventEditModal + EventTree 组件
-- [ ] 创建 `features/Tag/` 并迁移 TagManager
-- [ ] 创建 `features/Contact/` 并迁移 ContactModal
+- [x] 创建 `features/Event/` 并迁移 EventEditModal + EventTree 组件 (abe2e9e, 0e16f2a)
+- [x] 创建 `features/Tag/` 并迁移 TagManager (87ca372)
+- [x] 创建 `features/Contact/` 并迁移 ContactModal (b72f9ff)
 - [x] 创建 `features/Timer/` 并迁移 TimerCard
-- [ ] 创建 `features/Dashboard/` 并迁移 DailyStatsCard + UpcomingEventsPanel
+- [x] 创建 `features/Dashboard/` 并迁移 DailyStatsCard + UpcomingEventsPanel (3c9d16b)
 
 ### P3 - Services 优化
-- [ ] 提取 EventService 内部的 HTML 处理逻辑到 `eventlogProcessing/`
-- [ ] 创建 `state/` 目录并迁移 Zustand stores
+- [x] 提取 EventService 内部的 HTML 处理逻辑到 `eventlogProcessing/` (ba0c853, f107898)
+- [x] 创建 `state/` 目录并迁移 Zustand stores (bf1f594)
 
 ---
 
