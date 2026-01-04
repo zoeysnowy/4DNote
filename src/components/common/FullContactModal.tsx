@@ -9,9 +9,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Contact, Event } from '../../types';
-import { ContactService } from '../../services/ContactService';
-import { EventService } from '../../services/EventService';
+import { Contact, Event } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
+import { EventService } from '@backend/EventService';
 import { EditableField } from './EditableField';
 import './FullContactModal.css';
 
