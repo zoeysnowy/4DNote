@@ -19,7 +19,7 @@ import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
  * @author Zoey Gong
  */
 
-import { AIProvider, ExtractedEventInfo, AIProviderTestResult } from '../AIProvider.interface';
+import { AIProvider, ExtractedEventInfo, AIProviderTestResult } from '@backend/ai/AIProvider.interface';
 
 export interface DashScopeConfig {
   apiKey: string;

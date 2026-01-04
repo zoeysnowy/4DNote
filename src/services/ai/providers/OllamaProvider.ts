@@ -7,7 +7,7 @@
  * @version 1.0.0
  */
 
-import { AIProvider, ExtractedEventInfo } from '../AIProvider.interface';
+import { AIProvider, ExtractedEventInfo } from '@backend/ai/AIProvider.interface';
 
 export interface OllamaConfig {
   /** Ollama 服务地址 */

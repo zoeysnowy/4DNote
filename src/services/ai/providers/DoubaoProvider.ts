@@ -7,7 +7,7 @@
  */
 
 import OpenAI from 'openai';
-import { AIConfigManager } from '../AIConfig';
+import { AIConfigManager } from '@backend/ai/AIConfig';
 
 export interface DoubaoEmbeddingOptions {
   model?: string;

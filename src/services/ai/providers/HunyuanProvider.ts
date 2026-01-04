@@ -20,7 +20,7 @@ import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/util
  * @author Zoey Gong
  */
 
-import { AIProvider, ExtractedEventInfo, AIProviderTestResult } from '../AIProvider.interface';
+import { AIProvider, ExtractedEventInfo, AIProviderTestResult } from '@backend/ai/AIProvider.interface';
 import { checkProxyHealth, getProxyStartInstructions } from '@frontend/utils/proxyHelper';
 
 export interface HunyuanConfig {

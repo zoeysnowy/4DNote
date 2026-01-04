@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { buildEventTree, recomputeSiblings, computeReparentEffect } from './TreeEngine';
 import { EventTreeAPI } from './TreeAPI';
-import type { Event } from '../../types';
+import type { Event } from '@frontend/types';
 import type { EventNode } from './types';
 
 // 辅助函数：创建测试事件
