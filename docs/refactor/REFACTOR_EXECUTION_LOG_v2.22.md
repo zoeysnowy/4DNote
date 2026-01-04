@@ -151,6 +151,7 @@
 | 2026-01-04 | P3-19: event detail tab alias-only imports | Convert cross-directory relative imports (including dynamic imports) in `src/pages/Event/DetailTab.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | a62ec9b | Import-only changes; no behavior change |
 | 2026-01-04 | P3-20: Avatar alias-only imports | Convert cross-directory relative imports in `src/components/common/Avatar.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 9d23433 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-21: AttendeeDisplay alias-only imports | Convert cross-directory relative imports in `src/components/common/AttendeeDisplay*.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 64b8e85 | Import-only changes; no behavior change |
+| 2026-01-04 | P3-22: ContactPicker alias-only imports | Convert cross-directory relative imports in `src/components/common/ContactPicker.tsx` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 2d2c50e | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
