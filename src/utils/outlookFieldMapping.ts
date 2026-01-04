@@ -4,7 +4,7 @@
  * 定义哪些字段应该同步到 Outlook，哪些是 4DNote 内部字段
  */
 
-import { Contact, Event } from '../types';
+import { Contact, Event } from '@frontend/types';
 
 /**
  * Microsoft Graph Calendar Event 支持的字段
