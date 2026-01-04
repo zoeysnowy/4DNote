@@ -52,7 +52,7 @@ export async function testCRUDIntegration() {
           // 2. 手动删除 IndexedDB 数据库（session.clearStorageData 不可靠）
           console.log('   🗑️  手动删除 IndexedDB 数据库...');
           try {
-            const { indexedDBService } = await import('../services/storage/IndexedDBService');
+            const { indexedDBService } = await import('@backend/storage/IndexedDBService');
             
             // 关闭现有连接
             if ((indexedDBService as any).db) {
@@ -95,8 +95,8 @@ export async function testCRUDIntegration() {
           
           // 3. 重置服务状态
           console.log('   🔄 重置服务状态...');
-          const { storageManager } = await import('../services/storage/StorageManager');
-          const { sqliteService } = await import('../services/storage/SQLiteService');
+          const { storageManager } = await import('@backend/storage/StorageManager');
+          const { sqliteService } = await import('@backend/storage/SQLiteService');
           
           (storageManager as any).initialized = false;
           (storageManager as any).initializingPromise = null;
@@ -129,7 +129,7 @@ export async function testCRUDIntegration() {
           // 🔍 调试：检查 IndexedDB 中的数据
           console.log('   🔍 检查 IndexedDB 实际数据...');
           try {
-            const { indexedDBService } = await import('../services/storage/IndexedDBService');
+            const { indexedDBService } = await import('@backend/storage/IndexedDBService');
             
             // 确保服务已初始化
             if (!(indexedDBService as any).initialized) {
