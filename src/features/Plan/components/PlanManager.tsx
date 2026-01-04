@@ -3103,7 +3103,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   // ✅ 修复：从 TimeHub 读取最新时间，而不是使用旧的 item 数据
                   if (item) {
                     // 从 TimeHub 获取最新时间
-                    const { TimeHub } = await import('../../../services/TimeHub');
+                    const { TimeHub } = await import('@backend/TimeHub');
                     const timeSnapshot = TimeHub.getSnapshot(item.id);
                     
                     dbg('ui', '📝 UnifiedDateTimePicker.onApplied - 从 TimeHub 读取最新时间', {
