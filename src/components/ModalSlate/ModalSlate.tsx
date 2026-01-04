@@ -41,7 +41,7 @@ import type {
   TagNode,
   DateMentionNode,
   EventMentionNode
-} from '../SlateCore/types';
+} from '@frontend/components/SlateCore/types';
 
 import {
   // 服务
@@ -67,26 +67,26 @@ import {
   // 序列化
   jsonToSlateNodes as slateJsonToNodes,
   slateNodesToJson as slateNodesToJsonCore,
-} from '../SlateCore';
+} from '@frontend/components/SlateCore';
 
 // 共享元素组件
-import { TagElementComponent } from '../SlateCore/elements/TagElement';
-import DateMentionElement from '../SlateCore/elements/DateMentionElement';
-import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
+import { TagElementComponent } from '@frontend/components/SlateCore/elements/TagElement';
+import DateMentionElement from '@frontend/components/SlateCore/elements/DateMentionElement';
+import { EventMentionElement } from '@frontend/components/SlateCore/elements/EventMentionElement';
 // TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // UnifiedMentionMenu
 import { UnifiedMentionMenu } from '@frontend/components/shared/UnifiedMentionMenu';
-import { MentionItem } from '../../services/search/UnifiedSearchIndex';
+import { MentionItem } from '@backend/search/UnifiedSearchIndex';
 
 // 类型兼容
 type CustomElement = ParagraphNode | TagNode | DateMentionNode | EventMentionNode;
 type CustomText = TextNode;
 
 // 导入 EventHistoryService 获取创建时间
-import { EventHistoryService } from '../../services/EventHistoryService';
-import { EventService } from '../../services/EventService';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { EventHistoryService } from '@backend/EventHistoryService';
+import { EventService } from '@backend/EventService';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 // 样式复用 PlanSlate 的样式
 import './ModalSlate.css';
