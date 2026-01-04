@@ -3,7 +3,7 @@
  * 支持腾讯云 OCR 和本地 OCR
  */
 
-import { BaseTool } from '../base/Tool';
+import { BaseTool } from '@frontend/ai/tools/base/Tool';
 import { z } from 'zod';
 
 /**
