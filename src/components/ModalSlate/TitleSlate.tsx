@@ -39,16 +39,16 @@ import type {
   ParagraphNode,
   TextNode,
   TagNode
-} from '../SlateCore/types';
+} from '@frontend/components/SlateCore/types';
 
 import {
   applyTextFormat as slateApplyTextFormat,
   jsonToSlateNodes as slateJsonToNodes,
   slateNodesToJson as slateNodesToJsonCore,
-} from '../SlateCore';
+} from '@frontend/components/SlateCore';
 
 // 共享元素组件
-import { TagElementComponent } from '../SlateCore/elements/TagElement';
+import { TagElementComponent } from '@frontend/components/SlateCore/elements/TagElement';
 
 import './TitleSlate.css';
 
