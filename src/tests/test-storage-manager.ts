@@ -25,7 +25,7 @@ async function testStorageManager() {
 
   try {
     // 动态导入 StorageManager
-    const { storageManager } = await import('../services/storage/StorageManager');
+    const { storageManager } = await import('@backend/storage/StorageManager');
 
     // Test 1: 初始化
     console.log('\n1️⃣  Testing StorageManager initialization...');
