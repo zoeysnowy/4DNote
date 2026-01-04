@@ -81,60 +81,60 @@ import { createPortal } from 'react-dom';
 import Picker from '@emoji-mart/react';
 import data from '@emoji-mart/data';
 
-import { TagService } from '../../services/TagService';
-import { EventService } from '../../services/EventService';
-import { EventHub } from '../../services/EventHub';
-import { ContactService } from '../../services/ContactService';
-import { EventHistoryService } from '../../services/EventHistoryService';
-import { Event, Contact, EventTitle } from '../../types';
+import { TagService } from '@backend/TagService';
+import { EventService } from '@backend/EventService';
+import { EventHub } from '@backend/EventHub';
+import { ContactService } from '@backend/ContactService';
+import { EventHistoryService } from '@backend/EventHistoryService';
+import { Event, Contact, EventTitle } from '@frontend/types';
 import { HierarchicalTagPicker } from '@frontend/features/Tag/components/HierarchicalTagPicker';
 import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
-import { AttendeeDisplay } from '../../components/common/AttendeeDisplay';
-import { LocationInput } from '../../components/common/LocationInput';
-import { CalendarPicker } from '../../features/Calendar/components/CalendarPicker';
+import { AttendeeDisplay } from '@frontend/components/common/AttendeeDisplay';
+import { LocationInput } from '@frontend/components/common/LocationInput';
+import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '../../utils/calendarUtils';
-import { getLocationDisplayText } from '../../utils/locationUtils';
+import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
+import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
-import { ModalSlate } from '../../components/ModalSlate';
-import { TitleSlate } from '../../components/ModalSlate/TitleSlate';
-import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '../../components/ModalSlate/serialization';
+import { ModalSlate } from '@frontend/components/ModalSlate';
+import { TitleSlate } from '@frontend/components/ModalSlate/TitleSlate';
+import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '@frontend/components/ModalSlate/serialization';
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
-import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '../../components/PlanSlate/helpers';
+import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '@frontend/components/PlanSlate/helpers';
 // import { parseExternalHtml, slateNodesToRichHtml } from '../components/PlanSlate/serialization';
-import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
 import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/EventTreeViewer';
 import './DetailTab.css';
 
 // Import SVG icons
-import timerStartIcon from '../../assets/icons/timer_start.svg';
-import pauseIcon from '../../assets/icons/pause.svg';
-import stopIcon from '../../assets/icons/stop.svg';
-import cancelIcon from '../../assets/icons/cancel.svg';
-import rotationColorIcon from '../../assets/icons/rotation_color.svg';
-import attendeeIcon from '../../assets/icons/Attendee.svg';
-import datetimeIcon from '../../assets/icons/datetime.svg';
-import locationIcon from '../../assets/icons/Location.svg';
-import arrowBlueIcon from '../../assets/icons/Arrow_blue.svg';
-import timerCheckIcon from '../../assets/icons/timer_check.svg';
-import addTaskColorIcon from '../../assets/icons/Add_task_color.svg';
-import ddlAddIcon from '../../assets/icons/ddl_add.svg';
-import ddlCheckedIcon from '../../assets/icons/ddl_checked.svg';
-import taskGrayIcon from '../../assets/icons/task_gray.svg';
-import ddlWarnIcon from '../../assets/icons/ddl_warn.svg';
-import linkColorIcon from '../../assets/icons/link_color.svg';
-import backIcon from '../../assets/icons/back.svg';
-import remarkableLogo from '../../assets/icons/LOGO.svg';
-import notetreeIcon from '../../assets/icons/Notetree.svg';
-import rightIcon from '../../assets/icons/right.svg';
-import syncIcon from '../../assets/icons/Sync.svg';
-import tagIcon from '../../assets/icons/Tag.svg';
+import timerStartIcon from '@frontend/assets/icons/timer_start.svg';
+import pauseIcon from '@frontend/assets/icons/pause.svg';
+import stopIcon from '@frontend/assets/icons/stop.svg';
+import cancelIcon from '@frontend/assets/icons/cancel.svg';
+import rotationColorIcon from '@frontend/assets/icons/rotation_color.svg';
+import attendeeIcon from '@frontend/assets/icons/Attendee.svg';
+import datetimeIcon from '@frontend/assets/icons/datetime.svg';
+import locationIcon from '@frontend/assets/icons/Location.svg';
+import arrowBlueIcon from '@frontend/assets/icons/Arrow_blue.svg';
+import timerCheckIcon from '@frontend/assets/icons/timer_check.svg';
+import addTaskColorIcon from '@frontend/assets/icons/Add_task_color.svg';
+import ddlAddIcon from '@frontend/assets/icons/ddl_add.svg';
+import ddlCheckedIcon from '@frontend/assets/icons/ddl_checked.svg';
+import taskGrayIcon from '@frontend/assets/icons/task_gray.svg';
+import ddlWarnIcon from '@frontend/assets/icons/ddl_warn.svg';
+import linkColorIcon from '@frontend/assets/icons/link_color.svg';
+import backIcon from '@frontend/assets/icons/back.svg';
+import remarkableLogo from '@frontend/assets/icons/LOGO.svg';
+import notetreeIcon from '@frontend/assets/icons/Notetree.svg';
+import rightIcon from '@frontend/assets/icons/right.svg';
+import syncIcon from '@frontend/assets/icons/Sync.svg';
+import tagIcon from '@frontend/assets/icons/Tag.svg';
 
 // Import TagInput component
-import { TagInput } from '../../components/common/TagInput';
+import { TagInput } from '@frontend/components/common/TagInput';
 
 interface MockEvent {
   id: string;
@@ -1111,7 +1111,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       let endTimeForStorage: string | undefined = normalizeTimeInput(formData.endTime);
       
       if (startTimeForStorage) {
-        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('@frontend/utils/timeUtils');
         const startDate = parseLocalTimeStringOrNull(startTimeForStorage);
         if (startDate) {
           startTimeForStorage = formatTimeForStorage(startDate);
@@ -1121,7 +1121,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       }
       
       if (endTimeForStorage) {
-        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('../../utils/timeUtils');
+        const { formatTimeForStorage, parseLocalTimeStringOrNull } = await import('@frontend/utils/timeUtils');
         const endDate = parseLocalTimeStringOrNull(endTimeForStorage);
         if (endDate) {
           endTimeForStorage = formatTimeForStorage(endDate);
@@ -1250,7 +1250,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       });
 
       // 🔧 提前导入 EventHub
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
 
       // 🔧 Step 7: 统一保存路径（已移除 Timer 特殊处理）
       // 说明：所有事件创建/更新都通过 EventHub 统一处理，确保架构一致性
@@ -3462,7 +3462,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                 // 子模式：实时同步到父事件
                                 if (parentEvent) {
                                   console.log('🔗 [EventEditModalV2] 子事件模式：同步calendarIds到父事件:', parentEvent.id);
-                                  const { EventHub } = await import('../../services/EventHub');
+                                  const { EventHub } = await import('@backend/EventHub');
                                   await EventHub.updateFields(parentEvent.id, {
                                     calendarIds: calendarIds,
                                   }, {
@@ -3733,7 +3733,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                       calendarIds
                                     });
                                     
-                                    const { EventHub } = await import('../../services/EventHub');
+                                    const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
                                       if (childEvent.isTimer) {
                                         await EventHub.updateFields(childEvent.id, {
@@ -3852,7 +3852,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                         calendarIds: allCalendarIds
                                       });
                                       
-                                      const { EventHub } = await import('../../services/EventHub');
+                                      const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
                                         if (childEvent.isTimer) {
                                           await EventHub.updateFields(childEvent.id, {
