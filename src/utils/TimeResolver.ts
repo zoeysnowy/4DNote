@@ -1,5 +1,5 @@
 
-import type { Event } from '../types';
+import type { Event } from '@frontend/types';
 import { formatTimeForStorage, parseLocalTimeString } from './timeUtils';
 
 export interface CheckState {
