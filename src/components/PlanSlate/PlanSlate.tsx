@@ -1760,12 +1760,12 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
           
           // 只有已存在的事件才需要调用 TimeHub.setEventTime()
           if (eventId) {
-            const { EventService } = await import('../../services/EventService');
+            const { EventService } = await import('@backend/EventService');
             const existing = EventService.getEventById(eventId);
             
             if (existing) {
               // 已存在的事件：通过 TimeHub 更新时间
-              const { TimeHub } = await import('../../services/TimeHub');
+              const { TimeHub } = await import('@backend/TimeHub');
               await TimeHub.setEventTime(eventId, {
                 start: startStr,
                 end: endStr,
