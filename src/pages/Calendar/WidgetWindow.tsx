@@ -5,13 +5,13 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import TimeCalendar from '../../features/Calendar/TimeCalendar'; // Calendar 模块
-import { MicrosoftCalendarService } from '../../services/MicrosoftCalendarService';
+import TimeCalendar from '@frontend/features/Calendar/TimeCalendar'; // Calendar 模块
+import { MicrosoftCalendarService } from '@backend/MicrosoftCalendarService';
 import { ActionBasedSyncManager } from '@backend/sync/ActionBasedSyncManager';
-import { logger } from '../../utils/logger';
-import '../../features/Calendar/styles/DesktopCalendarWidget.css'; // Desktop Widget 样式
-import SyncIcon from '../../assets/icons/Sync.svg';
-import OutlookIcon from '../../assets/icons/Outlook.svg';
+import { logger } from '@frontend/utils/logger';
+import '@frontend/features/Calendar/styles/DesktopCalendarWidget.css'; // Desktop Widget 样式
+import SyncIcon from '@frontend/assets/icons/Sync.svg';
+import OutlookIcon from '@frontend/assets/icons/Outlook.svg';
 
 const widgetLogger = logger.module('Widget');
 

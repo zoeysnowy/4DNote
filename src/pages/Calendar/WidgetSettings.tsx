@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import CalendarSettingsPanel, { CalendarSettings } from '../../features/Calendar/components/CalendarSettingsPanel';
+import CalendarSettingsPanel, { CalendarSettings } from '@frontend/features/Calendar/components/CalendarSettingsPanel';
 import './WidgetSettings.css'; // 🎨 Widget Settings 专用样式
 
 /**
