@@ -162,7 +162,7 @@ class UnifiedSearchIndex {
    */
   async createBidirectionalLink(fromEventId: string, toEventId: string): Promise<boolean> {
     try {
-      const { EventService } = await import('../EventService');
+      const { EventService } = await import('@backend/EventService');
       const result = await EventService.addLink(fromEventId, toEventId);
       
       if (result.success) {
