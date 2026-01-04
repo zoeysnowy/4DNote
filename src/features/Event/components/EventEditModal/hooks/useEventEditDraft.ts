@@ -1,6 +1,6 @@
 import * as React from 'react';
 import type { Event } from '@frontend/types';
-import type { MockEvent } from '../types';
+import type { MockEvent } from '@frontend/features/Event/components/EventEditModal/types';
 
 type LocationDisplayFn = (location: unknown) => string;
 
