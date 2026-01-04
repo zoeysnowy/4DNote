@@ -108,7 +108,7 @@ export interface Event {
   isPlan?: boolean;      // 🆕 添加：标记为计划页面事件
   isTimeCalendar?: boolean; // 🆕 添加：标记为 TimeCalendar 页面创建的事件
   // 🆕 统一时间规范（不破坏现有 startTime/endTime，作为"意图+解析"来源）
-  timeSpec?: import('../../types/time').TimeSpec;
+  timeSpec?: import('@frontend/types/time').TimeSpec;
   
   // 🆕 v1.1: 模糊时间保留机制（displayHint）
   displayHint?: string | null; // 保留用户原始输入的模糊时间表述（如"本周"、"下周"、"明天"等）
