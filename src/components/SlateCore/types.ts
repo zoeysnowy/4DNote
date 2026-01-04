@@ -11,7 +11,7 @@
 import { BaseEditor, Descendant } from 'slate';
 import { ReactEditor } from 'slate-react';
 import { HistoryEditor } from 'slate-history';
-import type { EventLineNode } from '../PlanSlate/types';
+import type { EventLineNode } from '@frontend/components/PlanSlate/types';
 
 // ==================== 编辑器类型 ====================
 
