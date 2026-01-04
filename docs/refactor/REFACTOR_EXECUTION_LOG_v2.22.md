@@ -144,6 +144,7 @@
 | 2026-01-04 | P3-12: services alias-only imports (slice 2) | Continue alias-only cleanup by converting cross-directory relative imports inside services submodules (eventTree/storage/AI + a few root services) | Low | `npx tsc --noEmit`; `npm test -- --run` | 267cc96 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-13: services alias-only imports (slice 3) | Finish services alias-only cleanup by converting the last remaining cross-directory relative imports under `src/services/**` | Low | `npx tsc --noEmit`; `npm test -- --run` | c598b16 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-14: Home pages alias-only imports | Convert cross-directory relative imports in `src/pages/Home/*` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 5ad05cb | Import-only changes; no behavior change |
+| 2026-01-04 | P3-15: hooks alias-only imports | Convert cross-directory relative imports in `src/hooks/**` to `@frontend/*` + `@backend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 03316c7 | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
