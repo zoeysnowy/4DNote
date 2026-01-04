@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { icons } from '../../../assets/icons';
-import { formatTimeForStorage } from '../../../utils/timeUtils';
+import { icons } from '@frontend/assets/icons';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import './TimerCard.css';
 
 interface TimerCardProps {
