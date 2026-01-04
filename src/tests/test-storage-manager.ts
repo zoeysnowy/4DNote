@@ -17,7 +17,7 @@
 /**
  * 测试 StorageManager
  */
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 async function testStorageManager() {
   console.log('🧪 StorageManager Integration Test Started');
