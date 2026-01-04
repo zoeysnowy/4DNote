@@ -178,6 +178,7 @@
 | 2026-01-04 | P3-45: Logo asset alias-only import | Convert SVG import in `src/components/common/Logo.tsx` to `@frontend/assets/icons/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | 7b48a43 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-46: ContentSelectionPanel alias-only imports | Convert cross-directory service/type/hook/icon imports in `src/components/ContentSelectionPanel.tsx` to `@frontend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | 25341d8 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-47: LogSlate SlateCore alias-only imports | Convert SlateCore imports in `src/components/LogSlate/LogSlate.tsx` to `@frontend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | be8633f | Import-only changes; no behavior change |
+| 2026-01-04 | P3-48..P3-57: alias-only imports (utils + SlateCore) | Continue alias-only cleanup by converting remaining cross-directory relative imports in utilities and SlateCore helpers/types to `@frontend/*` | Low | `npx tsc --noEmit`; `npm test -- --run` | (this commit) | Commits: P3-48 TimeHoverCard, P3-49 SlateCore types, P3-50 TimestampService, P3-51 SlateCore inline helpers, P3-52 blockTimestampUtils, P3-53 blockTimestampMigration, P3-54 TimeResolver, P3-55 TitleResolver, P3-56 timerUtils, P3-57 versionDiff |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
