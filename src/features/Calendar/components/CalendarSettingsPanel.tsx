@@ -11,8 +11,8 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import '../styles/CalendarSettingsPanel.css';
-import '../styles/CalendarPicker.css'; // 🎨 导入 CalendarPicker 样式以保持日历列表一致性
+import '@frontend/features/Calendar/styles/CalendarSettingsPanel.css';
+import '@frontend/features/Calendar/styles/CalendarPicker.css'; // 🎨 导入 CalendarPicker 样式以保持日历列表一致性
 
 export interface CalendarSettings {
   eventOpacity: number; // 0-100
