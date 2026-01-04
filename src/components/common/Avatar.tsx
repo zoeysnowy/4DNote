@@ -8,8 +8,8 @@
  */
 
 import React from 'react';
-import { Contact } from '../../types';
-import { ContactService } from '../../services/ContactService';
+import { Contact } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
 
 interface AvatarProps {
   contact: Contact;
