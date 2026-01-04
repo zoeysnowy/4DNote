@@ -1,5 +1,5 @@
-import type { EventObject, ExternalEventTypes, Options } from '../../../lib/tui.calendar/apps/calendar';
-import ToastUICalendar from '../../../lib/tui.calendar/apps/calendar';
+import type { EventObject, ExternalEventTypes, Options } from '@frontend/lib/tui.calendar/apps/calendar';
+import ToastUICalendar from '@frontend/lib/tui.calendar/apps/calendar';
 import React from 'react';
 
 // Helper function to check equality
