@@ -164,6 +164,7 @@
 | 2026-01-04 | P3-32: ContactModal alias-only imports | Convert cross-directory relative CSS import in `src/features/Contact/components/ContactModal/ContactModal.tsx` to `@frontend/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | 3178090 | Import-only changes; no behavior change |
 | 2026-01-04 | P3-33: CalendarGroupManager alias-only imports (CSS follow-up) | Convert relative CSS import in `src/features/Calendar/components/CalendarGroupManager.tsx` to `@frontend/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | 3f5693d | Import-only changes; no behavior change |
 | 2026-01-04 | P3-34: CalendarPicker alias-only imports (CSS follow-up) | Convert relative CSS import in `src/features/Calendar/components/CalendarPicker.tsx` to `@frontend/*` alias | Low | `npx tsc --noEmit`; `npm test -- --run` | 25303bd | Import-only changes; no behavior change |
+| 2026-01-04 | P3-35: CalendarSettingsPanel alias-only imports (CSS follow-up) | Convert relative CSS imports in `src/features/Calendar/components/CalendarSettingsPanel.tsx` to `@frontend/*` aliases | Low | `npx tsc --noEmit`; `npm test -- --run` | e99d57a | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
