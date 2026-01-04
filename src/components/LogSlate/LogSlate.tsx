@@ -14,18 +14,18 @@ import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps, ReactE
 import { withHistory } from 'slate-history';
 
 // 导入 SlateCore 共享组件
-import { TagElementComponent } from '../SlateCore/elements/TagElement';
-import DateMentionElement from '../SlateCore/elements/DateMentionElement';
-import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
+import { TagElementComponent } from '@frontend/components/SlateCore/elements/TagElement';
+import DateMentionElement from '@frontend/components/SlateCore/elements/DateMentionElement';
+import { EventMentionElement } from '@frontend/components/SlateCore/elements/EventMentionElement';
 // TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // 导入 SlateCore 格式化操作
-import { applyTextFormat, toggleFormat } from '../SlateCore/operations/formatting';
-import { insertTag, insertEmoji } from '../SlateCore/operations/inlineHelpers';
-import { insertSoftBreak } from '../SlateCore/operations/paragraphOperations';
+import { applyTextFormat, toggleFormat } from '@frontend/components/SlateCore/operations/formatting';
+import { insertTag, insertEmoji } from '@frontend/components/SlateCore/operations/inlineHelpers';
+import { insertSoftBreak } from '@frontend/components/SlateCore/operations/paragraphOperations';
 
 // 🆕 导入 TimestampService
-import { EventLogTimestampService } from '../SlateCore/services/timestampService';
+import { EventLogTimestampService } from '@frontend/components/SlateCore/services/timestampService';
 
 // 导入菜单组件
 import { MentionMenu } from './MentionMenu';
