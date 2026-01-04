@@ -10,7 +10,7 @@
 
 import { compare, applyPatch as applyJSONPatch, type Operation } from 'fast-json-patch';
 import pako from 'pako';
-import type { EventLog } from '../types';
+import type { EventLog } from '@frontend/types';
 import { formatTimeForStorage } from './timeUtils';
 
 export interface DeltaResult {
