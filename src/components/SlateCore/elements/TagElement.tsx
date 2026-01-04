@@ -6,8 +6,8 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { RenderElementProps, useSelected, useFocused } from 'slate-react';
-import { TagService } from '../../../services/TagService';
-import { TagNode } from '../types';
+import { TagService } from '@backend/TagService';
+import { TagNode } from '@frontend/components/SlateCore/types';
 
 export const TagElementComponent: React.FC<RenderElementProps> = ({ attributes, children, element }) => {
   const tagElement = element as TagNode;
