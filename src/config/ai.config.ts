@@ -2,8 +2,8 @@
  * AI 配置文件
  */
 
-import { LLMConfig } from '../ai/services/LLMService';
-import { EmbeddingConfig } from '../ai/services/EmbeddingService';
+import { LLMConfig } from '@frontend/ai/services/LLMService';
+import { EmbeddingConfig } from '@frontend/ai/services/EmbeddingService';
 
 /**
  * LLM 配置
