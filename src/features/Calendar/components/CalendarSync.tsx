@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { formatDisplayDateTime, formatTimeForStorage } from '../../../utils/timeUtils';
+import { formatDisplayDateTime, formatTimeForStorage } from '@frontend/utils/timeUtils';
 import CalendarGroupManager from './CalendarGroupManager';
 
 interface CalendarSyncProps {
