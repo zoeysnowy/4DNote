@@ -1,6 +1,6 @@
-import { EventService } from '../../services/EventService';
-import { TimeHub } from '../../services/TimeHub';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { EventService } from '@backend/EventService';
+import { TimeHub } from '@backend/TimeHub';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 describe('TimeHub basic set/get/subscribe', () => {
   beforeEach(() => {

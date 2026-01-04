@@ -1,5 +1,5 @@
-import { parseToTimeSpec } from '../../services/TimeParsingService';
-import { defaultTimePolicy } from '../../config/time.config';
+import { parseToTimeSpec } from '@backend/TimeParsingService';
+import { defaultTimePolicy } from '@frontend/config/time.config';
 
 describe('TimeParsingService - Chinese week windows', () => {
   const policy = defaultTimePolicy; // weekStart=1 (Mon) by default
