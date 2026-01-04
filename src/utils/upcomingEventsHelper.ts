@@ -1,5 +1,5 @@
-import { Event } from '../types';
-import { TagService } from '../services/TagService';
+import { Event } from '@frontend/types';
+import { TagService } from '@backend/TagService';
 import { parseLocalTimeStringOrNull } from './timeUtils';
 
 export type TimeFilter = 'today' | 'tomorrow' | 'week' | 'nextWeek' | 'all';
