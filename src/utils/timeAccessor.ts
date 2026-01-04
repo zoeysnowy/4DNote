@@ -3,7 +3,7 @@
  * TimeHub是唯一的时间数据源
  */
 
-import { TimeHub } from '../services/TimeHub';
+import { TimeHub } from '@backend/TimeHub';
 
 export interface EventTime {
   start: string | null;
