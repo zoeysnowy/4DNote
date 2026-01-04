@@ -13,10 +13,10 @@
  * 7. 验证数据一致性（IndexedDB vs SQLite）
  */
 
-import { EventService } from '../services/EventService';
-import { storageManager } from '../services/storage/StorageManager';
-import { generateEventId } from '../utils/calendarUtils';
-import type { Event } from '../types';
+import { EventService } from '@backend/EventService';
+import { storageManager } from '@backend/storage/StorageManager';
+import { generateEventId } from '@frontend/utils/calendarUtils';
+import type { Event } from '@frontend/types';
 
 export async function testCRUDIntegration() {
   console.log('\n🧪 ============================================');
