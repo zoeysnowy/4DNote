@@ -3,7 +3,7 @@
  * 从 PlanManager 提取的时间判断逻辑
  */
 
-import { Event } from '../types';
+import { Event } from '@frontend/types';
 import { formatTimeForStorage, parseLocalTimeString } from './timeUtils';
 
 export interface TimeRange {
