@@ -203,11 +203,12 @@ src/
 ### 1.2 子组件渲染
 
 根据 `currentPage` 渲染不同的页面组件：
-- **home**: `TimerCard` + `DailyStatsCard`
-- **calendar**: `TimeCalendar`
-- **plan**: `PlanManager`
-- **tag**: `TagManager` (FigmaTagManager)
-- **settings**: `SettingsModal`
+- **home**: `pages/Home`（聚合 Dashboard/Timer 等）
+- **calendar**: `pages/Calendar`（渲染 `features/Calendar`）
+- **plan**: `pages/Plan`（渲染 `features/Plan`）
+- **timelog**: `pages/TimeLog`（渲染 `features/TimeLog`）
+- **tag**: `pages/Tag`（渲染 `features/Tag/components/TagManager`）
+- **settings**: `pages/Settings`
 
 ### 1.3 模块事件处理规则 (v2.17.5)
 
@@ -644,7 +645,7 @@ App 组件会在以下情况重新渲染：
 
 2. **标签数据更新** - `tagsVersion` 增加
    - 触发场景:
-     - FigmaTagManager 修改标签
+     - TagPage/TagManager 修改标签
      - TagService.updateTags() 被调用
    - 影响: `hierarchicalTags` 重新计算
 
@@ -807,10 +808,10 @@ hierarchicalTags useMemo 重新执行
 EventEditModal 收到新 prop
 ```
 
-#### 4.4.2 FigmaTagManager ↔ App ↔ TagService
+#### 4.4.2 TagManager ↔ App ↔ TagService
 
 ```
-FigmaTagManager 用户修改标签
+TagManager 用户修改标签
   ↓
 onTagsChange(newTags)
   ↓
