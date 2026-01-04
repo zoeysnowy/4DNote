@@ -6,13 +6,13 @@
 
 import React from 'react';
 import { EventLineNode } from './types';
-import { useEventTime } from '../../hooks/useEventTime';
-import { formatRelativeTimeDisplay } from '../../utils/relativeDateFormatter';
-import { parseLocalTimeStringOrNull } from '../../utils/timeUtils';
+import { useEventTime } from '@frontend/hooks/useEventTime';
+import { formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
+import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import Tippy from '@tippyjs/react';
-import TimeHoverCard from '../TimeHoverCard';
-import { icons } from '../../assets/icons';
-import { EventService } from '../../services/EventService';
+import TimeHoverCard from '@frontend/components/TimeHoverCard';
+import { icons } from '@frontend/assets/icons';
+import { EventService } from '@backend/EventService';
 
 export interface EventLineSuffixProps {
   element: EventLineNode;
