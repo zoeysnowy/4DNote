@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod';
-import { ITool, ToolConfig, ToolResult } from '../../../types/ai/tool.types';
+import { ITool, ToolConfig, ToolResult } from '@frontend/types/ai/tool.types';
 
 /**
  * Tool 抽象基类
