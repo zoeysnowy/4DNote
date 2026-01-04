@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import type { Event } from '../types';
+import type { Event } from '@frontend/types';
 import { useEventHubSnapshot, type UseEventHubSnapshotOptions } from './useEventHubSnapshot';
 
 export type UseEventHubQueryOptions = UseEventHubSnapshotOptions;

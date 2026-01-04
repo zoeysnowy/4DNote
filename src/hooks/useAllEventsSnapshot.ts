@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { EventService } from '../services/EventService';
-import type { Event } from '../types';
+import { EventService } from '@backend/EventService';
+import type { Event } from '@frontend/types';
 
 type UseAllEventsSnapshotOptions = {
   enabled: boolean;

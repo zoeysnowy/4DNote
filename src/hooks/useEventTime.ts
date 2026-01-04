@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { TimeHub } from '../services/TimeHub';
-import { TimeGetResult, TimeSpec } from '../types/time';
+import { TimeHub } from '@backend/TimeHub';
+import type { TimeGetResult, TimeSpec } from '@frontend/types/time';
 
 export interface UseEventTimeResult extends TimeGetResult {
   loading: boolean;

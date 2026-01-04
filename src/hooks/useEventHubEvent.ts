@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import type { Event } from '../types';
+import type { Event } from '@frontend/types';
 import { useEventHubQuery } from './useEventHubQuery';
 import type { UseEventHubSnapshotOptions } from './useEventHubSnapshot';
 

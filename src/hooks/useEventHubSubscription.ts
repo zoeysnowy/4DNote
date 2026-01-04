@@ -18,9 +18,9 @@
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { Event } from '../types';
-import { EventHub } from '../services/EventHub';
-import { EventService } from '../services/EventService';
+import type { Event } from '@frontend/types';
+import { EventHub } from '@backend/EventHub';
+import { EventService } from '@backend/EventService';
 
 export interface UseEventHubSubscriptionOptions {
   /**
