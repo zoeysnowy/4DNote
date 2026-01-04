@@ -9,10 +9,10 @@
  */
 
 import type { EventObject } from '../lib/tui.calendar/apps/calendar';
-import { Event } from '../types';
-import { EventHub } from '../services/EventHub';
+import { Event } from '@frontend/types';
+import { EventHub } from '@backend/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
-import { CalendarService } from '../services/CalendarService';
+import { CalendarService } from '@backend/CalendarService';
 import dayjs from 'dayjs';
 import { resolveCalendarDateRange } from './TimeResolver';
 import { resolveDisplayTitle } from './TitleResolver';
