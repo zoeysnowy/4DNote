@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Event } from '../../../types';
+import { Event } from '@frontend/types';
 import { describe, it, expect } from 'vitest';
 
 // 测试用的事件数据
