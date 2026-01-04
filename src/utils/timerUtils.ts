@@ -2,7 +2,7 @@
  * Timer 相关工具函数
  */
 
-import { Event, SyncStatus } from '../types';
+import { Event, SyncStatus } from '@frontend/types';
 
 /**
  * 判断事件是否为运行中的 Timer
