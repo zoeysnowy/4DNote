@@ -10,7 +10,7 @@
  */
 
 import { Editor, Transforms, Range, Node, Element as SlateElement, Text as SlateText } from 'slate';
-import { TimestampDividerElement } from '../types';
+import { TimestampDividerElement } from '@frontend/components/SlateCore/types';
 
 /**
  * 检查两个日期是否为同一天
