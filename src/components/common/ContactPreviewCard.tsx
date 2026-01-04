@@ -12,9 +12,9 @@
 import React, { useState, useEffect } from 'react';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
-import { Contact, Event } from '../../types';
-import { ContactService } from '../../services/ContactService';
-import { EventService } from '../../services/EventService';
+import { Contact, Event } from '@frontend/types';
+import { ContactService } from '@backend/ContactService';
+import { EventService } from '@backend/EventService';
 import { EditableField } from './EditableField';
 import './ContactPreviewCard.css';
 
