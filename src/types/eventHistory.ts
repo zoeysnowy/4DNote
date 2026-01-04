@@ -2,7 +2,7 @@
  * 事件历史记录相关类型定义
  */
 
-import { Event } from '../types';
+import { Event } from '@frontend/types';
 
 /**
  * 变更操作类型
