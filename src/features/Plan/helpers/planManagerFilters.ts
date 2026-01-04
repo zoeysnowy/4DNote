@@ -7,10 +7,10 @@
  * 3. 过期/完成处理：根据模式决定是否显示
  */
 
-import type { Event } from '../../../types';
-import { EventService } from '../../../services/EventService';
-import { resolveCalendarDateRange } from '../../../utils/TimeResolver';
-import { parseLocalTimeStringOrNull } from '../../../utils/timeUtils';
+import type { Event } from '@frontend/types';
+import { EventService } from '@backend/EventService';
+import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
+import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 /**
  * 检查事件是否应该显示在PlanManager中
