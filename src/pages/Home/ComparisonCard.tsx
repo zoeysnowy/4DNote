@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
 import { TimeRange } from './TimeRangeSelector';
-import { EventService } from '../../services/EventService';
-import { parseLocalTimeString } from '../../utils/timeUtils';
+import { EventService } from '@backend/EventService';
+import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import './ComparisonCard.css';
 
 export interface ComparisonCardProps {

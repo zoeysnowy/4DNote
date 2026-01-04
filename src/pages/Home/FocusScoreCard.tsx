@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { DashboardCard } from './DashboardCard';
-import { EventService } from '../../services/EventService';
+import { EventService } from '@backend/EventService';
 import { TimeRange } from './TimeRangeSelector';
-import { parseLocalTimeString } from '../../utils/timeUtils';
+import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import './FocusScoreCard.css';
 
 interface FocusData {

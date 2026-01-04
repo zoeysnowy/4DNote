@@ -3,10 +3,11 @@ import { StatsControlBar, StatsDimension, StatsTimeRange } from './StatsControlB
 import { PieChartView } from './charts/PieChartView';
 import { LineChartView } from './charts/LineChartView';
 import { PixelView } from './charts/PixelView';
-import { EventService } from '../../services/EventService';
-import { TagService } from '../../services/TagService';
-import { getAvailableCalendarsForSettings } from '../../utils/calendarUtils';
-import { parseLocalTimeString } from '../../utils/timeUtils';
+import { EventService } from '@backend/EventService';
+import { TagService } from '@backend/TagService';
+import type { EventStats } from '@backend/storage/types';
+import { getAvailableCalendarsForSettings } from '@frontend/utils/calendarUtils';
+import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import './StatsPanel.css';
 
 /**
@@ -25,11 +26,11 @@ export const StatsPanel: React.FC = () => {
   const [customRange, setCustomRange] = useState<[Date, Date] | null>(null);
   const [viewMode, setViewMode] = useState<'pie' | 'line' | 'pixel'>('pie');
   const [loading, setLoading] = useState(false);
-  const [eventStats, setEventStats] = useState<import('../../services/storage/types').EventStats[]>([]);
+  const [eventStats, setEventStats] = useState<EventStats[]>([]);
   const [availableCalendars, setAvailableCalendars] = useState<Array<{id: string, name: string, color: string}>>([]);
 
   // 计算事件时长（毫秒）- 从 EventStats 计算
-  const getEventDuration = (stats: import('../../services/storage/types').EventStats): number => {
+  const getEventDuration = (stats: EventStats): number => {
     if (!stats.startTime || !stats.endTime) return 0;
     try {
       return parseLocalTimeString(stats.endTime).getTime() - parseLocalTimeString(stats.startTime).getTime();
