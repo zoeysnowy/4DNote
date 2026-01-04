@@ -14,7 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import { Event } from '@frontend/types';
 import { EventService } from '@backend/EventService';
-import { EventTreeCanvas } from '../EventTree/EventTreeCanvas';
+import { EventTreeCanvas } from '@frontend/features/Event/components/EventTree/EventTreeCanvas';
 
 interface EventRelationSummaryProps {
   event: Event;                     // 当前事件
