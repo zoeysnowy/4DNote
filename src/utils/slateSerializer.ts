@@ -12,7 +12,7 @@
  */
 
 import { Descendant, Text as SlateText } from 'slate';
-import type { EventLog } from '../types';
+import type { EventLog } from '@frontend/types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './timeUtils';
 
 // ==================== EventLog 转换 ====================
