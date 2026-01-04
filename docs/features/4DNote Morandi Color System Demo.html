@@ -1,0 +1,579 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { Copy, Check, MessageSquare, Calendar, Leaf, ArrowRight, CornerDownRight, Flower } from 'lucide-react';
+
+const ColorSystemDemo = () => {
+  const [activeTab, setActiveTab] = useState('ui');
+  const [copiedColor, setCopiedColor] = useState(null);
+
+  // 完整色卡数据
+  const palette = {
+    primary: {
+      name: 'Brand Purple',
+      colors: {
+        'light': '#C084FC',
+        'main': '#A855F7',
+        'dark': '#9333EA',
+      }
+    },
+    red: {
+      name: 'Morandi Red (Emotion)',
+      colors: {
+        '50': '#F5E8E8', // 极浅
+        '100': '#E8D5D5',
+        '200': '#D4A5A5',
+        '500': '#B88B8D', // 主色
+        '700': '#8B6B6B',
+      }
+    },
+    green: {
+      name: 'Morandi Green (Growth)',
+      colors: {
+        '50': '#EFF3EB', // 极浅
+        '100': '#E0E8D8',
+        '200': '#A8B5A0',
+        '500': '#8A9B7E', // 主色
+        '700': '#6B7A5E',
+      }
+    },
+    yellow: {
+      name: 'Morandi Yellow (Life)',
+      colors: {
+        '50': '#F5F0E8', // 极浅
+        '100': '#EBE3D5',
+        '200': '#D9C9A8',
+        '500': '#B5A582', // 主色
+        '700': '#8B7D5E',
+      }
+    },
+    blue: {
+      name: 'Morandi Blue (Work)',
+      colors: {
+        '50': '#EDF1F5', // 极浅
+        '100': '#DFE6ED',
+        '200': '#A5B5C4',
+        '500': '#7A90A5', // 主色
+        '700': '#5B6E7E',
+      }
+    }
+  };
+
+  const copyToClipboard = (hex) => {
+    navigator.clipboard.writeText(hex);
+    setCopiedColor(hex);
+    setTimeout(() => setCopiedColor(null), 1500);
+  };
+
+  const ColorSwatch = ({ hex, label, darkText = false }) => (
+    <div 
+      onClick={() => copyToClipboard(hex)}
+      className="group relative flex flex-col items-center cursor-pointer transition-transform hover:scale-105"
+    >
+      <div 
+        className="w-full h-24 rounded-lg shadow-sm mb-2 flex items-center justify-center relative overflow-hidden"
+        style={{ backgroundColor: hex }}
+      >
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+        {copiedColor === hex && (
+          <div className="bg-white/90 p-2 rounded-full shadow-lg animate-in fade-in zoom-in duration-200">
+            <Check size={16} className="text-green-600" />
+          </div>
+        )}
+        <span className={`opacity-0 group-hover:opacity-100 absolute bottom-2 right-2 text-xs font-mono ${darkText ? 'text-gray-800' : 'text-white/90'}`}>
+          <Copy size={12} className="inline mr-1" />
+          Click
+        </span>
+      </div>
+      <div className="text-center">
+        <p className="font-bold text-gray-700 text-sm">{label}</p>
+        <p className="text-gray-400 text-xs font-mono uppercase">{hex}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-8 font-sans text-gray-800">
+      <header className="mb-10 max-w-5xl mx-auto">
+        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg" style={{ backgroundColor: palette.primary.colors.main }}></div>
+          4DNote Design System
+        </h1>
+        <p className="text-gray-500">Morandi Palette for AI Roots & Echo Garden</p>
+        
+        <div className="flex gap-4 mt-6">
+          <button 
+            onClick={() => setActiveTab('ui')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'ui' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+          >
+            Live UI Demo
+          </button>
+          <button 
+            onClick={() => setActiveTab('swatches')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'swatches' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+          >
+            Color Swatches
+          </button>
+        </div>
+      </header>
+
+      {/* ========== UI DEMO TAB ========== */}
+      {activeTab === 'ui' && (
+        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-2 gap-8">
+          
+          {/* LEFT: AI ROOTS DEMO */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2 text-gray-700">
+                <Leaf size={18} className="text-green-600" />
+                AI Roots (Nested Chat)
+              </h2>
+              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">Editor View</span>
+            </div>
+            
+            <div className="p-8">
+              <p className="text-gray-800 leading-relaxed mb-4">
+                We are focusing on <mark className="px-1 rounded" style={{ backgroundColor: palette.yellow.colors['50'], borderBottom: `2px solid ${palette.yellow.colors['500']}` }}>organic growth strategies</mark> for the new product launch. The core idea is to let users discover value naturally.
+              </p>
+
+              {/* LEVEL 1 ROOT */}
+              <div className="ml-4 relative mb-6 rounded-lg border-l-2 p-4 transition-all hover:shadow-md"
+                   style={{ 
+                     backgroundColor: palette.green.colors['50'], // 极浅绿背景
+                     borderLeftColor: palette.green.colors['500'], // 莫兰迪绿边框
+                     borderColor: palette.green.colors['100'] // 浅绿边框
+                   }}>
+                
+                {/* Connector Line Visualization */}
+                <div className="absolute -left-[2px] top-0 bottom-0 w-[2px]" style={{ backgroundColor: palette.green.colors['500'] }}></div>
+                
+                <div className="flex items-start gap-3 mb-3">
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-xs" style={{ backgroundColor: palette.primary.colors.main }}>AI</div>
+                  <div className="text-sm text-gray-700">
+                    <p className="mb-2">Based on your notes, here are 3 organic growth strategies:</p>
+                    <ul className="list-disc pl-4 space-y-1 text-gray-600">
+                      <li>Community-led events</li>
+                      <li>Content loops (SEO)</li>
+                      <li>Referral incentives</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="flex gap-2 mb-4">
+                  <button className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors hover:opacity-90"
+                          style={{ backgroundColor: palette.green.colors['500'], color: 'white' }}>
+                    Grow Deeper
+                  </button>
+                  <button className="text-xs px-3 py-1.5 rounded-md font-medium transition-colors hover:opacity-80"
+                          style={{ backgroundColor: 'white', color: palette.green.colors['700'], border: `1px solid ${palette.green.colors['200']}` }}>
+                    Harvest
+                  </button>
+                </div>
+
+                {/* LEVEL 2 NESTED ROOT */}
+                <div className="ml-6 relative rounded-lg border-l-2 p-3"
+                     style={{ 
+                       backgroundColor: palette.blue.colors['50'], // 极浅蓝背景
+                       borderLeftColor: palette.blue.colors['500'],
+                       border: `1px solid ${palette.blue.colors['100']}`
+                     }}>
+                   <div className="flex items-start gap-3">
+                    <div className="shrink-0 mt-1">
+                      <CornerDownRight size={14} style={{ color: palette.blue.colors['500'] }} />
+                    </div>
+                    <div className="text-sm">
+                      <p className="text-gray-500 text-xs mb-1">Reply to: "Content loops"</p>
+                      <p className="text-gray-700">How can we apply content loops to our specific niche?</p>
+                      <div className="mt-2 p-2 rounded bg-white/60 text-gray-600 text-xs border border-blue-100">
+                        AI is typing...
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-gray-800 leading-relaxed">
+                By implementing these loops, we ensure sustainable retention.
+              </p>
+            </div>
+          </section>
+
+          {/* RIGHT: ECHO GARDEN DEMO */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2 text-gray-700">
+                <Calendar size={18} className="text-blue-500" />
+                Echo Garden (Timeline)
+              </h2>
+              <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">Garden View</span>
+            </div>
+
+            <div className="p-6 space-y-4">
+              
+              {/* Event Card: Work (Blue) */}
+              <div className="flex gap-4 group">
+                <div className="w-16 text-right pt-2 text-xs font-mono text-gray-400">09:00</div>
+                <div className="flex-1 p-4 rounded-xl border-l-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                     style={{ 
+                       backgroundColor: palette.blue.colors['50'], 
+                       borderLeftColor: palette.blue.colors['500'] 
+                     }}>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-medium text-gray-800">Product Review</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                          style={{ backgroundColor: palette.blue.colors['100'], color: palette.blue.colors['700'] }}>
+                      WORK
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600 mb-2">Discussed the AI Roots architecture.</p>
+                  <div className="flex items-center gap-2 text-xs" style={{ color: palette.blue.colors['500'] }}>
+                    <MessageSquare size={12} />
+                    <span>3 thoughts harvested</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Event Card: Life (Yellow) */}
+              <div className="flex gap-4 group">
+                <div className="w-16 text-right pt-2 text-xs font-mono text-gray-400">12:30</div>
+                <div className="flex-1 p-4 rounded-xl border-l-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                     style={{ 
+                       backgroundColor: palette.yellow.colors['50'], 
+                       borderLeftColor: palette.yellow.colors['500'] 
+                     }}>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-medium text-gray-800">Reading Time</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                          style={{ backgroundColor: palette.yellow.colors['100'], color: palette.yellow.colors['700'] }}>
+                      LIFE
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ backgroundColor: 'white' }}>
+                       <Flower size={14} style={{ color: palette.yellow.colors['500'] }} />
+                    </div>
+                    <span className="text-xs text-gray-500">Idea planted from "The Mom Test"</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Event Card: Emotion/Urgent (Red) */}
+              <div className="flex gap-4 group">
+                <div className="w-16 text-right pt-2 text-xs font-mono text-gray-400">15:00</div>
+                <div className="flex-1 p-4 rounded-xl border-l-4 transition-all hover:-translate-y-0.5 hover:shadow-sm"
+                     style={{ 
+                       backgroundColor: palette.red.colors['50'], 
+                       borderLeftColor: palette.red.colors['500'] 
+                     }}>
+                  <div className="flex justify-between items-start mb-1">
+                    <h3 className="font-medium text-gray-800">Critical Bug Fix</h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium"
+                          style={{ backgroundColor: palette.red.colors['100'], color: palette.red.colors['700'] }}>
+                      URGENT
+                    </span>
+                  </div>
+                  <p className="text-sm text-gray-600">Fixed the nested scrolling issue in mobile view.</p>
+                </div>
+              </div>
+
+            </div>
+          </section>
+        </div>
+      )}
+
+      {/* ========== COLOR SWATCHES TAB ========== */}
+      {activeTab === 'swatches' && (
+        <div className="max-w-6xl mx-auto space-y-12">
+          
+          {/* Primary */}
+          <section>
+            <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <span className="w-2 h-6 rounded bg-purple-500"></span>
+              Primary Brand Color
+            </h3>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6 max-w-2xl">
+              <ColorSwatch hex={palette.primary.colors.light} label="Light" darkText={true} />
+              <ColorSwatch hex={palette.primary.colors.main} label="Main (Brand)" />
+              <ColorSwatch hex={palette.primary.colors.dark} label="Dark" />
+            </div>
+          </section>
+
+          <hr className="border-gray-200" />
+
+          {/* Families */}
+          {['red', 'green', 'yellow', 'blue'].map((family) => (
+            <section key={family}>
+              <h3 className="text-xl font-bold mb-6 flex items-center gap-2 capitalize">
+                <span className="w-2 h-6 rounded" style={{ backgroundColor: palette[family].colors['500'] }}></span>
+                {palette[family].name}
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <ColorSwatch hex={palette[family].colors['50']} label="50 (Bg)" darkText={true} />
+                <ColorSwatch hex={palette[family].colors['100']} label="100 (Subtle)" darkText={true} />
+                <ColorSwatch hex={palette[family].colors['200']} label="200 (Light)" darkText={true} />
+                <ColorSwatch hex={palette[family].colors['500']} label="500 (Main)" />
+                <ColorSwatch hex={palette[family].colors['700']} label="700 (Text)" />
+              </div>
+              
+              {/* Usage Guide */}
+              <div className="mt-4 flex gap-4 text-xs text-gray-500 font-mono">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: palette[family].colors['50'] }}></div>
+                  <span>Backgrounds</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: palette[family].colors['500'] }}></div>
+                  <span>Borders/Icons</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded" style={{ backgroundColor: palette[family].colors['700'] }}></div>
+                  <span>Text/Dark Mode</span>
+                </div>
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <ColorSystemDemo />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>

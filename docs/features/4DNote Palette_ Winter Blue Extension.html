@@ -1,0 +1,555 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { Copy, Check, MessageSquare, Calendar, Leaf, PenTool, Highlighter, CornerDownRight, Flower } from 'lucide-react';
+
+const ColorSystemDemo = () => {
+  const [activeTab, setActiveTab] = useState('ui');
+  const [copiedColor, setCopiedColor] = useState(null);
+
+  // 扩展后的色卡数据
+  const palette = {
+    // 1. 品牌色
+    primary: {
+      name: 'Brand Purple',
+      colors: { 'light': '#C084FC', 'main': '#A855F7', 'dark': '#9333EA' }
+    },
+    // 2. 灵感来源：你提供的图片色
+    winter: {
+      name: 'Inspiration: Flowers in Winter',
+      colors: {
+        'Deep': '#0068A7',
+        'Glacier': '#61B0D3',
+        'Foggy': '#6C84B1', // <--- 你最喜欢的雾霭蓝
+        'Pink': '#F8B5B5',
+        'White': '#F1F0F8'
+      }
+    },
+    // 3. 功能性：蓝色高亮扩展
+    highlights: {
+      name: 'Functional Blue Highlights',
+      colors: {
+        'Subtle': '#E3F2FD',   // 极浅空蓝 (大面积背景)
+        'Fresh': '#D1E9FC',    // 透亮冰蓝 (常规高亮)
+        'Foggy-Lt': '#C4D9F5', // 淡雾蓝 (基于#6C84B1减淡，推荐！)
+        'Vibrant': '#61B0D3',  // 选中状态 (Selection)
+        'Text': '#4A90E2'      // 强调文字/链接
+      }
+    },
+    // 4. 原莫兰迪色系 (保留用于对比)
+    morandi: {
+      name: 'Base Morandi System',
+      groups: {
+        red: { main: '#B88B8D', bg: '#F5E8E8' },
+        green: { main: '#8A9B7E', bg: '#EFF3EB' },
+        yellow: { main: '#B5A582', bg: '#F5F0E8' },
+      }
+    }
+  };
+
+  const copyToClipboard = (hex) => {
+    navigator.clipboard.writeText(hex);
+    setCopiedColor(hex);
+    setTimeout(() => setCopiedColor(null), 1500);
+  };
+
+  const ColorSwatch = ({ hex, label, darkText = false, isFavorite = false }) => (
+    <div 
+      onClick={() => copyToClipboard(hex)}
+      className="group relative flex flex-col items-center cursor-pointer transition-transform hover:scale-105"
+    >
+      <div 
+        className={`w-full h-20 rounded-lg shadow-sm mb-2 flex items-center justify-center relative overflow-hidden ${isFavorite ? 'ring-2 ring-offset-2 ring-purple-500' : ''}`}
+        style={{ backgroundColor: hex }}
+      >
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+        {copiedColor === hex && (
+          <div className="bg-white/90 p-2 rounded-full shadow-lg animate-in fade-in zoom-in duration-200">
+            <Check size={16} className="text-green-600" />
+          </div>
+        )}
+        {isFavorite && (
+          <div className="absolute top-1 right-1 text-white drop-shadow-md">
+            <span className="text-[10px] bg-black/20 px-1 rounded backdrop-blur-sm">❤️ Fav</span>
+          </div>
+        )}
+      </div>
+      <div className="text-center">
+        <p className="font-bold text-gray-700 text-xs">{label}</p>
+        <p className="text-gray-400 text-[10px] font-mono uppercase">{hex}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-6 lg:p-10 font-sans text-gray-800">
+      <header className="mb-8 max-w-5xl mx-auto">
+        <h1 className="text-3xl font-bold mb-2 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg shadow-sm" style={{ backgroundColor: palette.primary.colors.main }}></div>
+          4DNote Design System
+        </h1>
+        <p className="text-gray-500">Updated with "Winter Flowers" Blue Extension</p>
+        
+        <div className="flex gap-4 mt-6">
+          <button 
+            onClick={() => setActiveTab('ui')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'ui' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+          >
+            Live UI Demo
+          </button>
+          <button 
+            onClick={() => setActiveTab('swatches')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'swatches' ? 'bg-gray-900 text-white' : 'bg-white text-gray-600 hover:bg-gray-100'}`}
+          >
+            All Swatches
+          </button>
+        </div>
+      </header>
+
+      {/* ========== UI DEMO TAB ========== */}
+      {activeTab === 'ui' && (
+        <div className="max-w-5xl mx-auto space-y-8">
+
+          {/* NEW SECTION: HIGHLIGHT DEMO */}
+          <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+              <h2 className="font-semibold flex items-center gap-2 text-gray-700">
+                <Highlighter size={18} className="text-blue-500" />
+                Highlight Engine (Blue Extension)
+              </h2>
+            </div>
+            
+            <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Level 1: Subtle Background</label>
+                  <p className="text-gray-700 leading-relaxed p-4 rounded-lg border border-transparent" 
+                     style={{ backgroundColor: palette.highlights.colors['Subtle'] }}>
+                    Used for large block quotes or callouts. <span className="font-medium">#E3F2FD</span> is extremely light, providing structure without overwhelming the eye.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Level 2: Standard Highlight (Recommended)</label>
+                  <p className="text-gray-700 leading-relaxed">
+                    This is regular text but <mark className="px-1 py-0.5 rounded text-gray-800" style={{ backgroundColor: palette.highlights.colors['Foggy-Lt'] }}>we are highlighting this specific phrase</mark> using your "Foggy Light" blue. It retains the greyish tone of your favorite color.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                 <div>
+                  <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Level 3: Selection / Active</label>
+                  <p className="text-gray-700 leading-relaxed">
+                    When a user selects text, we use the <span className="px-1" style={{ backgroundColor: palette.highlights.colors['Vibrant'], color: 'white' }}>Glacier Blue</span> at higher opacity or pure color.
+                  </p>
+                </div>
+
+                <div>
+                   <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 block">Emphasis Text</label>
+                   <p className="text-gray-700">
+                     Sometimes you don't need a background. You just need <a href="#" style={{ color: palette.highlights.colors['Text'], textDecoration: 'underline' }}>strong blue text</a> for links or clickable elements.
+                   </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          
+          {/* COMBINED DEMO: AI ROOTS + GARDEN */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            {/* LEFT: AI ROOTS (Updated with Foggy Blue #6C84B1) */}
+            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+                <Leaf size={18} style={{ color: palette.winter.colors['Foggy'] }} />
+                <h2 className="font-semibold text-gray-700">AI Roots (Foggy Blue Theme)</h2>
+              </div>
+              
+              <div className="p-6">
+                <p className="text-gray-800 mb-4">
+                  Analyzing the market data for <mark className="px-1 rounded" style={{ backgroundColor: palette.highlights.colors['Foggy-Lt'] }}>Q4 user retention</mark>.
+                </p>
+
+                {/* ROOT CARD */}
+                <div className="ml-4 relative mb-6 rounded-lg border-l-2 p-4"
+                     style={{ 
+                       backgroundColor: palette.winter.colors['White'], // Winter white background
+                       borderLeftColor: palette.winter.colors['Foggy'], // <--- 核心改动：用你喜欢的雾霭蓝
+                       border: `1px solid ${palette.highlights.colors['Subtle']}`
+                     }}>
+                  
+                  {/* Connector Line */}
+                  <div className="absolute -left-[2px] top-0 bottom-0 w-[2px]" style={{ backgroundColor: palette.winter.colors['Foggy'] }}></div>
+                  
+                  <div className="flex items-start gap-3 mb-3">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 text-white text-xs shadow-sm" style={{ backgroundColor: palette.winter.colors['Foggy'] }}>AI</div>
+                    <div className="text-sm text-gray-700">
+                      <p className="mb-2">I found a pattern in the "Winter" cohort.</p>
+                      <div className="flex gap-2">
+                        <span className="px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-600">Retention +15%</span>
+                        <span className="px-2 py-0.5 rounded text-xs text-white" style={{ backgroundColor: palette.winter.colors['Glacier'] }}>High Value</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* NESTED ROOT */}
+                  <div className="ml-6 relative mt-4">
+                     <div className="flex items-start gap-3">
+                      <CornerDownRight size={14} style={{ color: palette.winter.colors['Foggy'] }} />
+                      <div className="text-sm bg-gray-50 p-3 rounded-lg w-full border border-gray-100">
+                        <p className="text-gray-600 text-xs mb-1">Reply to AI...</p>
+                        <p className="text-gray-700">Why did the Winter cohort perform better?</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            {/* RIGHT: ECHO GARDEN (Updated with Deep Blue) */}
+            <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="p-4 border-b border-gray-100 bg-gray-50/50 flex items-center gap-2">
+                <Calendar size={18} style={{ color: palette.winter.colors['Deep'] }} />
+                <h2 className="font-semibold text-gray-700">Echo Garden (Winter Palette)</h2>
+              </div>
+
+              <div className="p-6 space-y-4">
+                {/* Event 1: Deep Blue (Work) */}
+                <div className="flex gap-4">
+                  <div className="w-12 text-right pt-2 text-xs font-mono text-gray-400">10:00</div>
+                  <div className="flex-1 p-3 rounded-xl border-l-4"
+                       style={{ 
+                         backgroundColor: palette.highlights.colors['Subtle'], 
+                         borderLeftColor: palette.winter.colors['Deep'] 
+                       }}>
+                    <h3 className="font-medium text-gray-800 text-sm">Strategy Meeting</h3>
+                    <span className="text-[10px] text-gray-500">Tag: Work</span>
+                  </div>
+                </div>
+
+                {/* Event 2: Foggy Blue (Creative) */}
+                <div className="flex gap-4">
+                  <div className="w-12 text-right pt-2 text-xs font-mono text-gray-400">14:00</div>
+                  <div className="flex-1 p-3 rounded-xl border-l-4"
+                       style={{ 
+                         backgroundColor: palette.winter.colors['White'], 
+                         borderLeftColor: palette.winter.colors['Foggy'] 
+                       }}>
+                    <h3 className="font-medium text-gray-800 text-sm">Design Review</h3>
+                    <p className="text-xs text-gray-500 mt-1">Reviewing the new blue palette.</p>
+                  </div>
+                </div>
+
+                {/* Event 3: Pink (from Image) */}
+                 <div className="flex gap-4">
+                  <div className="w-12 text-right pt-2 text-xs font-mono text-gray-400">16:30</div>
+                  <div className="flex-1 p-3 rounded-xl border-l-4"
+                       style={{ 
+                         backgroundColor: '#FFF5F5', 
+                         borderLeftColor: palette.winter.colors['Pink'] 
+                       }}>
+                    <h3 className="font-medium text-gray-800 text-sm">Break & Tea</h3>
+                    <div className="flex items-center gap-1 mt-1">
+                       <Flower size={12} style={{ color: palette.winter.colors['Pink'] }} />
+                       <span className="text-[10px] text-gray-500">Rest</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </section>
+          </div>
+
+        </div>
+      )}
+
+      {/* ========== SWATCHES TAB ========== */}
+      {activeTab === 'swatches' && (
+        <div className="max-w-4xl mx-auto space-y-12">
+          
+          {/* Section 1: Winter Inspiration */}
+          <section>
+            <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <div className="p-1 rounded bg-blue-100"><Flower size={16} className="text-blue-600"/></div>
+              Original Inspiration: "Flowers in Winter"
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">Colors extracted directly from your image.</p>
+            <div className="grid grid-cols-5 gap-4">
+              <ColorSwatch hex={palette.winter.colors['Deep']} label="Deep Ocean" darkText={false} />
+              <ColorSwatch hex={palette.winter.colors['Glacier']} label="Glacier" darkText={false} />
+              <ColorSwatch hex={palette.winter.colors['Foggy']} label="Foggy Blue" darkText={false} isFavorite={true} />
+              <ColorSwatch hex={palette.winter.colors['Pink']} label="Winter Pink" darkText={false} />
+              <ColorSwatch hex={palette.winter.colors['White']} label="Snow White" darkText={true} />
+            </div>
+          </section>
+
+          {/* Section 2: Functional Highlights */}
+          <section>
+            <h3 className="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
+              <div className="p-1 rounded bg-blue-100"><Highlighter size={16} className="text-blue-600"/></div>
+              Functional Blue Highlights
+            </h3>
+            <p className="text-sm text-gray-500 mb-6">Extended variations for UI states & text marking.</p>
+            <div className="grid grid-cols-5 gap-4">
+              <ColorSwatch hex={palette.highlights.colors['Subtle']} label="L1: Subtle" darkText={true} />
+              <ColorSwatch hex={palette.highlights.colors['Fresh']} label="L2: Fresh" darkText={true} />
+              <ColorSwatch hex={palette.highlights.colors['Foggy-Lt']} label="L3: Foggy Lt" darkText={true} />
+              <ColorSwatch hex={palette.highlights.colors['Vibrant']} label="L4: Select" darkText={false} />
+              <ColorSwatch hex={palette.highlights.colors['Text']} label="Text/Link" darkText={false} />
+            </div>
+          </section>
+
+           {/* Section 3: Brand */}
+          <section className="opacity-60 hover:opacity-100 transition-opacity">
+            <h3 className="text-sm font-bold mb-4 text-gray-400 uppercase tracking-widest">Base Brand Color</h3>
+            <div className="grid grid-cols-5 gap-4">
+              <ColorSwatch hex={palette.primary.colors.main} label="Purple" />
+            </div>
+          </section>
+
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <ColorSystemDemo />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>
