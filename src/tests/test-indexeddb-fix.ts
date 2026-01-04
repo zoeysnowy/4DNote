@@ -7,8 +7,8 @@
  * 3. 验证双写功能正常
  */
 
-import { StorageManager } from '../services/storage/StorageManager';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { StorageManager } from '@backend/storage/StorageManager';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 export async function testIndexedDBFix() {
   console.log('\n🧪 ============================================');
