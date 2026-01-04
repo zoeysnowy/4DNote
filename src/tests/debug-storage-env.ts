@@ -25,7 +25,7 @@ if (typeof window !== 'undefined') {
     // 3. 检查存储服务
     console.log('\n3️⃣  Storage Services:');
     try {
-      const { storageManager } = require('../services/storage');
+      const { storageManager } = require('@backend/storage');
       console.log('   - StorageManager:', storageManager ? '✅ Available' : '❌ Not available');
     } catch (e) {
       console.log('   - StorageManager: ❌ Import failed');
