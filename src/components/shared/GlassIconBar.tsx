@@ -3,15 +3,15 @@ import './GlassIconBar.css';
 
 // 使用真实 SVG 资源（位于 assets/icons）
 // 说明：项目已安装 vite-plugin-svgr，可使用 ?react 方式，也可用 <img>. 为减少打包体积与保持现有 index.ts 结构，这里用 <img src>。
-import recordSvg from '../assets/icons/add.svg';
-import voiceSvg from '../assets/icons/voice.svg';
-import videoSvg from '../assets/icons/video.svg';
-import imageSvg from '../assets/icons/add_pic.svg';
-import audioSvg from '../assets/icons/RecNote.svg';
-import docSvg from '../assets/icons/doc.svg';
-import projectSvg from '../assets/icons/project.svg';
-import bookmarkSvg from '../assets/icons/collect.svg';
-import exportSvg from '../assets/icons/export.svg';
+import recordSvg from '@frontend/assets/icons/add.svg';
+import voiceSvg from '@frontend/assets/icons/voice.svg';
+import videoSvg from '@frontend/assets/icons/video.svg';
+import imageSvg from '@frontend/assets/icons/add_pic.svg';
+import audioSvg from '@frontend/assets/icons/RecNote.svg';
+import docSvg from '@frontend/assets/icons/doc.svg';
+import projectSvg from '@frontend/assets/icons/project.svg';
+import bookmarkSvg from '@frontend/assets/icons/collect.svg';
+import exportSvg from '@frontend/assets/icons/export.svg';
 
 interface GlassIconSpec {
   id: string;
