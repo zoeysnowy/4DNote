@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { formatRelativeDate } from '../../utils/relativeDateFormatter';
+import { formatRelativeDate } from '@frontend/utils/relativeDateFormatter';
 import './MentionPreview.css';
 
 export interface MentionPreviewProps {
