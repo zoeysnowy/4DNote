@@ -1,19 +1,19 @@
 import React, { useState, useMemo } from 'react';
 import './ContentSelectionPanel.css';
-import { CalendarService } from '../services/CalendarService';
-import type { Calendar, CalendarGroup } from '../types/calendar';
-import { useEventHubSnapshot } from '../hooks/useEventHubSnapshot';
+import { CalendarService } from '@frontend/services/CalendarService';
+import type { Calendar, CalendarGroup } from '@frontend/types/calendar';
+import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 
 // 导入本地 SVG 图标
-import SearchIconSvg from '../assets/icons/Search.svg';
-import HideIconSvg from '../assets/icons/hide.svg';
-import UnhideIconSvg from '../assets/icons/unhide.svg';
-import DownIconSvg from '../assets/icons/down.svg';
-import RightIconSvg from '../assets/icons/right.svg';
-import PiechartIconSvg from '../assets/icons/piechart.svg';
-import NoticeIconSvg from '../assets/icons/Notice.svg';
-import PinIconSvg from '../assets/icons/Pin.svg';
-import NotetreeIconSvg from '../assets/icons/Notetree.svg';
+import SearchIconSvg from '@frontend/assets/icons/Search.svg';
+import HideIconSvg from '@frontend/assets/icons/hide.svg';
+import UnhideIconSvg from '@frontend/assets/icons/unhide.svg';
+import DownIconSvg from '@frontend/assets/icons/down.svg';
+import RightIconSvg from '@frontend/assets/icons/right.svg';
+import PiechartIconSvg from '@frontend/assets/icons/piechart.svg';
+import NoticeIconSvg from '@frontend/assets/icons/Notice.svg';
+import PinIconSvg from '@frontend/assets/icons/Pin.svg';
+import NotetreeIconSvg from '@frontend/assets/icons/Notetree.svg';
 
 // 图标组件
 const SearchIcon = ({ className }: { className?: string }) => <img src={SearchIconSvg} alt="" className={className} style={{ width: '23px', height: '23px', opacity: 0.6 }} />;
