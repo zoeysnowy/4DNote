@@ -3,9 +3,9 @@
  * 用于测试 IndexedDBService 的基本功能
  */
 
-import { indexedDBService } from '../services/storage';
-import type { StorageEvent, Account, Calendar } from '../services/storage/types';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { indexedDBService } from '@backend/storage';
+import type { StorageEvent, Account, Calendar } from '@backend/storage/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 export async function testStorageModule() {
   console.log('========================================');
