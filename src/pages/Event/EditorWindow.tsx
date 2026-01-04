@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { EventEditModalV2 } from '@frontend/features/Event';
-import { EventService } from '../../services/EventService';
-import { getAvailableCalendarsForSettings } from '../../utils/calendarUtils';
-import type { Event } from '../../types';
+import { EventService } from '@backend/EventService';
+import { getAvailableCalendarsForSettings } from '@frontend/utils/calendarUtils';
+import type { Event } from '@frontend/types';
 import './EditorWindow.css';
 
 /**
