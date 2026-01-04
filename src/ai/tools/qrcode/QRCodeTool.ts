@@ -3,11 +3,11 @@
  * 识别图片中的二维码并提取链接、文本等信息
  */
 
-import { BaseTool } from '../base/Tool';
+import { BaseTool } from '@frontend/ai/tools/base/Tool';
 import { z } from 'zod';
 import QrCodeReader from 'qrcode-reader';
 import { Jimp, JimpMime } from 'jimp';
-import { formatTimeForStorage } from '../../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 type JimpImage = Awaited<ReturnType<typeof Jimp.read>>;
 
