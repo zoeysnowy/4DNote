@@ -10,9 +10,9 @@ import React, { useEffect, useState } from 'react';
 import { useSlateStatic, ReactEditor } from 'slate-react';
 import { Transforms, Editor } from 'slate';
 import { EventLineNode } from './types';
-import { EventService } from '../../services/EventService';
-import { formatTimeForStorage } from '../../utils/timeUtils';
-import { resolveCheckState } from '../../utils/TimeResolver';
+import { EventService } from '@backend/EventService';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { resolveCheckState } from '@frontend/utils/TimeResolver';
 
 export interface EventLinePrefixProps {
   element: EventLineNode;
