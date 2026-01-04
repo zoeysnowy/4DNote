@@ -1,4 +1,4 @@
-import type { Event, EventLog, EventTitle } from '../types';
+import type { Event, EventLog, EventTitle } from '@frontend/types';
 
 export type GetTagLabel = (tagId: string) => string | undefined;
 
