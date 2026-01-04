@@ -11,21 +11,21 @@
 
 import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import ToastUIReactCalendar, { ToastUIReactCalendarType } from './components/ToastUIReactCalendar';
-// import { EventEditModal } from '../../components/EventEditModal'; // v1 - 已替换为 v2
+// (v1) EventEditModal 已替换为 v2
 import { EventEditModalV2 } from '@frontend/features/Event';
 import CalendarSettingsPanel, { CalendarSettings } from './components/CalendarSettingsPanel';
-import type { EventObject } from '../../lib/tui.calendar/apps/calendar';
-import '../../lib/tui.calendar/apps/calendar/dist/toastui-calendar.css'; // 使用本地打包的 TUI Calendar
-import '../../styles/calendar.css'; // 🎨 4DNote 自定义样式
-import { Event } from '../../types';
-import { TagService } from '../../services/TagService';
-import { EventService } from '../../services/EventService';
-import { MicrosoftCalendarService } from '../../services/MicrosoftCalendarService';
-import { CalendarService } from '../../services/CalendarService';
-import { STORAGE_KEYS } from '../../constants/storage';
-import { PersistentStorage, PERSISTENT_OPTIONS } from '../../utils/persistentStorage';
-import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
-import { resolveCalendarDateRange } from '../../utils/TimeResolver';
+import type { EventObject } from '@frontend/lib/tui.calendar/apps/calendar';
+import '@frontend/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css'; // 使用本地打包的 TUI Calendar
+import '@frontend/styles/calendar.css'; // 🎨 4DNote 自定义样式
+import { Event } from '@frontend/types';
+import { TagService } from '@backend/TagService';
+import { EventService } from '@backend/EventService';
+import { MicrosoftCalendarService } from '@backend/MicrosoftCalendarService';
+import { CalendarService } from '@backend/CalendarService';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { PersistentStorage, PERSISTENT_OPTIONS } from '@frontend/utils/persistentStorage';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
+import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { 
   convertToCalendarEvent, 
   convertFromCalendarEvent,
@@ -36,7 +36,7 @@ import {
   getCalendarGroupColor,
   getAvailableCalendarsForSettings,
   generateEventId // ✅ 生成真实 UUID
-} from '../../utils/calendarUtils';
+} from '@frontend/utils/calendarUtils';
 
 interface TimeCalendarProps {
   // ❌ [REMOVED] onStartTimer - 旧的计时器启动回调已删除，使用 globalTimer 代替
@@ -1830,7 +1830,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       };
       
       // 🎯 立即保存到 EventService（通过 EventHub）
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       await EventHub.createEvent(newEvent);
       
       console.log('✅ [TimeCalendar] Event created immediately:', {
@@ -1910,7 +1910,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
         const due = new Date(base);
         due.setHours(23, 59, 59, 999);
 
-        const { EventHub } = await import('../../services/EventHub');
+        const { EventHub } = await import('@backend/EventHub');
         await EventHub.updateFields(
           calendarEvent.id,
           { endTime: formatTimeForStorage(due) },
@@ -1936,7 +1936,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       }
 
       // 🎯 使用 EventHub 更新事件（替代直接操作 localStorage）
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       
       // 提取需要更新的字段
       const updates: Partial<Event> = {};
@@ -1985,7 +1985,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       }
 
       // 🎯 使用 EventHub 删除事件（替代直接操作 localStorage）
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       await EventHub.deleteEvent(eventId);
       
       console.log('✅ [TimeCalendar] Event deleted via EventHub, waiting for eventsUpdated event');
@@ -2008,7 +2008,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     // 🔧 v2.17.5: 如果是新创建的事件（用户点击取消），则删除该事件
     if (newlyCreatedEventId) {
       try {
-        const { EventHub } = await import('../../services/EventHub');
+        const { EventHub } = await import('@backend/EventHub');
         await EventHub.deleteEvent(newlyCreatedEventId);
         console.log('🗑️ [TimeCalendar] Deleted newly created event (user cancelled):', newlyCreatedEventId);
         setNewlyCreatedEventId(null);
@@ -2119,7 +2119,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
     try {
       // ✨ 使用 EventHub 统一删除接口
       // EventHub 自动处理：localStorage删除 + recordLocalAction + eventsUpdated事件
-      const { EventHub } = await import('../../services/EventHub');
+      const { EventHub } = await import('@backend/EventHub');
       await EventHub.deleteEvent(eventId);
       
       // ✅ 增量更新：只从数组中移除该事件，避免重渲染全部 1150 个事件
