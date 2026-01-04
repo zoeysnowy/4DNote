@@ -1,4 +1,4 @@
-# 4DNote v1.3.0 🎯
+# 4DNote v1.3.0
 
 **四维时间管理系统 - 集成 Plan/Actual/TimeLog/Timer 的智能生产力工具**
 
@@ -8,15 +8,23 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178c6.svg)](https://www.typescriptlang.org/)
 [![Slate.js](https://img.shields.io/badge/Slate.js-0.118-00a67e.svg)](https://www.slatejs.org/)
 
-4DNote 是一个创新的四维时间管理系统，整合了 **计划 (Plan)**、**执行 (Actual)**、**日志 (TimeLog)** 和 **计时器 (Timer)** 四个维度，提供完整的时间管理闭环。支持与 Microsoft Outlook 日历双向同步，采用 Slate.js 富文本编辑器和现代化存储架构。
-
-> **🆕 v1.3.1 更新** (2025-12-17)  
-> 新增用户功能手册，完善 AI 功能文档，优化核心架构
+4DNote 是一个四维时间管理系统，整合了 **计划 (Plan)**、**执行 (Actual)**、**日志 (TimeLog)** 和 **计时器 (Timer)** 四个维度，提供完整的时间管理闭环。支持与 Microsoft Outlook 日历双向同步，采用 Slate.js 富文本编辑器和本地优先存储架构。
 
 > **📖 [用户功能手册](./USER_MANUAL.md)** - 面向用户的完整功能指南  
 > 包含详细的功能说明、使用场景、快捷键参考和常见问题
 
 ---
+
+## 🧭 代码结构与导入约定（开发者）
+
+- 目录结构目标与边界说明：`docs/refactor/CODE_STRUCTURE_TARGET_TREE_v2.0_2026-01-03.md`
+- 应用整体架构（包含目录结构/分层约定补充）：`docs/architecture/APP_ARCHITECTURE_PRD.md`
+- TypeScript Path Alias（强制）：
+  - `@frontend/*` → `src/*`（pages/features/components/hooks/utils/styles/assets...）
+  - `@backend/*` → `src/services/*`
+  - `@shared/*` → `src/shared/*`
+
+约定：跨目录引用优先使用 alias；同目录/同模块内部可使用 `./`。
 
 ## 🌟 核心特性
 
@@ -382,78 +390,34 @@ VITE_AMAP_KEY=your_actual_api_key_here
 
 ### 架构演进
 - **[CHANGELOG.md](./CHANGELOG.md)** - 完整更新日志
-- **[SlateCore Refactor Progress](./SLATECORE_REFACTOR_PROGRESS.md)** - SlateCore 重构进度
 
 ---
 
 ## 🧪 测试工具
 
-项目包含以下调试和测试工具（位于根目录）：
+项目包含一些调试与诊断页面/脚本（主要位于 `build/` 目录，直接用浏览器打开即可）：
 
-### 数据完整性测试
-- **`diagnose-duplicate-events.js`** - 重复事件检测
-- **`diagnose-storage-overflow.html`** - 存储溢出诊断
-- **`diagnose-fuzzy-time.js`** - 模糊时间解析测试
+### 数据与存储诊断
+- `build/diagnose-indexeddb.html` - IndexedDB 环境/数据诊断
+- `build/diagnose-sync-normalize.html` - 同步 normalize 诊断
+- `build/test-sqlite.js` - SQLite 相关测试脚本（Electron/本地环境）
 
-### 同步功能测试
-- **`test-circular-updates.bat`** - 循环更新检测
-- **`check-ghost-in-storage.html`** - 幽灵事件检查
+### 同步与循环更新
+- `build/test-circular-updates.html` - 循环更新检测
+- `build/debug-circular-updates.js` - 循环更新调试脚本
 
-### UI 组件测试
-- **`test-eventeditmodal-v2.html`** - EventEditModal V2 测试
-- **`test-attendee-feature.html`** - 参与者功能测试
-- **`test-time-display-fix.html`** - 时间显示修复验证
-- **`test-attachment-system.html`** - 附件系统测试
+### UI/交互验证
+- `build/test-vertical-line-status.html` - 状态线/布局验证
+- `build/test-searchbox-design.html` - 搜索框样式验证
+- `build/tab-design-test.html` - Tab 设计验证
 
-使用方法：在浏览器控制台中运行相应的 JavaScript 文件或直接打开 HTML 文件。
+使用方法：直接打开对应 HTML；JS 文件按需在控制台执行或作为页面脚本引用。
 
 ---
 
-## 🔄 版本历史
+## 🔄 版本与变更
 
-### v1.3.1 (2025-12-17) - 用户手册与 AI 文档完善
-- **用户功能手册**：新增 60+ 页完整功能指南
-  - 四维时间管理体系详解
-  - AI 事件提取功能突出展示
-  - 8 个市场稀缺亮点功能
-  - 5 个真实使用场景案例
-- **AI 文档体系**：新增 10+ 个 AI 相关文档
-  - AI ChatFlow、NotesManager、TaskManager PRD
-  - AI 事件提取使用指南
-  - RAG 系统快速开始和使用指南
-  - AI 框架实施报告
-- **文档结构优化**：MECE 原则重组，覆盖所有功能模块
-- **README 更新**：与实现和规划保持一致
-
-### v1.3.0 (2025-12-03) - 重命名与架构升级
-- **项目重命名**：ReMarkable → 4DNote
-- **代码重命名**：46 个文件（localStorage 键、变量名、数据库名）
-- **文档更新**：22 个文件（PRD、架构文档、用户指南）
-- **UI 修复**：应用标题、缺失 CSS 文件
-- **存储架构**：v2.4.0（UUID 生成、软删除、版本历史）
-- **GitHub 仓库**：更新为 4DNote
-
-### v1.2.0 (2025-11-29) - SlateCore 重构
-- **SlateCore 共享层**：1500+ 行共享代码
-- **ModalSlate 重构**：代码减少 247 行
-- **PlanSlate 优化**：导入 SlateCore 元素组件
-- **架构文档**：SLATEEDITOR_PRD.md v3.0
-
-### v1.1.0 (2025-10-20) - 日历集成增强
-- **TUI Calendar 集成** - 交互式日历视图
-- **多标签事件编辑** - 标签搜索和多选
-- **事件去重机制** - 双层保护防止重复
-- **时间解析修复** - ISO 8601 多格式支持
-- **日历过滤系统** - 实时显示/隐藏事件
-
-### v1.0.0 (2024) - 初始稳定版本
-- Microsoft Outlook 日历同步
-- 事件管理（创建/编辑/删除）
-- 任务管理系统
-- 标签管理系统
-- 番茄钟计时器
-- Azure MSAL 认证
-- localStorage 持久化
+详见 [CHANGELOG.md](./CHANGELOG.md)。
 
 ---
 
