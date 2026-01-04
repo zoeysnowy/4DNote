@@ -1,5 +1,5 @@
 import React from 'react';
-import logoSvg from '../assets/icons/LOGO_transparent.svg';
+import logoSvg from '@frontend/assets/icons/LOGO_transparent.svg';
 
 const Logo: React.FC = () => {
   return (
