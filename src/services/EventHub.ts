@@ -15,10 +15,10 @@
  * - TimeSpec 等时间元数据也在 EventHub 管理
  */
 
-import { Event } from '../types';
-import { EventService } from './EventService';
-import { TimeHub } from './TimeHub';
-import { formatTimeForStorage } from '../utils/timeUtils'; // 🔧 导入时间格式化工具
+import { Event } from '@frontend/types';
+import { EventService } from '@backend/EventService';
+import { TimeHub } from '@backend/TimeHub';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils'; // 🔧 导入时间格式化工具
 
 const dbg = console.log.bind(console);
 

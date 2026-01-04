@@ -9,22 +9,22 @@
  * 5. 确保所有事件创建路径（Timer、TimeCalendar、PlanManager）都经过统一处理
  */
 
-import { Event, EventLog } from '../types';
-import { STORAGE_KEYS } from '../constants/storage';
-import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
-import { storageManager } from './storage/StorageManager';
-import type { StorageEvent } from './storage/types';
-import { logger } from '../utils/logger';
-import { validateEventTime } from '../utils/eventValidation';
+import { Event, EventLog } from '@frontend/types';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { formatTimeForStorage, parseLocalTimeString } from '@frontend/utils/timeUtils';
+import { storageManager } from '@backend/storage/StorageManager';
+import type { StorageEvent } from '@backend/storage/types';
+import { logger } from '@frontend/utils/logger';
+import { validateEventTime } from '@frontend/utils/eventValidation';
 
-import { ContactService } from './ContactService';
-import { EventHistoryService } from './EventHistoryService'; // 🆕 事件历史记录
-import { jsonToSlateNodes, slateNodesToHtml } from '../components/ModalSlate/serialization'; // 🆕 Slate 转换
-import { generateEventId, isValidId } from '../utils/idGenerator'; // 🆕 UUID ID 生成
-import { EventHub } from './EventHub'; // 🔧 用于 IndexMap 同步
-import { generateBlockId, injectBlockTimestamp } from '../utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
-import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '../utils/blockTimestampMigration'; // 🆕 数据迁移
-import { SignatureUtils } from '../utils/signatureUtils'; // 🆕 统一的签名处理工具
+import { ContactService } from '@backend/ContactService';
+import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 事件历史记录
+import { jsonToSlateNodes, slateNodesToHtml } from '@frontend/components/ModalSlate/serialization'; // 🆕 Slate 转换
+import { generateEventId, isValidId } from '@frontend/utils/idGenerator'; // 🆕 UUID ID 生成
+import { EventHub } from '@backend/EventHub'; // 🔧 用于 IndexMap 同步
+import { generateBlockId, injectBlockTimestamp } from '@frontend/utils/blockTimestampUtils'; // 🆕 Block-Level Timestamp
+import { migrateToBlockTimestamp, needsMigration, ensureBlockTimestamps } from '@frontend/utils/blockTimestampMigration'; // 🆕 数据迁移
+import { SignatureUtils } from '@frontend/utils/signatureUtils'; // 🆕 统一的签名处理工具
 import { 
   cleanOutlookXmlTags, 
   decodeHtmlEntitiesRecursively, 
@@ -33,9 +33,9 @@ import {
   removeOutlookSignatureFromHtml, 
   sanitizeInlineStyles 
 } from '@backend/eventlogProcessing/outlookHtmlPipeline';
-import { resolveDisplayTitle } from '../utils/TitleResolver';
-import { resolveCheckState } from '../utils/TimeResolver';
-import { updateSubtreeRootEventIdUsingStatsIndex, EventTreeAPI } from './eventTree'; // 🆕 EventTree Engine 集成
+import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
+import { resolveCheckState } from '@frontend/utils/TimeResolver';
+import { updateSubtreeRootEventIdUsingStatsIndex, EventTreeAPI } from '@backend/eventTree'; // 🆕 EventTree Engine 集成
 
 type EventTreeNode = Event & { children: EventTreeNode[] };
 

@@ -1,19 +1,18 @@
 // Sync manager (type-checked). Avoid legacy localStorage compatibility.
-import { STORAGE_KEYS } from '../../constants/storage';
-import { StorageManager } from '../storage/StorageManager';
-import { logger } from '../../utils/logger';
-import { EventService } from '../EventService';
-import { CalendarService } from '../CalendarService';
-import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '../../utils/timeUtils';
-import { resolveCalendarDateRange } from '../../utils/TimeResolver';
-import { resolveSyncTitle } from '../../utils/TitleResolver';
-import { SignatureUtils } from '../../utils/signatureUtils';
-import { storageManager } from '../storage/StorageManager';
-import { SyncStatus } from '../storage/types';
-import type { SyncQueueItem } from '../storage/types';
-import { determineSyncTarget } from '../../utils/syncRouter';
-import { cleanupOutlookHtml } from '../eventlogProcessing/outlookHtmlCleanup';
-import type { Event as AppEvent, EventTitle, EventLog } from '../../types';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { StorageManager, storageManager } from '@backend/storage/StorageManager';
+import { logger } from '@frontend/utils/logger';
+import { EventService } from '@backend/EventService';
+import { CalendarService } from '@backend/CalendarService';
+import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
+import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
+import { resolveSyncTitle } from '@frontend/utils/TitleResolver';
+import { SignatureUtils } from '@frontend/utils/signatureUtils';
+import { SyncStatus } from '@backend/storage/types';
+import type { SyncQueueItem } from '@backend/storage/types';
+import { determineSyncTarget } from '@frontend/utils/syncRouter';
+import { cleanupOutlookHtml } from '@backend/eventlogProcessing/outlookHtmlCleanup';
+import type { Event as AppEvent, EventTitle, EventLog } from '@frontend/types';
 
 const syncLogger = logger.module('Sync');
 

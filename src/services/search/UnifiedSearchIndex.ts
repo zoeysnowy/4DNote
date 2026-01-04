@@ -17,12 +17,12 @@
  */
 
 import Fuse from 'fuse.js'; // 安装: npm install fuse.js
-import { Event } from '../../types';
-import { logger as AppLogger } from '../../utils/logger';
-import { EventService } from '../EventService';
-import { TagService, FlatTag } from '../TagService';
-import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
-import { parseLocalTimeString } from '../../utils/timeUtils';
+import { Event } from '@frontend/types';
+import { logger as AppLogger } from '@frontend/utils/logger';
+import { EventService } from '@backend/EventService';
+import { TagService, FlatTag } from '@backend/TagService';
+import { parseNaturalLanguage } from '@frontend/utils/naturalLanguageTimeDictionary';
+import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 
 // SVG 图标路径（直接使用路径字符串避免 Vite 转换为 data URL）
 const ICON_PATHS = {

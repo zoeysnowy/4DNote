@@ -16,11 +16,11 @@
  * @author Zoey Gong
  */
 
-import { Calendar, CalendarGroup, CalendarProvider, SPECIAL_CALENDAR_IDS } from '../types/calendar';
-import { getCalendarColor } from '../utils/calendarColorUtils';
-import { getCalendarDisplayName, getCalendarNameWithProvider } from '../utils/calendarNameUtils';
-import { STORAGE_KEYS } from '../constants/storage';
-import { StorageManager } from './storage/StorageManager';
+import { Calendar, CalendarGroup, CalendarProvider, SPECIAL_CALENDAR_IDS } from '@frontend/types/calendar';
+import { getCalendarColor } from '@frontend/utils/calendarColorUtils';
+import { getCalendarDisplayName, getCalendarNameWithProvider } from '@frontend/utils/calendarNameUtils';
+import { STORAGE_KEYS } from '@frontend/constants/storage';
+import { StorageManager } from '@backend/storage/StorageManager';
 
 /**
  * CalendarService 类

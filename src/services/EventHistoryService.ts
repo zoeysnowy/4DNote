@@ -12,19 +12,19 @@
  * - 自动清理机制防止存储溢出
  */
 
-import { Event } from '../types';
+import { Event } from '@frontend/types';
 import {
   EventChangeLog,
   ChangeOperation,
   ChangeDetail,
   HistoryQueryOptions,
   HistoryStatistics
-} from '../types/eventHistory';
-import { logger } from '../utils/logger';
-import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
-import { StorageManager } from './storage/StorageManager';
-import { SignatureUtils } from '../utils/signatureUtils';
-import { resolveCheckState } from '../utils/TimeResolver';
+} from '@frontend/types/eventHistory';
+import { logger } from '@frontend/utils/logger';
+import { formatTimeForStorage, parseLocalTimeString } from '@frontend/utils/timeUtils';
+import { StorageManager } from '@backend/storage/StorageManager';
+import { SignatureUtils } from '@frontend/utils/signatureUtils';
+import { resolveCheckState } from '@frontend/utils/TimeResolver';
 
 const historyLogger = logger.module('EventHistory');
 

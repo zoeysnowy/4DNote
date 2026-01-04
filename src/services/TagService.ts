@@ -5,10 +5,10 @@
  * ✅ v3.0: 迁移到 StorageManager（IndexedDB + SQLite）
  */
 
-import { storageManager } from './storage/StorageManager';
-import type { StorageTag } from './storage/types';
-import { generateTagId, isValidId } from '../utils/idGenerator';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { storageManager } from '@backend/storage/StorageManager';
+import type { StorageTag } from '@backend/storage/types';
+import { generateTagId, isValidId } from '@frontend/utils/idGenerator';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 export interface HierarchicalTag {
   id: string;

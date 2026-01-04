@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EventService } from '../EventService';
+import { EventService } from '@backend/EventService';
 
 function extractParagraphTexts(slateJson: string): string[] {
   const nodes = JSON.parse(slateJson) as any[];

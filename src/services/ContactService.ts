@@ -18,12 +18,12 @@
  * - ✅ 自动数据迁移
  */
 
-import { Contact, ContactSource } from '../types';
+import { Contact, ContactSource } from '@frontend/types';
 import md5 from 'crypto-js/md5';
-import { logger } from '../utils/logger';
-import { formatTimeForStorage } from '../utils/timeUtils';
-import { storageManager } from './storage/StorageManager';
-import { generateContactId } from '../utils/idGenerator';
+import { logger } from '@frontend/utils/logger';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { storageManager } from '@backend/storage/StorageManager';
+import { generateContactId } from '@frontend/utils/idGenerator';
 
 const contactLogger = logger.module('ContactService');
 

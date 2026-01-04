@@ -1,9 +1,9 @@
-import { Event } from '../types';
-import { TimeGetResult, TimeKind, TimePolicy, TimeSource, TimeSpec } from '../types/time';
-import { EventService } from './EventService';
-import { formatTimeForStorage, parseLocalTimeString } from '../utils/timeUtils';
-import { defaultTimePolicy } from '../config/time.config';
-import { dbg, error } from '../utils/debugLogger';
+import { Event } from '@frontend/types';
+import { TimeGetResult, TimeKind, TimePolicy, TimeSource, TimeSpec } from '@frontend/types/time';
+import { EventService } from '@backend/EventService';
+import { formatTimeForStorage, parseLocalTimeString } from '@frontend/utils/timeUtils';
+import { defaultTimePolicy } from '@frontend/config/time.config';
+import { dbg, error } from '@frontend/utils/debugLogger';
 
 // React 18/19 useSyncExternalStore requires getSnapshot() to be referentially stable
 // when the underlying store value hasn't changed. Returning a fresh `{}` on every

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { EventService } from '../EventService';
+import { EventService } from '@backend/EventService';
 
 describe('EventService - Outlook PlainText HTML import', () => {
   it('htmlToSlateJsonWithRecognition should keep all PlainText div lines', () => {

@@ -9,9 +9,9 @@
  * 5. 检查链接存在性
  */
 
-import { EventService } from '../EventService';
-import { Event } from '../../types';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { EventService } from '@backend/EventService';
+import { Event } from '@frontend/types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 // Mock localStorage
 const localStorageMock = (() => {
