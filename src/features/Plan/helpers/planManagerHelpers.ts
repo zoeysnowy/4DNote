@@ -2,10 +2,10 @@
  * PlanManager辅助函数（从executeBatchUpdate中抽取）
  */
 
-import type { Event } from '../../../types';
-import { TagService } from '../../../services/TagService';
-import { TimeHub } from '../../../services/TimeHub';
-import { formatTimeForStorage } from '../../../utils/timeUtils';
+import type { Event } from '@frontend/types';
+import { TagService } from '@backend/TagService';
+import { TimeHub } from '@backend/TimeHub';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 /**
  * 从标签中提取calendarIds
