@@ -3,14 +3,14 @@
  * 演示如何使用 BaseTool、BaseAgent、LLMService 等基础组件
  */
 
-import { BaseTool } from '../ai/tools/base/Tool';
-import { BaseAgent } from '../ai/agents/base/Agent';
-import { LLMService } from '../ai/services/LLMService';
-import { EmbeddingService } from '../ai/services/EmbeddingService';
-import { InMemoryVectorStore } from '../ai/services/VectorStoreService';
-import { llmConfig, embeddingConfig } from '../config/ai.config';
+import { BaseTool } from '@frontend/ai/tools/base/Tool';
+import { BaseAgent } from '@frontend/ai/agents/base/Agent';
+import { LLMService } from '@frontend/ai/services/LLMService';
+import { EmbeddingService } from '@frontend/ai/services/EmbeddingService';
+import { InMemoryVectorStore } from '@frontend/ai/services/VectorStoreService';
+import { llmConfig, embeddingConfig } from '@frontend/config/ai.config';
 import { z } from 'zod';
-import type { Features, Observation, Plan } from '../types/ai/agent.types';
+import type { Features, Observation, Plan } from '@frontend/types/ai/agent.types';
 
 /**
  * 示例 Tool: 文本处理工具
