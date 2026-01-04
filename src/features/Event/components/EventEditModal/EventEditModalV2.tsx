@@ -91,8 +91,8 @@ import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/p
 import { AttendeeDisplay } from '@frontend/components/common/AttendeeDisplay';
 import { LocationInput } from '@frontend/components/common/LocationInput';
 import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
-import { SimpleCalendarDropdown } from '../EventEditModalV2Demo/SimpleCalendarDropdown';
-import { SyncModeDropdown } from '../EventEditModalV2Demo/SyncModeDropdown';
+import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
+import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
 import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
 import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
@@ -102,7 +102,7 @@ import { jsonToSlateNodes, slateNodesToHtml, slateNodesToJson } from '@frontend/
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { insertTag, insertEmoji, insertDateMention, applyTextFormat } from '@frontend/components/PlanSlate/helpers';
-// import { parseExternalHtml, slateNodesToRichHtml } from '../PlanSlate/serialization';
+// import { parseExternalHtml, slateNodesToRichHtml } from '@frontend/components/PlanSlate/serialization';
 import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import { EventRelationSummary } from '@frontend/features/Event/components/EventTree/EventRelationSummary';
 import { EventTreeViewer } from '@frontend/features/Event/components/EventTree/EventTreeViewer';
