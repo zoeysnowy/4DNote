@@ -15,7 +15,7 @@ import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
 import { Contact } from '@frontend/types';
 import { ContactService } from '@backend/ContactService';
-import '../../styles/ContactModal.css';
+import '@frontend/features/Contact/styles/ContactModal.css';
 
 export type ContactModalMode = 'create' | 'edit' | 'view';
 
