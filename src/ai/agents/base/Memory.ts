@@ -12,7 +12,7 @@ import {
   Fact,
   Experience,
   VectorMemoryEntry
-} from '../../../types/ai/memory.types';
+} from '@frontend/types/ai/memory.types';
 
 /**
  * Memory 配置
