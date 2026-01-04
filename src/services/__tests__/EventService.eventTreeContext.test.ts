@@ -42,7 +42,7 @@ vi.mock('../storage/StorageManager', () => ({
   storageManager: mockStorageManager,
 }));
 
-const { EventService } = await import('../EventService');
+const { EventService } = await import('@backend/EventService');
 
 beforeAll(async () => {
   const helpers = await import('@backend/eventTree');
