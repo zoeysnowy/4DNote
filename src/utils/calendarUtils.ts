@@ -8,7 +8,7 @@
  * @version 2.0.0 - 重构使用统一的CalendarService
  */
 
-import type { EventObject } from '../lib/tui.calendar/apps/calendar';
+import type { EventObject } from '@frontend/lib/tui.calendar/apps/calendar';
 import { Event } from '@frontend/types';
 import { EventHub } from '@backend/EventHub';
 import { parseLocalTimeString, formatTimeForStorage } from './timeUtils';
