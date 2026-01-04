@@ -34,7 +34,8 @@ async function rebuildSQLiteDatabase() {
 /**
  * 测试 SQLite 存储模块
  */
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+
 
 async function testSQLiteModule() {
   console.log('🧪 SQLite Storage Module Test Started');
