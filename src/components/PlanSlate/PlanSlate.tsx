@@ -24,24 +24,24 @@ import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react'
 import { createEditor, Descendant, Editor, Transforms, Range, Point, Node, Element as SlateElement, Text as SlateText, Path } from 'slate';
 import { Slate, Editable, withReact, RenderElementProps, RenderLeafProps, ReactEditor } from 'slate-react';
 import { withHistory } from 'slate-history';
-import { EventLineNode, ParagraphNode, TagNode, DateMentionNode, TextNode, CustomEditor } from './types';
-import { EventLineElement } from './EventLineElement';
+import { EventLineNode, ParagraphNode, TagNode, DateMentionNode, TextNode, CustomEditor } from '@frontend/components/PlanSlate/types';
+import { EventLineElement } from '@frontend/components/PlanSlate/EventLineElement';
 
 // ✅ 从 SlateCore 导入共享元素组件
-import { TagElementComponent } from '../SlateCore/elements/TagElement';
-import DateMentionElement from '../SlateCore/elements/DateMentionElement';
-import { EventMentionElement } from '../SlateCore/elements/EventMentionElement';
+import { TagElementComponent } from '@frontend/components/SlateCore/elements/TagElement';
+import DateMentionElement from '@frontend/components/SlateCore/elements/DateMentionElement';
+import { EventMentionElement } from '@frontend/components/SlateCore/elements/EventMentionElement';
 // TimestampDividerElement 已废弃 - 使用 Block-Level Timestamp (paragraph.createdAt)
 
 // ✅ 从 SlateCore 导入共享服务
-import { EventLogTimestampService } from '../SlateCore/services/timestampService';
-import { EventHistoryService } from '../../services/EventHistoryService'; // 🆕 v2.20.0: 检查事件历史
+import { EventLogTimestampService } from '@frontend/components/SlateCore/services/timestampService';
+import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 v2.20.0: 检查事件历史
 
 // ✅ 从 SlateCore 导入共享操作工具（备用，后续可能使用）
 import {
   moveParagraphUp as slateMoveParagraphUp,
   moveParagraphDown as slateMoveParagraphDown,
-} from '../SlateCore/operations/paragraphOperations';
+} from '@frontend/components/SlateCore/operations/paragraphOperations';
 
 import {
   handleBulletBackspace,
@@ -49,26 +49,26 @@ import {
   detectBulletTrigger,
   applyBulletAutoConvert,
   getBulletChar,
-} from '../SlateCore/operations/bulletOperations';
+} from '@frontend/components/SlateCore/operations/bulletOperations';
 
 import {
   extractBulletItems,
   generateClipboardData,
   parsePlainTextBullets,
   parseHTMLBullets,
-} from '../SlateCore/operations/clipboardHelpers';
+} from '@frontend/components/SlateCore/operations/clipboardHelpers';
 
 import UnifiedDateTimePicker from '@frontend/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker';
 
 // 🆕 v2.20.0: EventTree Engine for Tab/Shift+Tab optimization
 import { EventTreeAPI } from '@backend/eventTree';
 import { UnifiedMentionMenu } from '@frontend/components/shared/UnifiedMentionMenu';
-import { SlateErrorBoundary } from './ErrorBoundary';
-import { EventService } from '../../services/EventService';
-import { EventHub } from '../../services/EventHub';
+import { SlateErrorBoundary } from '@frontend/components/PlanSlate/ErrorBoundary';
+import { EventService } from '@backend/EventService';
+import { EventHub } from '@backend/EventHub';
 // 🆕 v2.17: EventIdPool 已删除，直接使用 UUID 生成
-import { generateEventId } from '../../utils/idGenerator';
-import { parseNaturalLanguage } from '../../utils/naturalLanguageTimeDictionary';
+import { generateEventId } from '@frontend/utils/idGenerator';
+import { parseNaturalLanguage } from '@frontend/utils/naturalLanguageTimeDictionary';
 import {
   planItemsToSlateNodes,
   slateNodesToPlanItems,
@@ -77,10 +77,10 @@ import {
   parseExternalHtml,
   setEventLineLevel,  // 🔥 v2.20.0: 统一层级更新函数
 } from './serialization';
-import { insertDateMention, insertEventMention, insertTag } from './helpers';
+import { insertDateMention, insertEventMention, insertTag } from '@frontend/components/PlanSlate/helpers';
 // 🆕 v2.21.0: 会话态管理 Hook
-import { usePlanSlateSession } from './hooks/usePlanSlateSession';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { usePlanSlateSession } from '@frontend/components/PlanSlate/hooks/usePlanSlateSession';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import {
   initDebug,
   isDebugEnabled,
