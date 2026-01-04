@@ -3,9 +3,9 @@
  * 验证 Phase 1 实现
  */
 
-import { ContactService } from '../services/ContactService';
-import { EventService } from '../services/EventService';
-import { formatTimeForStorage } from '../utils/timeUtils';
+import { ContactService } from '@backend/ContactService';
+import { EventService } from '@backend/EventService';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 async function waitForExpectation(
   expectation: () => void | Promise<void>,
