@@ -13,7 +13,7 @@
  */
 
 import { generateBlockId } from './blockTimestampUtils';
-import type { ParagraphNode } from '../components/SlateCore/types';
+import type { ParagraphNode } from '@frontend/components/SlateCore/types';
 
 // ==================== 迁移核心函数 ====================
 
