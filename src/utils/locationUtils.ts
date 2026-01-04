@@ -3,7 +3,7 @@
  * 用于处理 Event.location 的双格式（string | LocationObject）
  */
 
-import type { LocationObject } from '../types';
+import type { LocationObject } from '@frontend/types';
 
 /**
  * 获取 location 的显示文本
