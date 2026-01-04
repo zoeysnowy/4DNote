@@ -13,7 +13,7 @@
  * - UI 层的内容判断（例如：是否显示为空行）
  */
 
-import { Event, EventLog } from '../types';
+import { Event, EventLog } from '@frontend/types';
 
 /**
  * 从 EventLog 中提取纯文本内容
