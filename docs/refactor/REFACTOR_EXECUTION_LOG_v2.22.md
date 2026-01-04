@@ -142,6 +142,7 @@
 | 2026-01-04 | P3-11: services alias-only imports (slice 1) | Start repo-wide alias-only cleanup by converting cross-directory relative imports inside core services to `@frontend/*` + `@backend/*` | Low | `npx tsc --noEmit`; `npm test -- --run` | 6e2a052 | Updated imports in EventService, ActionBasedSyncManager, EventHub, Contact/Tag/Calendar/TimeHub, UnifiedSearchIndex, and EventService service tests |
 | 2026-01-04 | Docs: align target-tree checklist with completed work | Fix doc drift by marking P2/P3 checklist items as completed (using existing commit hashes) | Low | `npx tsc --noEmit`; `npm test -- --run` | 8a9b0f9 | Updated `CODE_STRUCTURE_TARGET_TREE_v2.0_2026-01-03.md` only |
 | 2026-01-04 | P3-12: services alias-only imports (slice 2) | Continue alias-only cleanup by converting cross-directory relative imports inside services submodules (eventTree/storage/AI + a few root services) | Low | `npx tsc --noEmit`; `npm test -- --run` | 267cc96 | Import-only changes; no behavior change |
+| 2026-01-04 | P3-13: services alias-only imports (slice 3) | Finish services alias-only cleanup by converting the last remaining cross-directory relative imports under `src/services/**` | Low | `npx tsc --noEmit`; `npm test -- --run` | c598b16 | Import-only changes; no behavior change |
 
 ## Decisions / ADRs
 ### ADR-001: Use `parentEventId` as structure truth
