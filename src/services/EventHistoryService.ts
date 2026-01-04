@@ -250,7 +250,7 @@ export class EventHistoryService {
    */
   static logDeleteWithSnapshot(
     event: Event,
-    snapshot: import('../utils/eventContentSemantics').EventSnapshot,
+    snapshot: import('@frontend/utils/eventContentSemantics').EventSnapshot,
     source: string = 'user'
   ): EventChangeLog {
     const log: EventChangeLog = {
