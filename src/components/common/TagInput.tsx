@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useRef, useEffect } from 'react';
-import { TagService } from '../../services/TagService';
+import { TagService } from '@backend/TagService';
 import './TagInput.css';
 
 interface Tag {
