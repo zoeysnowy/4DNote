@@ -15,7 +15,7 @@
  */
 
 import { Editor, Node, Path } from 'slate';
-import type { ParagraphNode } from '../components/SlateCore/types';
+import type { ParagraphNode } from '@frontend/components/SlateCore/types';
 
 // ==================== Block ID 生成 ====================
 
