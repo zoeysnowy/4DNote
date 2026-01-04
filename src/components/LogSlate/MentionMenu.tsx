@@ -3,9 +3,9 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { TagService } from '../../services/TagService';
+import { TagService } from '@backend/TagService';
 import './MentionMenu.css';
-import { useEventHubSnapshot } from '../../hooks/useEventHubSnapshot';
+import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 
 interface MentionMenuProps {
   type: 'mention' | 'hashtag';
