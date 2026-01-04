@@ -4,7 +4,7 @@
  * 包含 Private 模式、同步配置处理、远程事件管理等核心功能
  */
 
-import { Contact, Event, PlanSyncConfig, ActualSyncConfig } from '../types';
+import { Contact, Event, PlanSyncConfig, ActualSyncConfig } from '@frontend/types';
 import { logger } from './logger';
 
 const syncLogger = logger.module('CalendarSync');
