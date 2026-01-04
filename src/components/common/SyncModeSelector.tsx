@@ -5,8 +5,8 @@
  */
 
 import React, { useState } from 'react';
-import { PlanSyncMode, ActualSyncMode } from '../../types';
-import { getSyncModeConfig, isValidPlanSyncMode, isValidActualSyncMode } from '../../utils/calendarSyncUtils';
+import { PlanSyncMode, ActualSyncMode } from '@frontend/types';
+import { getSyncModeConfig, isValidPlanSyncMode, isValidActualSyncMode } from '@frontend/utils/calendarSyncUtils';
 import './SyncModeSelector.css';
 
 interface SyncModeSelectorProps {
