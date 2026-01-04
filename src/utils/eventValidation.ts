@@ -7,7 +7,7 @@
  * @version 1.0
  */
 
-import { Event } from '../types';
+import { Event } from '@frontend/types';
 import { parseLocalTimeString } from './timeUtils';
 
 export interface ValidationResult {
