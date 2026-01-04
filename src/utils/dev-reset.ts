@@ -66,7 +66,7 @@ export async function resetAllData() {
       const dbName = '4DNoteDB';
       
       try {
-        const { indexedDBService } = await import('../services/storage/IndexedDBService');
+        const { indexedDBService } = await import('@backend/storage/IndexedDBService');
         indexedDBService.close();
         console.log('   🔒 已关闭现有 IndexedDB 连接');
       } catch (e) {
@@ -202,7 +202,7 @@ export async function clearIndexedDB() {
   const dbName = '4DNoteDB';
   
   try {
-    const { indexedDBService } = await import('../services/storage/IndexedDBService');
+    const { indexedDBService } = await import('@backend/storage/IndexedDBService');
     indexedDBService.close();
     console.log('🔒 已关闭现有连接');
   } catch (e) {
