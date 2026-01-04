@@ -3,7 +3,7 @@
  * 统一处理事件显示逻辑
  */
 
-import { Event, CheckType } from '../types';
+import { Event, CheckType } from '@frontend/types';
 import { resolveCheckState } from './TimeResolver';
 
 /**
