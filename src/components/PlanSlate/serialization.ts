@@ -5,7 +5,7 @@
  */
 
 import { Descendant, Text, Editor, Transforms, Node as SlateNode, Path } from 'slate';
-import { formatTimeForStorage } from '../../utils/timeUtils';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import { 
   EventLineNode, 
   ParagraphNode, 
@@ -16,8 +16,8 @@ import {
   EventLineData,
   EventMetadata,  // 🆕 导入 EventMetadata 类型
 } from './types';
-import { TimeHub } from '../../services/TimeHub';  // 🆕 导入 TimeHub
-import { generateEventId } from '../../utils/idGenerator';  // 🆕 v2.17: UUID 生成器
+import { TimeHub } from '@backend/TimeHub';  // 🆕 导入 TimeHub
+import { generateEventId } from '@frontend/utils/idGenerator';  // 🆕 v2.17: UUID 生成器
 
 // ==================== 层级同步工具函数 ====================
 
