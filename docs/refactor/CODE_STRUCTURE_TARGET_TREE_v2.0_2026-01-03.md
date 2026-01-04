@@ -1,7 +1,7 @@
 # 4DNote 目标目录树 v2.0（完整架构重组方案）
 
 **日期**：2026-01-03  
-**状态**：🟢 提案待审阅  
+**状态**：🟢 已落地（持续维护）  
 **基于**：App Architecture PRD + README + 现有代码扫描  
 **目的**：基于应用实际功能和架构，制定清晰的目录结构重组方案
 
@@ -173,9 +173,9 @@ src/
         TimelineGrid.css
       index.ts
 
-    Event/                               # 建议新增：事件编辑功能包
+    Event/                               # ✅ 已迁移：事件编辑功能包
       components/
-        EventEditModal/                  # 模态框编辑器（目前在 components/）
+        EventEditModal/                  # 模态框编辑器
           EventEditModalV2.tsx
           sections/
             BasicInfoSection.tsx
@@ -187,7 +187,7 @@ src/
           ModalSlate.tsx
           TitleSlate.tsx
           plugins/
-        EventTree/                       # 事件树可视化（目前在 components/）
+        EventTree/                       # 事件树可视化
           EventTreeCanvas.tsx
           EditableEventTree.tsx
           CustomEventNode.tsx
@@ -201,7 +201,7 @@ src/
         EventTree.css
       index.ts
 
-    Tag/                                 # 建议新增：标签管理
+    Tag/                                 # ✅ 已迁移：标签管理
       components/
         TagManager.tsx                   # Figma 风格标签管理器
         HierarchicalTagPicker/
@@ -214,7 +214,7 @@ src/
         TagManager.css
       index.ts
 
-    Contact/                             # 建议新增：联系人管理
+    Contact/                             # ✅ 已迁移：联系人管理
       components/
         ContactModal/
           ContactModal.tsx
@@ -237,7 +237,7 @@ src/
         TimerCard.css
       index.ts
 
-    Dashboard/                           # 建议新增：仪表盘
+    Dashboard/                           # ✅ 已迁移：仪表盘
       components/
         DailyStatsCard.tsx
         UpcomingEventsPanel.tsx
@@ -312,7 +312,6 @@ src/
       AIDemo.tsx
       AIDemoV2.tsx
       RAGDemo.tsx
-      EventEditModalV2Demo/
 
   ┌─────────────────────────────────────────────────────────────
   │ hooks/ - 跨功能 hooks
@@ -485,17 +484,7 @@ src/
 
 ### 1. Pages 重组（解决"什么都有，什么都没有"的问题）
 
-**当前问题**：
-```
-pages/
-  TimeLog.tsx          # 历史遗留入口文件（应收敛为薄编排）
-  TimeLog_new.tsx      # 历史遗留入口文件（应收敛为薄编排）
-  LogTab.tsx           # 4181 行大文件！
-  DesktopCalendarWidget.tsx
-  EventEditorWindow.tsx
-  WidgetSettings.tsx
-  HomePage/
-```
+**历史问题（已解决）**：pages/ 曾包含多个旧入口与超大文件（如 LogTab / DesktopCalendarWidget 等），现已收敛为“薄编排”并按模块归位。
 
 **目标结构**：
 ```
