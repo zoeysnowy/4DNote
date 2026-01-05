@@ -78,11 +78,12 @@ class TagServiceClass {
       console.log(`🔍 [TagService] queryTags result:`, result);
       
       if (result.items.length > 0) {
-        console.log(`🏷️ [TagService] Loaded ${result.items.length} tags from StorageManager`);
-        console.log('📋 [TagService] Raw tags from StorageManager:', result.items.map(t => ({ id: t.id, name: t.name, parentId: t.parentId })));
+        const activeItems = result.items.filter(t => !t.deletedAt);
+        console.log(`🏷️ [TagService] Loaded ${activeItems.length} active tags from StorageManager`);
+        console.log('📋 [TagService] Raw tags from StorageManager (active):', activeItems.map(t => ({ id: t.id, name: t.name, parentId: t.parentId })));
         
         // 转换为 FlatTag 格式
-        this.flatTags = result.items.map(tag => ({
+        this.flatTags = activeItems.map(tag => ({
           id: tag.id,
           name: tag.name,
           color: tag.color,
@@ -111,6 +112,37 @@ class TagServiceClass {
         this.flatTags = this.flattenTags(this.tags);
         console.log(`📊 [TagService] After flattenTags: ${this.flatTags.length} flat tags`);
         console.log('🔍 [TagService] Final flat tags:', this.flatTags.map(t => ({ name: t.name, emoji: t.emoji, position: t.position, level: t.level })));
+
+        // 🔧 [RECONCILE] 如果 localStorage 里有 TagManager 的权威数据，且比 StorageManager 更“干净”（比如少了已删除标签），则以 localStorage 为准同步回存储。
+        try {
+          const isDevelopment = process.env.NODE_ENV === 'development' || 
+                               window.location.hostname === 'localhost' ||
+                               window.location.hostname === '127.0.0.1';
+          const baseKey = '4dnote-hierarchical-tags';
+          const localStorageKey = isDevelopment ? `4dnote-dev-persistent-${baseKey}` : baseKey;
+          const rawData = localStorage.getItem(localStorageKey);
+
+          if (rawData) {
+            const parsed = JSON.parse(rawData);
+            const localTags = parsed.value || parsed;
+            if (Array.isArray(localTags) && localTags.length > 0) {
+              const localFlat = this.flattenTags(localTags as any);
+              const storageIds = new Set(this.flatTags.map(t => t.id));
+              const localIds = new Set(localFlat.map(t => t.id));
+
+              const storageHasExtra = Array.from(storageIds).some(id => !localIds.has(id));
+              if (storageHasExtra) {
+                console.warn('🧹 [TagService] Detected stale tags in StorageManager; reconciling from localStorage');
+                this.tags = localTags as any;
+                this.flatTags = localFlat;
+                await this.saveTags();
+                this.notifyListeners();
+              }
+            }
+          }
+        } catch (e) {
+          console.warn('⚠️ [TagService] Failed to reconcile from localStorage:', e);
+        }
       } else {
         // 🔄 迁移：尝试从 localStorage 加载 TagManager 保存的标签
         console.log('🏷️ [TagService] No tags in StorageManager, checking localStorage (TagManager)...');
@@ -279,6 +311,8 @@ class TagServiceClass {
       console.log(`📊 [TagService] Flattened ${flatTags.length} tags:`, flatTags.map(t => t.name));
       
       // 批量保存到 StorageManager
+      const currentIds = new Set(flatTags.map(t => t.id));
+
       for (const tag of flatTags) {
         
         const now = formatTimeForStorage(new Date());
@@ -310,6 +344,20 @@ class TagServiceClass {
           console.log(`➕ [TagService] Creating new tag: ${tag.name} (${tag.id})`);
           await storageManager.createTag(storageTag);
         }
+      }
+
+      // 🧹 同步删除：把 StorageManager 中“已不存在于当前层级”的标签软删除（否则会在下次启动时重新出现）
+      try {
+        const existing = await storageManager.queryTags({ limit: 5000 });
+        const stale = existing.items.filter(t => !t.deletedAt && !currentIds.has(t.id));
+        if (stale.length > 0) {
+          console.warn(`🗑️ [TagService] Soft-deleting ${stale.length} stale tags from StorageManager...`);
+          for (const tag of stale) {
+            await storageManager.deleteTag(tag.id);
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ [TagService] Failed to soft-delete stale tags:', e);
       }
       
       console.log(`✅ [TagService] Saved ${flatTags.length} tags to StorageManager`);

@@ -1,5 +1,10 @@
 # Event Field Contract（字段契约）
 
+> ⚠️ 已迁移：新的 Single Source of Truth（可执行规范）请见：
+> - docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md
+>
+> 本文保留为历史事实与过程记录。
+
 > 目的：给全 App 一个“唯一口径”的字段规则：哪些字段是 canonical（存储真相）、哪些是 derived（派生值）、谁是 owner、哪些模块允许写、哪些禁止默认值注入。
 >
 > 更详细的强制写入审计与风险点见本文附录：

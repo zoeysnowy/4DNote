@@ -570,6 +570,7 @@
   border-radius: 8px;
   padding: 8px;
   border: 0.8px solid rgba(255, 255, 255, 0.6);
+  font-size: 14px;
 }
 
 .task-node {
@@ -679,9 +680,9 @@
   opacity: 1;
 }
 
-.task-title {
+.task-tree .task-title {
   flex: 1;
-  font-family: 'Microsoft YaHei', 'Inter', sans-serif;
+  font-family: 'Microsoft YaHei', 'Inter', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
@@ -717,9 +718,9 @@
   height: 14px;
 }
 
-.task-progress-text {
+.task-tree .task-progress-text {
   font-family: 'Microsoft YaHei', sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   color: #4b5563;
 }
 
@@ -750,9 +751,9 @@
   background: #10b981;
 }
 
-.task-hours {
+.task-tree .task-hours {
   font-family: 'Microsoft YaHei', sans-serif;
-  font-size: 12px;
+  font-size: 14px;
   color: #4b5563;
 }
 
