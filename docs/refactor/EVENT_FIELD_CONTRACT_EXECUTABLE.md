@@ -142,7 +142,7 @@ flowchart LR
 | D Task/Plan Semantics | `isTask/isPlan/checkType/checked/unchecked/isCompleted/dueDateTime/isDeadline` | `PlanManager/Task` 入口 + `EventService`（checkin 等） | 只读；禁止 `EventEditModal` “缺时间就强行 isTask=true” 这类注入 |
 | I Context（Tags/People/Place） | `tags/location/organizer/attendees/reminder` | `EventService.normalizeEvent` + external merge 例外 | 只读；Tag/Contact 的字典维护不等于 Event 字段写入 |
 | E Sync | `syncMode/syncStatus/externalId/calendarIds/todoListIds/synced*` | `ActionBasedSyncManager` +（部分用户意图字段由 UI 写） | UI 仅可写“用户意图”（如选择 `calendarIds/todoListIds`）；状态/外部映射仅 Sync 写 |
-| F Structure | `parentEventId`（真相）/ `position`（展示）/ `childEventIds`（legacy） | `Plan/EventTree` | `childEventIds` 只读或 repair；禁止当真相 |
+| F Structure | `parentEventId`（真相）/ `position`（展示） | `Plan/EventTree` | 结构真相仅来自 `parentEventId + position`；`childEventIds` 已从代码侧移除（历史数据若存在也会被忽略） |
 | G System Trajectory（subordinate） | `isTimer/isTimeLog/isOutsideApp`（现状） | 建议迁移到 Telemetry/Signal（另案）；短期按 `EventService.isSubordinateEvent` 口径 | 短期保留但必须语义单一，不得混载 |
 | H Derived/Index（不可回写） | `_isDeleted/_deletedAt/_isVirtualTime/bulletLevel?` 等 | Derived/Repair 工具路径 | **禁止**主路径回写 |
 
@@ -320,7 +320,7 @@ flowchart LR
 - 树结构真相：`parentEventId`
 - 同级排序：`position`
 - 双向链接：`linkedEventIds/backlinks`
-- Legacy hint：`childEventIds`（只读/repair）
+- Historical residual：`childEventIds`（已移除；若历史数据仍存在，读写路径会忽略）
 
 #### G. System Trajectory（系统轨迹 / subordinate）
 - `isTimer/isTimeLog/isOutsideApp`（当前用于 subordinate 判定）
@@ -470,7 +470,7 @@ flowchart LR
 - Writers：Plan/EventTree 结构操作（移动、缩进、排序）
 - Readers：Plan、EventTree、批量子树操作
 - 不变量：
-  - `childEventIds` 仅为 legacy hint，不得作为结构真相回写。
+  - `childEventIds` 已移除；若历史数据仍存在，不得作为结构真相回写/依赖。
 
 ---
 
@@ -678,7 +678,7 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 **读（Read）**
 - 列表/快照：由 EventHub/EventService 提供领域数据；Plan 的 focus/filter/snapshot 属于会话态，不得回写到 Event。
 - 标题显示：`resolveDisplayTitle(event)`（不回写）。
-- 结构读取：`parentEventId + position` 为真相；`childEventIds` 只读/repair。
+- 结构读取：`parentEventId + position` 为真相。
 
 **写（Write：必须通过 `EventService` / `TimeHub`）**
 - Content：
@@ -704,7 +704,7 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 
 **禁止项（Forbidden）**
 - 禁止把“解析失败/缺省”的结果写为默认值（例如把时间字段补成当天 00:00–23:59）。
-- 禁止维护 `childEventIds` 作为结构真相。
+- 禁止维护任何“父侧反向列表”作为结构真相；只写子节点自身的 `parentEventId`（必要时更新 `position`）。
 
 **动作（Actions）**
 - 本地发起 Create：输入行创建 → `EventService.createEvent`；最小写集为 `title`（允许空）+（可选）解析得到的 tags/task/time/structure。
@@ -729,7 +729,7 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 - 子节点查询：`parentEventId` 派生（可通过 stats 索引优化，不扫全表）。
 
 **写（Write）**
-- reparent：只写子节点自身的 `parentEventId`（必要时更新 `position`）；不得维护 `childEventIds`。
+- reparent：只写子节点自身的 `parentEventId`（必要时更新 `position`）。
 - 关联：`linkedEventIds/backlinks` 的双向维护必须由 Owner API 统一处理（避免单边脏链）。
 
 **过滤（Filter/Scope）**
@@ -744,7 +744,7 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 **禁止项（Forbidden）**
 - `parentEventId` 是唯一结构真相；`event_stats` 为派生索引，可重建，不能反向成为真相。
 
-> 兼容性说明：当前仓库仍存在 legacy 路径使用 `childEventIds` 做子节点遍历（例如部分 `EventService.getChildEvents` 实现）。本 contract 以 ADR-001 为准：`childEventIds` 只能作为 hint/repair 输入，不能作为长期真相依赖。
+> 兼容性说明：当前仓库已移除 `childEventIds` 的读写/遍历路径；历史数据若仍存在该字段，会被忽略。本 contract 以 ADR-001 为准：结构真相仅来自 `parentEventId + position`。
 
 **动作（Actions）**
 - 本地发起 Create：N/A（EventTree 不是创建入口；创建由 Plan/Calendar/EditModal 负责）。
@@ -1113,7 +1113,7 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 
 - `type`：legacy，仅用于兼容；新代码不应依赖其作为真相。
 - `content`：已废弃（使用 `title.fullTitle`）。
-- `childEventIds`：legacy hint，结构真相来自 `parentEventId + position`。
+- `childEventIds`：已移除（历史数据若存在会被忽略），结构真相来自 `parentEventId + position`。
 - `fourDNoteSource`：历史字段，逐步迁移到 `source`（读取层可双读）。
 
 ---

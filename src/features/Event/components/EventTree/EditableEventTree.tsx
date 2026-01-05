@@ -9,7 +9,7 @@
  * - Enter 创建新事件
  * 
  * 架构：
- * - 基于 parentEventId/childEventIds 构建树形结构
+ * - 基于 parentEventId 构建树形结构（ADR-001）
  * - 每个节点独立的 Slate 编辑器实例
  * - 递归渲染子节点
  */
@@ -21,6 +21,7 @@ import { withHistory } from 'slate-history';
 import { ChevronRight, ChevronDown, Circle, Link as LinkIcon } from 'lucide-react';
 import { Event } from '@frontend/types';
 import { EventService } from '@backend/EventService';
+import { EventTreeAPI } from '@backend/eventTree';
 import { LinkedCard } from './LinkedCard';
 import Tippy from '@tippyjs/react';
 import 'tippy.js/dist/tippy.css';
@@ -187,61 +188,25 @@ export const EditableEventTree: React.FC<EditableEventTreeProps> = ({
 }) => {
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const allEventsRef = useRef<Event[]>([]);
 
   // 构建树形结构（递归加载所有层级）
   const buildTree = useCallback(async (event: Event, depth: number = 0): Promise<TreeNode> => {
-    console.log(`📊 [EventTree] 构建节点 (深度${depth}):`, {
-      id: event.id.slice(-8),
-      title: event.title?.simpleTitle,
-      childEventIds: event.childEventIds,
-      childCount: event.childEventIds?.length || 0,
-      hasChildEventIds: !!event.childEventIds,
-      isArrayType: Array.isArray(event.childEventIds)
-    });
+    const allEvents = allEventsRef.current;
+    const directChildren = EventTreeAPI
+      .getDirectChildren(event.id, allEvents)
+      .filter(child => EventService.shouldShowInEventTree(child));
 
     const children: TreeNode[] = [];
-    
-    if (event.childEventIds && event.childEventIds.length > 0) {
-      console.log(`🔄 [EventTree] 开始加载 ${event.childEventIds.length} 个子事件 (深度${depth})`);
-      
-      for (const childId of event.childEventIds) {
-        console.log(`  ↳ [EventTree] 加载子事件 (深度${depth + 1}):`, childId.slice(-8));
-        
-        const child = await EventService.getEventById(childId);
-        if (child && EventService.shouldShowInEventTree(child)) {
-          console.log(`  ✅ [EventTree] 子事件有效，递归加载 (深度${depth + 1}):`, {
-            id: childId.slice(-8),
-            title: child.title?.simpleTitle,
-            hasOwnChildren: !!child.childEventIds,
-            ownChildCount: child.childEventIds?.length || 0
-          });
-          
-          // 🔥 递归加载子事件的子事件（三级、四级等）
-          const childNode = await buildTree(child, depth + 1);
-          children.push(childNode);
-        } else if (child) {
-          console.log(`⏭️ [EventTree] 跳过系统事件 (深度${depth + 1}):`, child.id.slice(-8));
-        } else {
-          console.warn(`⚠️ [EventTree] 子事件不存在 (深度${depth + 1}):`, childId.slice(-8));
-        }
-      }
-    } else {
-      console.log(`📭 [EventTree] 无子事件 (深度${depth}):`, {
-        id: event.id.slice(-8),
-        childEventIds: event.childEventIds
-      });
+    for (const child of directChildren) {
+      const childNode = await buildTree(child, depth + 1);
+      children.push(childNode);
     }
-
-    console.log(`✅ [EventTree] 节点完成 (深度${depth}):`, {
-      id: event.id,
-      title: event.title?.simpleTitle,
-      loadedChildren: children.length
-    });
 
     return {
       event,
       children,
-      isOpen: true, // 默认展开
+      isOpen: true,
     };
   }, []);
 
@@ -257,10 +222,11 @@ export const EditableEventTree: React.FC<EditableEventTreeProps> = ({
         return;
       }
 
+      allEventsRef.current = await EventService.getAllEvents();
+
       console.log('✅ [EventTree] 根事件加载成功:', {
         id: rootEvent.id,
         title: rootEvent.title?.simpleTitle,
-        directChildren: rootEvent.childEventIds?.length || 0
       });
 
       const tree = await buildTree(rootEvent);

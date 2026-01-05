@@ -68,14 +68,9 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
           parentInfo.event = parentEvent;
           
           // 统计父事件的子事件（同级任务）
-          const siblingIds = parentEvent.childEventIds || [];
-          const siblings: Event[] = [];
-          for (const id of siblingIds) {
-            const sibling = await EventService.getEventById(id);
-            if (sibling && EventService.shouldShowInEventTree(sibling)) {
-              siblings.push(sibling);
-            }
-          }
+          // ADR-001: siblings 来自 parentEventId 推导
+          const siblings = (await EventService.getChildEvents(parentEvent.id))
+            .filter(e => EventService.shouldShowInEventTree(e));
           
           parentInfo.docCount = siblings.filter(e => !e.isTask).length;
           parentInfo.taskTotal = siblings.filter(e => e.isTask).length;
@@ -84,14 +79,9 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       }
 
       // 2. 下级事件信息
-      const childIds = event.childEventIds || [];
-      const children: Event[] = [];
-      for (const id of childIds) {
-        const child = await EventService.getEventById(id);
-        if (child && EventService.shouldShowInEventTree(child)) {
-          children.push(child);
-        }
-      }
+      // ADR-001: children 来自 parentEventId 推导
+      const children = (await EventService.getChildEvents(event.id))
+        .filter(e => EventService.shouldShowInEventTree(e));
       
       const childInfo = {
         total: children.length,

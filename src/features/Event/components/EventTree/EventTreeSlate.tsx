@@ -35,7 +35,6 @@ export interface TreeNodeElement {
   level: number;           // 缩进层级 (0, 1, 2, ...)
   isOpen: boolean;         // 是否展开子节点
   parentEventId?: string;  // 父事件 ID
-  childEventIds?: string[]; // 子事件 ID 列表
   linkedEventIds?: string[]; // 双向链接 ID 列表
   children: Descendant[];  // Slate 文本内容
 }
@@ -138,6 +137,15 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
   const [loading, setLoading] = useState(true);
   const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
 
+  const childCountByEventId = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const node of value) {
+      if (!node.parentEventId) continue;
+      map.set(node.parentEventId, (map.get(node.parentEventId) || 0) + 1);
+    }
+    return map;
+  }, [value]);
+
   // ==================== 数据加载 ====================
 
   /**
@@ -165,7 +173,6 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
       level,
       isOpen: true,
       parentEventId,
-      childEventIds: event.childEventIds || [],
       linkedEventIds: event.linkedEventIds || [],
       children: [{ text: titleText }],
     };
@@ -173,11 +180,11 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
     nodes.push(currentNode);
 
     // 递归加载子节点
-    if (event.childEventIds && event.childEventIds.length > 0) {
-      for (const childId of event.childEventIds) {
-        const childNodes = await buildTreeValue(childId, level + 1, event.id);
-        nodes.push(...childNodes);
-      }
+    // ADR-001: children 来自 parentEventId 推导
+    const children = await EventService.getChildEvents(event.id);
+    for (const child of children) {
+      const childNodes = await buildTreeValue(child.id, level + 1, event.id);
+      nodes.push(...childNodes);
     }
 
     return nodes;
@@ -324,7 +331,7 @@ export const EventTreeSlate: React.FC<EventTreeSlateProps> = ({
 
     if ((element as any).type === 'tree-node') {
       const treeNode = element as unknown as TreeNodeElement;
-      const hasChildren = treeNode.childEventIds && treeNode.childEventIds.length > 0;
+      const hasChildren = (childCountByEventId.get(treeNode.eventId) || 0) > 0;
       const isCollapsed = collapsedNodes.has(treeNode.nodeId);
 
       // 加载链接的事件

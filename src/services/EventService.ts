@@ -730,35 +730,7 @@ export class EventService {
       }
       
       // 🆕 自动维护父子事件双向关联
-      if (finalEvent.parentEventId) {
-        const parentEvent = await this.getEventById(finalEvent.parentEventId);
-        
-        if (parentEvent) {
-          // 初始化 childEventIds 数组
-          const childIds = parentEvent.childEventIds || [];
-          
-          // 添加子事件 ID（避免重复）
-          if (!childIds.includes(finalEvent.id)) {
-            await this.updateEvent(parentEvent.id, {
-              childEventIds: [...childIds, finalEvent.id]
-            }, true); // skipSync=true 避免递归同步
-            
-            eventLogger.log('🔗 [EventService] 已关联子事件到父事件:', {
-              parentId: parentEvent.id,
-              parentTitle: parentEvent.title?.simpleTitle,
-              childId: finalEvent.id,
-              childTitle: finalEvent.title?.simpleTitle,
-              childType: this.getEventType(finalEvent),
-              totalChildren: childIds.length + 1
-            });
-          }
-        } else {
-          eventLogger.warn('⚠️ [EventService] 父事件不存在:', {
-            parentId: finalEvent.parentEventId,
-            childId: finalEvent.id
-          });
-        }
-      }
+      // ADR-001: 树结构真相 = child.parentEventId；不再维护父侧反向列表（已移除）
       
       // 🆕 v2.16: 记录到事件历史 (跳过池化占位事件)
       if (!(finalEvent as any)._isPlaceholder) {
@@ -1122,7 +1094,6 @@ export class EventService {
       const localOnlyFields = new Set([
         'tags',
         'remarkableSource',
-        'childEventIds',
         'parentEventId',
         'linkedEventIds',
         'backlinks',
@@ -1276,7 +1247,7 @@ export class EventService {
       };
       
       // ⚡️ [TRANSIENT BUFFER] 立即更新到临时缓冲区
-      // 确保后续的 getEventById 能读到最新状态（包括刚更新的 childEventIds）
+      // 确保后续的 getEventById 能读到最新状态
       this.pendingWrites.set(eventId, updatedEvent);
       eventLogger.log('⚡️ [TransientBuffer] Event added to pending writes:', {
         eventId: eventId.slice(-8),
@@ -1297,84 +1268,7 @@ export class EventService {
         });
       }
 
-      // 🆕 检测 parentEventId 变化，同步更新双向关联
-      // 🔧 修复：即使 parentEventId 没有变化，也要确保父事件的 childEventIds 包含当前事件
-      if (filteredUpdates.parentEventId !== undefined) {
-        const parentHasChanged = filteredUpdates.parentEventId !== originalEvent.parentEventId;
-        
-        if (parentHasChanged) {
-          eventLogger.log('🔗 [EventService] Detected parentEventId change, syncing bi-directional links');
-        
-          // 从旧父事件移除
-          if (originalEvent.parentEventId) {
-            const oldParent = await this.getEventById(originalEvent.parentEventId);
-            if (oldParent && oldParent.childEventIds) {
-              await this.updateEvent(
-                oldParent.id,
-                {
-                  childEventIds: oldParent.childEventIds.filter(cid => cid !== eventId)
-                },
-                true // skipSync
-              );
-              
-              eventLogger.log('🔗 [EventService] 已从旧父事件移除子事件:', {
-                oldParentId: originalEvent.parentEventId,
-                childId: eventId,
-                remainingChildren: oldParent.childEventIds.length - 1
-              });
-            }
-          }
-        }
-        
-        // 🔧 无论是否变化，都要确保父事件的 childEventIds 包含当前事件
-        if (filteredUpdates.parentEventId) {
-          const newParent = await this.getEventById(filteredUpdates.parentEventId);
-          if (newParent) {
-            const childIds = newParent.childEventIds || [];
-            
-            if (!childIds.includes(eventId)) {
-              await this.updateEvent(
-                newParent.id,
-                {
-                  childEventIds: [...childIds, eventId]
-                },
-                true // skipSync
-              );
-              
-              eventLogger.log('🔗 [EventService] 已添加子事件到新父事件:', {
-                newParentId: filteredUpdates.parentEventId,
-                childId: eventId,
-                totalChildren: childIds.length + 1,
-                reason: parentHasChanged ? 'parentEventId changed' : 'ensuring consistency'
-              });
-            } else {
-              eventLogger.log('✅ [EventService] 父事件已包含子事件，跳过:', {
-                parentId: filteredUpdates.parentEventId.slice(-8),
-                childId: eventId.slice(-8)
-              });
-            }
-          } else {
-            // 🔧 [FIX] 父事件可能正在创建中（批量保存未完成），保留 parentEventId
-            // 只有当父事件ID明显无效时才清除（如临时ID）
-            if (filteredUpdates.parentEventId.startsWith('line-')) {
-              eventLogger.warn('⚠️ [EventService] 父事件ID是临时ID，清除 parentEventId:', {
-                childId: eventId.slice(-8),
-                invalidParentId: filteredUpdates.parentEventId,
-                action: 'clearing parentEventId'
-              });
-              delete filteredUpdates.parentEventId;
-              delete updatedEvent.parentEventId;
-            } else {
-              // 真实ID但暂时找不到，可能正在创建中，保留它
-              eventLogger.warn('⚠️ [EventService] 父事件暂时不存在（可能正在创建），保留 parentEventId:', {
-                childId: eventId.slice(-8),
-                parentId: filteredUpdates.parentEventId.slice(-8),
-                action: 'keeping parentEventId for future consistency'
-              });
-            }
-          }
-        }
-      }
+      // ADR-001: 树结构真相 = child.parentEventId；不再维护父侧反向列表（已移除）
 
       // 更新到 StorageManager（双写到 IndexedDB + SQLite）
       const storageEvent = this.convertEventToStorageEvent(updatedEvent);
@@ -1540,7 +1434,7 @@ export class EventService {
    * ```typescript
    * const result = await EventService.batchUpdateEvents([
    *   { ...event1, parentEventId: 'new_parent' },
-   *   { ...event2, childEventIds: [..., 'event1'] }
+  *   { ...event1, parentEventId: 'event2' }
    * ], true);
    * ```
    */
@@ -3567,7 +3461,6 @@ export class EventService {
       
       // Timer 关联
       parentEventId: event.parentEventId,
-      childEventIds: event.childEventIds,
       
       // 日历同步配置
       // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
@@ -5821,29 +5714,30 @@ export class EventService {
    * ✅ [EventTreeAPI] 使用 TreeAPI.getDirectChildren 统一树逻辑
    */
   static async getChildEvents(parentId: string): Promise<Event[]> {
-    const parent = await this.getEventById(parentId);
-    if (!parent?.childEventIds || parent.childEventIds.length === 0) return [];
-    
-    // ✅ [OPTIMIZATION] 批量查询所有子事件，然后使用 TreeAPI 排序
+    // ADR-001: 通过 parentEventId 派生子列表（EventStats 索引 → 批量取全量 Event）
     try {
-      const result = await storageManager.queryEvents({
-        filters: { eventIds: parent.childEventIds },
-        limit: 1000 // 足够大的限制
+      const stats = await storageManager.getEventStatsByParentEventId(parentId);
+      if (!stats || stats.length === 0) return [];
+
+      const childIds = stats.map(s => s.id).filter(Boolean);
+      if (childIds.length === 0) return [];
+
+      await storageManager.queryEvents({
+        filters: { eventIds: childIds },
+        limit: 1000
       });
-      
-      // ✅ 使用 EventTreeAPI 保证排序和验证
+
       const allEvents = await this.getAllEvents();
       const sortedChildren = EventTreeAPI.getDirectChildren(parentId, allEvents);
-      
-      eventLogger.log('⚡️ [getChildEvents] TreeAPI query completed:', {
+
+      eventLogger.log('⚡️ [getChildEvents] TreeAPI (ADR-001) completed:', {
         parentId: parentId.slice(-8),
-        childCount: sortedChildren.length,
-        expected: parent.childEventIds.length
+        childCount: sortedChildren.length
       });
-      
+
       return sortedChildren;
     } catch (error) {
-      eventLogger.error('❌ [getChildEvents] Query failed:', error);
+      eventLogger.error('❌ [getChildEvents] ADR-001 query failed:', error);
       return [];
     }
   }
@@ -5906,32 +5800,45 @@ export class EventService {
    * 递归获取整个事件树（广度优先遍历）
    */
   static async getEventTree(rootId: string): Promise<Event[]> {
+    // ADR-001: 树结构真相 = child.parentEventId
+    const allEvents = await this.getAllEvents();
+    const eventsById = new Map(allEvents.map(e => [e.id, e] as const));
+
+    if (!eventsById.has(rootId)) return [];
+
+    const childrenMap = new Map<string, string[]>();
+    for (const e of allEvents) {
+      if (!e.parentEventId) continue;
+      const list = childrenMap.get(e.parentEventId) || [];
+      list.push(e.id);
+      childrenMap.set(e.parentEventId, list);
+    }
+
     const result: Event[] = [];
     const visited = new Set<string>();
     const queue = [rootId];
-    
+
     while (queue.length > 0) {
       const currentId = queue.shift()!;
-      
+
       // 避免循环引用
       if (visited.has(currentId)) {
         eventLogger.warn('⚠️ [EventService] 检测到循环引用:', currentId);
         continue;
       }
       visited.add(currentId);
-      
-      const event = await this.getEventById(currentId);
-      
-      if (event) {
-        result.push(event);
-        
-        // 添加子事件到队列
-        if (event.childEventIds) {
-          queue.push(...event.childEventIds);
-        }
+
+      const event = eventsById.get(currentId);
+      if (!event) continue;
+
+      result.push(event);
+
+      const childIds = childrenMap.get(currentId);
+      if (childIds && childIds.length > 0) {
+        queue.push(...childIds);
       }
     }
-    
+
     return result;
   }
 
@@ -5949,43 +5856,50 @@ export class EventService {
   static async buildEventTree(rootId: string): Promise<EventTreeNode> {
     // 1. 批量查询所有事件（一次查询）
     const allEvents = await this.getAllEvents();
-    
+
     // 2. 使用EventTreeAPI获取完整子树（纯内存操作）
     const subtree = EventTreeAPI.getSubtree(rootId, allEvents);
-    
+
     if (subtree.length === 0) {
       throw new Error(`Event not found: ${rootId}`);
     }
-    
+
     // 3. 构建TreeNode结构（纯内存操作）
-    const eventsById = new Map(subtree.map(e => [e.id, e]));
-    
-    const buildNode = (id: string): EventTreeNode => {
+    const eventsById = new Map(subtree.map(e => [e.id, e] as const));
+
+    const buildNode = (id: string, stack: Set<string>): EventTreeNode => {
       const event = eventsById.get(id);
       if (!event) {
         throw new Error(`Event not found: ${id}`);
       }
-      
+
+      if (stack.has(id)) {
+        eventLogger.warn('⚠️ [EventService] 检测到循环引用(构建树):', id);
+        return { ...event, children: [] };
+      }
+
+      const nextStack = new Set(stack);
+      nextStack.add(id);
+
+      // ADR-001: children 来自 parentEventId 推导 + EventTreeAPI 排序
+      const directChildren = EventTreeAPI.getDirectChildren(id, subtree).filter(c => eventsById.has(c.id));
       const children: EventTreeNode[] = [];
-      if (event.childEventIds && event.childEventIds.length > 0) {
-        for (const childId of event.childEventIds) {
-          if (eventsById.has(childId)) {
-            try {
-              children.push(buildNode(childId));
-            } catch (error) {
-              eventLogger.error('❌ [EventService] 构建子树失败:', childId, error);
-            }
-          }
+
+      for (const child of directChildren) {
+        try {
+          children.push(buildNode(child.id, nextStack));
+        } catch (error) {
+          eventLogger.error('❌ [EventService] 构建子树失败:', child.id, error);
         }
       }
-      
+
       return {
         ...event,
-        children
+        children,
       };
     };
-    
-    return buildNode(rootId);
+
+    return buildNode(rootId, new Set());
   }
 
   /**
@@ -6266,22 +6180,6 @@ export class EventService {
           });
         }
         
-        // 检查 childEventIds
-        if (event.childEventIds && Array.isArray(event.childEventIds)) {
-          const index = event.childEventIds.indexOf(tempId);
-          if (index !== -1) {
-            const newChildIds = [...event.childEventIds];
-            newChildIds[index] = realId;
-            updates.childEventIds = newChildIds;
-            needUpdate = true;
-            eventLogger.log('🔥 [TempId] 找到引用临时ID的childEventIds:', {
-              eventId: event.id.slice(-8),
-              oldChildId: tempId,
-              newChildId: realId
-            });
-          }
-        }
-        
         if (needUpdate) {
           needsUpdate.push({ ...event, ...updates });
         }
@@ -6295,8 +6193,7 @@ export class EventService {
           await this.updateEvent(
             event.id,
             {
-              parentEventId: event.parentEventId,
-              childEventIds: event.childEventIds
+              parentEventId: event.parentEventId
             },
             true, // skipSync
             {

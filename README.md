@@ -163,8 +163,8 @@ LocalStorage (缓存层)
 
 ```typescript
 // EventTree 自动维护机制
-EventService.createEvent() → 自动设置 parentEventId/childEventIds
-EventService.updateEvent() → 自动同步父子关系
+EventService.createEvent() → 持久化 parentEventId（结构真相）
+EventService.updateEvent() → 更新 parentEventId/position（不维护父侧反向列表）
 EventService.deleteEvent() → 软删除，保留关系链
 
 // 双向链接功能

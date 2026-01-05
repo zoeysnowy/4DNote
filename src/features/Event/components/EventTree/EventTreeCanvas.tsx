@@ -5,7 +5,7 @@
  * 
  * 功能：
  * - 过滤系统事件（isTimer/isOutsideApp/isTimeLog）
- * - 父子关系可视化（刚性骨架 - parentEventId/childEventIds）
+ * - 父子关系可视化（刚性骨架 - parentEventId）
  * - 双向链接堆叠卡片（柔性血管 - linkedEventIds/backlinks）
  * - 自动布局（使用 dagre 算法）
  * - 交互：拖拽、缩放、点击节点打开 EventEditModal
@@ -54,7 +54,7 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
 
   // 构建节点数据
   const initialNodes: Node<EventNodeData>[] = useMemo(() => {
-    // ADR-001: childEvents 来自 parentEventId 推导（childEventIds 仅 legacy hint）
+    // ADR-001: childEvents 来自 parentEventId 推导
     const childrenMap = new Map<string, Event[]>();
     for (const e of filteredEvents) {
       if (e.parentEventId) {
@@ -88,20 +88,19 @@ export const EventTreeCanvas: React.FC<EventTreeCanvasProps> = ({
   // 构建边数据（父子关系）
   const initialEdges: Edge[] = useMemo(() => {
     const edges: Edge[] = [];
-    
-    filteredEvents.forEach(event => {
-      // 为每个子事件创建一条边
-      event.childEventIds?.forEach(childId => {
-        // 检查子事件是否在过滤后的事件列表中
-        if (filteredEvents.some(e => e.id === childId)) {
-          edges.push({
-            id: `${event.id}-${childId}`,
-            source: event.id,
-            target: childId,
-            type: 'smoothstep',
-            animated: false,
-          });
-        }
+
+    // ADR-001: 边来自 child.parentEventId
+    const exists = new Set(filteredEvents.map(e => e.id));
+    filteredEvents.forEach(child => {
+      if (!child.parentEventId) return;
+      if (!exists.has(child.parentEventId)) return;
+
+      edges.push({
+        id: `${child.parentEventId}-${child.id}`,
+        source: child.parentEventId,
+        target: child.id,
+        type: 'smoothstep',
+        animated: false,
       });
     });
     
