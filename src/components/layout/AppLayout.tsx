@@ -7,7 +7,7 @@ import { SyncStatusStore } from '@frontend/state/syncStatusStore';
 import PanelIconSvg from '@frontend/assets/icons/Panel.svg';
 
 // 页面类型定义
-export type PageType = 'home' | 'timecalendar' | 'timelog' | 'tag' | 'plan' | 'sync' | 'ai-demo' | 'ai-demo-v2' | 'rag-demo';
+export type PageType = 'home' | 'timecalendar' | 'timelog' | 'tag' | 'plan' | 'sync' | 'ai-demo' | 'ai-demo-v2' | 'rag-demo' | 'theme-demo';
 
 interface AppLayoutProps {
   currentPage: PageType;
@@ -150,6 +150,7 @@ const Sidebar: React.FC<SidebarProps> = ({ currentPage, onPageChange, onPanelTog
     { id: 'tag' as PageType, label: '标签', icon: 'tag' },
     { id: 'plan' as PageType, label: '计划', icon: 'plan' },
     { id: 'sync' as PageType, label: '同步', icon: 'sync' },
+    { id: 'theme-demo' as PageType, label: '主题', icon: 'setting' },
     { id: 'ai-demo-v2' as PageType, label: 'AI V2', icon: 'ai-demo' },
     { id: 'rag-demo' as PageType, label: 'RAG Demo', icon: 'rag-demo' }
   ];

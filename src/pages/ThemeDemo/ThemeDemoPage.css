@@ -1,0 +1,119 @@
+.theme-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* AppLayout main area is overflow:hidden; enable scrolling inside this page */
+.page-container.theme-demo-page-container {
+  height: 100%;
+}
+
+.page-container.theme-demo-page-container .page-content {
+  overflow-y: auto;
+  padding-right: 8px; /* keep space from scrollbar */
+}
+
+.theme-demo .theme-demo-card {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.theme-demo .theme-demo-card.theme-demo-card--transparent {
+  background: transparent;
+}
+
+.theme-demo .theme-demo-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ui-text);
+  margin-bottom: 10px;
+}
+
+.theme-demo .theme-demo-muted {
+  color: var(--ui-text-muted);
+}
+
+.theme-demo .theme-demo-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.theme-demo .theme-demo-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.theme-demo .theme-demo-btn.primary {
+  background: var(--ui-btn-primary-bg);
+  color: var(--ui-btn-primary-text);
+}
+
+.theme-demo .theme-demo-btn.primary:hover {
+  background: var(--ui-btn-primary-bg-hover);
+}
+
+.theme-demo .theme-demo-btn.primary:active {
+  background: var(--ui-btn-primary-bg-press);
+}
+
+.theme-demo .theme-demo-btn.secondary {
+  background: var(--ui-btn-secondary-bg);
+  border-color: var(--ui-btn-secondary-border);
+  color: var(--ui-btn-secondary-text);
+}
+
+.theme-demo .theme-demo-btn.secondary:hover {
+  background: var(--ui-btn-secondary-bg-hover);
+}
+
+.theme-demo .theme-demo-btn.danger {
+  background: var(--ui-btn-danger-bg);
+  color: var(--ui-btn-danger-text);
+}
+
+.theme-demo .theme-demo-btn.danger:hover {
+  background: var(--ui-btn-danger-bg-hover);
+}
+
+.theme-demo .theme-demo-btn.danger:active {
+  background: var(--ui-btn-danger-bg-press);
+}
+
+.theme-demo .theme-palette {
+  display: grid;
+  grid-template-columns: repeat(6, 44px);
+  gap: 8px;
+}
+
+.theme-demo .theme-palette.theme-palette--5 {
+  grid-template-columns: repeat(5, 44px);
+}
+
+.theme-demo .theme-swatch {
+  width: 44px;
+  height: 28px;
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.theme-demo .theme-family {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.theme-demo .theme-family-name {
+  font-weight: 600;
+  color: var(--ui-text);
+}

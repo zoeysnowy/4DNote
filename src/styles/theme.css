@@ -1,0 +1,148 @@
+/*
+  Theme tokens (Morandi-inspired)
+  - This file intentionally only defines CSS variables.
+  - Components can gradually migrate to these tokens.
+*/
+
+:root {
+  /* Neutrals / surfaces (aligned with existing App.css vibe) */
+  --ui-bg-1: #f5f7fa;
+  --ui-bg-2: #c3cfe2;
+  --ui-text: #333;
+  --ui-text-muted: #666;
+  --ui-border: rgba(0, 0, 0, 0.12);
+
+  --ui-surface: rgba(255, 255, 255, 0.92);
+  --ui-surface-strong: #ffffff;
+  --ui-surface-soft: rgba(255, 255, 255, 0.75);
+
+  /* Brand palette (from Figma: "4D Note | APP Colorcode") */
+  --brand-accent-purple: #8b5cf6;
+  --brand-accent-blue: #3b82f6;
+  --brand-accent-pink: #f48fb1;
+  --brand-accent-neutral: #f1f0f8;
+
+  --brand-smoked-purple-1: #f5f3f7;
+  --brand-smoked-purple-2: #ebe8f0;
+  --brand-smoked-purple-3: #d6cfde;
+  --brand-smoked-purple-4: #9b8ca8;
+  --brand-smoked-purple-5: #6b5d7b;
+
+  --brand-rustic-red-1: #f9f4f4;
+  --brand-rustic-red-2: #f2ebeb;
+  --brand-rustic-red-3: #e0d1d1;
+  --brand-rustic-red-4: #b58b8b;
+  --brand-rustic-red-5: #855858;
+
+  --brand-ginger-yellow-1: #fdf9f0;
+  --brand-ginger-yellow-2: #fcf4e3;
+  --brand-ginger-yellow-3: #fae7bf;
+  --brand-ginger-yellow-4: #f0c875;
+  --brand-ginger-yellow-5: #e8b854;
+
+  --brand-deep-pine-1: #f2f7f7;
+  --brand-deep-pine-2: #e6f0f0;
+  --brand-deep-pine-3: #c8dedf;
+  --brand-deep-pine-4: #659496;
+  --brand-deep-pine-5: #2e5b5e;
+
+  --brand-glacier-blue-1: #f0f8fc;
+  --brand-glacier-blue-2: #e0f1fa;
+  --brand-glacier-blue-3: #bce2f5;
+  --brand-glacier-blue-4: #61b0d3;
+  --brand-glacier-blue-5: #026da9;
+
+  --brand-periwinkle-1: #f4f6fa;
+  --brand-periwinkle-2: #e9edf5;
+  --brand-periwinkle-3: #d1d9eb;
+  --brand-periwinkle-4: #95a8cb;
+  --brand-periwinkle-5: #6c84b1;
+
+  --brand-graphite-1: #f5f6f7;
+  --brand-graphite-2: #ebedf0;
+  --brand-graphite-3: #d6d9e0;
+  --brand-graphite-4: #9ca1ad;
+  --brand-graphite-5: #6c707b;
+
+  /* Tag palette (8 families × 6 steps) */
+  --tag-red-1: #F7D0D0;
+  --tag-red-2: #EBB0A3;
+  --tag-red-3: #D6847F;
+  --tag-red-4: #C4645E;
+  --tag-red-5: #A85A5A;
+  --tag-red-6: #823C3C;
+
+  --tag-orange-1: #FAE3C6;
+  --tag-orange-2: #F0C99E;
+  --tag-orange-3: #E0A872;
+  --tag-orange-4: #C98A55;
+  --tag-orange-5: #A66D46;
+  --tag-orange-6: #855030;
+
+  --tag-yellow-1: #FCEFC7;
+  --tag-yellow-2: #F5DE9E;
+  --tag-yellow-3: #EBC968;
+  --tag-yellow-4: #D6AF4E;
+  --tag-yellow-5: #B38E36;
+  --tag-yellow-6: #8F6E20;
+
+  --tag-green-1: #D4E0D1;
+  --tag-green-2: #ACC4A8;
+  --tag-green-3: #7E9C7A;
+  --tag-green-4: #527050;
+  --tag-green-5: #324F33;
+  --tag-green-6: #1F3620;
+
+  --tag-cyan-1: #C4EBEB;
+  --tag-cyan-2: #96D6D6;
+  --tag-cyan-3: #69BDBD;
+  --tag-cyan-4: #459696;
+  --tag-cyan-5: #2D7575;
+  --tag-cyan-6: #1B5252;
+
+  --tag-blue-1: #D6E8F7;
+  --tag-blue-2: #B3D4ED;
+  --tag-blue-3: #8BB8DE;
+  --tag-blue-4: #649AC9;
+  --tag-blue-5: #4278A6;
+  --tag-blue-6: #2E567A;
+
+  --tag-purple-1: #EBE0F5;
+  --tag-purple-2: #D6C4E6;
+  --tag-purple-3: #BCA0D6;
+  --tag-purple-4: #9D7DBA;
+  --tag-purple-5: #7A5B96;
+  --tag-purple-6: #5C4175;
+
+  --tag-gray-1: #F1F5F9;
+  --tag-gray-2: #E2E8F0;
+  --tag-gray-3: #CBD5E1;
+  --tag-gray-4: #94A3B8;
+  --tag-gray-5: #64748B;
+  --tag-gray-6: #475569;
+
+  /* UI semantic accents (default to Tag Palette for nicer button states) */
+  --ui-accent: var(--tag-blue-4);
+  --ui-accent-hover: var(--tag-blue-5);
+  --ui-accent-press: var(--tag-blue-6);
+
+  --ui-danger: var(--tag-red-4);
+  --ui-danger-hover: var(--tag-red-5);
+  --ui-danger-press: var(--tag-red-6);
+
+  /* Button tokens */
+  --ui-btn-primary-bg: var(--ui-accent);
+  --ui-btn-primary-bg-hover: var(--ui-accent-hover);
+  --ui-btn-primary-bg-press: var(--ui-accent-press);
+  --ui-btn-primary-text: #ffffff;
+
+  --ui-btn-secondary-bg: var(--ui-surface-soft);
+  --ui-btn-secondary-bg-hover: var(--ui-surface);
+  --ui-btn-secondary-text: var(--ui-text);
+  --ui-btn-secondary-border: var(--ui-border);
+
+  --ui-btn-danger-bg: var(--ui-danger);
+  --ui-btn-danger-bg-hover: var(--ui-danger-hover);
+  --ui-btn-danger-bg-press: var(--ui-danger-press);
+  --ui-btn-danger-text: #ffffff;
+}

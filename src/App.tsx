@@ -17,6 +17,7 @@ import CalendarPage from '@frontend/pages/Calendar';
 import TimeLogPage from '@frontend/pages/TimeLog';
 import TagPage from '@frontend/pages/Tag';
 import PlanPage from '@frontend/pages/Plan';
+import ThemeDemoPage from '@frontend/pages/ThemeDemo';
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
 import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
@@ -1924,6 +1925,12 @@ function App() {
           <React.Suspense fallback={<PageContainer title="RAG Demo"><div>加载中...</div></PageContainer>}>
             <RAGDemo />
           </React.Suspense>
+        );
+        break;
+
+      case 'theme-demo':
+        content = (
+          <ThemeDemoPage />
         );
         break;
 
