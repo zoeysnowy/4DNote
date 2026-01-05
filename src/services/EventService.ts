@@ -3395,26 +3395,47 @@ export class EventService {
       : event.fourDNoteSource;
     const finalSource = extractedCreator.source || event.source;
     
-    // 🆕 [v2.19] Note 事件时间标准化：startTime = createdAt（统一处理）
+    // 🆕 [v2.19] Note 事件时间标准化：仅对「非任务」且无时间的事件派生虚拟时间
+    // 重要：Task(isTask=true) 允许无时间；不能被默认注入 startTime/endTime。
     let isVirtualTime = false;
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
-    
-    // 检测 note 事件：没有真实时间的事件
-    if (!event.startTime && !event.endTime) {
+
+    const isTimeLogEvent = event.isTimeLog === true;
+    const hasAnyTime = !!event.startTime || !!event.endTime;
+
+    // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
+    // Note: legacy call sites may set only some of these fields; check a small set of hints.
+    const isTaskLikeEvent =
+      event.isTask === true ||
+      event.isPlan === true ||
+      event.type === 'todo' ||
+      event.type === 'task' ||
+      (event.checkType !== undefined && event.checkType !== 'none');
+
+    // System time logs should have explicit time; if not, treat as data bug (do not inject).
+    if (isTimeLogEvent && !hasAnyTime) {
+      console.warn('[normalizeEvent] ⚠️ TimeLog 事件缺少时间字段（start/end），已保持为空（不注入虚拟时间）:', {
+        eventId: event.id?.slice(-8),
+        createdAt: finalCreatedAt?.slice(0, 19),
+        updatedAt: finalUpdatedAt?.slice(0, 19)
+      });
+    }
+
+    // 检测 note 事件：没有真实时间、且不是 Plan/Task-like、且不是系统 TimeLog 的事件
+    if (!hasAnyTime && !isTaskLikeEvent && !isTimeLogEvent) {
       const createdDate = new Date(finalCreatedAt);
       syncStartTime = formatTimeForStorage(createdDate);
       syncEndTime = null;  // ⚠️ endTime 保持为空，虚拟时间仅在同步时添加
-      
-      // 🔧 修复：所有无时间的 Note 事件都标记为虚拟时间
+
       isVirtualTime = true;
-      
+
       console.log('[normalizeEvent] 📝 Note事件时间标准化:', {
         eventId: event.id?.slice(-8),
         startTime: syncStartTime,
         endTime: syncEndTime,
         isVirtualTime: true,
-        reason: '无原始时间'
+        reason: '无原始时间（非Task事件）'
       });
     }
     
@@ -3513,7 +3534,8 @@ export class EventService {
       // 时间字段（使用虚拟时间或真实时间）
       startTime: syncStartTime,
       endTime: syncEndTime,
-      isAllDay: event.isAllDay || false,
+      // 事件字段允许 undefined；不要在 normalize 阶段强制注入 false
+      isAllDay: typeof event.isAllDay === 'boolean' ? event.isAllDay : undefined,
       dueDateTime: event.dueDateTime,
       
       // 🆕 [v2.19] 虚拟时间标记（内部字段，不存储）
