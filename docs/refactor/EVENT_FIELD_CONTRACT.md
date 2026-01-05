@@ -95,27 +95,38 @@
 
 #### 4.5.2 Event（现有）过滤字段清单 + 各模块行为
 
-| 字段/字段组 | 语义归类 | PlanManager | TimeCalendar | Dashboard（Upcoming/面板） | EventTree | Search/Index | Sync Router |
-|---|---|---|---|---|---|---|---|
-| `deletedAt` | 生命周期 | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** |
-| `isPlan` | 模块来源 | **纳入**（并集条件之一） | 不作为核心筛选（可显示/编辑） | 可作为“待办/计划”入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） |
-| `isTimeCalendar` | 模块来源 | **纳入**（并集条件之一） | **核心模块**（TimeCalendar 创建/管理） | 可作为入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） |
-| `isTask` | 业务类型 | **隐式纳入**（多数 Plan 事件应是 task） | 可显示，但“无时间 task”需特殊处理 | 可能用于任务统计/筛选 | 用于任务计数/完成态 | 影响索引语义 | **决定 target=todo** |
-| `type` (`todo|task|event`) | 兼容字段 | **辅助**（不要单独依赖） | 辅助 | 辅助 | 辅助 | 辅助 | 辅助（仅用于 task-like 兜底） |
-| `checkType/checked/unchecked` | 任务/签到过滤 | **纳入**（并集条件之一：`checkType!==none`） | 可显示/用于签到 UI | Upcoming 面板用作主过滤条件之一 | 可显示 | 可索引 | 不决定 target |
-| `isCompleted` | 完成态 | 正常模式可隐藏（`showCompleted=false`） | 可显示 | 可隐藏/排序 | 影响样式/计数 | 可索引 | ToDo 同步映射字段 |
-| `dueDateTime` + `isDeadline` | 截止语义 | 用于过期过滤（示例：>7天未完成） | 用于展示/排序 | 用于范围过滤/倒计时 | 可显示 | 可索引 | ToDo 字段映射；不等价于 `endTime` |
-| `startTime/endTime/isAllDay` | 时间存在性/展示 | Snapshot 模式会用 `resolveCalendarDateRange` 做范围过滤 | **核心筛选**（按日期范围、全天/时间块） | Upcoming 按时间范围筛选（依赖 `isEventInRange`） | 用于渲染位置/时间线 | 可索引 | `start+end` 决定 calendar 可同步；**task 时间允许空** |
-| `tags` | 标签过滤 | 非核心（Plan 里更多是结构/状态） | **核心筛选**（`visibleTags`；支持 `no-tag` 特殊选项） | 非核心 | 非核心 | 可索引 | 不决定 target |
-| `category` | 兼容/展示分类 | 视产品口径 | TimeCalendar 内部会推导类别；此字段更多用于 legacy/调试 | 视产品口径 | 视产品口径 | 可索引 | 不决定 target |
-| `syncMode` | 同步策略 | 仅展示/编辑 | 仅展示/编辑 | 仅展示/编辑 | - | - | `receive-only` 必须不推送 |
-| `calendarIds/todoListIds` | 同步目标选择 | Plan save/编辑可写“用户意图” | TimeCalendar 视图会用于日历筛选 | - | - | - | Sync 层映射与分流 |
-| `externalId` | 外部映射 | - | TimeCalendar 支持 `not-synced`（无 `externalId` 或无 `calendarIds`）筛选 | - | - | - | Sync 合并/映射写入 |
-| `source/fourDNoteSource` | 来源/本地创建 | - | TimeCalendar 支持 `local-created`（`source=local` 或 `fourDNoteSource=true`）筛选 | - | - | - | Sync 合并/映射写入 |
-| `syncStatus` | 同步状态 | 展示/诊断 | 展示/诊断 | - | - | - | Sync 合并/映射写入 |
-| `isTimer/isTimeLog/isOutsideApp` | 系统轨迹/记录（subordinate） | **排除**（`EventService.isSubordinateEvent`） | Timer 可能参与 TimeCalendar 视图（视产品口径） | **排除**（面板明确排除） | **排除**（EventTree 明确排除） | 通常不作为主结果 | 通常不推送（除非专门映射） |
-| `isNote` | 快速访问/标记 | 视产品口径（一般不作为 Plan 条件） | 视产品口径 | 视产品口径 | 视产品口径 | 可能影响 icon/召回 | 不决定 target |
-| `parentEventId/position` | 结构与排序 | Plan 结构/缩进/排序（间接影响展示） | 非核心 | 非核心 | **核心**（树结构与同级排序） | 非核心 | 不决定 target |
+| 字段/字段组 | 字段类型 | 功能类型 | 语义归类 | PlanManager | TimeCalendar | TimeLog（Timeline） | Dashboard（Upcoming/面板） | EventTree | Search/Index | Sync Router | EventHistory |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| `deletedAt` | Canonical | Filter | 生命周期 | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** | **记录**（delete/update 链路均可能产生日志） |
+| `isPlan` | Canonical | Filter | 模块来源 | **纳入**（并集条件之一） | 不作为核心筛选（可显示/编辑） | **纳入**（仅显式时间；无时间排除） | 可作为“待办/计划”入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） | **记录** |
+| `isTimeCalendar` | Canonical | Filter | 模块来源 | **纳入**（并集条件之一） | **核心模块**（TimeCalendar 创建/管理） | **纳入**（按时间范围） | 可作为入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） | **记录** |
+| `isTask` | Canonical | Routing | 业务类型 | **隐式纳入**（多数 Plan 事件应是 task） | 可显示，但“无时间 task”需特殊处理 | **仅显式时间纳入**（无时间 task 不上时间轴） | 可能用于任务统计/筛选 | 用于任务计数/完成态 | 影响索引语义 | **决定 target=todo** | **记录** |
+| `type` (`todo\|task\|event`) | Legacy | Compat | 兼容字段 | **辅助**（不要单独依赖） | 辅助 | 辅助 | 辅助 | 辅助 | 辅助 | 辅助（仅用于 task-like 兜底） | **记录**（若被写入/变更） |
+| `checkType/checked/unchecked` | Canonical | Filter | 任务/签到过滤 | **纳入**（并集条件之一：`checkType!==none`） | 可显示/用于签到 UI | 非核心（不决定时间轴） | Upcoming 面板用作主过滤条件之一 | 可显示 | 可索引 | 不决定 target | **记录** |
+| `isCompleted` | Canonical | Filter+Sync | 完成态 | 正常模式可隐藏（`showCompleted=false`） | 可显示 | 可显示（不作为主过滤） | 可隐藏/排序 | 影响样式/计数 | 可索引 | ToDo 同步映射字段 | **记录** |
+| `dueDateTime` + `isDeadline` | Canonical | Filter+Sync | 截止语义 | 用于过期过滤（示例：>7天未完成） | 用于展示/排序 | 非核心（可展示/排序） | 用于范围过滤/倒计时 | 可显示 | 可索引 | ToDo 字段映射；不等价于 `endTime` | **记录** |
+| `startTime/endTime/isAllDay` | Canonical | Filter+Sync | 时间存在性/展示 | Snapshot 模式会用 `resolveCalendarDateRange` 做范围过滤 | **核心筛选**（按日期范围、全天/时间块） | **核心筛选**（范围加载/排序/分组；Plan/Task 需显式时间） | Upcoming 按时间范围筛选（依赖 `isEventInRange`） | 用于渲染位置/时间线 | 可索引 | `start+end` 决定 calendar 可同步；**task 时间允许空** | **记录** |
+| `tags` | Canonical | Filter | 标签过滤 | 非核心（Plan 里更多是结构/状态） | **核心筛选**（`visibleTags`；支持 `no-tag` 特殊选项） | **核心筛选**（hiddenTags 等） | 非核心 | 非核心 | 可索引 | 不决定 target | **记录**（tags 专用比较） |
+| `category` | Legacy | Display | 兼容/展示分类 | 视产品口径 | TimeCalendar 内部会推导类别；此字段更多用于 legacy/调试 | 仅展示/调试 | 视产品口径 | 视产品口径 | 可索引 | 不决定 target | **记录** |
+| `syncMode` | Canonical | Routing | 同步策略 | 仅展示/编辑 | 仅展示/编辑 | 仅展示/编辑 | 仅展示/编辑 | - | - | `receive-only` 必须不推送 | **记录**（可能由同步/设置更新） |
+| `calendarIds/todoListIds` | Canonical | Sync | 同步目标选择 | Plan save/编辑可写“用户意图” | TimeCalendar 视图会用于日历筛选 | 仅展示/编辑 | - | - | - | Sync 层映射与分流 | **记录** |
+| `externalId` | Canonical | Sync | 外部映射 | - | TimeCalendar 支持 `not-synced`（无 `externalId` 或无 `calendarIds`）筛选 | - | - | - | - | Sync 合并/映射写入 | **可能记录**（同步写入；非忽略字段） |
+| `source/fourDNoteSource` | Canonical+Legacy | Diagnose | 来源/本地创建 | - | TimeCalendar 支持 `local-created`（`source=local` 或 `fourDNoteSource=true`）筛选 | 仅展示/诊断 | - | - | - | Sync 合并/映射写入 | `source` **记录**；`fourDNoteSource` **忽略** |
+| `syncStatus` | Canonical | Sync | 同步状态 | 展示/诊断 | 展示/诊断 | 展示/诊断 | - | - | - | Sync 合并/映射写入 | **可能记录**（同步状态变化；非忽略字段） |
+| `isTimer/isTimeLog/isOutsideApp` | Canonical | Filter | 系统轨迹/记录（subordinate） | **排除**（`EventService.isSubordinateEvent`） | Timer 可能参与 TimeCalendar 视图（视产品口径） | **排除**（subordinate 不上时间轴） | **排除**（面板明确排除） | **排除**（EventTree 明确排除） | 通常不作为主结果 | 通常不推送（除非专门映射） | **记录**（若发生变更） |
+| `isNote` | Canonical | Filter | 快速访问/标记 | 视产品口径（一般不作为 Plan 条件） | 视产品口径 | **用于标记/批量子树操作**（TimeLog 可切换） | 视产品口径 | 视产品口径 | 可能影响 icon/召回 | 不决定 target | **记录** |
+| `parentEventId/position` | Canonical | Structure | 结构与排序 | Plan 结构/缩进/排序（间接影响展示） | 非核心 | 非核心（但可用于子树相关操作） | 非核心 | **核心**（树结构与同级排序） | 非核心 | 不决定 target | `parentEventId` **记录**；`position` **忽略** |
+
+> 说明（默认值约束）：
+> - **字段类型**默认 `Canonical`（除非明确标注 `Legacy` 或 `Canonical+Legacy`）。
+> - **功能类型**默认 `Filter`（本节表格的主目标是“可见性/分类/过滤口径”；若某字段主要用于同步/路由/结构，则在本列显式标注）。
+
+> 备注（TimeLog Timeline 口径）：TimeLogPage 的时间轴列表与 `EventService.getTimelineEvents` 对齐：
+> - 排除 subordinate：`isTimer/isTimeLog/isOutsideApp`；
+> - 排除“无显式时间”的 `isPlan/isTask`；
+> - 排序/分组使用 `resolveCalendarDateRange(event).start` 作为派生 anchor（兼容 no-time / end-only）。
+
+> 备注（EventHistory 列的含义）：此列表达“该字段变更是否会进入 EventHistory 的 diff/日志”，与“该字段是否参与过滤”无关；详细规则以 4.6.12 为准。
 
 > 备注（为什么看起来“复杂”）：PlanManager 的“并集条件”本质是一个 **plan-scope（计划域）** 判定，用于兼容历史数据与不同入口：
 > - `isPlan===true`：明确由 Plan 域创建/维护的任务；
