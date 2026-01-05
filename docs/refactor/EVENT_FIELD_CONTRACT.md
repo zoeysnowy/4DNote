@@ -49,6 +49,51 @@
 
 ### 4.2 Time（时间字段 v1.8）
 
+> 本节回答两个问题：
+> 1) **时间到底怎么存（canonical）**？
+> 2) **各页面到底怎么读（resolver 口径）**？
+
+#### 4.2.1 存储格式（强制）
+
+- 所有持久化 TimeSpec 字符串（如 `startTime/endTime/createdAt/updatedAt/dueDateTime/checked/unchecked`）必须使用本地 TimeSpec 格式：`YYYY-MM-DD HH:mm:ss`。
+- 禁止在存储层写入 ISO 8601（例如 `2025-12-07T14:30:00.000Z`）。
+- 规范依据：TIME_ARCHITECTURE（TimeSpec 格式标准化）。
+
+#### 4.2.2 Canonical（存储真相）vs Derived（派生值）
+
+- Canonical（可落库/可同步路由使用）
+  - `startTime/endTime/isAllDay`：显式时间块（可为空，见下文约束）
+  - `timeSpec`：用户时间意图（rawText/kind/resolved 等），由 TimeHub 维护
+  - `createdAt/updatedAt`：写入链路维护
+  - `dueDateTime/isDeadline`：deadline 语义（不是时间块）
+  - `checked/unchecked`：签到/完成时间轨迹
+- Derived（只能计算、不能回写）
+  - strict-time：`timeSpec.resolved`（用于 Upcoming 等“必须严格时间”的视图）
+  - derived anchor：`resolveCalendarDateRange(event).start`（用于 TimeLog/Plan Snapshot 等“允许派生锚点”的视图）
+  - 任何“虚拟时间/默认时间”（如从 `createdAt` 推导出来的 startTime）
+
+#### 4.2.3 写入权（谁能写什么）
+
+- UI（DateTimePicker/Modal 等）
+  - 只能表达“用户选择/输入”，不应自行注入默认时间。
+- TimeHub（单一真相源）
+  - 负责写入 `timeSpec` 并据此规范化 `startTime/endTime/isAllDay`（仅限用户显式意图）。
+  - 禁止：为 Plan/Task 注入默认 `startTime/endTime`。
+- EventService.normalizeEvent
+  - 负责格式/兼容性 canonical 化（例如把空字符串时间视为无时间）。
+- Storage 层
+  - 被动持久化，不得擅自改写时间字段（尤其是把 `updatedAt` 写成 ISO）。
+
+#### 4.2.4 读取与 Resolver 口径（每个页面必须选型）
+
+- strict-time 视图（例如 Upcoming）：
+  - **只允许使用** `timeSpec.resolved` 做过滤/排序；缺失则不展示（不得回退到 `startTime/endTime/createdAt`）。
+- timeline / chronological 视图（例如 TimeLog、Plan Snapshot 的范围过滤）：
+  - **允许使用** `resolveCalendarDateRange(event)` 作为 anchor（兼容 no-time / end-only task）。
+  - 注意：这是派生锚点，不得回写到 `startTime/endTime`。
+- deadline 视图（Plan 的过期/截止规则）：
+  - 以 `dueDateTime` 为准；不得把 deadline 等价为 `endTime`（除非明确做了双写策略）。
+
 - `startTime/endTime/isAllDay`：
   - Task/Plan：允许 `undefined`（不显示时间）。
   - Calendar 事件：必须存在（由 TimeCalendar/TimeHub/校验器保证）。
@@ -98,6 +143,7 @@
 | 字段/字段组 | 字段类型 | 功能类型 | 语义归类 | PlanManager | TimeCalendar | TimeLog（Timeline） | Dashboard（Upcoming/面板） | EventTree | Search/Index | Sync Router | EventHistory |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | `deletedAt` | Canonical | Filter | 生命周期 | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** | **排除** | **记录**（delete/update 链路均可能产生日志） |
+| `title`（`EventTitle`: `simpleTitle/colorTitle/fullTitle`） | Canonical | Display | 展示标题（派生口径） | **必须 `resolveDisplayTitle`**（禁直读多层字段） | **必须 `resolveDisplayTitle`** | **必须 `resolveDisplayTitle`** | **必须 `resolveDisplayTitle`**（可用 `maxLength` 控制截断） | **必须 `resolveDisplayTitle`** | 索引/召回以 `simpleTitle` 为主；展示统一 `resolveDisplayTitle` | 外部 title/subject **必须 `resolveSyncTitle`**（不回写） | **记录**（title 深比较；避免 JSON/空白层噪音） |
 | `isPlan` | Canonical | Filter | 模块来源 | **纳入**（并集条件之一） | 不作为核心筛选（可显示/编辑） | **纳入**（仅显式时间；无时间排除） | 可作为“待办/计划”入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） | **记录** |
 | `isTimeCalendar` | Canonical | Filter | 模块来源 | **纳入**（并集条件之一） | **核心模块**（TimeCalendar 创建/管理） | **纳入**（按时间范围） | 可作为入口筛选 | 可显示（取决于 UI） | 影响 icon/分类 | 不决定 target（仍看 `isTask`/时间） | **记录** |
 | `isTask` | Canonical | Routing | 业务类型 | **隐式纳入**（多数 Plan 事件应是 task） | 可显示，但“无时间 task”需特殊处理 | **仅显式时间纳入**（无时间 task 不上时间轴） | 可能用于任务统计/筛选 | 用于任务计数/完成态 | 影响索引语义 | **决定 target=todo** | **记录** |
@@ -125,6 +171,8 @@
 > - 排除 subordinate：`isTimer/isTimeLog/isOutsideApp`；
 > - 排除“无显式时间”的 `isPlan/isTask`；
 > - 排序/分组使用 `resolveCalendarDateRange(event).start` 作为派生 anchor（兼容 no-time / end-only）。
+
+> 备注（TitleResolver 口径）：任何 UI 展示标题必须统一走 `resolveDisplayTitle(event)`；任何外部同步标题必须统一走 `resolveSyncTitle(event)`；两者都属于只读派生值，**不得**回写到 `event.title.*`。
 
 > 备注（EventHistory 列的含义）：此列表达“该字段变更是否会进入 EventHistory 的 diff/日志”，与“该字段是否参与过滤”无关；详细规则以 4.6.12 为准。
 
@@ -196,6 +244,22 @@
 - 构建保存对象：[src/features/Plan/helpers/planManagerHelpers.ts](../../src/features/Plan/helpers/planManagerHelpers.ts)
 - 批量保存/更新：[src/features/Plan/components/PlanManager.tsx](../../src/features/Plan/components/PlanManager.tsx)
 
+**Title/Time 契约（本模块必须显式遵守的读写/过滤口径）**
+
+- **Title（显示/存储/回写）**
+  - 展示读：任何列表项/卡片/tooltip 的标题展示，必须使用 `resolveDisplayTitle(event)`（禁止手写 `event.title?.xxx` 拼接）。
+  - 存储写：用户编辑的标题只允许写入 `event.title`（结构化 `EventTitle`），由 `EventService.normalizeTitle` 负责把 Slate/纯文本归一为 `fullTitle/colorTitle/simpleTitle`。
+  - 禁止回写：
+    - 禁止把 `resolveDisplayTitle/resolveSyncTitle` 的派生结果反向写回 `event.title.*`（避免默认值注入污染 diff/sync）。
+    - 禁止把 `eventlog/description/tags` 的派生标题回写到 `title`。
+
+- **Time（显示/存储/回写/过滤）**
+  - 存储真相（canonical）：只认 `startTime/endTime/isAllDay/timeSpec/dueDateTime`（`timeSpec.resolved` 属于派生，不是存储真相）。
+  - 写入来源：PlanSlate 保存时的时间字段必须来自 `TimeHub.getSnapshot(eventId)`（用户意图单一真相），再由 `EventService.normalizeEvent()` 做 canonical 化。
+  - 过滤/排序口径：
+    - 任务/截止业务：Plan 的过期/截止语义以 `dueDateTime` 为真相字段（如页面需要按截止落位，必须写清楚是否映射到 `endTime`）。
+    - Snapshot/范围类视图：允许使用 `resolveCalendarDateRange(event)` 作为派生 anchor（只读），不得将 anchor 回写到 `startTime/endTime`。
+
 **创建（Create）**
 - PlanSlate 的 editor 把业务字段透传在 `updatedItem`（含 title/eventlog/tags/结构字段等）。
 - 时间来源遵循“TimeHub 单一真相”：`buildEventForSave()` 会读取 `TimeHub.getSnapshot(updatedItem.id)`，并以 snapshot 的 `start/end/timeSpec` 覆盖写入。
@@ -229,6 +293,19 @@
 
 代码入口：[src/features/Calendar/TimeCalendar.tsx](../../src/features/Calendar/TimeCalendar.tsx)
 
+**Title/Time 契约（本模块必须显式遵守的读写/过滤口径）**
+
+- **Title（显示/存储/回写）**
+  - 展示读：日历事件块/详情标题必须使用 `resolveDisplayTitle(event)`。
+  - 存储写：只通过编辑入口写 `event.title`（`EventTitle`），不允许写入派生标题。
+  - 禁止回写：不得把展示标题回写 `event.title.*`；不得把 `description/eventlog` 的派生内容回写标题。
+
+- **Time（显示/存储/回写/过滤）**
+  - 存储真相（canonical）：时间块必须以 `startTime/endTime/isAllDay` 表达；如 TimeHub 同步写入 `timeSpec`，也必须视为 canonical 之一。
+  - 渲染/落位：TimeCalendar 的“位置/排序”允许用 `resolveCalendarDateRange(event)` 作为派生 anchor（只读）。
+  - 严格时间声明（若页面宣称 strict-time）：只能使用 `timeSpec.resolved`，且缺失则不展示；不得用 `startTime/endTime` 兜底以免跨视图可见性漂移。
+  - 禁止回写：不得把派生 anchor（如 `resolveCalendarDateRange` 结果）回写到 `startTime/endTime`。
+
 **创建（Create）**
 - 用户框选时间段：立即构造 Event 并 `EventHub.createEvent(newEvent)` 先落库，再打开编辑模态框。
 - 当前写入字段（事实）：
@@ -255,6 +332,22 @@
 #### 4.6.4 TimeLog 页面（时间流 / 日记流）
 
 代码入口：[src/features/TimeLog/pages/TimeLogPage.tsx](../../src/features/TimeLog/pages/TimeLogPage.tsx)
+
+**Title/Time 契约（本模块必须显式遵守的读写/过滤口径）**
+
+- **Title（显示/存储/回写）**
+  - 展示读：Timeline 列表/分组标题必须使用 `resolveDisplayTitle(event)`。
+  - 存储写：标题只写入 `event.title`（`EventTitle`）；正文只写 `eventlog`（Slate JSON 字符串），`description` 交由 normalize 派生。
+  - 禁止回写：不得把 `resolveDisplayTitle` 的结果写回 `title`；不得把 `description` 写回 `eventlog`/`title`。
+
+- **Time（显示/存储/回写/过滤）**
+  - 存储真相（canonical）：`startTime/endTime/isAllDay/timeSpec`（若存在）是时间真相；TimeLog 不允许为“无时间笔记”注入默认时间来改变语义。
+  - 排序/按天分组：必须使用 `resolveCalendarDateRange(event).start` 作为 anchor（派生、只读）。
+  - Timeline 收录过滤（必须与代码保持一致，禁止各处自写一套）：
+    - 排除 subordinate：`isTimer || isTimeLog || isOutsideApp`（或等价的 `EventService.isSubordinateEvent`）。
+    - Plan/Task 若没有明确时间，不应被当作 timeline 事件收录（避免“计划/待办默认落位”污染时间流）。
+    - 必须排除 `deletedAt`。
+  - 禁止回写：任何派生 anchor/过滤结果不得写回 canonical 时间字段。
 
 **创建（Create）**
 - TimeGap 点击“创建事件”：构造带时间段的事件（默认 30 分钟）并先 `EventHub.createEvent()`，再打开编辑模态框。
@@ -317,6 +410,17 @@
   - `startTime && endTime`：推送 Outlook Calendar
   - 否则不推送
 
+**Title/Time 契约（Sync 必须遵守的读写/过滤口径）**
+
+- **Title（外部字段映射）**
+  - 外部 subject/title：必须使用 `resolveSyncTitle(event)`（只读派生）。
+  - 禁止回写：Sync 过程中不得把 `resolveSyncTitle` 的结果写回 `event.title.*`（即使远端要求纯文本，也只能在映射层转换）。
+
+- **Time（外部字段映射）**
+  - 同步路由只允许依赖 canonical：`isTask/startTime/endTime/syncMode`（严禁依赖 `resolveCalendarDateRange` 等派生 anchor）。
+  - 映射到远端日历时，只允许使用 canonical `startTime/endTime/isAllDay`（以及必要的时区/format 转换），不得“补齐/注入默认时间”来满足路由条件。
+  - 远端回流合并写入本地：只允许写入“远端真相字段”（如 `externalId`、必要的 `startTime/endTime/isAllDay/updatedAt` 等），不得写入 UI 派生字段。
+
 **远端拉取与回写（Remote → Local）**
 - 远端拉取按“逐日历拉取”实现，确保每个远端事件带准确的 `calendarId`；随后根据 `externalId/IndexMap` 匹配本地事件。
 - 远端变更会转换为 `recordRemoteAction(create|update|delete)` 入队，然后合并回本地事件（写入/更新 `externalId/syncStatus/updatedAt/...` 等），最终仍通过 `EventService.updateEvent()` 落库并触发 UI 更新。
@@ -373,6 +477,17 @@
 - 面板不自己“全量加载 + 缓存维护”，而是订阅式拿快照：`useEventHubSnapshot({ enabled })`。
 - 事件范围筛选使用 `timeSpec.resolved`（TIME_ARCHITECTURE）：没有 `timeSpec.resolved` 的事件直接不展示。
 
+**Title/Time 契约（本模块必须显式遵守的读写/过滤口径）**
+
+- **Title（显示/存储/回写）**
+  - 展示读：列表项标题必须使用 `resolveDisplayTitle(event)`；禁止直接读 `event.title.*` 拼装。
+  - 禁止回写：不得把展示标题写回 `event.title.*`。
+
+- **Time（显示/存储/回写/过滤）**
+  - 严格时间：Upcoming 必须只使用 `timeSpec.resolved` 作为“显示/排序/过滤”的唯一口径；缺失则不展示。
+  - 禁止兜底：不得改用 `startTime/endTime/createdAt` 兜底（否则会与 TimeLog/PlanSnapshot 的派生 anchor 口径混淆）。
+  - 禁止回写：不得把 `timeSpec.resolved` 或任何派生时间结果回写到 canonical 时间字段。
+
 **过滤口径（Filter）**
 - 并集条件（面板内实现）：`isPlan===true` OR (`checkType && checkType!=='none'`) OR `isTimeCalendar===true`
 - 排除 subordinate（面板内显式排除）：`isTimer===true || isOutsideApp===true || isTimeLog===true`
@@ -406,6 +521,17 @@
 #### 4.6.11 Cross-Module Consistency Checks（跨模块冲突检查清单）
 
 > 目的：把“类似 TimeResolver 使用口径冲突”的问题制度化检查，避免只看字段写入点却漏掉“派生/过滤口径漂移”。
+
+**Resolver 覆盖表（按模块/视图必须显式选型）**
+
+| 模块/视图 | UI Title（展示） | Sync Title（外部） | Time Anchor（排序/过滤） |
+|---|---|---|---|
+| PlanManager / PlanSlate | `resolveDisplayTitle` | - | 业务规则混合：任务/截止看 `dueDateTime`；Snapshot 范围类视图用 `resolveCalendarDateRange` |
+| TimeCalendar | `resolveDisplayTitle` | - | TimeCalendar 渲染/排序允许用 `resolveCalendarDateRange`；若宣称 strict-time 则必须用 `timeSpec.resolved` |
+| TimeLog（Timeline） | `resolveDisplayTitle` | - | `resolveCalendarDateRange`（派生 anchor；允许 no-time/end-only） |
+| Dashboard Upcoming | `resolveDisplayTitle` | - | strict-time：`timeSpec.resolved`（缺失则不展示） |
+| EventTree（树） | `resolveDisplayTitle` | - | 不负责时间 anchor；仅消费 canonical 时间做展示（如有） |
+| Sync（ActionBasedSyncManager） | - | `resolveSyncTitle` | 路由/同步不允许用派生时间注入；如需要“日期落位”只能用派生计算（不回写字段） |
 
 **检查 1：每个页面必须声明并遵守 1 种 Time Anchor 口径**
 - 严格时间口径：仅使用 `timeSpec.resolved`（例如 Upcoming 倒计时/即将开始）
