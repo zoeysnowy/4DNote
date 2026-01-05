@@ -40,7 +40,10 @@
 
 1) **Canonical vs Derived 分离**：派生值只用于显示/排序/同步 payload，不得回写污染 `Event` 存储（除 repair/migration 工具路径）。
 2) **Single Writer**：每个字段域只有一个 Owner；其他模块要改必须通过 Owner API，或携带明确 `intent` 并通过校验。
-3) **Plan/Task 时间允许为空**：`startTime/endTime/isAllDay` 在 Task/Plan 场景允许 `undefined`，禁止“虚拟时间注入”。
+3) **时间字段允许为空（不要用页面规则兜底）**：任何 Event 都允许没有 calendar block（`startTime/endTime/isAllDay` 均可为 `undefined`），包括 Task/Plan/Note。
+  - **路由规则仍然严格**：只有 `startTime && endTime` 才允许路由到 Calendar（见 syncRouter）。
+  - **禁止“为了展示/排序而落库注入虚拟时间”**：例如把 Note 的 `startTime = createdAt`、或把 Task 的时间补成当天 00:00–23:59 都视为污染 canonical。
+  - **展示/排序必须走 resolver**：时间轴位置用派生的 Timeline Anchor（见 5.2 #4），不改写 Core 时间字段。
 4) **数组默认保留 `undefined`**：除非用户显式清空（`intent=user_clear`），否则禁止把 `tags/calendarIds/todoListIds/attendees/...` 默认写成 `[]`。
 5) **Storage 被动持久化**：Storage 层不得覆盖 `updatedAt/startTime/endTime/syncStatus` 等业务字段。
 6) **时间字符串格式分层**：
@@ -139,6 +142,64 @@ flowchart LR
 
 > 说明：Domain A 的 `kind/recordClass/origin` 属于“建议新增字段”，仅用于收敛语义与减少 if-else 漂移；是否引入与何时引入由后续实现任务决定（见 plan）。
 
+### 4.3 Storage Stores（IndexedDB/SQLite：最小存储契约）
+
+> 原则（只写“会影响契约”的 schema）：
+> - `Event` 永远是唯一 Canonical 真相；其余表都是 Derived/Index/Cache（可重建）。
+> - Storage schema 只有在影响 **跨模块语义 / 写入边界 / 查询能力** 时才进入 SSOT。
+
+#### 4.3.1 Stores 总览（先看表，后看细节）
+
+| Store | 定位 | Truth Level | Owner（唯一写入方） | 关键列（只列影响契约的） | 关键索引（只列必须理解的） | 重建/迁移 |
+|---|---|---|---|---|---|---|
+| `events` | 主表：Event 真相 | Canonical | `EventService`→`StorageManager` | `Event` 全量字段 | `id`（PK），（按实现可能有 `startTime` 等索引） | N/A |
+| `event_stats` | 轻量索引/统计（性能优化） | Derived/Index | `EventService`（写入/更新） + Repair/Migration | `id`、`parentEventId`、`rootEventId`、`tags[]`、`calendarIds[]`、`startTime/endTime`、`updatedAt` | `parentEventId`、`rootEventId`（已存在）；（范围查询常需要 `startTime`） | `StorageManager.migrateToEventStats`（可重建） |
+| `sync_queue` | 同步动作队列 | Derived/System | `ActionBasedSyncManager` | `id`、`status`、`updatedAt` 等队列字段 | `status`/时间索引（按实现） | 可清理/可重放 |
+| `tags` | 标签字典（含软删除） | Dictionary | `TagService` | `id`、`name`、`deletedAt`… | `id`/`deletedAt`（按实现） | 可从外部/本地恢复（另案） |
+| `curation_store`（建议新增） | Workspace/SkyPin 等“快捷入口引用表” | UI Local | 对应 UI 模块（独立 store，不写 Event） | `workspaceId`、`eventId`、`order`、`group`… | `workspaceId`、`eventId` | 本地为主；多端一致另案 |
+
+#### 4.3.2 Store Spec：`events`
+
+- **定位**：存储完整 `Event`（Core/Sync 字段）。
+- **写入链路**：UI/Sync → `EventService.normalize/merge` → `StorageManager`。
+- **不变量**：Storage 必须被动；不得改写 `updatedAt/startTime/endTime/syncStatus/...`（Hard Rules #5）。
+
+#### 4.3.3 Store Spec：`event_stats`
+
+- **定位**：轻量索引/统计表，目标是“快”：让 Tree 统计与某些范围/过滤不必加载全量 `Event`。
+- **Schema（以代码为准）**：`src/services/storage/types.ts` 的 `EventStats`：
+  - `id: string`（= eventId，PK）
+  - `parentEventId?: string | null`（Tree 直接父指针引用）
+  - `rootEventId?: string`（派生 root 索引，可重建）
+  - `tags: string[]`、`calendarIds: string[]`
+  - `startTime: string`、`endTime: string`（用于范围查询/性能；**不是语义真相**）
+  - `source?: string`、`updatedAt: string`
+- **索引（必须理解）**：
+  - `parentEventId`、`rootEventId`（已存在：用于 count/query）。
+  - 范围查询通常依赖 `startTime`（按 IndexedDB schema 实现）。
+- **契约口径（避免误用）**：
+  - `event_stats` 允许滞后/缺失；不得作为业务判断真相来源。
+  - 不允许为了 TimeLog 查询而污染 `Event.startTime`（Hard Rules #3）。
+  - 若需要“TimeLog 可查询 + 稳定排序”，应把 **派生锚点** 物化为 `event_stats.timelineAnchor`（Derived/Index，可重建），而不是用 `startTime=createdAt` 这种 Core 污染。
+
+#### 4.3.4 Store Spec：`sync_queue`
+
+- **定位**：同步动作队列（重放/失败重试/状态机）。
+- **Owner**：`ActionBasedSyncManager`。
+- **不变量**：不得承载业务真相；队列项可清理、可重放。
+
+#### 4.3.5 Store Spec：`tags`
+
+- **定位**：标签字典（可软删除），用于 UI 展示与过滤。
+- **Owner**：`TagService`。
+- **不变量**：字典维护 ≠ 写 `Event.tags`；Event 的 tags 仍由 Event Owner 写入与 merge。
+
+#### 4.3.6 Store Spec：`curation_store`（建议新增）
+
+- **定位**：Workspace/SkyPin 等“快捷入口”，仅保存 `eventId` 引用 + 排序/分组元信息。
+- **Owner**：对应 UI 模块（独立 store，不写 Event）。
+- **同步边界**：默认本地；若未来多端一致，走应用自有同步（另案）。
+
 ---
 
 ## 5. Resolver Contracts（页面必须显式声明）
@@ -147,12 +208,21 @@ flowchart LR
 - UI 展示标题：必须使用 `resolveDisplayTitle(event)`（只读派生，不回写）。
 - 外部同步标题：必须使用 `resolveSyncTitle(event)`（只读派生，不回写）。
 
-### 5.2 Time Anchor（只允许三种口径）
+### 5.2 Time Anchor（允许四种口径；排序/展示必须声明）
 1) **Calendar block（发生区间）**：`startTime/endTime/isAllDay`
 2) **Deadline（截止）**：`dueDateTime`
 3) **Anchor（派生、只读）**：
    - strict-time：`timeSpec.resolved`
    - derived anchor：`resolveCalendarDateRange(event)`
+4) **Timeline Anchor（时间轴锚点：派生、只读、不可落库）**：`resolveTimelineAnchor(event, scope)`
+  - 目的：TimeLog/Timeline 等视图需要一个“可排序的位置”，但不能用“落库注入虚拟 startTime”来达成。
+  - 推荐优先级（scope='timelog' 的默认口径）：
+    - 有 calendar block：用 `startTime`（发生区间的开始）
+    - 否则若有 `timeSpec.resolved`：用其 resolved（允许 Note/Task/Plan 仅用于锚点展示）
+    - 否则：用 `createdAt`（Meta；所有事件必须有，作为稳定 fallback）
+  - 不变量：Timeline Anchor **只用于展示/排序/分组**，不得回写到 `startTime/endTime`。
+
+> 说明：这四种 anchor 是“语义口径”，不是“页面特例”。页面不应定义“哪些页面时间可以为空”；任何事件都可以为空，页面只需选择合适的 anchor 与过滤规则。
 
 ---
 
@@ -198,6 +268,14 @@ flowchart LR
 - `fourDNoteSource`（legacy）
 - 分类 flags（现状，未来可迁移到 `kind/recordClass/origin`）：`isPlan/isTask/isTimeCalendar/isTimer/isTimeLog/isOutsideApp/isDeadline/isNote`
 - 兼容/展示分类：`type`（legacy）、`category`（legacy/展示）
+
+> 建议新增（Note/Doc/Curation：用于收敛“笔记/文档/碎碎念/库”语义；不影响外部同步映射）：
+> - `kind`：`'note'|'event'|'task'|...`（收敛 `isNote/isTask/...` 的 if-else 漂移）
+> - `recordClass`：`'ephemeral'|'doc'|'system'|...`（区分“碎碎念/长期维护文档/系统轨迹”）
+> - `origin`：`'user'|'external-sync'|'migration'|...`（写入来源仲裁与审计）
+> - `isInLibrary?: boolean`（是否进入 Library：doc/explorer 视图的纳入开关；默认 `undefined` 表示未设定）
+
+> 注：`workspace sidebar` 与 `pin to sky` 更推荐做成“独立的本地 Curation Store（按 eventId 引用）”，而不是写进 Event，避免无谓 diff 与 merge 冲突；见 9.12/9.13。
 
 #### B. Content（内容真相与承载）
 - `title`（`EventTitle`：`fullTitle/colorTitle/simpleTitle/formatMap`）
@@ -294,8 +372,31 @@ flowchart LR
 - Writers：TimeHub（用户意图真相）；TimeCalendar 创建入口可写初值；external merge 例外
 - Readers：TimeCalendar（按天/范围）、Sync（Calendar 映射）、TimeLog（仅对显式时间的 Plan/Task 纳入）
 - 默认值：Task/Plan 保持 `undefined`；禁止虚拟时间注入
+- 默认值：Task/Plan/Note 保持 `undefined`；禁止虚拟时间注入（例如为 TimeLog 展示把 `startTime=createdAt`）
 - 不变量：
   - `startTime && endTime` 才允许路由到 Calendar（见 syncRouter）。
+
+### Field Card（建议新增）：`kind/recordClass/origin`（分类与来源：收敛 Note/Doc/系统态）
+- 层级：Core（Identity & Classification）
+- 语义（一句话）：用最少的新字段把“这是笔记还是文档/这是用户创建还是系统/同步生成”从一堆 `isXxx` 漂移中收敛出来。
+- Writers：
+  - create/update 入口：`EventService`（根据 writer/intent 归一化）；
+  - UI：仅可通过显式用户意图切换（例如“添加到 Library”可触发 `recordClass` 的升级，见下）。
+- Readers：所有模块（过滤/展示/纳入），尤其是 TimeLog 与未来 Library。
+- 默认值：保持 `undefined`（兼容旧字段）；逐步迁移后再允许写入稳定枚举。
+- 不变量：
+  - 不得通过“页面猜测”自动写入（避免把碎碎念误升级为 doc）。
+  - 外部同步 inbound 不得覆盖本地分类字段（本地专属，merge 保护）。
+
+### Field Card（建议新增）：`isInLibrary`（文档升级：进入 Library）
+- 层级：Core（Identity & Classification）
+- 语义（一句话）：用户把一个 Event（通常是 Note）升级为“长期维护的文档”，允许进入 Library（explorer）视图。
+- Writers：UI（显式动作：“添加到 Library”）→ `EventService.updateEvent`（携带 `intent=user_edit`）。
+- Readers：Library（纳入/筛选）、Search/Tag/EventTree（作为 doc 集合的限定）。
+- 默认值：`undefined`（未升级/不关心）；仅当用户显式升级时写 `true`；显式移出时写 `false` 或 `undefined`（二选一并在实现里统一）。
+- 同步边界：
+  - 外部系统（Outlook/To Do）不理解此字段；必须在 external inbound merge 时保护不被覆盖。
+  - 若未来存在 4DNote 多端同步，可将其纳入“应用自有同步域”，与 Graph 无关。
 
 ### Field Card：`tags/calendarIds/todoListIds`（数组字段：默认值策略）
 - 层级：Core（tags）/ Sync(intent)（calendarIds、todoListIds）
@@ -660,7 +761,8 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 - 标题显示：`resolveDisplayTitle(event)`。
 
 **写（Write）**
-- N/A（只读视图；不提供直接写入口）。
+- TimeLog 允许用户快速记录“碎碎念 Note”（典型只写 `eventlog`，可无 `title`、无 calendar block、无 tags）。
+- 写入必须通过 `EventService.createEvent/updateEvent`；不得为了锚点展示写入 `startTime/endTime`。
 
 **过滤（Filter/Scope：架构示例口径）**
 - 默认排除 `deletedAt != null`。
@@ -668,8 +770,13 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
   - 明确 `isTimeLog === true` 的事件必纳入；
   - 普通事件仅纳入“非 Timer、非 Task”的事件（避免把待办/计时混入时间轴）。
 
+> Note 纳入建议：
+> - 将“碎碎念 Note”视为 `kind='note'` 或 `isNote===true` 的事件；默认纳入 TimeLog。
+> - “升级为文档（isInLibrary===true）”并不意味着退出 TimeLog；是否退出由 TimeLog 的过滤策略决定（建议仍可在 TimeLog 出现，但可提供单独过滤开关，另案）。
+
 **时间锚点（Time Anchor）**
-- 分组/排序使用 `resolveCalendarDateRange(event)`（派生，不回写）。
+- 分组/排序使用 **Timeline Anchor**：`resolveTimelineAnchor(event, 'timelog')`（派生，不回写）。
+- 说明：当 Note 没有 calendar block 时，Timeline Anchor 默认回退到 `createdAt`，用于时间轴位置显示；这比“写入 startTime=createdAt”更干净。
 
 **同步边界（Sync Boundary）**
 - TimeLog 不写 Sync 字段；只消费同步后的结果数据。
@@ -677,6 +784,14 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 **禁止项（Forbidden）**
 - 禁止在 TimeLog 内生成或写回任何派生锚点字段。
 - 禁止把“可见性/纳入规则”写回到 Event 字段（这些属于 UI 过滤策略）。
+
+**动作（Actions）**
+- 本地发起 Create：快速记录 Note → `EventService.createEvent`，最小写集：`eventlog` + `createdAt/updatedAt`；`title/tags/startTime/endTime/isAllDay` 允许全部缺省。
+  - 支持“创建过去的事件/笔记”：用户若显式选择日期/时间，则写入 `timeSpec`（或 calendar block，取决于用户选择的是锚点还是发生区间）；否则保持时间字段为空。
+- 本地发起 Save：编辑 `eventlog`（与可选的 `title/tags/isInLibrary`）→ `EventService.updateEvent`；不得注入虚拟时间。
+- 本地发起 Delete：允许删除 → `EventService.deleteEvent` 写 `deletedAt`。
+- 远端发起（inbound）Create/Save/Delete：由 Sync 处理并呈现结果；注意 external inbound 不得覆盖本地 Note/Library 分类字段。
+- 远端执行（outbound）：TimeLog 不直接触发；由 Sync 决策。
 
 **动作（Actions）**
 - 本地发起 Create/Save/Delete：N/A。
@@ -877,6 +992,117 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 
 ---
 
+### 9.11 Library（Explorer：文档库 / 长期维护的 Doc）
+
+**定位（What/Why）**：Library 是“长期维护内容”的入口（类似 explorer）；用户通过 tag 或 EventTree 管理 doc。它的核心不是时间轴，而是“可维护性与组织”。
+
+**读（Read）**
+- 列表来源：`EventService.queryEvents`（或等价）按条件查询；避免 UI 自建全量缓存。
+- 纳入条件：`isInLibrary===true`（建议字段）作为主开关；并可结合 `tags/parentEventId` 做组织。
+- 展示：标题用 `resolveDisplayTitle(event)`；内容预览来自 `eventlog/description`（只读）。
+
+**写（Write）**
+- Library 不直接写内容字段（编辑仍走 EventEditModal/Plan 等入口）；Library 只负责：
+  - “添加到 Library/移出 Library”：写 `isInLibrary`（显式用户意图）。
+- 其他字段变更仍必须走 Owner API（`EventService`/`TimeHub`）。
+
+**过滤（Filter/Scope）**
+- 默认排除：`deletedAt != null`、subordinate。
+- 默认不纳入：纯 Timer/TimeLog 系统轨迹事件（除非显式升级为 doc）。
+
+**时间锚点（Time Anchor）**
+- Library 的排序/最近修改：以 `updatedAt` 为主（Meta）。
+- 若需要按“发生时间/锚点”展示：只允许用 `resolveTimelineAnchor(event, 'library')`（派生），不得写回 Core 时间字段。
+
+**同步边界（Sync Boundary）**
+- `isInLibrary` 属于应用内的“内容策展”字段：
+  - 外部 Graph 系统无此概念；external inbound merge 必须保护不覆盖。
+  - 若未来引入 4DNote 自有多端同步，可将其纳入“应用自有同步域”（与 Graph 解耦）。
+
+**禁止项（Forbidden）**
+- 禁止为了让 doc 在 Library“看起来有时间”而写 `startTime=createdAt`。
+
+**动作（Actions）**
+- 本地发起 Create：
+  - “新建文档”推荐实现为：创建一个 Note（最小写集：`eventlog` 可为空）→ 立即写 `isInLibrary=true`（升级）。
+- 本地发起 Save：只涉及 `isInLibrary` 的 toggle；其余保存走编辑入口。
+- 本地发起 Delete：走 `EventService.deleteEvent`（写 `deletedAt`）。
+- 远端发起（inbound）Create/Save/Delete：N/A（除非未来引入应用自有同步；Graph inbound 不应触碰 `isInLibrary`）。
+- 远端执行（outbound）：N/A。
+
+---
+
+### 9.12 Sidebar Workspace（内容面板事件选择器：快捷方式工作区）
+
+**定位（What/Why）**：内容面板的“事件选择器”将演进为 Workspace：用户把常用 Event 以快捷方式固定在侧边栏，便于快速打开/切换。
+
+**读（Read）**
+- Workspace 只维护“引用列表”：`eventId[]` + UI 元数据（排序/分组）。
+- 事件数据读取：对每个 `eventId` 通过 `EventHub.getSnapshotAsync`（或订阅）获取；列表查询不需要全表。
+
+**写（Write）**
+- **推荐最佳实践**：Workspace 数据不写入 Event；而是写入“本地 Curation Store（独立于 Event）”。
+  - 这样可以避免：无意义的 Event diff、与 external sync merge 冲突、以及“快捷方式”跨设备语义不清。
+- 若短期必须写入 Event：也只能写本地专属字段，并明确在 Sync inbound merge 中保护（不推荐）。
+
+**过滤（Filter/Scope）**
+- Workspace 不参与 `deletedAt/subordinate` 的业务过滤；但 UI 需对已删除/不可见的引用给出降级处理（例如隐藏或提示）。
+
+**时间锚点（Time Anchor）**
+- N/A（Workspace 是快捷方式列表，不以时间为主锚）。
+
+**同步边界（Sync Boundary）**
+- Workspace/Curation Store 默认为本地数据：
+  - 不通过 Graph 同步；
+  - 如未来需要多端一致，应该走应用自有同步/账号空间（另案）。
+
+**禁止项（Forbidden）**
+- 禁止为了 Workspace 排序而写入 Event 的 `position/startTime/...` 等业务字段。
+
+**动作（Actions）**
+- 本地发起 Create：无（Workspace 本身是集合）。
+- 本地发起 Save：
+  - “添加到侧边栏工作区”：向 Curation Store 添加 `eventId`；
+  - “移除”：从 Curation Store 删除 `eventId`；
+  - “排序”：只改 Curation Store 的顺序/分组元数据。
+- 本地发起 Delete：无（删除事件仍走 `EventService.deleteEvent`）。
+- 远端发起（inbound）Create/Save/Delete：N/A。
+- 远端执行（outbound）：N/A。
+
+---
+
+### 9.13 Sky Pin（Pin to Sky：全局顶部快捷胶囊）
+
+**定位（What/Why）**：用户可把正在编辑/常用的 Event pin 到全局顶部（无论在哪个菜单都能快速呼出查阅/编辑）。这是“全局快捷入口”，不是 Event 的业务字段。
+
+**读（Read）**
+- Pin 列表：来自本地 Curation Store（`pinnedEventIds[]` + 排序/最近使用信息）。
+- 事件内容：通过 `EventHub` 订阅或 `getSnapshotAsync` 读取。
+
+**写（Write）**
+- Pin/unpin 不写 Event；只写 Curation Store。
+- 若需要“固定时刻/固定视图状态”，也应写入 Curation Store（UI-only），不进 Event。
+
+**过滤（Filter/Scope）**
+- 若 pin 的 event 已删除（`deletedAt != null`），应自动移除或降级提示（不回写 Event）。
+
+**时间锚点（Time Anchor）**
+- N/A。
+
+**同步边界（Sync Boundary）**
+- 默认本地；未来多端一致另案。
+
+**禁止项（Forbidden）**
+- 禁止为了 pin 状态写入 Event 字段（避免扩散为业务真相与 merge 冲突）。
+
+**动作（Actions）**
+- 本地发起 Save：pin/unpin/reorder → 更新 Curation Store。
+- 本地发起 Delete：删除事件仍走 `EventService.deleteEvent`；pin 状态随 UI 自动清理。
+- 远端发起（inbound）Create/Save/Delete：N/A。
+- 远端执行（outbound）：N/A。
+
+---
+
 ## 10. Deprecations（遗留字段口径）
 
 - `type`：legacy，仅用于兼容；新代码不应依赖其作为真相。
@@ -890,7 +1116,8 @@ Inbound（Graph → Event）：以 Sync merge 规则为准；禁止把 payload �
 
 - Storage 更新不得覆盖传入 `updatedAt`。
 - 非 `intent=user_clear` 时，数组字段 `[]` 必须被归一化为 `undefined`。
-- Task/Plan 允许 `startTime/endTime/isAllDay` 全 `undefined`，且保存/重开不会被注入默认值。
+- Task/Plan/Note 允许 `startTime/endTime/isAllDay` 全 `undefined`，且保存/重开不会被注入默认值。
+- TimeLog/Timeline 的锚点展示必须使用 `resolveTimelineAnchor`（派生），不得通过“写入 startTime=createdAt”实现。
 - UI 展示标题全部走 `resolveDisplayTitle`；Sync 标题全部走 `resolveSyncTitle`。
 - `syncRouter` 的路由规则与本文一致（receive-only 不推送；task→todo；start+end→calendar）。
 - `deletedAt` 必须为 `null` 或 ISO 8601 字符串；不得写入本地格式时间字符串。
