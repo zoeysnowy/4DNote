@@ -89,6 +89,7 @@ flowchart LR
     ES["EventService<br/>(normalize + single-writer gate)"]
     EH["EventHub<br/>(订阅/广播: 单一数据源)"]
     TH["TimeHub<br/>(Time intent single-writer)"]
+    CS["CalendarService<br/>(calendar metadata + cache)"]
     SS["ActionBasedSyncManager<br/>(sync pipeline + status)"]
     TS["TagService / ContactService<br/>(字典/索引, 不写 Event)"]
   end
@@ -110,6 +111,10 @@ flowchart LR
   Features --> TH
   TH --> ES
 
+  Features --> CS
+  SS --> CS
+  CS -.-> OC
+
   ES --> SM --> DB
   SS --> ES
   ES --> SS
@@ -123,6 +128,7 @@ flowchart LR
 - **Single Writer（核心）**：UI/Sync 不直接写 Core 字段；必须通过 `EventService`（以及 Time 相关的 `TimeHub`）的 normalize/merge/校验链路。
 - **Domain 单一数据源**：UI 读取以 `EventHub` 订阅视图为准（避免 UI 自建 `allEvents` 真相缓存；详见 `REFACTOR_MASTER_PLAN_v2.22`）。
 - **Storage 被动**：`StorageManager` 只做持久化/查询，不擅自改写业务字段（详见 Hard Rules #5）。
+- **字典/元数据服务**：`CalendarService` / `TagService` / `ContactService` 提供查询与缓存；不直接改写 Core 字段（Core 写入仍走 `EventService` / `TimeHub` / Sync merge）。
 
 ### 4.2 Field Domains（建议：A–I）
 
