@@ -1,0 +1,369 @@
+
+	      <!DOCTYPE html>
+<html>
+  <head>
+    <title>CodeSandbox</title>
+
+    <script type="importmap">
+      {"imports":{"react":"https://esm.sh/react@18.3.1","lucide-react":"https://esm.sh/lucide-react?external=react,react-dom","react-dom":"https://esm.sh/react-dom@18.3.1","react/jsx-runtime":"https://esm.sh/react@18.3.1/jsx-runtime","react-dom/client":"https://esm.sh/react-dom@18.3.1/client","tailwindcss/defaultTheme":"https://esm.sh/tailwindcss/defaultTheme","tailwindcss-animate":"https://esm.sh/tailwindcss-animate"}}
+    </script>
+
+    <script>
+      window.addEventListener("error", function (event) {
+        const errorObj = {
+          message: event.message,
+          source: event.filename,
+          lineno: event.lineno,
+          colno: event.colno,
+          stack: event.error ? event.error.stack : null
+        };
+        window.parent.postMessage(
+          { action: "error", error: JSON.stringify(errorObj) },
+          "*"
+        );
+        event.preventDefault();
+      });
+
+  function handleImportError(error) {
+    throw new Error('Import module failed: ' + error.target.src);
+  }
+
+  const observer = new MutationObserver(mutations => {
+    mutations.forEach(mutation => {
+      mutation.addedNodes.forEach(node => {
+        if (node.tagName === 'SCRIPT' && node.type === 'module') {
+          node.onerror = handleImportError;
+        }
+      });
+    });
+  });
+
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+
+  document.querySelectorAll('script[type="module"]').forEach(script => {
+    script.onerror = handleImportError;
+  });
+
+  
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+
+
+    </script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,typography,aspect-ratio,container-queries"></script>
+    <style type="text/tailwindcss">
+      @layer base {
+        :root {
+          --background: 0 0% 100%;
+          --foreground: 222.2 47.4% 11.2%;
+
+          --muted: 210 40% 96.1%;
+          --muted-foreground: 215.4 16.3% 46.9%;
+
+          --popover: 0 0% 100%;
+          --popover-foreground: 222.2 47.4% 11.2%;
+
+          --border: 214.3 31.8% 91.4%;
+          --input: 214.3 31.8% 91.4%;
+
+          --card: 0 0% 100%;
+          --card-foreground: 222.2 47.4% 11.2%;
+
+          --primary: 222.2 47.4% 11.2%;
+          --primary-foreground: 210 40% 98%;
+
+          --secondary: 210 40% 96.1%;
+          --secondary-foreground: 222.2 47.4% 11.2%;
+
+          --accent: 210 40% 96.1%;
+          --accent-foreground: 222.2 47.4% 11.2%;
+
+          --destructive: 0 100% 50%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 215 20.2% 65.1%;
+
+          --radius: 0.5rem;
+        }
+
+        .dark {
+          --background: 224 71% 4%;
+          --foreground: 213 31% 91%;
+
+          --muted: 223 47% 11%;
+          --muted-foreground: 215.4 16.3% 56.9%;
+
+          --accent: 216 34% 17%;
+          --accent-foreground: 210 40% 98%;
+
+          --popover: 224 71% 4%;
+          --popover-foreground: 215 20.2% 65.1%;
+
+          --border: 216 34% 17%;
+          --input: 216 34% 17%;
+
+          --card: 224 71% 4%;
+          --card-foreground: 213 31% 91%;
+
+          --primary: 210 40% 98%;
+          --primary-foreground: 222.2 47.4% 1.2%;
+
+          --secondary: 222.2 47.4% 11.2%;
+          --secondary-foreground: 210 40% 98%;
+
+          --destructive: 0 63% 31%;
+          --destructive-foreground: 210 40% 98%;
+
+          --ring: 216 34% 17%;
+
+          --radius: 0.5rem;
+        }
+      }
+    </style>
+    <script type="module">
+          import defaultTheme from "tailwindcss/defaultTheme"
+          import tailwindcssAnimate from "tailwindcss-animate"
+
+          const fontFamily = defaultTheme.fontFamily;
+
+          tailwind.config = {
+            darkMode: ["class"],
+        content: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+        theme: {
+          container: {
+            center: true,
+            padding: "2rem",
+            screens: {
+              "2xl": "1400px",
+            },
+          },
+          extend: {
+            colors: {
+              border: "hsl(var(--border))",
+              input: "hsl(var(--input))",
+              ring: "hsl(var(--ring))",
+              background: "hsl(var(--background))",
+              foreground: "hsl(var(--foreground))",
+              primary: {
+                DEFAULT: "hsl(var(--primary))",
+                foreground: "hsl(var(--primary-foreground))",
+              },
+              secondary: {
+                DEFAULT: "hsl(var(--secondary))",
+                foreground: "hsl(var(--secondary-foreground))",
+              },
+              destructive: {
+                DEFAULT: "hsl(var(--destructive))",
+                foreground: "hsl(var(--destructive-foreground))",
+              },
+              muted: {
+                DEFAULT: "hsl(var(--muted))",
+                foreground: "hsl(var(--muted-foreground))",
+              },
+              accent: {
+                DEFAULT: "hsl(var(--accent))",
+                foreground: "hsl(var(--accent-foreground))",
+              },
+              popover: {
+                DEFAULT: "hsl(var(--popover))",
+                foreground: "hsl(var(--popover-foreground))",
+              },
+              card: {
+                DEFAULT: "hsl(var(--card))",
+                foreground: "hsl(var(--card-foreground))",
+              },
+            },
+            borderRadius: {
+              lg: `var(--radius)`,
+              md: `calc(var(--radius) - 2px)`,
+              sm: "calc(var(--radius) - 4px)",
+            },
+            fontFamily: {
+              sans: [...fontFamily.sans],
+            },
+
+            keyframes: {
+              "accordion-down": {
+                from: { height: "0" },
+                to: { height: "var(--radix-accordion-content-height)" },
+              },
+              "accordion-up": {
+                from: { height: "var(--radix-accordion-content-height)" },
+                to: { height: "0" },
+              },
+            },
+            animation: {
+              "accordion-down": "accordion-down 0.2s ease-out",
+              "accordion-up": "accordion-up 0.2s ease-out",
+            },
+          },
+        },
+        plugins: [tailwindcssAnimate]
+      }
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.27.0/babel.min.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="text/babel" data-type="module">
+      		  import {createRoot} from "react-dom/client";
+            
+      		  
+import React, { useState } from 'react';
+import { Check } from 'lucide-react';
+
+const CustomMorandiPicker = () => {
+  const usedColors = ['#E6A39E', '#3D5A5B'];
+
+  // 8列 (Hues) x 7行 (Shades)
+  // 根据用户上传图片提取的核心色进行扩展
+  const colorMatrix = {
+    // 1. 红色系：保持之前的干玫瑰色调，温暖柔和
+    red:    ['#FCE7E7', '#F7D0D0', '#EBB0A3', '#D6847F', '#C4645E', '#A85A5A', '#823C3C'],
+    
+    // 2. 橙色系：赤陶色，稍微降低了饱和度
+    orange: ['#FFF0E0', '#FAE3C6', '#F0C99E', '#E0A872', '#C98A55', '#A66D46', '#855030'],
+    
+    // 3. 黄色系 (NEW)：基于你提供的[暖黄色]扩展
+    // 从极淡的蛋壳黄 -> 你的核心姜黄 -> 深琥珀色
+    yellow: ['#FEF9E3', '#FCEFC7', '#F5DE9E', '#EBC968', '#D6AF4E', '#B38E36', '#8F6E20'],
+    
+    // 4. 绿色系 (NEW)：基于你提供的[松绿色]扩展
+    // 从灰豆绿 -> 你的核心松绿 -> 深墨绿
+    green:  ['#EBF2E8', '#D4E0D1', '#ACC4A8', '#7E9C7A', '#527050', '#324F33', '#1F3620'],
+    
+    // 5. 蓝绿/青色系 (NEW)：基于你提供的[蓝绿色]扩展
+    // 这种 Teal 色调非常适合搭配松绿
+    cyan:   ['#E0F5F5', '#C4EBEB', '#96D6D6', '#69BDBD', '#459696', '#2D7575', '#1B5252'],
+    
+    // 6. 蓝色系：稍微偏灰的雾霾蓝
+    blue:   ['#EBF5FF', '#D6E8F7', '#B3D4ED', '#8BB8DE', '#649AC9', '#4278A6', '#2E567A'],
+    
+    // 7. 紫色系：保持香芋紫
+    purple: ['#F5F0FA', '#EBE0F5', '#D6C4E6', '#BCA0D6', '#9D7DBA', '#7A5B96', '#5C4175'],
+    
+    // 8. 灰色系：冷灰
+    grey:   ['#F8FAFC', '#F1F5F9', '#E2E8F0', '#CBD5E1', '#94A3B8', '#64748B', '#475569'],
+  };
+
+  const hues = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple', 'grey'];
+  const [selectedColor, setSelectedColor] = useState('#D6AF4E'); // 默认选中你喜欢的黄色
+
+  return (
+    <div className="flex items-center justify-center min-h-[500px] bg-[#F4F4F6] p-8">
+      
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-auto inline-block border border-gray-100">
+        
+        {/* 顶部标题与数值 */}
+        <div className="flex justify-between items-center mb-6 pl-1 pr-2">
+          <div className="flex flex-col">
+            <h3 className="text-gray-800 font-semibold text-sm tracking-tight">Tag Color</h3>
+            <span className="text-[10px] text-gray-400 font-medium mt-0.5">Based on your palette</span>
+          </div>
+          <div className="flex items-center gap-2">
+             <div 
+               className="w-4 h-4 rounded-full border border-black/5"
+               style={{ backgroundColor: selectedColor }}
+             ></div>
+             <span className="text-xs text-gray-400 font-mono uppercase">{selectedColor}</span>
+          </div>
+        </div>
+
+        {/* 颜色矩阵网格 */}
+        <div className="flex gap-2.5">
+          {hues.map((hue) => (
+            <div key={hue} className="flex flex-col gap-2 group/column">
+              {colorMatrix[hue].map((color, index) => {
+                const isSelected = selectedColor === color;
+                const isUsed = usedColors.includes(color) && !isSelected;
+
+                return (
+                  <button
+                    key={color}
+                    onClick={() => setSelectedColor(color)}
+                    className="relative w-8 h-8 rounded-full focus:outline-none transition-all duration-200"
+                    title={`${hue} - Level ${index + 1}`}
+                  >
+                    {/* 颜色块本体 */}
+                    <div 
+                      className={`
+                        w-full h-full rounded-full border border-black/5
+                        transition-all duration-300 ease-out
+                        ${isSelected 
+                          ? 'scale-110 shadow-md ring-2 ring-offset-2 ring-gray-200 z-10' 
+                          : 'scale-100 hover:scale-105 hover:z-10'}
+                      `}
+                      style={{ backgroundColor: color }}
+                    >
+                      {/* 选中态：前三行深色勾，后四行浅色勾 */}
+                      {isSelected && (
+                        <div className="flex items-center justify-center h-full w-full">
+                          <Check 
+                            size={14} 
+                            strokeWidth={3} 
+                            className={`drop-shadow-sm ${index < 3 ? 'text-gray-600' : 'text-white'}`} 
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 已使用的小点标记 */}
+                    {isUsed && (
+                      <div className="absolute -top-0.5 -right-0.5 pointer-events-none z-20">
+                        <div className="w-2 h-2 bg-white rounded-full flex items-center justify-center shadow-sm">
+                           <div className="w-1 h-1 bg-gray-400 rounded-full"></div>
+                        </div>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+        
+        {/* 底部引导指示器 */}
+        <div className="mt-4 flex items-center gap-2 px-1">
+           <div className="h-full flex flex-col justify-between py-1 gap-1">
+               <div className="w-1 h-1 rounded-full bg-gray-200"></div>
+               <div className="w-1 h-1 rounded-full bg-gray-300"></div>
+               <div className="w-1 h-1 rounded-full bg-gray-400"></div>
+           </div>
+           <span className="text-[10px] text-gray-400 font-medium tracking-wide">Light &rarr; Deep</span>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+
+      		  createRoot(document.getElementById("root")).render(
+             <>
+      		    <CustomMorandiPicker />
+              </>
+      		    );
+              window.parent.postMessage({ action: "ready" }, "*");
+    </script>
+  </body>
+</html>
