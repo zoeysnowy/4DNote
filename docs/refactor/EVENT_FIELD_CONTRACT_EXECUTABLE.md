@@ -79,28 +79,28 @@
 
 ```mermaid
 flowchart LR
-  subgraph UI[UI Layer (@frontend/*)]
-    Pages[pages/*\n(薄编排)]
-    Features[features/*\n(业务逻辑+领域组件)]
-    Components[components/*\n(可复用 UI)]
+  subgraph UI["UI Layer (@frontend/*)"]
+    Pages["pages/*<br/>(薄编排)"]
+    Features["features/*<br/>(业务逻辑+领域组件)"]
+    Components["components/*<br/>(可复用 UI)"]
   end
 
-  subgraph Domain[Domain/Service Layer (@backend/*)]
-    ES[EventService\n(normalize + single-writer gate)]
-    EH[EventHub\n(订阅/广播: 单一数据源)]
-    TH[TimeHub\n(Time intent single-writer)]
-    SS[ActionBasedSyncManager\n(sync pipeline + status)]
-    TS[TagService / ContactService\n(字典/索引, 不写 Event)]
+  subgraph Domain["Domain/Service Layer (@backend/*)"]
+    ES["EventService<br/>(normalize + single-writer gate)"]
+    EH["EventHub<br/>(订阅/广播: 单一数据源)"]
+    TH["TimeHub<br/>(Time intent single-writer)"]
+    SS["ActionBasedSyncManager<br/>(sync pipeline + status)"]
+    TS["TagService / ContactService<br/>(字典/索引, 不写 Event)"]
   end
 
-  subgraph Storage[Storage Layer]
-    SM[StorageManager\n(passive persistence)]
-    DB[(IndexedDB / SQLite / LocalStorage cache)]
+  subgraph Storage["Storage Layer"]
+    SM["StorageManager<br/>(passive persistence)"]
+    DB["IndexedDB / SQLite / LocalStorage cache"]
   end
 
-  subgraph External[External Systems]
-    OC[Outlook Calendar (Graph)]
-    TD[Microsoft To Do (Graph)]
+  subgraph External["External Systems"]
+    OC["Outlook Calendar (Graph)"]
+    TD["Microsoft To Do (Graph)"]
   end
 
   Pages --> Features --> ES
