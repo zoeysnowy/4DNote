@@ -94,7 +94,7 @@ import { LocationInput } from '@frontend/components/common/LocationInput';
 import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
+import { getAvailableCalendarsForSettings, generateEventId } from '@frontend/utils/calendarUtils';
 import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '@frontend/components/ModalSlate';

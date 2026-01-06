@@ -18,7 +18,7 @@ import PlanPage from '@frontend/pages/Plan';
 import ThemeDemoPage from '@frontend/pages/ThemeDemo';
 import { TimerSession, Event } from './types';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from './utils/timeUtils';
-import { getCalendarGroupColor, getAvailableCalendarsForSettings } from './utils/calendarUtils';
+import { getAvailableCalendarsForSettings } from './utils/calendarUtils';
 import { STORAGE_KEYS, CacheManager } from './constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from './utils/persistentStorage';
 import { TagService } from './services/TagService';

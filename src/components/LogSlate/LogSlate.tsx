@@ -27,8 +27,9 @@ import { insertSoftBreak } from '@frontend/components/SlateCore/operations/parag
 // 🆕 导入 TimestampService
 import { EventLogTimestampService } from '@frontend/components/SlateCore/services/timestampService';
 
-// 导入菜单组件
-import { MentionMenu } from './MentionMenu';
+// 导入统一提及菜单
+import { UnifiedMentionMenu } from '@frontend/components/shared/UnifiedMentionMenu';
+import type { MentionItem } from '@backend/search/UnifiedSearchIndex';
 
 import './LogSlate.css';
 
@@ -857,7 +858,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   }, [editor]);
   
   // 处理 @ 提及选择
-  const handleMentionSelect = useCallback((item: any) => {
+  const handleMentionSelect = useCallback((item: MentionItem) => {
     if (!editor.selection) return;
     
     // 删除输入的 @xxx 文本
@@ -879,7 +880,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
     const mentionNode = {
       type: 'event-mention',
       eventId: item.id,
-      eventTitle: item.name,
+      eventTitle: item.title,
       children: [{ text: '' }],
     };
     
@@ -891,7 +892,7 @@ export const LogSlate: React.FC<LogSlateProps> = ({
   }, [editor]);
   
   // 处理 # 标签选择
-  const handleHashtagSelect = useCallback((item: any) => {
+  const handleHashtagSelect = useCallback((item: MentionItem) => {
     if (!editor.selection) return;
     
     // 删除输入的 #xxx 文本
@@ -909,8 +910,13 @@ export const LogSlate: React.FC<LogSlateProps> = ({
       });
     }
     
-    // 插入标签节点
-    insertTag(editor, item.id, item.name, item.color, item.emoji);
+    // 插入标签节点（UnifiedSearchIndex 会把 tag 的完整元数据塞到 metadata）
+    const tagId = item.metadata?.tagId ?? item.metadata?.tagName ?? item.id;
+    const tagName = item.metadata?.tagName ?? String(item.title || item.id).replace(/^#/, '');
+    const tagColor = item.metadata?.tagColor;
+    const tagEmoji = item.metadata?.tagEmoji;
+
+    insertTag(editor, tagId, tagName, tagColor, tagEmoji);
     
     setHashtagSearch(null);
     ReactEditor.focus(editor as ReactEditor);
@@ -991,23 +997,27 @@ export const LogSlate: React.FC<LogSlateProps> = ({
           }}
         />
         
-        {/* @ 提及菜单 */}
+        {/* @ 提及菜单（事件） */}
         {mentionSearch !== null && (
-          <MentionMenu
-            type="mention"
-            search={mentionSearch}
+          <UnifiedMentionMenu
+            query={mentionSearch}
+            includeTypes={['event']}
             onSelect={handleMentionSelect}
             onClose={() => setMentionSearch(null)}
+            context="editor"
+            currentEventId={eventId}
+            // 位置暂时沿用旧逻辑（默认 0,0）；后续如需跟随光标可再做
           />
         )}
-        
+
         {/* # 标签菜单 */}
         {hashtagSearch !== null && (
-          <MentionMenu
-            type="hashtag"
-            search={hashtagSearch}
+          <UnifiedMentionMenu
+            query={hashtagSearch}
+            includeTypes={['tag']}
             onSelect={handleHashtagSelect}
             onClose={() => setHashtagSearch(null)}
+            context="editor"
           />
         )}
       </Slate>

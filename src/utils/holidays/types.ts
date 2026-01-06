@@ -119,7 +119,6 @@ export interface Event {
   color?: string;        // 自定义颜色
   dueDateTime?: string;      // 截止日期/时间（用于任务类型，支持模糊时间）
   notes?: string;        // 备注
-  priority?: 'low' | 'medium' | 'high' | 'urgent'; // 优先级
   isCompleted?: boolean; // 是否完成
   level?: number;        // 层级缩进（用于 Plan 页面显示）
   mode?: 'title' | 'eventlog'; // 显示模式（title或eventlog行）

@@ -12,7 +12,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { unifiedSearchIndex, MentionItem, SearchResult } from '@backend/search/UnifiedSearchIndex';
+import { unifiedSearchIndex, MentionItem, MentionType, SearchResult } from '@backend/search/UnifiedSearchIndex';
 import './UnifiedMentionMenu.css';
 
 interface UnifiedMentionMenuProps {
@@ -22,6 +22,7 @@ interface UnifiedMentionMenuProps {
   context?: 'editor' | 'comment' | 'title'; // 上下文
   position?: { x: number; y: number }; // 菜单位置
   currentEventId?: string; // 🆕 当前编辑的事件 ID（用于创建双向链接）
+  includeTypes?: MentionType[]; // 可选：限制搜索类型（例如仅 event 或仅 tag）
 }
 
 export const UnifiedMentionMenu: React.FC<UnifiedMentionMenuProps> = ({
@@ -31,6 +32,7 @@ export const UnifiedMentionMenu: React.FC<UnifiedMentionMenuProps> = ({
   context = 'editor',
   position,
   currentEventId,
+  includeTypes,
 }) => {
   const [results, setResults] = useState<SearchResult | null>(null);
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -62,6 +64,7 @@ export const UnifiedMentionMenu: React.FC<UnifiedMentionMenuProps> = ({
         query,
         context,
         limit: 5,
+        includeTypes,
       });
       setResults(searchResults);
       setLoading(false);
@@ -73,7 +76,7 @@ export const UnifiedMentionMenu: React.FC<UnifiedMentionMenuProps> = ({
         clearTimeout(debounceTimerRef.current);
       }
     };
-  }, [query, context]);
+  }, [query, context, includeTypes]);
 
   // ⌨️ 键盘导航
   useEffect(() => {

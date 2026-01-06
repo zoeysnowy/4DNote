@@ -33,7 +33,6 @@ import {
   flattenTags,
   validateEvent,
   mergeEventUpdates,
-  getCalendarGroupColor,
   getAvailableCalendarsForSettings,
   generateEventId // ✅ 生成真实 UUID
 } from '@frontend/utils/calendarUtils';
@@ -2654,13 +2653,21 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
           useDetailPopup={false}
           week={{
             // 显示 Task 与 Deadline 面板（ToastUI 将 Deadline 命名为 'milestone'）
-            taskView: calendarSettings.showTask !== false ? ['milestone', 'task'] : false,
+            taskView: (() => {
+              const showDeadline = calendarSettings.showDeadline !== false;
+              const showTask = calendarSettings.showTask !== false;
+              if (!showDeadline && !showTask) return false;
+              return [
+                ...(showDeadline ? (['milestone'] as const) : []),
+                ...(showTask ? (['task'] as const) : [])
+              ];
+            })(),
             // 显示时间段与全天面板
             eventView: calendarSettings.showAllDay !== false ? ['time', 'allday'] : ['time'],
             // 面板高度（若未设置则使用合理默认值）
-            milestoneHeight: calendarSettings.deadlineHeight || 24,
-            taskHeight: calendarSettings.taskHeight || 24,
-            alldayHeight: calendarSettings.allDayHeight || 24,
+            milestoneHeight: calendarSettings.deadlineHeight ?? 24,
+            taskHeight: calendarSettings.taskHeight ?? 24,
+            alldayHeight: calendarSettings.allDayHeight ?? 24,
             showNowIndicator: true,
             showTimezoneCollapseButton: false
           } as any}

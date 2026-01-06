@@ -179,6 +179,44 @@ export function useEventEditDraft({
     getLocationDisplayText,
   ]);
 
+  // 🔗 仅同步“关系字段”（不会覆盖用户正在编辑的 title/eventlog 等）
+  React.useEffect(() => {
+    if (!event) return;
+
+    const nextLinkedEventIds = ((event as any).linkedEventIds || []) as string[];
+    const nextBacklinks = ((event as any).backlinks || []) as string[];
+
+    const sameArray = (a: string[] = [], b: string[] = []) => {
+      if (a === b) return true;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i] !== b[i]) return false;
+      }
+      return true;
+    };
+
+    setFormData(prev => {
+      if (prev.id !== event.id) return prev;
+
+      const prevLinked = (prev.linkedEventIds || []) as string[];
+      const prevBack = (prev.backlinks || []) as string[];
+
+      if (sameArray(prevLinked, nextLinkedEventIds) && sameArray(prevBack, nextBacklinks)) {
+        return prev;
+      }
+
+      return {
+        ...prev,
+        linkedEventIds: nextLinkedEventIds,
+        backlinks: nextBacklinks,
+      };
+    });
+  }, [
+    event?.id,
+    JSON.stringify(((event as any)?.linkedEventIds || []) as string[]),
+    JSON.stringify(((event as any)?.backlinks || []) as string[]),
+  ]);
+
   // 🔧 同步 titleRef 与 formData.title（只在事件切换时，即 formData.id 变化）
   React.useEffect(() => {
     titleRef.current = formData.title;

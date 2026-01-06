@@ -265,6 +265,8 @@ export const HierarchicalTagPicker: React.FC<HierarchicalTagPickerProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen, mode]);
 
+  const showHeader = searchable || (multiple && showBulkActions) || !!onClose;
+
   return (
     <div 
       className={`hierarchical-tag-picker ${mode} ${className}`}
@@ -319,58 +321,60 @@ export const HierarchicalTagPicker: React.FC<HierarchicalTagPickerProps> = ({
       {/* 下拉列表 */}
       {isOpen && (
         <div className="tag-picker-dropdown">
-          {/* 头部：搜索 + 操作按钮 */}
-          <div className="tag-picker-header">
-            {searchable && (
-              <input
-                ref={searchInputRef}
-                type="text"
-                className="tag-search-input"
-                placeholder="搜索标签...（按 / 激活）"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => setIsSearchFocused(true)}
-                onBlur={() => setIsSearchFocused(false)}
-                onClick={(e) => e.stopPropagation()}
-              />
-            )}
-            
-            {multiple && showBulkActions && (
-              <div className="tag-picker-actions">
+          {/* 头部：搜索 + 操作按钮（可选） */}
+          {showHeader && (
+            <div className="tag-picker-header">
+              {searchable && (
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  className="tag-search-input"
+                  placeholder="搜索标签...（按 / 激活）"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              )}
+              
+              {multiple && showBulkActions && (
+                <div className="tag-picker-actions">
+                  <button 
+                    className="action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSelectAll();
+                    }}
+                  >
+                    全选
+                  </button>
+                  <button 
+                    className="action-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleClearAll();
+                    }}
+                  >
+                    清空
+                  </button>
+                </div>
+              )}
+              
+              {onClose && (
                 <button 
-                  className="action-btn"
+                  className="tag-picker-close"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSelectAll();
+                    setIsOpen(false);
+                    onClose();
                   }}
                 >
-                  全选
+                  ✕
                 </button>
-                <button 
-                  className="action-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleClearAll();
-                  }}
-                >
-                  清空
-                </button>
-              </div>
-            )}
-            
-            {onClose && (
-              <button 
-                className="tag-picker-close"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsOpen(false);
-                  onClose();
-                }}
-              >
-                ✕
-              </button>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* 标签列表（层级展示） */}
           <div className="tag-picker-list" ref={tagListRef}>

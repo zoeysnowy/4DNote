@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 
 import PageContainer from '@frontend/components/common/PageContainer';
+import { ContentPanelPickersDemo } from './ContentPanelPickersDemo';
 import './ThemeDemoPage.css';
 
 type ThemeFamily = {
@@ -57,9 +58,34 @@ const brandFamilies: BrandFamily[] = [
   }
 ];
 
+const AGREED_ELEVATION_SHADOW = '0 10px 15px -3px rgba(0, 0, 0, 0.12), 0 4px 6px -2px rgba(0, 0, 0, 0.08)';
+
 const ThemeDemoPage: React.FC = () => {
   const [activeFloatbarTools, setActiveFloatbarTools] = useState<Set<string>>(() => new Set(['bold']));
   const [activeMenuKey, setActiveMenuKey] = useState<string>('active');
+
+  const demoCalendars = useMemo(() => {
+    return [
+      { id: 'cal-main', name: '日历', color: 'var(--brand-accent-purple)' },
+      { id: 'cal-bday', name: 'My Calendar Birthdays', color: 'var(--brand-accent-blue)' },
+      { id: 'cal-3x3', name: '#3x3', color: 'var(--ui-text-muted)' },
+      { id: 'cal-3x3-work', name: '#3x3_工作', color: 'var(--tag-blue-4)' },
+      { id: 'cal-3x3-meeting', name: '#3x3_会议', color: 'var(--tag-blue-5)' },
+      { id: 'cal-3x3-social', name: '#3x3_社交', color: 'var(--tag-green-4)' },
+      { id: 'cal-3x3-sport', name: '#3x3_运动', color: 'var(--tag-orange-4)' },
+      { id: 'cal-3x3-life', name: '#3x3_生活', color: 'var(--tag-red-4)' },
+    ];
+  }, []);
+
+  const demoTags = useMemo(() => {
+    return [
+      { id: 'tag-work', name: '工作', color: 'var(--tag-blue-4)', emoji: '🔒', level: 0 },
+      { id: 'tag-dev', name: '4DNote开发', color: 'var(--tag-purple-4)', emoji: '🧑‍💻', parentId: 'tag-work', level: 1 },
+      { id: 'tag-meeting', name: '会议', color: 'var(--tag-blue-5)', emoji: '👩‍💼', parentId: 'tag-work', level: 1 },
+      { id: 'tag-life', name: '生活', color: 'var(--tag-red-4)', emoji: '🍒', level: 0 },
+      { id: 'tag-badminton', name: '羽毛球', color: 'var(--tag-yellow-4)', emoji: '🏸', parentId: 'tag-life', level: 1 },
+    ];
+  }, []);
 
   const cssModules = useMemo(() => {
     return import.meta.glob<string>('../../**/*.css', { as: 'raw' }) as Record<string, () => Promise<string>>;
@@ -217,9 +243,10 @@ const ThemeDemoPage: React.FC = () => {
   }, [recommendedRadius]);
 
   const recommendedShadow = useMemo(() => {
-    const top = audit?.boxShadow?.[0]?.value;
-    return top ?? '0 8px 24px rgba(0, 0, 0, 0.12)';
-  }, [audit]);
+    // ThemeDemo “After” is an explicit spec, not a statistical mode.
+    // The audit histogram is useful as an inventory, but it must not drive UI rules.
+    return AGREED_ELEVATION_SHADOW;
+  }, []);
 
   const recommendedOverlay = useMemo(() => {
     const top = audit?.overlayColors?.[0]?.value;
@@ -455,7 +482,7 @@ const ThemeDemoPage: React.FC = () => {
                 <div className="spec-canvas" style={{ background: recommendedOverlay }}>
                   <div className="spec-modal spec-modal--after" style={{ borderRadius: preferredLargeRadius, boxShadow: recommendedShadow }}>
                     <div className="spec-modal-title">Dialog Title</div>
-                    <div className="spec-modal-body">Standardized radius + shadow (mode of repo).</div>
+                    <div className="spec-modal-body">Standardized radius + shadow (agreed spec).</div>
                     <div className="spec-modal-actions">
                       <button className="theme-demo-btn secondary" type="button">Cancel</button>
                       <button className="theme-demo-btn primary" type="button">OK</button>
@@ -680,6 +707,17 @@ const ThemeDemoPage: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="theme-demo-card">
+        <div className="theme-demo-title">Isolated Pickers (review)</div>
+        <div className="theme-demo-muted">
+          复刻 sidebar 的 Tag/Calendar 选择区（task-tree + calendar-tree），但不渲染完整 sidebar panel。
+        </div>
+
+        <div className="theme-demo-content-panel-pickers" style={{ marginTop: 12, maxWidth: 360 }}>
+          <ContentPanelPickersDemo tags={demoTags} calendars={demoCalendars} defaultExpandedTagIds={['tag-work', 'tag-life']} />
         </div>
       </div>
     </PageContainer>

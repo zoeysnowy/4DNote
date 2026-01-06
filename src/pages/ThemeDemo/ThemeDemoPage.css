@@ -9,6 +9,65 @@
   --spec-border: var(--ui-border);
 }
 
+/* =========================================
+   ThemeDemo-only overrides for sidebar pickers
+   (tag-tree + calendar-tree) used in review.
+   Do NOT affect production sidebar UI.
+   ========================================= */
+
+.theme-demo .theme-demo-content-panel-pickers .section-header-simple {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+/* 5.2 + 5.3: section title is 15px, no bg/border */
+.theme-demo .theme-demo-content-panel-pickers .section-title {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 22px;
+  color: var(--ui-text);
+}
+
+/* Buttons: never show borders (5.1 close button rule applied broadly) */
+.theme-demo .theme-demo-content-panel-pickers .panel-toggle-btn,
+.theme-demo .theme-demo-content-panel-pickers .task-expand-btn,
+.theme-demo .theme-demo-content-panel-pickers .task-visibility-btn,
+.theme-demo .theme-demo-content-panel-pickers .calendar-visibility-btn {
+  border: 0;
+}
+
+/* Picker containers: use theme tokens instead of hard-coded rgba/glass */
+.theme-demo .theme-demo-content-panel-pickers .task-tree,
+.theme-demo .theme-demo-content-panel-pickers .calendar-tree {
+  background: var(--ui-surface-soft);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* 5.3: list items are 14px body */
+.theme-demo .theme-demo-content-panel-pickers .task-title,
+.theme-demo .theme-demo-content-panel-pickers .calendar-name {
+  font-size: 14px;
+  line-height: 32px;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+/* 5.3: meta is 13px */
+.theme-demo .theme-demo-content-panel-pickers .task-progress-text,
+.theme-demo .theme-demo-content-panel-pickers .task-hours,
+.theme-demo .theme-demo-content-panel-pickers .calendar-event-count {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+}
+
+.theme-demo .theme-demo-content-panel-pickers .task-time-bar {
+  background: color-mix(in srgb, var(--ui-border) 55%, transparent);
+}
+
 /* AppLayout main area is overflow:hidden; enable scrolling inside this page */
 .page-container.theme-demo-page-container {
   height: 100%;

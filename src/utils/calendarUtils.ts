@@ -17,6 +17,33 @@ import dayjs from 'dayjs';
 import { resolveCalendarDateRange } from './TimeResolver';
 import { resolveDisplayTitle } from './TitleResolver';
 
+const DEFAULT_TUI_CALENDAR_COLOR_HEX = '#3788d8';
+
+const isHexColor = (value: unknown): value is string =>
+  typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
+
+const isLikelyCssColor = (value: unknown): value is string => {
+  if (typeof value !== 'string') return false;
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+
+  // Accept hex, css vars, rgb/rgba/hsl/hsla, and basic keywords.
+  if (isHexColor(trimmed)) return true;
+  if (/^var\(--[a-zA-Z0-9-]+\)$/.test(trimmed)) return true;
+  if (/^(?:rgb|rgba|hsl|hsla)\(/.test(trimmed)) return true;
+  if (/^[a-zA-Z]+$/.test(trimmed)) return true;
+  return false;
+};
+
+// Single source of truth for calendar colors: keep it hex-only.
+// This is safe for ToastUI and keeps UI/TUI consistent.
+const resolveCalendarHexColor = (calendarId: string, calendarColor?: unknown): string => {
+  const serviceColor = CalendarService.getColor(calendarId);
+  if (isHexColor(serviceColor)) return serviceColor;
+  if (isHexColor(calendarColor)) return calendarColor;
+  return DEFAULT_TUI_CALENDAR_COLOR_HEX;
+};
+
 /**
  * Get a human-readable tag label from a (possibly hierarchical) tag list.
  */
@@ -54,7 +81,7 @@ export function generateEventId(): string {
  */
 export function getTagColor(tagId: string | undefined, tags: any[]): string {
   if (!tagId) {
-    return '#3788d8'; // 默认颜色
+    return DEFAULT_TUI_CALENDAR_COLOR_HEX; // 默认颜色
   }
   
   const findTag = (tagList: any[]): any => {
@@ -69,7 +96,7 @@ export function getTagColor(tagId: string | undefined, tags: any[]): string {
   };
   
   const tag = findTag(tags);
-  const color = tag?.color || '#3788d8';
+  const color = (typeof tag?.color === 'string' ? tag.color : '') || DEFAULT_TUI_CALENDAR_COLOR_HEX;
   
   return color;
 }
@@ -95,7 +122,7 @@ export function getEventColor(event: Event, tags: any[]): string {
   }
 
   // Default
-  return '#3788d8';
+  return DEFAULT_TUI_CALENDAR_COLOR_HEX;
 }
 
 function stripLeadingTimestampBlocksForCalendar(raw: string): string {
@@ -236,20 +263,10 @@ function tryExtractSlateTextFromUnknownString(value: string): string {
 }
 
 /**
- * 从 CalendarService 获取日历颜色
- * @deprecated 使用 CalendarService.getColor() 代替
- * @param calendarId 日历ID
- * @returns 颜色值或null
- */
-export function getCalendarGroupColor(calendarId: string): string | null {
-  return CalendarService.getColor(calendarId);
-}
-
-/**
  * 获取可用日历列表（用于EventEditModal的availableCalendars）
  * 包含所有同步的日历 + 特殊选项（"创建自本地"、"未同步至日历"）
  * 
- * @returns 日历列表，每个日历包含 id, name, color（十六进制颜色值）
+ * @returns 日历列表，每个日历包含 id, name, color（hex；与 ToastUI 颜色口径一致）
  */
 export function getAvailableCalendarsForSettings(): Array<{ id: string; name: string; color: string }> {
   // 使用新的 CalendarService 获取日历列表
@@ -258,7 +275,7 @@ export function getAvailableCalendarsForSettings(): Array<{ id: string; name: st
   return calendars.map(cal => ({
     id: cal.id,
     name: cal.name,
-    color: cal.color
+    color: resolveCalendarHexColor(cal.id, cal.color)
   }));
 }
 
@@ -354,7 +371,9 @@ export function convertToCalendarEvent(
   // 口径：不再使用/兼容 Event.category（legacy 展示字段），一律从规范字段推导。
   let category: 'milestone' | 'task' | 'allday' | 'time' = 'time';
 
-  if (event.isDeadline) {
+  const isDeadline = event.isDeadline === true || event.timeSpec?.kind === 'deadline';
+
+  if (isDeadline) {
     category = 'milestone';
   } else if (event.isTask) {
     category = 'task';
@@ -525,54 +544,16 @@ export function convertToCalendarEvents(
 }
 
 /**
- * 创建日历分组配置
- * @param tags 标签列表
- * @returns TUI Calendar 的 calendars 配置
- */
-export function createCalendarsFromTags(tags: any[]): any[] {
-  const flatTags = flattenTags(tags);
-  // 使用所有标签创建日历分组
-  const eventTags = flatTags;
-  
-  const defaultColor = '#3788d8';
-  
-  return [
-    {
-      id: 'default',
-      name: '默认日历',
-      color: '#ffffff',
-      backgroundColor: defaultColor,
-      borderColor: defaultColor,
-      dragBackgroundColor: defaultColor
-    },
-    ...eventTags.map(tag => {
-      const tagColor = tag.color || defaultColor;
-      return {
-        id: tag.id,
-        name: tag.displayName || tag.name,
-        color: '#ffffff',
-        backgroundColor: tagColor,
-        borderColor: tagColor,
-        dragBackgroundColor: tagColor
-      };
-    })
-  ];
-}
-
-/**
  * Create calendars from CalendarService (external calendar grouping).
  * This aligns event colors with `event.calendarIds`.
  */
 export function createCalendarsFromCalendarService(sourceCalendars?: any[], tags?: any[]): any[] {
-  const defaultColor = '#3788d8';
+  const defaultColor = DEFAULT_TUI_CALENDAR_COLOR_HEX;
   const calendars = Array.isArray(sourceCalendars) && sourceCalendars.length > 0
     ? sourceCalendars
     : CalendarService.getCalendars(false);
 
   const flatTags = Array.isArray(tags) ? flattenTags(tags) : [];
-
-  const isHexColor = (value: unknown): value is string =>
-    typeof value === 'string' && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(value);
 
   const base = [
     {
@@ -584,10 +565,10 @@ export function createCalendarsFromCalendarService(sourceCalendars?: any[], tags
       dragBackgroundColor: defaultColor
     },
     ...calendars.map(cal => {
-      const serviceColor = typeof cal?.id === 'string' ? CalendarService.getColor(cal.id) : null;
-      const color = (serviceColor && isHexColor(serviceColor))
-        ? serviceColor
-        : (isHexColor(cal?.color) ? cal.color : defaultColor);
+      const calendarId = typeof cal?.id === 'string' ? cal.id : '';
+      const color = calendarId
+        ? resolveCalendarHexColor(calendarId, (cal as any)?.color)
+        : defaultColor;
       return {
         id: cal.id,
         name: (cal as any).displayName || cal.name || cal.id,

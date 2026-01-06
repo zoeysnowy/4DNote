@@ -14,6 +14,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import '@frontend/features/Calendar/styles/CalendarSettingsPanel.css';
 import '@frontend/features/Calendar/styles/CalendarPicker.css'; // 🎨 导入 CalendarPicker 样式以保持日历列表一致性
 
+import { CalendarPicker } from './CalendarPicker';
+import { HierarchicalTagPicker } from '@frontend/components/shared';
+
 export interface CalendarSettings {
   eventOpacity: number; // 0-100
   visibleTags: string[]; // 显示的标签ID列表
@@ -225,6 +228,29 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
     onSettingsChange(newSettings);
   };
 
+  const handleTagSelectionChange = (selectedIds: string[]) => {
+    const prevSelected = localSettings.visibleTags;
+    const addedIds = selectedIds.filter(id => !prevSelected.includes(id));
+
+    let newVisibleCalendars = [...localSettings.visibleCalendars];
+    for (const tagId of addedIds) {
+      if (tagId === 'no-tag') continue;
+      const tag = availableTags.find(t => t.id === tagId);
+      if (tag?.calendarId && !newVisibleCalendars.includes(tag.calendarId)) {
+        newVisibleCalendars.push(tag.calendarId);
+      }
+    }
+
+    const newSettings = {
+      ...localSettings,
+      visibleTags: selectedIds,
+      visibleCalendars: newVisibleCalendars,
+    };
+
+    setLocalSettings(newSettings);
+    onSettingsChange(newSettings);
+  };
+
   const handleCalendarToggle = (calendarId: string) => {
     const isRemoving = localSettings.visibleCalendars.includes(calendarId);
     const newVisibleCalendars = isRemoving
@@ -248,6 +274,33 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
       visibleTags: newVisibleTags,
       visibleCalendars: newVisibleCalendars
     };
+    setLocalSettings(newSettings);
+    onSettingsChange(newSettings);
+  };
+
+  const handleCalendarSelectionChange = (selectedIds: string[]) => {
+    const prevSelected = localSettings.visibleCalendars;
+    const removedIds = prevSelected.filter(id => !selectedIds.includes(id));
+
+    let newVisibleTags = [...localSettings.visibleTags];
+    for (const calendarId of removedIds) {
+      if (['local-created', 'not-synced'].includes(calendarId)) continue;
+
+      const tagsToRemove = availableTags
+        .filter(tag => tag.calendarId === calendarId)
+        .map(tag => tag.id);
+
+      if (tagsToRemove.length > 0) {
+        newVisibleTags = newVisibleTags.filter(id => !tagsToRemove.includes(id));
+      }
+    }
+
+    const newSettings = {
+      ...localSettings,
+      visibleTags: newVisibleTags,
+      visibleCalendars: selectedIds,
+    };
+
     setLocalSettings(newSettings);
     onSettingsChange(newSettings);
   };
@@ -380,14 +433,7 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
                 type="color"
                 value={widgetColor}
                 onChange={(e) => onWidgetColorChange?.(e.target.value)}
-                style={{
-                  width: '80px',
-                  height: '32px',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  marginLeft: 'auto'
-                }}
+                className="widget-color-input"
                 onMouseDown={(e) => e.stopPropagation()}
               />
             </div>
@@ -396,14 +442,9 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
           {/* Widget 锁定位置 */}
           <div className="settings-section compact-section">
             <div className="compact-slider-row">
-              <span className="slider-label">� 置顶显示</span>
+              <span className="slider-label">📌 置顶显示</span>
               <label 
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  cursor: 'pointer',
-                  marginLeft: 'auto'
-                }}
+                className="widget-lock-toggle"
                 onClick={(e) => {
                   e.stopPropagation();
                 }}
@@ -418,24 +459,13 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
                   onClick={(e) => {
                     e.stopPropagation();
                   }}
-                  style={{
-                    width: '18px',
-                    height: '18px',
-                    cursor: 'pointer'
-                  }}
                 />
-                <span style={{ marginLeft: '8px', fontSize: '14px' }}>
+                <span className="widget-lock-text">
                   {widgetLocked ? '已置顶' : '未置顶'}
                 </span>
               </label>
             </div>
           </div>
-
-          {/* 分隔线 */}
-          <div style={{ 
-            borderTop: '1px solid #e0e0e0', 
-            margin: '12px 0' 
-          }} />
         </>
       )}
 
@@ -571,49 +601,23 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
       {/* 标签筛选 */}
       <div className="settings-section">
         <div className="section-title">
-          <span>🏷️ 显示标签 {localSettings.visibleTags.length === 0 && <span style={{fontSize: '11px', color: '#28a745'}}>(全部)</span>}</span>
+          <span>🏷️ 显示标签 {localSettings.visibleTags.length === 0 && <span className="settings-hint">(全部)</span>}</span>
           <div className="section-actions">
             <button onClick={handleSelectAllTags} className="action-btn">全选</button>
             <button onClick={handleDeselectAllTags} className="action-btn">清空</button>
           </div>
         </div>
-        <div className="filter-list">
-          {availableTags.length === 0 ? (
-            <div className="empty-message">暂无标签</div>
-          ) : (
-            availableTags.map(tag => {
-              const paddingLeft = `${(tag.level || 0) * 12}px`;
-              
-              return (
-                <label key={tag.id} className="filter-item">
-                  <input
-                    type="checkbox"
-                    checked={localSettings.visibleTags.includes(tag.id)}
-                    onChange={() => handleTagToggle(tag.id)}
-                  />
-                  <div 
-                    className="tag-content"
-                    style={{ paddingLeft }}
-                    data-level={tag.level || 0}
-                    data-padding={paddingLeft}
-                  >
-                    <span 
-                      className="tag-hash" 
-                      style={{ color: tag.color }}
-                    >#</span>
-                    
-                    <span className="tag-emoji">{tag.emoji || '🏷️'}</span>
-                    
-                    <span 
-                      className="tag-name"
-                      style={{ color: tag.color }}
-                    >{tag.name}</span>
-                  </div>
-                </label>
-              );
-            })
-          )}
-        </div>
+        <HierarchicalTagPicker
+          availableTags={availableTags}
+          selectedTagIds={localSettings.visibleTags}
+          onSelectionChange={handleTagSelectionChange}
+          multiple={true}
+          searchable={false}
+          showSelectedChips={false}
+          showBulkActions={false}
+          mode="inline"
+          className="calendar-settings-tag-picker"
+        />
       </div>
 
       {/* 日历分组筛选 */}
@@ -625,31 +629,14 @@ const CalendarSettingsPanel: React.FC<CalendarSettingsPanelProps> = ({
             <button onClick={handleDeselectAllCalendars} className="action-btn">清空</button>
           </div>
         </div>
-        <div className="filter-list">
-          {availableCalendars.length === 0 ? (
-            <div className="empty-message">暂无日历</div>
-          ) : (
-            availableCalendars.map(calendar => (
-              <label key={calendar.id} className="filter-item calendar-item">
-                <input
-                  type="checkbox"
-                  checked={localSettings.visibleCalendars.includes(calendar.id)}
-                  onChange={() => handleCalendarToggle(calendar.id)}
-                />
-                <div className="calendar-content">
-                  {/* 颜色圆点 */}
-                  <span 
-                    className="calendar-dot" 
-                    style={{ backgroundColor: calendar.color || '#3788d8' }}
-                  ></span>
-                  
-                  {/* 日历名称 */}
-                  <span className="calendar-name">{calendar.name}</span>
-                </div>
-              </label>
-            ))
-          )}
-        </div>
+        <CalendarPicker
+          availableCalendars={availableCalendars}
+          selectedCalendarIds={localSettings.visibleCalendars}
+          onSelectionChange={handleCalendarSelectionChange}
+          maxSelection={Number.MAX_SAFE_INTEGER}
+          mode="list"
+          listClassName="filter-list calendar-filter-list"
+        />
       </div>
     </div>
   );  // 🖥️ Widget 模式：不需要 overlay 包裹

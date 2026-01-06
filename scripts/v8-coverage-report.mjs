@@ -1,8 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { createCoverageMap } from 'istanbul-lib-coverage';
+import istanbulCoverage from 'istanbul-lib-coverage';
 import v8toIstanbul from 'v8-to-istanbul';
+
+const { createCoverageMap } = istanbulCoverage;
 
 const repoRoot = process.cwd();
 const v8Path = path.resolve(repoRoot, '.coverage', 'v8-js.json');
@@ -33,6 +35,46 @@ function urlToBuiltFile(urlStr) {
 function pct(covered, total) {
   if (!total) return 0;
   return Math.round((covered / total) * 1000) / 10;
+}
+
+function summarizeFiles(coverageMap, filterFn) {
+  const rows = [];
+  for (const file of coverageMap.files()) {
+    const rel = toPosix(file);
+    if (!filterFn(rel)) continue;
+
+    const s = coverageMap.fileCoverageFor(file).toSummary();
+    rows.push({
+      file: rel,
+      lines: {
+        total: s.lines.total,
+        covered: s.lines.covered,
+        uncovered: s.lines.total - s.lines.covered,
+        pct: pct(s.lines.covered, s.lines.total),
+      },
+      branches: {
+        total: s.branches.total,
+        covered: s.branches.covered,
+        uncovered: s.branches.total - s.branches.covered,
+        pct: pct(s.branches.covered, s.branches.total),
+      },
+      functions: {
+        total: s.functions.total,
+        covered: s.functions.covered,
+        uncovered: s.functions.total - s.functions.covered,
+        pct: pct(s.functions.covered, s.functions.total),
+      },
+    });
+  }
+
+  rows.sort((a, b) => {
+    // Primary: most uncovered lines first, then lowest coverage
+    if (b.lines.uncovered !== a.lines.uncovered) return b.lines.uncovered - a.lines.uncovered;
+    if (a.lines.pct !== b.lines.pct) return a.lines.pct - b.lines.pct;
+    return a.file.localeCompare(b.file);
+  });
+
+  return rows;
 }
 
 function summarizeGroup(coverageMap, filterFn) {
@@ -105,6 +147,9 @@ async function main() {
   const app = summarizeGroup(normalized, appFilter);
   const tui = summarizeGroup(normalized, tuiFilter);
 
+  const appFiles = summarizeFiles(normalized, appFilter);
+  const tuiFiles = summarizeFiles(normalized, tuiFilter);
+
   const outDir = path.resolve(repoRoot, 'coverage');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -116,6 +161,8 @@ async function main() {
   };
 
   fs.writeFileSync(path.join(outDir, 'v8-coverage-summary.json'), JSON.stringify(summary, null, 2), 'utf8');
+  fs.writeFileSync(path.join(outDir, 'v8-coverage-files-app.json'), JSON.stringify(appFiles, null, 2), 'utf8');
+  fs.writeFileSync(path.join(outDir, 'v8-coverage-files-tui.json'), JSON.stringify(tuiFiles, null, 2), 'utf8');
 
   console.log('V8 Coverage Summary (sourcemap-mapped)');
   console.log('-----------------------------------');
@@ -132,6 +179,7 @@ async function main() {
   console.log(`- Branches:  ${tui.branches.covered}/${tui.branches.total} (${tui.branches.pct}%)`);
   console.log('');
   console.log(`Wrote: ${toPosix(path.relative(repoRoot, path.join(outDir, 'v8-coverage-summary.json')))}`);
+  console.log(`Wrote: ${toPosix(path.relative(repoRoot, path.join(outDir, 'v8-coverage-files-tui.json')))}`);
 }
 
 main().catch((e) => {

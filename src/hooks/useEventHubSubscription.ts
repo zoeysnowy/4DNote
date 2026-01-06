@@ -21,6 +21,67 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import type { Event } from '@frontend/types';
 import { EventHub } from '@backend/EventHub';
 import { EventService } from '@backend/EventService';
+import { useEventsUpdatedSubscription } from '@frontend/hooks/useEventsUpdatedSubscription';
+
+function getEventIdFromEventsUpdatedDetail(detail: unknown): string | null {
+  if (!detail || typeof detail !== 'object') return null;
+  const asAny = detail as any;
+  if (typeof asAny.eventId === 'string' && asAny.eventId) return asAny.eventId;
+  if (typeof asAny.event?.id === 'string' && asAny.event.id) return asAny.event.id;
+  return null;
+}
+
+function getEventFromEventsUpdatedDetail(detail: unknown): Event | null {
+  if (!detail || typeof detail !== 'object') return null;
+  const asAny = detail as any;
+  if (asAny.event && typeof asAny.event === 'object' && typeof asAny.event.id === 'string') {
+    return asAny.event as Event;
+  }
+  return null;
+}
+
+function isDeletedFromEventsUpdatedDetail(detail: unknown): boolean {
+  if (!detail || typeof detail !== 'object') return false;
+  const asAny = detail as any;
+  return Boolean(asAny.deleted || asAny.softDeleted || asAny.hardDeleted);
+}
+
+type EventHubPayload =
+  | Event
+  | {
+      eventId?: string;
+      event?: Event;
+      updates?: Record<string, unknown>;
+      [key: string]: unknown;
+    }
+  | null
+  | undefined;
+
+function getEventIdFromPayload(payload: EventHubPayload): string | null {
+  if (!payload) return null;
+  if (typeof payload === 'object') {
+    const asAny = payload as any;
+    return (
+      (typeof asAny.eventId === 'string' && asAny.eventId) ||
+      (typeof asAny.id === 'string' && asAny.id) ||
+      (typeof asAny.event?.id === 'string' && asAny.event.id) ||
+      null
+    );
+  }
+  return null;
+}
+
+function getEventFromPayload(payload: EventHubPayload): Event | null {
+  if (!payload) return null;
+  if (typeof payload === 'object') {
+    const asAny = payload as any;
+    // Newer/expected: wrapper payload
+    if (asAny.event && typeof asAny.event === 'object') return asAny.event as Event;
+    // Current EventService.emit/EventHub.notify path: raw Event
+    if (typeof asAny.id === 'string') return asAny as Event;
+  }
+  return null;
+}
 
 export interface UseEventHubSubscriptionOptions {
   /**
@@ -100,11 +161,12 @@ export function useEventHubSubscription(
     
     // 2. 订阅事件创建
     const unsubscribeCreated = EventHub.subscribe('event-created', (data) => {
+      const createdEvent = getEventFromPayload(data);
       if (debug) {
         console.log('[useEventHubSubscription] 事件创建', {
           source,
-          eventId: data.event?.id,
-          title: data.event?.title
+          eventId: getEventIdFromPayload(data),
+          title: (createdEvent as any)?.title
         });
       }
       
@@ -116,8 +178,8 @@ export function useEventHubSubscription(
       if (debug) {
         console.log('[useEventHubSubscription] 事件更新', {
           source,
-          eventId: data.eventId,
-          fields: data.updates ? Object.keys(data.updates) : []
+          eventId: getEventIdFromPayload(data),
+          fields: (data as any)?.updates ? Object.keys((data as any).updates) : []
         });
       }
       
@@ -129,7 +191,7 @@ export function useEventHubSubscription(
       if (debug) {
         console.log('[useEventHubSubscription] 事件删除', {
           source,
-          eventId: data.eventId
+          eventId: getEventIdFromPayload(data)
         });
       }
       
@@ -209,64 +271,84 @@ export function useEventSubscription(
   debug: boolean = false
 ): Event | null {
   const [event, setEvent] = useState<Event | null>(null);
-  
+
+  // 1) 初始强一致加载（避免依赖 EventHub 缓存时序/契约）
   useEffect(() => {
     if (!eventId) {
       setEvent(null);
       return;
     }
-    
-    // 1. 初始加载
-    const loadEvent = () => {
-      const snapshot = EventHub.getSnapshot(eventId);
-      setEvent(snapshot);
-      
+
+    let cancelled = false;
+    (async () => {
+      const loaded = await EventService.getEventById(eventId);
+      if (cancelled) return;
+      setEvent(loaded);
+
       if (debug) {
-        console.log('[useEventSubscription] 初始加载', {
+        console.log('[useEventSubscription] 初始加载(EventService)', {
           source,
           eventId,
-          title: snapshot?.title
+          title: loaded?.title
         });
       }
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    
-    loadEvent();
-    
-    // 2. 订阅更新
-    const unsubscribe = EventHub.subscribe('event-updated', (data) => {
-      if (data.eventId === eventId) {
-        const updatedEvent = EventHub.getSnapshot(eventId);
-        setEvent(updatedEvent);
-        
+  }, [eventId, source, debug]);
+
+  // 2) 监听全局 eventsUpdated 增量更新（方案A：UI 以 eventsUpdated 为主）
+  const handleEventsUpdated = useCallback(
+    (detail: unknown) => {
+      if (!eventId) return;
+      const updatedId = getEventIdFromEventsUpdatedDetail(detail);
+      if (updatedId !== eventId) return;
+
+      if (isDeletedFromEventsUpdatedDetail(detail)) {
+        setEvent(null);
         if (debug) {
-          console.log('[useEventSubscription] 事件更新', {
+          console.log('[useEventSubscription] eventsUpdated: 删除', {
             source,
             eventId,
-            fields: data.updates ? Object.keys(data.updates) : []
+            senderId: (detail as any)?.senderId,
+            timestamp: (detail as any)?.timestamp
           });
         }
+        return;
       }
-    });
-    
-    // 3. 订阅删除
-    const unsubscribeDeleted = EventHub.subscribe('event-deleted', (data) => {
-      if (data.eventId === eventId) {
-        setEvent(null);
-        
+
+      const payloadEvent = getEventFromEventsUpdatedDetail(detail);
+      if (payloadEvent) {
+        setEvent(payloadEvent);
         if (debug) {
-          console.log('[useEventSubscription] 事件删除', {
+          console.log('[useEventSubscription] eventsUpdated: 更新(payload)', {
+            source,
+            eventId,
+            senderId: (detail as any)?.senderId,
+            timestamp: (detail as any)?.timestamp
+          });
+        }
+        return;
+      }
+
+      // 极少数情况下 detail 可能不带 event：兜底强一致 reload
+      void (async () => {
+        const reloaded = await EventService.getEventById(eventId);
+        setEvent(reloaded);
+        if (debug) {
+          console.log('[useEventSubscription] eventsUpdated: 更新(reload)', {
             source,
             eventId
           });
         }
-      }
-    });
-    
-    return () => {
-      unsubscribe();
-      unsubscribeDeleted();
-    };
-  }, [eventId, source, debug]);
+      })();
+    },
+    [eventId, source, debug]
+  );
+
+  useEventsUpdatedSubscription({ enabled: Boolean(eventId), onEventsUpdated: handleEventsUpdated });
   
   return event;
 }

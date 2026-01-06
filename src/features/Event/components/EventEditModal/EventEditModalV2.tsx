@@ -93,7 +93,7 @@ import { LocationInput } from '@frontend/components/common/LocationInput';
 import { CalendarPicker } from '@frontend/features/Calendar/components/CalendarPicker';
 import { SimpleCalendarDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SimpleCalendarDropdown';
 import { SyncModeDropdown } from '@frontend/features/Event/components/EventEditModalV2Demo/SyncModeDropdown';
-import { getAvailableCalendarsForSettings, getCalendarGroupColor, generateEventId } from '@frontend/utils/calendarUtils';
+import { getAvailableCalendarsForSettings, generateEventId } from '@frontend/utils/calendarUtils';
 import { getLocationDisplayText } from '@frontend/utils/locationUtils';
 // TimeLog 相关导入
 import { ModalSlate } from '@frontend/components/ModalSlate';
@@ -668,11 +668,20 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // 🔧 使用 useMemo 缓存 EventTree 数据，避免频繁序列化
   const eventTreeData = React.useMemo(() => {
     if (!event) return { linkedEventIds: [], backlinks: [] };
+
+    const linkedEventIds = ((event as any).linkedEventIds || []) as string[];
+    const backlinks = ((event as any).backlinks || []) as string[];
     return {
-      linkedEventIds: (event as any).linkedEventIds || [],
-      backlinks: (event as any).backlinks || [],
+      linkedEventIds,
+      backlinks,
     };
-  }, [event?.id]); // 只监听 ID 变化
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    event?.id,
+    // 关系字段变化必须驱动更新，否则 UI 会卡在旧的关联数量
+    (((event as any)?.linkedEventIds as string[] | undefined) || []).join('|'),
+    (((event as any)?.backlinks as string[] | undefined) || []).join('|'),
+  ]);
   
   // 🔧 只在 event.id 变化时更新 EventTree 关联关系
   React.useEffect(() => {
@@ -694,7 +703,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       ...prev,
       ...eventTreeData,
     }));
-  }, [event?.id, eventTreeData]);
+  }, [eventTreeData, event?.id]);
   
   // 🔧 [已删除] syncMode 同步 useEffect - 改为在 sourceSyncMode/syncSyncMode 初始化时直接设置，避免额外的 state 更新
   
@@ -3878,7 +3887,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                       ref={slateEditorRef}
                       key={`editor-${formData.id}`}
                       content={timelogContent}
-                      parentEventId={formData.id || 'new-event'}
+                      parentEventId={eventId || formData.id}
                       enableTimestamp={true}
                       placeholder="记录时间轴..."
                       onChange={handleTimelogChange}

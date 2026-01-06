@@ -97,18 +97,24 @@ class UnifiedSearchIndex {
   async search(options: SearchOptions): Promise<SearchResult> {
     await this.initialize();
 
-    const { query, context = 'editor', limit = 5 } = options;
+    const { query, context = 'editor', limit = 5, includeTypes } = options;
     const trimmedQuery = query.trim().toLowerCase();
 
     if (!trimmedQuery) {
       return this._getEmptyResult();
     }
 
-    // 并行搜索所有类型
+    const allowEvents = !includeTypes || includeTypes.includes('event');
+    const allowTags = !includeTypes || includeTypes.includes('tag');
+    const allowTime = !includeTypes || includeTypes.includes('time');
+    const allowAI = !includeTypes || includeTypes.includes('ai');
+    const allowNew = !includeTypes || includeTypes.includes('new');
+
+    // 并行搜索所有类型（按 includeTypes 限制）
     const [events, tags, time] = await Promise.all([
-      this._searchEvents(trimmedQuery, limit),
-      this._searchTags(trimmedQuery, limit),
-      this._searchTime(trimmedQuery),
+      allowEvents ? this._searchEvents(trimmedQuery, limit) : Promise.resolve([]),
+      allowTags ? this._searchTags(trimmedQuery, limit) : Promise.resolve([]),
+      allowTime ? this._searchTime(trimmedQuery) : Promise.resolve([]),
     ]);
 
     console.log('[UnifiedSearchIndex] 搜索结果:', {
@@ -129,10 +135,10 @@ class UnifiedSearchIndex {
     const topHit = allResults.length > 0 ? allResults[0] : undefined;
 
     // 🤖 AI 助手触发条件
-    const ai = this._shouldShowAI(trimmedQuery) ? this._createAIItem(trimmedQuery) : undefined;
+    const ai = allowAI && this._shouldShowAI(trimmedQuery) ? this._createAIItem(trimmedQuery) : undefined;
 
     // 📄 "创建新页面"兜底
-    const newPage = this._createNewPageItem(query);
+    const newPage = allowNew ? this._createNewPageItem(query) : undefined;
 
     return {
       topHit,

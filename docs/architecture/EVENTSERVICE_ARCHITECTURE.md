@@ -550,11 +550,33 @@ private static normalizeTitle(
 **三层架构**:
 ```typescript
 interface EventTitle {
-  simpleTitle: string;     // 纯文本标题
-  colorTitle?: ColorTitle; // 富文本标题（Slate JSON）
-  fullTitle?: FullTitle;   // 完整标题（含 Tag/DateMention）
+  fullTitle?: string;      // 完整标题（Slate JSON，包含Tag/DateMention）
+  colorTitle?: string;     // 富文本标题（Slate JSON，移除Tag/DateMention）
+  simpleTitle?: string;    // 纯文本标题
 }
 ```
+
+**字段用途与使用场景**:
+
+| 字段 | 格式 | 用途 | 使用场景 |
+|------|------|------|----------|
+| `fullTitle` | Slate JSON | 完整富文本（含标签） | PlanSlate编辑、EventLine显示 |
+| `colorTitle` | Slate JSON | 编辑富文本（无标签） | EventEditModal、UpcomingEventsPanel、TimeLog、TimeCalendar、Library、EventTree、Sky等所有显示 |
+| `simpleTitle` | 纯文本 | 搜索和同步 | Outlook同步、搜索索引 |
+
+**模块使用规范**:
+
+| 模块 | 使用字段 | 说明 |
+|------|----------|------|
+| **PlanSlate** | `fullTitle` | 需要显示Tag元素，编辑完整富文本 |
+| **EventEditModalV2** | `colorTitle` | 编辑富文本但不显示Tag（Tag通过独立标签选择器管理） |
+| **TimeCalendar** | `colorTitle` | 日历视图显示富文本但不需要Tag元素 |
+| **TimeLog** | `colorTitle` | 显示富文本但不需要Tag元素 |
+| **Library** | `colorTitle` | 文档列表显示富文本，Tag通过标签筛选器展示 |
+| **EventTree** | `colorTitle` | 树节点显示富文本但不需要Tag元素 |
+| **Sky** | `colorTitle` | 顶部快捷入口简洁显示，不需要Tag元素 |
+| **Outlook同步** | `simpleTitle` | 外部同步只传输纯文本 |
+| **搜索索引** | `simpleTitle` | 纯文本索引，提升搜索性能 |
 
 **数据流**:
 ```

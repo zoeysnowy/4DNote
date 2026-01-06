@@ -16,6 +16,8 @@ interface CalendarPickerProps {
   placeholder?: string;
   maxSelection?: number;
   className?: string;
+  mode?: 'dropdown' | 'list';
+  listClassName?: string;
 }
 
 /**
@@ -27,7 +29,9 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
   onSelectionChange,
   placeholder = "选择日历...",
   maxSelection = 5,
-  className = ""
+  className = "",
+  mode = 'dropdown',
+  listClassName,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,6 +74,8 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
 
   // 点击外部关闭下拉
   useEffect(() => {
+    if (mode !== 'dropdown') return;
+
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -87,8 +93,47 @@ export const CalendarPicker: React.FC<CalendarPickerProps> = ({
   };
 
   const getCalendarColor = (calendar: Calendar) => {
-    return calendar.color || '#3498db';
+    // Business source of truth is CalendarService/calendarUtils.
+    // UI should not hardcode default hex colors; use tokens as the last fallback.
+    return calendar.color || 'var(--ui-accent)';
   };
+
+  // List 模式：仅渲染列表（用于 SettingsPanel 复用样式/结构）
+  if (mode === 'list') {
+    return (
+      <div className={`calendar-picker list-mode ${className}`}> 
+        <div className={listClassName || 'calendar-dropdown-list'}>
+          {availableCalendars.length > 0 ? (
+            availableCalendars.map(calendar => {
+              const isSelected = selectedCalendarIds.includes(calendar.id);
+
+              return (
+                <label
+                  key={calendar.id}
+                  className={`filter-item calendar-item ${isSelected ? 'selected' : ''}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleCalendar(calendar.id)}
+                  />
+                  <div className="calendar-content">
+                    <span
+                      className="calendar-dot"
+                      style={{ backgroundColor: getCalendarColor(calendar) }}
+                    ></span>
+                    <span className="calendar-name">{getCalendarName(calendar)}</span>
+                  </div>
+                </label>
+              );
+            })
+          ) : (
+            <div className="no-calendars">暂无日历</div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`calendar-picker ${className}`} ref={dropdownRef}>

@@ -152,6 +152,21 @@ const safeFocusEditor = (editor: Editor, path?: number[]) => {
   }
 };
 
+const getCurrentEventIdFromSelection = (editor: Editor): string | null => {
+  try {
+    if (!editor.selection) return null;
+    const match = Editor.above(editor, {
+      match: n => (n as any).type === 'event-line',
+    });
+    if (!match) return null;
+    const [eventLineNode] = match;
+    const eventId = (eventLineNode as any)?.eventId;
+    return typeof eventId === 'string' && eventId.length > 0 ? eventId : null;
+  } catch {
+    return null;
+  }
+};
+
 export interface PlanSlateProps {
   items: any[];  // PlanItem[]
   onChange: (items: any[]) => void;
@@ -1206,6 +1221,9 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   // 🆕 v2.21.0: 统一的会话态管理（替代8个useState）
   const { state: session, actions: sessionActions } = usePlanSlateSession();
+
+  // 记录打开 @ 搜索菜单时的“当前事件ID”（用于 UnifiedMentionMenu 自动创建双向链接）
+  const searchCurrentEventIdRef = useRef<string | null>(null);
   
   // 🔄 向后兼容：保留原有的ref名称
   const mentionAnchorRef = useRef<HTMLElement | null>(session.mention.anchor);
@@ -1394,6 +1412,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
                   showSearchMenu: true
                 });
                 
+                // 记录当前事件ID（用于创建双向链接）
+                searchCurrentEventIdRef.current = getCurrentEventIdFromSelection(editor);
                 // 🆕 v2.21.0: 原子操作打开搜索菜单
                 sessionActions.openSearch(text);
                 
@@ -1417,6 +1437,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
               // 空输入（只输入 @），显示搜索菜单
               console.log('[@ Mention] 空输入，显示搜索菜单');
               
+              // 记录当前事件ID（用于创建双向链接）
+              searchCurrentEventIdRef.current = getCurrentEventIdFromSelection(editor);
               // 🆕 v2.21.0: 原子操作打开搜索菜单
               sessionActions.openSearch('');
               
@@ -1440,6 +1462,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             // 没有检测到 @，关闭所有菜单
             sessionActions.closeMention();
             sessionActions.closeSearch();
+            searchCurrentEventIdRef.current = null;
           }
         } else {
           // 不是文本节点
@@ -1447,6 +1470,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             console.log('[@ Mention] 不在文本节点，清除状态');
             sessionActions.closeMention();
             sessionActions.closeSearch();
+            searchCurrentEventIdRef.current = null;
           }
         }
       } catch (err) {
@@ -1858,16 +1882,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             },
           });
           
-          // 获取当前事件ID
-          const match = Editor.above(editor, {
-            match: n => (n as any).type === 'event-line',
-          });
-          
-          let eventId: string | undefined;
-          if (match) {
-            const [eventLineNode] = match;
-            eventId = (eventLineNode as EventLineNode).eventId;
-          }
+          const eventId: string | undefined =
+            searchCurrentEventIdRef.current || getCurrentEventIdFromSelection(editor) || undefined;
           
           // 根据不同类型插入不同的节点
           console.log('[Unified Mention] 处理类型:', item.type, '数据:', item);
@@ -1876,7 +1892,8 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             case 'event':
               // 插入事件提及元素
               console.log('[Unified Mention] 插入事件:', item.id, item.title, 'currentEventId:', eventId);
-              insertEventMention(editor, item.id, item.title, eventId);
+              // 双向链接由 UnifiedMentionMenu（基于 currentEventId）负责创建，这里仅插入 mention 节点
+              insertEventMention(editor, item.id, item.title);
               break;
               
             case 'tag':
@@ -1950,9 +1967,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       
       // 关闭搜索菜单
       sessionActions.closeSearch();
+      searchCurrentEventIdRef.current = null;
     } catch (err) {
       console.error('[Unified Mention] 插入失败:', err);
       sessionActions.closeSearch();
+      searchCurrentEventIdRef.current = null;
     }
   }, [editor, flushPendingChanges]);
   
@@ -4033,20 +4052,24 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             )}
             
             {/* 🔍 Unified Mention 搜索菜单（事件/标签/AI搜索） */}
-            {session.search.isOpen && session.mention.type === 'search' && session.mention.anchor && (
+            {session.search.isOpen && mentionAnchorRef.current && (
               <div
                 style={{
                   position: 'fixed',
-                  top: `${session.mention.anchor.style.top}`,
-                  left: `${session.mention.anchor.style.left}`,
+                  top: mentionAnchorRef.current.style.top || '0px',
+                  left: mentionAnchorRef.current.style.left || '0px',
                   zIndex: 10000,
                 }}
               >
                 <UnifiedMentionMenu
                   query={session.search.query}
                   onSelect={handleSearchSelect}
-                  onClose={() => sessionActions.closeSearch()}
+                  onClose={() => {
+                    sessionActions.closeSearch();
+                    searchCurrentEventIdRef.current = null;
+                  }}
                   context="editor"
+                  currentEventId={searchCurrentEventIdRef.current || undefined}
                 />
               </div>
             )}
