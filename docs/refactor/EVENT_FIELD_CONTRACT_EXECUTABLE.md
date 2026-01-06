@@ -1715,18 +1715,23 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
      - **禁止通过时间点判断**（例如"同日00:00"）来推导全天属性
 
 3. **Task Bar（任务栏）**
-   - **判定**：`checkType && checkType !== 'none' && !startTime && !endTime`
+   - **判定**：`checkType && checkType !== 'none' && (!startTime || !endTime)`
    - **位置**：日期下方的任务列表区域（checkbox 列表）
    - **示例**：待办事项、每日打卡任务
    - **解释**：
      - 有 `checkType` 说明这是"可打钩/签到"的任务
-     - **且没有时间段**（`!startTime && !endTime`，符合 Hard Rules #3 的"同时为空"约束）
-     - 典型场景：Plan 页面创建的待办（有 `checkType='once'`，但用户未设置时间）
-     - 外部 To Do 同步进来的任务（有 `checkType`，但 To Do 本身不要求时间）
+     - **但没有完整时间段**（`!startTime || !endTime`），无法在时间轴上渲染 Calendar Block
+     - 典型场景：
+       - Plan 页面创建的待办（有 `checkType='once'`，但用户未设置时间）
+       - 外部 To Do 同步进来的任务（有 `checkType`，只有 `dueDateTime`，无 startTime/endTime）
+       - 只有截止时间的项目任务（`dueDateTime` 有值，但 startTime/endTime 为空）
    - **显示行为**：
      - 按 `createdAt` 或 `dueDateTime` 锚定到某一天
      - 显示为紧凑列表：checkbox + title
      - 可原地勾选完成（更新 `checked` 数组）
+   - **说明**：
+     - EventEditModal 有 UI 约束"禁止只写一个时间"（见 Section 9.1），但 Task 的实际需求是"只需要 dueDateTime"
+     - 此处的 `!startTime || !endTime` 是**数据层面的判定**，不是编辑器约束
 
 4. **Deadline Marker（截止时间标记）**
    - **判定**：`dueDateTime`（只要有截止时间就显示）
@@ -1747,14 +1752,16 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
 2. else if (startTime && endTime) → Calendar Block
    - 若同时有 checkType：Calendar Block 内部显示 checkbox UI
    - 若同时有 dueDateTime：Calendar Block + 同时显示 Deadline Marker
-3. else if (checkType !== 'none' && !startTime && !endTime) → Task Bar
+3. else if (checkType !== 'none' && (!startTime || !endTime)) → Task Bar
    - 若同时有 dueDateTime：Task Bar + 同时显示 Deadline Marker
 4. else if (dueDateTime) → 仅显示 Deadline Marker
 5. else → 不显示（无时间语义）
 
-关键变更：
-- isAllDay 判定：只信任 isAllDay 标志，不通过时间点推导
-- Task Bar 判定：!startTime && !endTime（符合 Hard Rules #3）
+关键说明：
+- isAllDay 判定：只信任 isAllDay 标志（Outlook 同步事件有此标志），不通过时间点推导
+- Task Bar 判定：(!startTime || !endTime) 表示"没有完整时间段可渲染 Calendar Block"
+  - 允许只有 dueDateTime 的 task（最常见场景）
+  - EventEditModal 的"禁止只写一个"是 UI 编辑约束，不是数据模型约束
 - dueDateTime 与其他分区**不互斥**，可以共存显示
 ```
 
