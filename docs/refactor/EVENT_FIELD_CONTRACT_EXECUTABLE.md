@@ -819,25 +819,49 @@ interface EventTitle {
 #### A. Identity & Classification（身份/分类）
 - `id`
 - `deletedAt`
-- **`creator`**：外部系统来源（枚举）`'local' | 'outlook' | 'google' | 'icloud'`
-  - `'local'`：本地创建（4DNote 内部创建，未从外部系统同步）
-  - `'outlook'`：从 Outlook 同步而来
-  - `'google'`：从 Google Calendar 同步而来（预留）
-  - `'icloud'`：从 iCloud 同步而来（预留）
-- **`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | 'workspace' | 'sky' | 'event_edit' | 'ai_chat_card' | 'ai_inline' | undefined`
-  - `'plan'`：Plan 页面创建（都是 Task，即 `checkType !== 'none'`）
-  - `'timecalendar'`：TimeCalendar 页面创建（通常有 calendar block，虽通过 EventEditModal 但标记来源）
-  - `'timelog'`：TimeLog 页面创建（系统轨迹记录，通常是 subordinate）
-  - `'library'`：Library 页面创建（文档/笔记型事件，通常无时间）
-  - `'workspace'`：Workspace 侧边栏创建（文档型，自动归入 lib_store + workspace_store）
-  - `'sky'`：Sky Pin 入口创建（任意类型，自动归入 sky_store）
-  - `'event_edit'`：EventEditModal 直接创建（通用编辑器，无明确页面上下文）
-  - `'ai_chat_card'`：AI 对话卡片形式创建（Sprout/Root，需配合 conversationType 字段）
-  - `'ai_inline'`：文档内 @AI 创建（Sprout/Root，自动插入 mention element）
-  - `undefined`：仅限外部同步事件（Outlook/To Do 等）
+- **`source`**：事件来源（枚举），完整表达"从哪里创建/同步"
+  ```typescript
+  type EventSource = 
+    // 本地创建（细分页面）
+    | 'local:plan'           // Plan 页面创建（都是 Task）
+    | 'local:timecalendar'   // TimeCalendar 页面创建（通常有 calendar block）
+    | 'local:timelog'        // TimeLog 页面创建（系统轨迹记录，通常是 subordinate）
+    | 'local:library'        // Library 页面创建（文档/笔记型，通常无时间）
+    | 'local:workspace'      // Workspace 侧边栏创建（文档型，自动归入 lib_store + workspace_store）
+    | 'local:sky'            // Sky Pin 入口创建（任意类型，自动归入 sky_store）
+    | 'local:event_edit'     // EventEditModal 直接创建（通用编辑器，无明确页面上下文）
+    | 'local:ai_chat_card'   // AI 对话卡片形式创建（Sprout/Root）
+    | 'local:ai_inline'      // 文档内 @AI 创建（Sprout/Root，自动插入 mention）
+    
+    // 外部同步（区分子类型）
+    | 'outlook:calendar'     // Outlook Calendar 同步
+    | 'outlook:todo'         // Outlook To Do 同步
+    | 'google:calendar'      // Google Calendar 同步（预留）
+    | 'icloud:calendar';     // iCloud Calendar 同步（预留）
+  ```
+  
+  **使用示例**：
+  ```typescript
+  // 判断是否 Plan 创建
+  if (event.source === 'local:plan') { ... }
+  
+  // 判断是否本地创建
+  if (event.source?.startsWith('local:')) { ... }
+  
+  // 判断是否外部同步
+  if (event.source?.startsWith('outlook:') || event.source?.startsWith('google:')) { ... }
+  
+  // 判断是否 Outlook Calendar
+  if (event.source === 'outlook:calendar') { ... }
+  
+  // 判断是否 AI 卡片创建
+  if (event.source === 'local:ai_chat_card' || event.source === 'local:ai_inline') { ... }
+  ```
+
 - Legacy 字段（必须删除，禁止任何引用）：
-  - `source`（已废弃，迁移到 `creator`）
-  - `fourDNoteSource`（已废弃，由 `creator='local'` 替代）
+  - `creator`（已废弃，合并到 `source`）
+  - `pageOrigin`（已废弃，合并到 `source`）
+  - `fourDNoteSource`（已废弃，合并到 `source`）
 - 已废弃分类字段：`type`（legacy）、`category`（legacy/展示）
 
 > 约束（本 SSOT 的架构真相）：**分类/角色/视图纳入**不允许依赖 `isXxx` / `type/category` 等“缓存/标记字段”。
