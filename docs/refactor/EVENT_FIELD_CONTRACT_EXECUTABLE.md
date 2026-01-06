@@ -378,15 +378,23 @@ flowchart LR
 | `'workspace'` | Workspace 侧边栏 | 通常无时间（文档型） | Workspace 创建的事件自动归入 lib_store |
 | `'sky'` | Sky Pin 入口 | 无默认假设（任意类型） | Sky 创建的事件可以是任何类型 |
 | `undefined` | 外部同步/EventEditModal/无明确来源 | 无默认假设 | 包括 Outlook 同步、用户通过通用编辑器创建等 |
-创建入口**：Plan/TimeCalendar/TimeLog/Library/Workspace/Sky 都可以创建事件，设置对应的 `pageOrigin`
+**创建入口与引用操作的区分**：
+
+- **真实创建入口**（设置对应 `pageOrigin`）：
+  - Plan/TimeCalendar/TimeLog/Library/Workspace/Sky 都可以直接创建事件
   - Library/Workspace 创建：通常是文档/笔记型事件（无时间），自动加入对应 store
   - Workspace 特殊：创建的事件同时归入 `lib_store` 和 `workspace_store`
   - Sky 创建：可以是任意类型（Task/Calendar/Note），自动加入 `sky_store`
-- **引用操作**：将已有事件"添加到 Library/Workspace/Sky"不会改变其 `pageOrigin`，只在对应 store 中添加引用
+  - TimeCalendar 特殊：虽然通过 EventEditModal 创建，但 `pageOrigin` 标记为 `'timecalendar'`（标记真实来源页面）
+  - EventEditModal 直接创建（无明确页面上下文）：`pageOrigin = 'event_edit'`
+
+- **引用操作**（不改变 `pageOrigin`）：
+  - 将已有事件"添加到 Library/Workspace/Sky"只在对应 store 中添加引用
+  - 不会改变原事件的 `pageOrigin`
+
 - **EventTree**：不是创建入口，只维护层级结构
-- **Workspace、Sky 不是创建入口**，它们只是引用表（`workspace_store/sky_store`）
-- 用户"添加到 Library/Workspace/Sky"不会改变已有事件的 `pageOrigin`，只会在对应 store 中添加引用
-- EventEditModal 创建的事件 `pageOrigin` 为 `undefined`（通用编辑器）
+
+- **外部同步**：`pageOrigin = undefined`（仅限外部系统）
 
 ### 4.3 监控字段与增量更新机制
 
@@ -816,16 +824,17 @@ interface EventTitle {
   - `'outlook'`：从 Outlook 同步而来
   - `'google'`：从 Google Calendar 同步而来（预留）
   - `'icloud'`：从 iCloud 同步而来（预留）
-- **`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | 'workspace' | 'sky' | 'ChatCard' | 'InlineChat' | undefined`
+- **`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | 'workspace' | 'sky' | 'event_edit' | 'ai_chat_card' | 'ai_inline' | undefined`
   - `'plan'`：Plan 页面创建（都是 Task，即 `checkType !== 'none'`）
-  - `'timecalendar'`：TimeCalendar 页面创建（通常有 calendar block）
+  - `'timecalendar'`：TimeCalendar 页面创建（通常有 calendar block，虽通过 EventEditModal 但标记来源）
   - `'timelog'`：TimeLog 页面创建（系统轨迹记录，通常是 subordinate）
   - `'library'`：Library 页面创建（文档/笔记型事件，通常无时间）
   - `'workspace'`：Workspace 侧边栏创建（文档型，自动归入 lib_store + workspace_store）
   - `'sky'`：Sky Pin 入口创建（任意类型，自动归入 sky_store）
-  - `'ChatCard'`：AI 对话卡片形式创建（Sprout/Root，需配合 conversationType 字段）
-  - `'InlineChat'`：文档内 @AI 创建（Sprout/Root，自动插入 mention element）
-  - `undefined`：外部同步事件、EventEditModal创建、或无明确来源
+  - `'event_edit'`：EventEditModal 直接创建（通用编辑器，无明确页面上下文）
+  - `'ai_chat_card'`：AI 对话卡片形式创建（Sprout/Root，需配合 conversationType 字段）
+  - `'ai_inline'`：文档内 @AI 创建（Sprout/Root，自动插入 mention element）
+  - `undefined`：仅限外部同步事件（Outlook/To Do 等）
 - Legacy 字段（必须删除，禁止任何引用）：
   - `source`（已废弃，迁移到 `creator`）
   - `fourDNoteSource`（已废弃，由 `creator='local'` 替代）
@@ -1213,9 +1222,9 @@ interface SproutEvent extends Event {
   
   // ===== Type Markers =====
   conversationType: 'sprout';      // 标识这是Sprout卡片
-  pageOrigin: 'ChatCard' | 'InlineChat';  // 创建方式标识
-                                   // 'ChatCard': 卡片形式创建
-                                   // 'InlineChat': 文本中通过@AI创建
+  pageOrigin: 'ai_chat_card' | 'ai_inline';  // 创建方式标识
+                                   // 'ai_chat_card': 卡片形式创建
+                                   // 'ai_inline': 文本中通过@AI创建
   
   // ===== AI Metadata =====
   aiModel?: string;                // AI模型（如 'gpt-4'）
@@ -1235,8 +1244,8 @@ interface SproutEvent extends Event {
 - **Sprout 是 Level 1**（挂宿主 Event，与初始 Roots 同级）
 - **生成 Sprout 时，会把关联的 Roots 重新挂载到 Sprout 下**（变成 Level 2）
 - **`pageOrigin` 标识创建方式**：
-  - `'ChatCard'`：卡片形式创建（独立操作）
-  - `'InlineChat'`：文本中通过 @AI 创建（同时插入 mention 元素）
+  - `'ai_chat_card'`：卡片形式创建（独立对话操作）
+  - `'ai_inline'`：文档内 @AI 创建（自动插入 mention element）
 - **显示规则**：两种方式相同，都需要加入 Library 才在 EventTree 中显示
 
 #### Root（对话卡片）
@@ -1260,7 +1269,7 @@ interface RootEvent extends Event {
   
   // ===== Type Markers =====
   conversationType: 'root';        // 标识这是Root卡片
-  pageOrigin: 'ChatCard' | 'InlineChat';  // 创建方式标识（继承自Sprout）
+  pageOrigin: 'ai_chat_card' | 'ai_inline';  // 创建方式标识（继承自Sprout）
   
   // ===== Conversation Data =====
   userQuestion: string;            // 用户问题（纯文本）
@@ -1290,7 +1299,7 @@ interface RootEvent extends Event {
 
 #### EventLog 中的 AI 对话引用
 
-**位置**：宿主 Event 的 `eventlog.slateJson` 中（`pageOrigin: 'InlineChat'` 时自动插入）。
+**位置**：宿主 Event 的 `eventlog.slateJson` 中（`pageOrigin: 'ai_inline'` 时自动插入）。
 
 ```typescript
 {
@@ -1308,8 +1317,8 @@ interface RootEvent extends Event {
 ```
 
 **说明**：
-- `pageOrigin: 'InlineChat'` 创建时，自动在正文插入此 mention 元素
-- `pageOrigin: 'ChatCard'` 创建时，不插入 mention（卡片独立存在）
+- `pageOrigin: 'ai_inline'` 创建时，自动在正文插入此 mention 元素
+- `pageOrigin: 'ai_chat_card'` 创建时，不插入 mention（卡片独立存在）
 - 两种方式的 Sprout/Roots 在 EventTree 中显示规则相同（都需要加入 Library）
 
 ### 8.4.3 EventTree 结构示例
@@ -1399,7 +1408,7 @@ async createRoot(params: {
   const root = await EventService.createEvent({
     parentEventId: params.hostEventId,  // 初始挂宿主Event（Level 1）
     conversationType: 'root',
-    pageOrigin: 'ChatCard',
+    pageOrigin: 'ai_chat_card',
     userQuestion: params.userQuestion,
     aiResponse: params.aiResponse,
     syncMode: 'local-only',
@@ -1421,7 +1430,7 @@ async createSprout(params: {
   const sprout = await EventService.createEvent({
     parentEventId: params.hostEventId,
     conversationType: 'sprout',
-    pageOrigin: 'ChatCard',
+    pageOrigin: 'ai_chat_card',
     syncMode: 'local-only',
     // title/eventlog 由AI生成
   });
@@ -1567,7 +1576,7 @@ async generateSproutSummary(sproutId: string): Promise<void> {
   - **Library/Workspace/Sky/TimeLog**：完全排除（不独立显示）
   - **EventTree 组件**：默认不显示，只有加入 Library 才显示（`ViewMembershipService.isInLibrary()`）
   - **判定**：通过 `conversationType` 字段识别
-  - **`pageOrigin` 不影响显示逻辑**，只标识创建方式（`ChatCard` vs `InlineChat`）
+  - **`pageOrigin` 不影响显示逻辑**，只标识创建方式（`ai_chat_card` vs `ai_inline`）
 
 **默认值（避免 diff 噪音）**
 - 数组字段（`tags/calendarIds/todoListIds/attendees/...`）：默认必须保持 `undefined`；只有用户显式清空时才允许写 `[]`（`intent=user_clear`）。
