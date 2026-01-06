@@ -2172,7 +2172,18 @@ applyLocalActionToRemote(action) {
 **过滤（Filter/Scope：架构示例口径）**
 - 默认排除：`deletedAt != null`、**AI 卡片**（`conversationType === 'sprout' || 'root'`）
 - timelineEvents（最终口径）：
-  - 所有事件默认全部纳入（包括 subordinate、子事件、Note、Task 等）
+  - **所有非 AI 卡片事件默认全部纳入**（包括 subordinate、子事件、Note、Task 等）
+  - 不因 `parentEventId` 排除：用户子事件也应纳入 TimeLog（树结构用于组织/展开，不是纳入开关）。
+  - 其余事件默认全部纳入（包括"无 calendar block 的笔记/碎碎念"与无时间的 task）。
+
+> 说明：TimeLog 是"时间锚点聚合视图"，显示"用户做了什么事"。
+> - "笔记/碎碎念"不靠 `kind/isNote` 标记，而是自然落在"无 calendar block、仅有 eventlog"的数据形态上。
+> - Library/Workspace/Sky 收录不影响是否纳入 TimeLog；如需单独过滤属于 UI 策略（另案）。
+> - **AI 卡片（Sprout/Root）完全排除**：
+>   - AI 卡片是"对话记录"，应该在宿主 Event 的 EventTree 中查看
+>   - 如果 hostEvent 已经在 TimeLog 显示，再显示 AI 卡片会造成信息重复和混乱
+>   - 用户想快速访问 AI 对话：通过 Sky Pin/Workspace 快捷方式，而不是在时间轴中查看
+>   - 判定依据：`conversationType`（标识事件类型），不是 `pageOrigin`（标识创建方式）
   - 不因 `parentEventId` 排除：用户子事件也应纳入 TimeLog（树结构用于组织/展开，不是纳入开关）。
   - 其余事件默认全部纳入（包括“无 calendar block 的笔记/碎碎念”与无时间的 task）。
 
