@@ -235,7 +235,6 @@ export class SQLiteService {
         is_completed BOOLEAN DEFAULT 0,
         is_timer BOOLEAN DEFAULT 0,
         is_plan BOOLEAN DEFAULT 0,
-        priority TEXT,
         tags TEXT,
         eventlog TEXT,
         source_account_id TEXT,
@@ -729,11 +728,11 @@ export class SQLiteService {
         id, full_title, color_title, simple_title,
         start_time, end_time, is_all_day,
         description, location, emoji, color,
-        is_completed, is_timer, is_plan, priority,
+        is_completed, is_timer, is_plan,
         tags, eventlog,
         source_account_id, source_calendar_id, sync_status,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     await stmt.run(
@@ -751,7 +750,6 @@ export class SQLiteService {
       event.isCompleted ? 1 : 0,
       event.isTimer ? 1 : 0,
       event.isPlan ? 1 : 0,
-      event.priority || null,
       event.tags ? JSON.stringify(event.tags) : null,
       event.eventlog ? JSON.stringify(event.eventlog) : null,
       event.sourceAccountId || null,
@@ -800,6 +798,10 @@ export class SQLiteService {
     Object.entries(updates).forEach(([key, value]) => {
       if (key === 'id') {
         console.log('[SQLiteService] ⏭️ Skipping id');
+        return;
+      }
+      if (key === 'priority') {
+        console.log('[SQLiteService] ⏭️ Skipping legacy priority');
         return;
       }
       if (key === 'updatedAt' || key === 'updated_at') {
@@ -1102,10 +1104,10 @@ export class SQLiteService {
         id, full_title, color_title, simple_title,
         start_time, end_time, is_all_day,
         description, location, emoji, color,
-        is_completed, is_timer, is_plan, priority,
+        is_completed, is_timer, is_plan,
         source_account_id, source_calendar_id, sync_status,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // 注意：IPC 模式不支?transaction API，使用循?+ BEGIN/COMMIT
@@ -1135,7 +1137,6 @@ export class SQLiteService {
             event.isCompleted ? 1 : 0,
             event.isTimer ? 1 : 0,
             event.isPlan ? 1 : 0,
-            event.priority || null,
             event.sourceAccountId || null,
             event.sourceCalendarId || null,
             event.syncStatus || 'local-only',
@@ -1267,7 +1268,6 @@ export class SQLiteService {
       isCompleted: Boolean(row.is_completed),
       isTimer: Boolean(row.is_timer),
       isPlan: Boolean(row.is_plan),
-      priority: row.priority,
       tags: row.tags ? JSON.parse(row.tags) : undefined,
       eventlog: row.eventlog ? JSON.parse(row.eventlog) : undefined,
       sourceAccountId: row.source_account_id,

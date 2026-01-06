@@ -7,6 +7,9 @@ node_modules/
 build/
 dist/
 coverage/
+.coverage/
+playwright-report/
+test-results/
 
 # Large external sources
 tui-calendar-source/

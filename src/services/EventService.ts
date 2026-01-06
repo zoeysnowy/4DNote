@@ -3439,7 +3439,6 @@ export class EventService {
       // 🔥 [CRITICAL FIX] 只有 tags 字段存在时才设置，避免强制覆盖为空数组
       // 否则 Outlook 同步会导致 tags: undefined → tags: [] → EventHistory 误判为变更
       ...(event.tags !== undefined ? { tags: event.tags || [] } : {}),
-      priority: event.priority,
       
       // 协作字段
       organizer: event.organizer,

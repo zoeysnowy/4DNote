@@ -266,19 +266,6 @@ export function mapEventToTodoTask(event: Event): Record<string, any> {
     todoTask.status = event.isCompleted ? 'completed' : 'notStarted';
   }
   
-  // 重要性
-  if (event.priority) {
-    // 4DNote: 'low' | 'medium' | 'high' | 'urgent'
-    // To Do: 'low' | 'normal' | 'high'
-    const importanceMap: Record<string, string> = {
-      'low': 'low',
-      'medium': 'normal',
-      'high': 'high',
-      'urgent': 'high'
-    };
-    todoTask.importance = importanceMap[event.priority] || 'normal';
-  }
-  
   // 提醒（使用最早的时间点，直接使用 TimeSpec 格式）
   if (event.reminder !== undefined && event.reminder > 0 && earliestTime) {
     todoTask.isReminderOn = true;
@@ -295,7 +282,6 @@ export function mapEventToTodoTask(event: Event): Record<string, any> {
  * Microsoft To Do 同步对比字段
  * 注意：
  * - isCompleted: 对应 To Do 的 status 字段
- * - priority: 4DNote 当前不支持，未来可能映射到 importance
  * - dueDateTime: 会映射到 To Do 的 dueDateTime，但不在此列表中单独对比
  */
 export const TODO_SYNC_FIELDS = [

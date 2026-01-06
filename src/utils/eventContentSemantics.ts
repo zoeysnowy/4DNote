@@ -112,11 +112,10 @@ function isDefaultTaskFields(event: Event): boolean {
   if (!event.isTask) return true;
   
   // 检查任务特有字段
-  const hasPriority = !!event.priority && event.priority !== 'low';
   const hasCompleted = event.isCompleted === true;
   const hasDueDateTime = !!event.dueDateTime && event.dueDateTime.trim() !== '';
   
-  return !hasPriority && !hasCompleted && !hasDueDateTime;
+  return !hasCompleted && !hasDueDateTime;
 }
 
 /**
@@ -297,7 +296,6 @@ export interface EventSnapshot {
   location?: string | any;
   isTask?: boolean;
   isCompleted?: boolean;
-  priority?: string;
   dueDateTime?: string;
   score: number;      // contentScore 评分
 }
@@ -319,7 +317,6 @@ export function createSnapshot(event: Event): EventSnapshot {
     location: event.location,
     isTask: event.isTask,
     isCompleted: event.isCompleted,
-    priority: event.priority,
     dueDateTime: event.dueDateTime,
     score: contentScore(event)
   };
@@ -371,7 +368,6 @@ export function restoreFromSnapshot(snapshot: EventSnapshot): Partial<Event> {
     location: snapshot.location,
     isTask: snapshot.isTask,
     isCompleted: snapshot.isCompleted,
-    priority: snapshot.priority as any,
     dueDateTime: snapshot.dueDateTime
   };
 }

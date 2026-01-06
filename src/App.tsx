@@ -513,7 +513,6 @@ function App() {
           organizer: existingEvent.organizer,
           attendees: existingEvent.attendees,
           notes: existingEvent.notes,
-          priority: existingEvent.priority,
           eventlog: existingEvent.eventlog
         };
         

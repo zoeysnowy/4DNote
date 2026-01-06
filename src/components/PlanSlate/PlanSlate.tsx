@@ -1094,7 +1094,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             timeSpec: updatedEvent.timeSpec,
             emoji: updatedEvent.emoji,
             color: updatedEvent.color,
-            priority: updatedEvent.priority,
             isCompleted: updatedEvent.isCompleted,
             isTask: updatedEvent.isTask,
             type: updatedEvent.type,

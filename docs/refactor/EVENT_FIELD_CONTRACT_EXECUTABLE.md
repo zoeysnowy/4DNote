@@ -21,6 +21,9 @@
 
 ### 0.2 Out of Scope
 - Signal 模型的完整落地（作为独立实体另案）；本文只约束 Event 不用 `isXxx` 模拟 Signal。
+  - 现状：代码库当前没有业务意义的 `Signal`/`signals` 实体、Store 或 `SignalService`（仅在 PRD/设计稿中存在概念定义）。
+  - 因而：Signal **目前没有“管辖范围/Owner”**；任何“重点标注/疑问/行动项”等信号需求，不得通过给 `Event` 加 `isXxx` 或回写派生字段来偷跑。
+  - 未来：当 Signal 落地时，应作为独立实体/独立存储，由专门的 Owner（例如 `SignalService`）负责写入与一致性，`Event` 只允许通过引用或 derived index 使用。
 - 大规模 UI 改造；本文只定义“写入边界/读口径/映射表”。
 
 ---
