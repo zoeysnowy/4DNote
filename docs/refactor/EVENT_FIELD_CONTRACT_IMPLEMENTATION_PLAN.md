@@ -6,6 +6,59 @@
 
 ---
 
+## 🚨 需要用户决策的事项
+
+### 决策点 1: 多日历同步架构 (Phase 4.3)
+
+**当前架构**:
+- 本地 1 个 event → 远程 N 个 event (不同日历)
+- 存储: `syncedPlanCalendars: Array<{calendarId, remoteEventId}>`
+
+**冲突**:
+- SSOT Contract 只定义了单个 `externalId`
+- 无法存储多个 remoteEventId
+
+**选项 A: 保留多日历同步** (推荐)
+- ✅ 保留现有功能
+- ✅ 用户体验不变
+- ❌ 需要修改 Contract，添加 `externalMappings` 字段
+- 工作量: +2h (Contract 更新 + 文档说明)
+
+**选项 B: 简化为单日历同步**
+- ✅ 完全符合 Contract
+- ❌ Breaking Change: 多日历数据丢失
+- ❌ 用户需要手动删除远程重复事件
+- 工作量: +4h (数据迁移 + 用户通知)
+
+**建议**: 选项 A，理由：
+1. 多日历同步是现有功能，不应退化
+2. Contract 可以扩展，添加 `externalMappings` 不违反设计原则
+3. 避免 Breaking Change
+
+**待确认**: 请用户选择选项 A 或 B
+
+---
+
+### 决策点 2: SQLite Schema 变更 (Phase 5.4)
+
+**问题**: `events` 表有 `color` 列，需要删除
+
+**选项 A: 直接删除列**
+- ✅ 干净彻底
+- ❌ SQLite 不支持 DROP COLUMN (需要重建表)
+- 工作量: +1h (重建表 + 数据迁移)
+
+**选项 B: 标记为废弃，不删除**
+- ✅ 安全
+- ❌ 留下技术债务
+- 工作量: 0h
+
+**建议**: 选项 A，在 Phase 5.4 执行表重建
+
+**待确认**: 请用户确认是否同意重建表
+
+---
+
 ## 📊 现状审计
 
 ### ✅ 已符合 Contract 的字段
@@ -110,28 +163,61 @@ fourDNoteSource?: boolean;
 ```typescript
 // ❌ 必须删除
 content?: string;      // 已废弃，使用 title.fullTitle
-emoji?: string;        // 迁移到其他系统（UI-only）
-color?: string;        // 迁移到其他系统（UI-only）
-notes?: string;        // 已废弃，使用 eventlog
+emoji?: string;        // 迁移到 title.fullTitle（Slate JSON第一个text node开头）
+color?: string;        // 迁移到 title.fullTitle（Slate JSON标记节点的color属性）
+notes?: string;        // 已废弃，使用 eventlog（已迁移完成，只需删除类型定义）
 isCompleted?: boolean; // 替换为 checkType + checked 推导
-mode?: 'title' | 'eventlog'; // UI-only，不应在 Event
+mode?: 'title' | 'eventlog'; // UI-only，不应在 Event（FloatingToolbar内部状态）
 ```
+
+**emoji/color 迁移说明**:
+- **当前使用**: `event.emoji` 在 DetailTab.tsx, App.tsx 中用于 Timer 显示
+- **目标**: 全部改为从 `title.fullTitle` (Slate JSON) 中提取
+- **已有工具**: DetailTab.tsx 已有 `extractFirstEmoji()` 函数（L1977）
+- **迁移影响**: 8个文件（App.tsx, DetailTab.tsx, EventEditModalV2.tsx等）
+- **color**: 只在4处使用，全部改为从标签颜色或默认值读取
 
 #### 4. 废弃的 Sync 字段
 ```typescript
 // ❌ 必须删除
 lastLocalChange?: string;          // 使用 updatedAt
-timerSessionId?: string;           // 不应在 Event（Timer 自己管理）
-subEventConfig?: { ... };          // 复杂，待评估
-hasCustomSyncConfig?: boolean;     // 待评估
-syncedPlanCalendars?: Array<...>;  // 待评估
-syncedActualCalendars?: Array<...>; // 待评估
-syncedPlanEventId?: string | null;  // @deprecated
-syncedActualEventId?: string | null; // @deprecated
-syncedOutlookEventId?: string | null; // @deprecated
-planSyncConfig?: PlanSyncConfig;    // 待评估
-actualSyncConfig?: ActualSyncConfig; // 待评估
+timerSessionId?: string;           // ✅ 保留（只读审计字段，Timer系统写入，EventService只读）
+syncedPlanEventId?: string | null;  // @deprecated（删除，使用 syncedPlanCalendars）
+syncedActualEventId?: string | null; // @deprecated（删除，使用 syncedActualCalendars）
+syncedOutlookEventId?: string | null; // @deprecated（已废弃，删除）
+
+// ⚠️ 保留（需要重新审视，但不在本次删除范围）
+subEventConfig?: { calendarIds, syncMode };  // ✅ 保留（父事件模板配置，EVENTEDITMODAL_V2_PRD.md核心机制）
+hasCustomSyncConfig?: boolean;               // ✅ 保留（手动子事件继承判断，ActionBasedSyncManager需要）
+
+// 🔄 迁移方案（多日历同步）
+syncedPlanCalendars?: Array<{calendarId, remoteEventId}>;  
+syncedActualCalendars?: Array<{calendarId, remoteEventId}>;
+// → 迁移到统一的 externalId 结构（Phase 4.3）
+
+// 🔄 迁移方案（同步配置统一）
+planSyncConfig?: PlanSyncConfig;    // → 迁移到 calendarIds + syncMode（Phase 4.4）
+actualSyncConfig?: ActualSyncConfig; // → 迁移到 subEventConfig.syncMode（Phase 4.4）
 ```
+
+**timerSessionId 保留理由**:
+- **用途**: Timer系统在创建Timer事件时写入，用于关联Timer会话
+- **读取**: EventService只读，用于审计和调试
+- **影响**: 仅2处引用（types.ts定义 + holidays/types.ts副本）
+- **结论**: 只读审计字段，符合Contract原则，保留
+
+**subEventConfig 保留理由**:
+- **核心机制**: EVENTEDITMODAL_V2_PRD.md L119-122定义的父事件模板系统
+- **用途**: 父事件存储子事件默认配置（calendarIds + syncMode）
+- **场景**: 父事件无子事件时配置持久化，创建子事件时继承
+- **影响**: DetailTab.tsx, EventEditModalV2.tsx, App.tsx 核心逻辑
+- **结论**: 架构设计核心，必须保留
+
+**hasCustomSyncConfig 保留理由**:
+- **用途**: 标记手动子事件是否自定义了同步配置
+- **场景**: 父事件更新配置时，只更新未自定义的子事件（DetailTab L1552）
+- **影响**: EventEditModalV2.tsx L1386, DetailTab.tsx L1454-1555
+- **结论**: 继承机制必需，保留
 
 ---
 
@@ -532,19 +618,21 @@ export class AIConversationService {
 
 ### Phase 4: 清理废弃的 Sync 字段
 
-#### Step 4.1: 评估 syncMode 统一
-**当前**: `syncMode`, `planSyncConfig.mode`, `actualSyncConfig.mode`  
-**Contract**: 只保留 `syncMode`
+#### Step 4.1: 删除 lastLocalChange 字段
+**文件**: `src/types.ts`
 
-**调研文件**:
-- `src/services/sync/ActionBasedSyncManager.ts`
-- `src/features/EventEditModal/components/SyncTargetPicker.tsx`
+**查找**: `lastLocalChange`  
+**替换**: `updatedAt`
 
-**决策**: 待评估（可能需要 Breaking Change）
+**影响范围**: 无引用（grep搜索结果为0）
+
+**测试**: `npm run build`
+
+**提交**: `refactor(types): 删除废弃的 lastLocalChange 字段 (Contract Phase 4.1)`
 
 ---
 
-#### Step 4.2: 删除 @deprecated 字段
+#### Step 4.2: 删除 @deprecated 字段（syncedPlanEventId/syncedActualEventId/syncedOutlookEventId）
 **文件**: `src/types.ts`
 
 ```typescript
@@ -564,6 +652,175 @@ if (event.syncedOutlookEventId && !event.externalId) {
 ```
 
 **提交**: `refactor(sync): 删除 deprecated sync 字段 (Contract Phase 4.2)`
+
+---
+
+#### Step 4.3: 多日历同步迁移（syncedPlanCalendars → externalId）
+**当前架构**:
+```typescript
+syncedPlanCalendars: Array<{ calendarId: string, remoteEventId: string }>
+syncedActualCalendars: Array<{ calendarId: string, remoteEventId: string }>
+```
+
+**目标架构**（Contract Section 7.2）:
+```typescript
+externalId: string  // 主日历的远程事件ID
+calendarIds: string[]  // 所有同步的日历ID
+```
+
+**⚠️ 重大决策点 - 需要用户确认**:
+
+**方案A: 保留多日历数组（推荐）**  
+- **理由**: 本地1个event → 远程N个event的映射关系必须保存
+- **场景**: 用户将同一事件同步到"工作日历"和"个人日历"
+- **数据**: `syncedPlanCalendars: [{calendarId: 'work', remoteEventId: 'event-1'}, {calendarId: 'personal', remoteEventId: 'event-2'}]`
+- **问题**: Contract只定义了单个externalId，无法存储多个remoteEventId
+- **影响**: 如果删除，多日历同步功能将失效
+
+**方案B: 简化为单日历同步**  
+- **修改**: 限制每个event只能同步到1个日历
+- **迁移**: 保留第一个日历的remoteEventId → externalId
+- **数据丢失**: 其他日历的远程事件变成孤儿（无法更新/删除）
+- **Breaking Change**: 用户需要手动删除远程重复事件
+
+**🎯 建议**: 保留 `syncedPlanCalendars/syncedActualCalendars`，但重命名为 `externalMappings: Array<{calendarId, remoteEventId}>` 以符合Contract术语
+
+**📋 调用链路分析** (如果删除会影响的代码):
+
+**写入路径** (EventService.ts):
+```
+L5062: updates.syncedPlanCalendars = syncedCalendars;
+       ↓
+       存储本地事件对应的所有远程事件ID
+```
+
+**读取路径** (EventService.ts):
+```
+L4971: event.syncedPlanCalendars || []
+       ↓
+L5143: event.syncedPlanCalendars
+       ↓
+       判断远程事件是否属于本地事件
+```
+
+**同步路径** (ActionBasedSyncManager.ts):
+```
+L4186: e.syncedPlanCalendars?.some((cal) => ...)
+       ↓
+       查找本地事件对应的远程事件ID
+       ↓
+       决定是 UPDATE 还是 CREATE
+```
+
+**影响范围**: 如果删除，以下场景会失败:
+1. 用户将同一事件同步到"工作日历"和"个人日历"
+2. 修改事件后，只能更新第一个日历，其他日历变成孤儿事件
+3. 删除事件后，只能删除第一个日历，其他日历残留
+
+**提交**: `refactor(sync): 重命名多日历映射字段 (Contract Phase 4.3)` ← 等待用户决策
+
+---
+
+#### Step 4.4: 同步配置统一（planSyncConfig/actualSyncConfig → syncMode + calendarIds）
+**当前架构**:
+```typescript
+planSyncConfig: {
+  mode: 'bidirectional',
+  targetCalendars: ['cal1', 'cal2'],
+  privateMode: false
+}
+actualSyncConfig: {
+  mode: 'send-only-private',
+  targetCalendars: ['cal3']
+}
+```
+
+**目标架构**（Contract Section 7.1）:
+```typescript
+calendarIds: ['cal1', 'cal2']  // 计划安排同步的日历
+syncMode: 'bidirectional'       // 计划安排的同步模式
+subEventConfig: {
+  calendarIds: ['cal3'],        // 实际进展（子事件）同步的日历
+  syncMode: 'send-only-private' // 实际进展的同步模式
+}
+```
+
+**迁移步骤**:
+
+1. **创建迁移函数**: `src/utils/migrations/migrateSyncConfig.ts`
+```typescript
+export function migrateSyncConfig(event: Event): Event {
+  const updates: Partial<Event> = {};
+  
+  // 1. 迁移 planSyncConfig → calendarIds + syncMode
+  if (event.planSyncConfig) {
+    updates.calendarIds = event.planSyncConfig.targetCalendars || [];
+    updates.syncMode = event.planSyncConfig.mode || 'bidirectional';
+  }
+  
+  // 2. 迁移 actualSyncConfig → subEventConfig
+  if (event.actualSyncConfig) {
+    updates.subEventConfig = {
+      calendarIds: event.actualSyncConfig.targetCalendars || [],
+      syncMode: event.actualSyncConfig.mode || 'bidirectional-private'
+    };
+  } else if (event.planSyncConfig) {
+    // actualSyncConfig=null 表示继承 planSyncConfig
+    updates.subEventConfig = {
+      calendarIds: event.planSyncConfig.targetCalendars || [],
+      syncMode: event.planSyncConfig.mode || 'bidirectional'
+    };
+  }
+  
+  return { ...event, ...updates };
+}
+```
+
+2. **执行迁移**: EventService.ts `initializeEvents()`
+```typescript
+const events = await this.storage.getAllEvents();
+const migrated = events.map(migrateSyncConfig);
+await this.storage.bulkUpdate(migrated);
+```
+
+3. **更新同步逻辑**: ActionBasedSyncManager.ts
+```typescript
+// 修改前：
+const planConfig = event.planSyncConfig;
+const actualConfig = event.actualSyncConfig;
+
+// 修改后：
+const planConfig = {
+  mode: event.syncMode,
+  targetCalendars: event.calendarIds
+};
+const actualConfig = event.subEventConfig ? {
+  mode: event.subEventConfig.syncMode,
+  targetCalendars: event.subEventConfig.calendarIds
+} : null;
+```
+
+4. **删除类型定义**: `src/types.ts`
+```typescript
+// ❌ 删除
+export interface PlanSyncConfig { ... }
+export interface ActualSyncConfig { ... }
+planSyncConfig?: PlanSyncConfig;
+actualSyncConfig?: ActualSyncConfig;
+```
+
+**影响文件**:
+- `src/utils/calendarSyncUtils.ts` (getEffectivePlanSyncConfig等函数)
+- `src/services/sync/ActionBasedSyncManager.ts` (L3005-3030保护字段)
+- `src/services/EventService.ts` (L1344-1351同步配置日志)
+- `docs/PRD/EVENTEDITMODAL_V2_PRD.md` (文档更新)
+
+**测试策略**:
+1. **数据迁移测试**: 验证所有旧配置正确转换
+2. **同步功能测试**: Plan/Actual分别同步到不同日历
+3. **继承测试**: actualSyncConfig=null时正确继承planSyncConfig
+
+**提交**: `refactor(sync): 统一同步配置到 syncMode + calendarIds (Contract Phase 4.4)`
 
 ---
 
@@ -598,20 +855,126 @@ function isCompleted(event: Event): boolean {
 
 ---
 
-#### Step 5.3: 删除 emoji, color, notes, mode
-**文件**: `src/types.ts`
+#### Step 5.3: 迁移 emoji 到 title.fullTitle
+**文件**: `src/App.tsx`, `src/pages/Event/DetailTab.tsx`, `src/features/Event/components/EventEditModal/EventEditModalV2.tsx`
 
+**当前使用**:
 ```typescript
-// ❌ 删除以下字段：
-emoji?: string;
-color?: string;
-notes?: string;
-mode?: 'title' | 'eventlog';
+// App.tsx L500, L879: Timer创建时设置emoji
+emoji: existingEvent.emoji || eventEmoji,
+
+// DetailTab.tsx L1603: 保存后更新全局Timer
+emoji: updatedEvent.emoji,
 ```
 
-**迁移**: emoji/color 移到 UI state 或 tag 系统
+**迁移方案**:
+```typescript
+// 1. 使用已有的 extractFirstEmoji() 函数
+const emoji = extractFirstEmoji(event.title);
 
-**提交**: `refactor(plan): 删除废弃的 Plan UI 字段 (Contract Phase 5.3)`
+// 2. Timer创建时：emoji写入title.fullTitle的第一个text node
+const titleNodes = [{
+  type: 'paragraph',
+  children: [{ text: `${emoji} ${eventTitle}` }]
+}];
+
+// 3. 读取emoji：从title.fullTitle提取
+const eventEmoji = extractFirstEmoji(event.title) || '⏱️'; // fallback
+```
+
+**影响文件**（8个）:
+- `src/App.tsx`: Timer创建逻辑（L500, L590, L879等）
+- `src/pages/Event/DetailTab.tsx`: emoji显示和保存（L1603）
+- `src/features/Event/components/EventEditModal/EventEditModalV2.tsx`: L1530
+- `src/components/PlanSlate/PlanSlate.tsx`: L1111
+- `src/features/Dashboard/components/UpcomingEventsPanel.tsx`: 显示逻辑
+
+**测试**:
+```bash
+npm run test:unit -- extractFirstEmoji.test.ts
+```
+
+**提交**: `refactor(event): 迁移 emoji 到 title.fullTitle (Contract Phase 5.3a)`
+
+---
+
+#### Step 5.4: 迁移 color 到标签系统
+**文件**: `src/types.ts`, `src/services/storage/SQLiteService.ts`
+
+**当前使用**（4处）:
+```typescript
+// DetailTab.tsx L1604: 保存后更新
+color: updatedEvent.color,
+
+// UpcomingEventsPanel.tsx L172: 显示颜色
+const tagColor = primaryTag?.color || event.color || '#6b7280';
+
+// SQLiteService.ts L749, L1136: 数据库存储
+event.color || null,
+```
+
+**迁移方案**:
+```typescript
+// 1. 从第一个标签读取颜色
+const eventColor = event.tags?.[0] 
+  ? tagManager.getTag(event.tags[0])?.color 
+  : '#6b7280'; // 默认灰色
+
+// 2. 或者从title的Slate节点读取color属性
+const titleNodes = JSON.parse(event.title);
+const colorMark = titleNodes[0]?.children?.[0]?.color;
+```
+
+**数据库迁移**:
+```sql
+-- 删除 events 表的 color 列
+ALTER TABLE events DROP COLUMN color;
+```
+
+**影响文件**（4个）:
+- `src/pages/Event/DetailTab.tsx`: L1604
+- `src/features/Dashboard/components/UpcomingEventsPanel.tsx`: L172
+- `src/services/storage/SQLiteService.ts`: L749, L1136
+- `src/features/Event/components/EventEditModal/EventEditModalV2.tsx`: L1530
+
+**提交**: `refactor(event): 迁移 color 到标签系统 (Contract Phase 5.4)`
+
+---
+
+#### Step 5.5: 删除 notes 字段
+**文件**: `src/types.ts`
+
+**当前使用**: 仅1处（App.tsx L515: `notes: existingEvent.notes`）
+
+**迁移**: 已废弃，使用 `eventlog` 字段
+
+**步骤**:
+1. 删除 App.tsx L515 的 `notes` 写入
+2. 删除 `src/types.ts` 的 `notes?: string` 定义
+
+**提交**: `refactor(event): 删除废弃的 notes 字段 (Contract Phase 5.5)`
+
+---
+
+#### Step 5.6: 删除 mode 字段
+**文件**: `src/types.ts`
+
+**当前使用**: 4处（全部为FloatingToolbar内部状态）
+```typescript
+// types.ts L447: Event接口定义
+mode?: 'title' | 'eventlog';
+
+// FloatingToolbar/types.ts L99, TagPicker.tsx L17: UI组件状态
+editorMode?: 'title' | 'eventlog';
+```
+
+**迁移**: mode 是 UI-only 状态，不应存储在 Event 中
+
+**步骤**:
+1. 删除 Event 接口的 `mode` 字段
+2. FloatingToolbar 组件内部使用 `editorMode` 状态（已实现）
+
+**提交**: `refactor(event): 删除 UI-only 的 mode 字段 (Contract Phase 5.6)`
 
 ---
 
@@ -725,13 +1088,18 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 - [ ] Step 3.2: 实现 AI 卡片服务
 
 ### Phase 4: Sync 字段清理
-- [ ] Step 4.1: 评估 syncMode 统一
-- [ ] Step 4.2: 删除 @deprecated 字段
+- [ ] Step 4.1: 删除 lastLocalChange
+- [ ] Step 4.2: 删除 @deprecated 字段（syncedPlanEventId等）
+- [ ] Step 4.3: 多日历同步迁移（⚠️ 需用户决策）
+- [ ] Step 4.4: 同步配置统一（planSyncConfig → syncMode）
 
 ### Phase 5: Plan 字段清理
-- [ ] Step 5.1: 迁移 content
-- [ ] Step 5.2: 迁移 isCompleted
-- [ ] Step 5.3: 删除 emoji/color/notes/mode
+- [ ] Step 5.1: 迁移 content → title.fullTitle
+- [ ] Step 5.2: 迁移 isCompleted → checkType推导
+- [ ] Step 5.3: 迁移 emoji → title.fullTitle
+- [ ] Step 5.4: 迁移 color → 标签系统
+- [ ] Step 5.5: 删除 notes 字段
+- [ ] Step 5.6: 删除 mode 字段
 
 ### Phase 6: Timeline Anchor
 - [ ] Step 6.1: 实现 resolveTimelineAnchor
@@ -748,12 +1116,26 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 ### 高风险项
 1. **删除 isPlan/isTask flags**: 影响面大，需要全局搜索替换
 2. **source 字段迁移**: 需要数据库迁移，必须测试回滚方案
-3. **syncMode 统一**: 可能需要 Breaking Change
+3. **🔴 CRITICAL - 多日历同步架构决策 (Phase 4.3)**: 
+   - **影响**: 是否保留多日历同步功能
+   - **Breaking Change**: 如果简化为单日历，已有多日历数据会丢失
+   - **需要用户决策**: 保留数组 vs 简化为单字段
+4. **planSyncConfig/actualSyncConfig 统一 (Phase 4.4)**: 
+   - **影响**: 30+ 文件引用需要更新
+   - **数据迁移**: 所有现有配置需要转换
+   - **Breaking Change**: 旧代码依赖 PlanSyncConfig 接口
+
+### 中风险项
+1. **emoji/color 迁移 (Phase 5.3-5.4)**: 
+   - **影响**: 8个文件，Timer/DetailTab 核心逻辑
+   - **兼容性**: 需要保证现有emoji正确提取
+   - **SQLite schema**: color字段需要删除列
 
 ### 低风险项
 1. **添加 AI 字段**: 向后兼容，不影响现有功能
 2. **Timeline Anchor**: 纯函数，易于测试
 3. **删除 @deprecated 字段**: 已标记废弃，影响较小
+4. **timerSessionId 保留**: 只读字段，无影响
 
 ---
 
@@ -778,17 +1160,19 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 ## 📅 预估时间
 
-| Phase | 预估工时 | 依赖 |
-|-------|---------|------|
-| Phase 1 | 8h | 无 |
-| Phase 2 | 4h | Phase 1 |
-| Phase 3 | 3h | 无 |
-| Phase 4 | 6h | Phase 2 |
-| Phase 5 | 3h | Phase 1 |
-| Phase 6 | 2h | 无 |
-| Phase 7 | 2h | All |
+| Phase | 预估工时 | 依赖 | 备注 |
+|-------|---------|------|------|
+| Phase 1 | 8h | 无 | 清理Legacy Flags |
+| Phase 2 | 4h | Phase 1 | source字段扩展 |
+| Phase 3 | 3h | 无 | AI对话字段 |
+| Phase 4 | 12h | Phase 2 | **重点**: 多日历同步+配置统一 |
+| Phase 5 | 8h | Phase 1 | **细化**: emoji/color/notes/mode迁移 |
+| Phase 6 | 2h | 无 | Timeline Anchor |
+| Phase 7 | 2h | All | 验证和文档 |
 
-**总计**: ~28 工时（约 3.5 个工作日）
+**总计**: ~39 工时（约 5 个工作日）
+
+**⚠️ Phase 4.3 需要用户决策**: 多日历同步是保留数组还是简化为单日历
 
 ---
 
