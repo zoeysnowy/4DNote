@@ -205,15 +205,6 @@
   cursor: pointer;
 }
 
-.event-title-icon {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
 .event-title {
   font-family: 'Inter', 'Noto Sans SC', 'Noto Sans JP', sans-serif;
   font-size: 14px;
@@ -391,28 +382,6 @@
 }
 
 /* Action Indicator Labels (matching Figma design) */
-.action-indicator-label {
-  position: absolute;
-  left: -10px;
-  transform: translateY(-50%);
-  font-family: 'Roboto', sans-serif;
-  font-size: 10px;
-  font-weight: 600;
-  font-style: italic;
-  font-variation-settings: 'wdth' 100;
-}
-
-.action-indicator-new {
-  color: #dc2626;
-}
-
-.action-indicator-done {
-  color: #0b9265;
-}
-
-.action-indicator-updated {
-  color: #9ca3af;
-}
 
 /* Scrollbar Styling */
 .upcoming-events-panel::-webkit-scrollbar,

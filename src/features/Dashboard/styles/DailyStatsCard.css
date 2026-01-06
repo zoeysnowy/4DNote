@@ -115,12 +115,6 @@
   /* padding-left 通过 style 动态设置以支持多层级缩进 */
 }
 
-.tag-stat-emoji {
-  font-size: 16px;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
 .tag-stat-name {
   font-size: 14px;
   font-weight: 500;

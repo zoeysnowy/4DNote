@@ -3018,9 +3018,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             editorApi.flushPendingChanges();
           }
         }}
-        onPrioritySelect={(priority: 'low' | 'medium' | 'high' | 'urgent') => {
-
-        }}
         onColorSelect={(color: string) => {
 
         }}

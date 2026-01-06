@@ -126,8 +126,10 @@ export const parseLocalTimeStringOrNull = (
   const trimmed = timeString.trim();
   if (trimmed === '') return null;
 
-  // ISO 8601（带 Z 或时区）
+  // ⚠️ DEPRECATED: ISO 8601（带 Z 或时区）兼容性解析
+  // 仅用于向后兼容存量数据，新代码严禁写入 ISO 格式
   if (trimmed.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(trimmed)) {
+    console.warn('⚠️ [timeUtils] Parsing deprecated ISO 8601 format:', trimmed.slice(0, 30));
     const date = new Date(trimmed);
     return isNaN(date.getTime()) ? null : date;
   }

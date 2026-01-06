@@ -5,7 +5,7 @@ import { LineChartView } from './charts/LineChartView';
 import { PixelView } from './charts/PixelView';
 import { EventService } from '@backend/EventService';
 import { TagService } from '@backend/TagService';
-import type { EventStats } from '@backend/storage/types';
+import type { EventTreeIndex } from '@backend/storage/types';
 import { getAvailableCalendarsForSettings } from '@frontend/utils/calendarUtils';
 import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import './StatsPanel.css';
@@ -26,11 +26,11 @@ export const StatsPanel: React.FC = () => {
   const [customRange, setCustomRange] = useState<[Date, Date] | null>(null);
   const [viewMode, setViewMode] = useState<'pie' | 'line' | 'pixel'>('pie');
   const [loading, setLoading] = useState(false);
-  const [eventStats, setEventStats] = useState<EventStats[]>([]);
+  const [eventStats, setEventStats] = useState<EventTreeIndex[]>([]);
   const [availableCalendars, setAvailableCalendars] = useState<Array<{id: string, name: string, color: string}>>([]);
 
   // 计算事件时长（毫秒）- 从 EventStats 计算
-  const getEventDuration = (stats: EventStats): number => {
+  const getEventDuration = (stats: EventTreeIndex): number => {
     if (!stats.startTime || !stats.endTime) return 0;
     try {
       return parseLocalTimeString(stats.endTime).getTime() - parseLocalTimeString(stats.startTime).getTime();
@@ -92,7 +92,7 @@ export const StatsPanel: React.FC = () => {
           return `${year}-${month}-${day}`;
         };
 
-        const statsData = await EventService.getEventStatsByDateRange(
+        const statsData = await EventService.getEventTreeIndexByDateRange(
           formatDate(startDate),
           formatDate(endDate)
         );

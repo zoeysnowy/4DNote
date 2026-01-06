@@ -1,8 +1,4 @@
 /* TagPicker 样式 */
-.tag-picker-panel {
-  min-width: 280px;
-  max-width: 350px;
-}
 
 .tag-search-input {
   flex: 1;
@@ -15,24 +11,6 @@
 
 .tag-search-input:focus {
   border-color: #3b82f6;
-}
-
-.tag-list {
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.tag-section {
-  margin-bottom: 12px;
-}
-
-.tag-section-title {
-  font-size: 12px;
-  color: #6b7280;
-  font-weight: 600;
-  margin-bottom: 4px;
-  padding: 0 8px;
 }
 
 .tag-item {
@@ -58,11 +36,6 @@
 .tag-item.create-new {
   color: #3b82f6;
   font-weight: 500;
-}
-
-.tag-icon {
-  font-weight: bold;
-  color: #3b82f6;
 }
 
 .tag-checkmark {

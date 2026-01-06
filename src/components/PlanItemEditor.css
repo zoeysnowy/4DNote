@@ -1,20 +1,5 @@
 /* PlanItemEditor 样式 - 参考 TagManager 设计 */
 
-.plan-item-editor-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  animation: fadeIn 0.2s ease-out;
-}
-
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -22,20 +7,6 @@
   to {
     opacity: 1;
   }
-}
-
-.plan-item-editor-container {
-  width: 90%;
-  max-width: 1200px;
-  height: 85vh;
-  max-height: 800px;
-  background-color: white;
-  border-radius: 20px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-  display: flex;
-  overflow: hidden;
-  animation: slideUp 0.3s ease-out;
-  position: relative;
 }
 
 @keyframes slideUp {
@@ -50,554 +21,41 @@
 }
 
 /* 左侧主编辑区 */
-.plan-editor-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 32px;
-  overflow-y: auto;
-  position: relative;
-}
 
 /* 顶部工具栏 */
-.plan-editor-header {
-  margin-bottom: 24px;
-}
-
-.plan-editor-title-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.plan-emoji {
-  font-size: 32px;
-  cursor: pointer;
-  transition: transform 0.2s;
-}
-
-.plan-emoji:hover {
-  transform: scale(1.1);
-}
-
-.plan-priority-badge {
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  color: white;
-  letter-spacing: 0.5px;
-}
-
-.plan-close-btn {
-  margin-left: auto;
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: #F5F5F5;
-  border-radius: 50%;
-  cursor: pointer;
-  font-size: 18px;
-  color: #666;
-  transition: all 0.2s;
-}
-
-.plan-close-btn:hover {
-  background: #E0E0E0;
-  color: #333;
-  transform: scale(1.1);
-}
 
 /* 编辑区块 */
-.plan-editor-section {
-  margin-bottom: 24px;
-}
-
-.plan-label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #555;
-  margin-bottom: 8px;
-}
 
 /* 标题输入 */
-.plan-title-wrapper {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.plan-bullet {
-  font-size: 20px;
-  color: #007AFF;
-  line-height: 1.4;
-  margin-top: 6px;
-  user-select: none;
-}
-
-.plan-title-input {
-  flex: 1;
-  font-size: 24px;
-  font-weight: 600;
-  border: none;
-  outline: none;
-  resize: none;
-  overflow: hidden;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
-  line-height: 1.4;
-  padding: 4px 8px;
-  border-radius: 8px;
-  transition: background-color 0.2s;
-}
-
-.plan-title-input:focus {
-  background-color: rgba(0, 122, 255, 0.05);
-}
-
-.plan-title-input::placeholder {
-  color: #BBB;
-}
 
 /* 标签显示 */
-.plan-tags-display {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-  padding: 12px;
-  background-color: #F8F9FA;
-  border-radius: 12px;
-}
-
-.plan-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
-  background-color: #007AFF;
-  color: white;
-  border-radius: 16px;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s;
-}
-
-.plan-tag:hover {
-  background-color: #0051D5;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
-}
-
-.plan-tag-remove {
-  background: none;
-  border: none;
-  color: white;
-  cursor: pointer;
-  font-size: 14px;
-  padding: 0;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: background-color 0.2s;
-}
-
-.plan-tag-remove:hover {
-  background-color: rgba(255, 255, 255, 0.3);
-}
 
 /* 内容输入 */
-.plan-content-input {
-  width: 100%;
-  font-size: 16px;
-  border: 2px solid #E0E0E0;
-  outline: none;
-  resize: vertical;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
-  line-height: 1.6;
-  padding: 16px;
-  border-radius: 12px;
-  transition: all 0.2s;
-}
-
-.plan-content-input:focus {
-  border-color: #007AFF;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
-}
-
-.plan-content-input::placeholder {
-  color: #BBB;
-}
 
 /* 备注输入 */
-.plan-notes-input {
-  width: 100%;
-  font-size: 14px;
-  border: 1px solid #E0E0E0;
-  outline: none;
-  resize: vertical;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
-  line-height: 1.5;
-  padding: 12px;
-  border-radius: 8px;
-  background-color: #FAFAFA;
-  transition: all 0.2s;
-}
-
-.plan-notes-input:focus {
-  border-color: #999;
-  background-color: white;
-}
 
 /* 底部操作栏 */
-.plan-editor-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: auto;
-  padding-top: 24px;
-  border-top: 1px solid #E0E0E0;
-}
-
-.plan-btn {
-  padding: 12px 32px;
-  font-size: 15px;
-  font-weight: 600;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
-}
-
-.plan-btn-cancel {
-  background-color: #F5F5F5;
-  color: #666;
-}
-
-.plan-btn-cancel:hover {
-  background-color: #E0E0E0;
-  color: #333;
-}
-
-.plan-btn-save {
-  background-color: #007AFF;
-  color: white;
-}
-
-.plan-btn-save:hover {
-  background-color: #0051D5;
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
-}
 
 /* 右侧工具面板 */
-.plan-editor-sidebar {
-  width: 320px;
-  background-color: #F8F9FA;
-  padding: 32px 24px;
-  overflow-y: auto;
-  border-left: 1px solid #E0E0E0;
-}
-
-.plan-sidebar-section {
-  margin-bottom: 32px;
-}
-
-.plan-sidebar-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-  margin-bottom: 16px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
 
 /* 时间输入 */
-.plan-time-inputs {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.plan-time-inputs label {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
-  color: #666;
-  font-weight: 500;
-}
-
-.plan-time-input {
-  padding: 10px 12px;
-  border: 1px solid #DDD;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: 'Microsoft YaHei', Arial, sans-serif;
-  outline: none;
-  transition: all 0.2s;
-}
-
-.plan-time-input:focus {
-  border-color: #007AFF;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
-}
 
 /* 计时器 */
-.plan-timer {
-  background: white;
-  padding: 20px;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.plan-timer-display {
-  font-size: 36px;
-  font-weight: 700;
-  font-family: 'Courier New', monospace;
-  text-align: center;
-  color: #007AFF;
-  margin-bottom: 16px;
-  letter-spacing: 2px;
-}
-
-.plan-timer-controls {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.plan-timer-btn {
-  flex: 1;
-  padding: 10px;
-  border: none;
-  border-radius: 8px;
-  background-color: #007AFF;
-  color: white;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.plan-timer-btn:hover {
-  background-color: #0051D5;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
-}
-
-.plan-timer-total {
-  text-align: center;
-  font-size: 12px;
-  color: #666;
-  padding-top: 12px;
-  border-top: 1px solid #E0E0E0;
-}
 
 /* 优先级选择器 */
-.plan-priority-selector {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.plan-priority-option {
-  padding: 10px;
-  border: 2px solid;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-}
-
-.plan-priority-option:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
 
 /* 详细设置 */
-.plan-detail-toggle {
-  width: 100%;
-  padding: 12px 16px;
-  background: white;
-  border: 1px solid #DDD;
-  border-radius: 8px;
-  text-align: left;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  color: #333;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.plan-detail-toggle:hover {
-  background-color: #F5F5F5;
-  border-color: #007AFF;
-}
-
-.plan-detail-panel {
-  margin-top: 12px;
-  padding: 16px;
-  background: white;
-  border-radius: 8px;
-  border: 1px solid #E0E0E0;
-}
-
-.plan-detail-info {
-  font-size: 13px;
-  color: #666;
-  margin-bottom: 8px;
-  line-height: 1.5;
-}
-
-.plan-detail-info:last-child {
-  margin-bottom: 0;
-}
 
 /* 弹窗通用样式 */
-.plan-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.3);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10001;
-  animation: fadeIn 0.2s ease-out;
-}
-
-.plan-picker-container {
-  background: white;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  animation: slideUp 0.2s ease-out;
-}
 
 /* 颜色选择器 */
-.plan-color-picker {
-  background: white;
-  padding: 24px;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  min-width: 300px;
-}
-
-.plan-color-picker h4 {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.plan-color-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.plan-color-option {
-  width: 50px;
-  height: 50px;
-  border: 3px solid transparent;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.plan-color-option:hover {
-  transform: scale(1.1);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-}
-
-.plan-color-input {
-  width: 100%;
-  height: 40px;
-  border: 2px solid #E0E0E0;
-  border-radius: 8px;
-  cursor: pointer;
-}
 
 /* 标签选择器 */
-.plan-tag-selector {
-  background: white;
-  padding: 24px;
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-  min-width: 400px;
-  max-width: 500px;
-}
-
-.plan-tag-selector h4 {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #333;
-}
-
-.plan-tag-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 16px;
-  max-height: 300px;
-  overflow-y: auto;
-  padding: 8px;
-}
-
-.plan-tag-option {
-  padding: 8px 16px;
-  border: 2px solid #E0E0E0;
-  border-radius: 16px;
-  background: white;
-  color: #333;
-  font-size: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.plan-tag-option:hover {
-  border-color: #007AFF;
-  background-color: rgba(0, 122, 255, 0.05);
-}
 
 .plan-tag-option.selected {
   border-color: #007AFF;
   background-color: #007AFF;
   color: white;
-}
-
-.plan-tag-create {
-  padding-top: 16px;
-  border-top: 1px solid #E0E0E0;
-}
-
-.plan-tag-input {
-  width: 100%;
-  padding: 12px 16px;
-  border: 2px solid #E0E0E0;
-  border-radius: 10px;
-  font-size: 14px;
-  outline: none;
-  transition: all 0.2s;
-}
-
-.plan-tag-input:focus {
-  border-color: #007AFF;
-  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
 }
 
 /* 滚动条样式 */
@@ -629,51 +87,13 @@
 
 /* 响应式设计 */
 @media (max-width: 1024px) {
-  .plan-item-editor-container {
-    flex-direction: column;
-    height: 95vh;
-  }
-
-  .plan-editor-sidebar {
-    width: 100%;
-    max-height: 300px;
-  }
 }
 
 @media (max-width: 768px) {
-  .plan-item-editor-container {
-    width: 95%;
-    height: 95vh;
-  }
-
-  .plan-editor-main {
-    padding: 20px;
-  }
-
-  .plan-editor-sidebar {
-    padding: 20px;
-  }
-
-  .plan-title-input {
-    font-size: 20px;
-  }
-
-  .plan-content-input {
-    font-size: 14px;
-  }
 }
 
 /* 深色模式适配 */
 @media (prefers-color-scheme: dark) {
-  .plan-item-editor-container {
-    background-color: #1E1E1E;
-    color: #E0E0E0;
-  }
-
-  .plan-editor-sidebar {
-    background-color: #2D2D2D;
-    border-left-color: #3D3D3D;
-  }
 
   .plan-title-input,
   .plan-content-input,
@@ -681,30 +101,6 @@
     background-color: #2D2D2D;
     color: #E0E0E0;
     border-color: #3D3D3D;
-  }
-
-  .plan-close-btn {
-    background-color: #3D3D3D;
-    color: #BBB;
-  }
-
-  .plan-close-btn:hover {
-    background-color: #4D4D4D;
-    color: #FFF;
-  }
-
-  .plan-btn-cancel {
-    background-color: #3D3D3D;
-    color: #BBB;
-  }
-
-  .plan-btn-cancel:hover {
-    background-color: #4D4D4D;
-    color: #FFF;
-  }
-
-  .plan-timer {
-    background-color: #2D2D2D;
   }
 
   .plan-detail-toggle,
@@ -720,25 +116,10 @@
     background-color: #2D2D2D;
     color: #E0E0E0;
   }
-
-  .plan-tag-option {
-    background-color: #1E1E1E;
-    border-color: #3D3D3D;
-    color: #E0E0E0;
-  }
 }
 
 /* 打印样式 */
 @media print {
-  .plan-item-editor-overlay {
-    position: static;
-    background: none;
-  }
-
-  .plan-item-editor-container {
-    box-shadow: none;
-    border: 1px solid #E0E0E0;
-  }
 
   .plan-editor-sidebar,
   .plan-editor-footer,

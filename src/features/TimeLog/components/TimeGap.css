@@ -85,35 +85,11 @@
 }
 
 /* === Hover 状态：添加按钮 === */
-.time-gap-add-btn {
-  opacity: 0;
-  pointer-events: none;
-  padding: 6px 16px;
-  font-size: 14px;
-  font-weight: 500;
-  color: white;
-  background: linear-gradient(to right, #a855f7, #3b82f6); /* 紫蓝渐变 */
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-  transform: scale(0.9);
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1); /* ease-out-expo */
-}
 
 .time-gap.hovered .time-gap-add-btn {
   opacity: 1;
   pointer-events: auto;
   transform: scale(1);
-}
-
-.time-gap-add-btn:hover {
-  transform: scale(1.05);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-}
-
-.time-gap-add-btn:active {
-  transform: scale(0.98);
 }
 
 /* 小间隙的按钮样式 */
@@ -129,21 +105,6 @@
 }
 
 /* === Hover 时的时间提示 === */
-.time-gap-tooltip {
-  position: absolute;
-  top: 50%;
-  right: 20px;
-  transform: translateY(-50%);
-  font-size: 11px;
-  color: #6B7280;
-  background: white;
-  padding: 4px 8px;
-  border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  white-space: nowrap;
-  pointer-events: none;
-  animation: fade-in 0.2s ease;
-}
 
 @keyframes fade-in {
   from {

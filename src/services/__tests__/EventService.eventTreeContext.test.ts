@@ -1,7 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import 'fake-indexeddb/auto';
-let updateSubtreeRootEventIdUsingStatsIndex: typeof import('@backend/eventTree').updateSubtreeRootEventIdUsingStatsIndex;
+let updateSubtreeRootEventIdUsingTreeIndex: typeof import('@backend/eventTree').updateSubtreeRootEventIdUsingTreeIndex;
 
 // Some services initialize at import-time and expect these globals.
 if (!(globalThis as any).localStorage) {
@@ -23,12 +23,12 @@ const mockStorageManager = vi.hoisted(() => ({
   queryEvents: vi.fn(async () => ({ items: [], total: 0 })),
   getEvent: vi.fn(async () => null),
 
-  getEventStats: vi.fn(),
-  updateEventStats: vi.fn(),
-  countEventStatsByParentEventId: vi.fn(),
-  countEventStatsByRootEventId: vi.fn(),
-  getEventStatsByParentEventId: vi.fn(),
-  bulkPutEventStats: vi.fn(),
+  getEventTreeIndex: vi.fn(),
+  updateEventTreeIndex: vi.fn(),
+  countEventTreeIndexByParentEventId: vi.fn(),
+  countEventTreeIndexByRootEventId: vi.fn(),
+  getEventTreeIndexByParentEventId: vi.fn(),
+  bulkPutEventTreeIndex: vi.fn(),
 }));
 
 // ContactService has an import-time auto-initialize. Mock it to avoid side effects.
@@ -46,7 +46,7 @@ const { EventService } = await import('@backend/EventService');
 
 beforeAll(async () => {
   const helpers = await import('@backend/eventTree');
-  updateSubtreeRootEventIdUsingStatsIndex = helpers.updateSubtreeRootEventIdUsingStatsIndex;
+  updateSubtreeRootEventIdUsingTreeIndex = helpers.updateSubtreeRootEventIdUsingTreeIndex;
 
   // Vitest sometimes ends up with an older full-scan getEventTreeContext from this huge module.
   // For these unit tests, force the required stats-backed behavior.
@@ -62,7 +62,7 @@ beforeAll(async () => {
         if (visited.has(currentId)) break;
         visited.add(currentId);
 
-        const stats = await mockStorageManager.getEventStats(currentId);
+        const stats = await mockStorageManager.getEventTreeIndex(currentId);
         if (stats?.rootEventId) return stats.rootEventId;
 
         const current = await EventService.getEventById(currentId);
@@ -74,19 +74,19 @@ beforeAll(async () => {
       return eventId;
     };
 
-    const stats = await mockStorageManager.getEventStats(eventId);
+    const stats = await mockStorageManager.getEventTreeIndex(eventId);
     const rootEventId = stats?.rootEventId ?? (await computeRootEventId());
 
     if (!stats?.rootEventId) {
-      await mockStorageManager.updateEventStats(eventId, {
+      await mockStorageManager.updateEventTreeIndex(eventId, {
         parentEventId: event.parentEventId ?? null,
         rootEventId,
       });
     }
 
     const [directChildCount, subtreeCount, rootEvent] = await Promise.all([
-      mockStorageManager.countEventStatsByParentEventId(eventId),
-      mockStorageManager.countEventStatsByRootEventId(rootEventId),
+      mockStorageManager.countEventTreeIndexByParentEventId(eventId),
+      mockStorageManager.countEventTreeIndexByRootEventId(rootEventId),
       EventService.getEventById(rootEventId),
     ]);
 
@@ -102,18 +102,18 @@ beforeAll(async () => {
 
 describe('EventService.getEventTreeContext (stats-backed)', () => {
   beforeEach(() => {
-    mockStorageManager.getEventStats.mockReset();
-    mockStorageManager.updateEventStats.mockReset();
-    mockStorageManager.countEventStatsByParentEventId.mockReset();
-    mockStorageManager.countEventStatsByRootEventId.mockReset();
-    mockStorageManager.getEventStatsByParentEventId.mockReset();
-    mockStorageManager.bulkPutEventStats.mockReset();
+    mockStorageManager.getEventTreeIndex.mockReset();
+    mockStorageManager.updateEventTreeIndex.mockReset();
+    mockStorageManager.countEventTreeIndexByParentEventId.mockReset();
+    mockStorageManager.countEventTreeIndexByRootEventId.mockReset();
+    mockStorageManager.getEventTreeIndexByParentEventId.mockReset();
+    mockStorageManager.bulkPutEventTreeIndex.mockReset();
   });
 
   it('is available at runtime', () => {
     expect(typeof (EventService as any).getEventTreeContext).toBe('function');
     const src = String((EventService as any).getEventTreeContext);
-    expect(src.includes('getEventStats') || src.includes('countEventStatsByRootEventId')).toBe(true);
+    expect(src.includes('getEventTreeIndex') || src.includes('countEventTreeIndexByRootEventId')).toBe(true);
   });
 
   it('returns counts using stats indexes (root already known)', async () => {
@@ -123,12 +123,12 @@ describe('EventService.getEventTreeContext (stats-backed)', () => {
       return null;
     });
 
-    mockStorageManager.getEventStats.mockResolvedValue({ id: 'C', rootEventId: 'A', parentEventId: 'B' });
-    mockStorageManager.countEventStatsByParentEventId.mockResolvedValue(0);
-    mockStorageManager.countEventStatsByRootEventId.mockResolvedValue(4);
+    mockStorageManager.getEventTreeIndex.mockResolvedValue({ id: 'C', rootEventId: 'A', parentEventId: 'B' });
+    mockStorageManager.countEventTreeIndexByParentEventId.mockResolvedValue(0);
+    mockStorageManager.countEventTreeIndexByRootEventId.mockResolvedValue(4);
 
     const ctx = await EventService.getEventTreeContext('C');
-    expect(mockStorageManager.getEventStats).toHaveBeenCalled();
+    expect(mockStorageManager.getEventTreeIndex).toHaveBeenCalled();
     expect(ctx).not.toBeNull();
     expect(ctx!.rootEventId).toBe('A');
     expect(ctx!.subtreeCount).toBe(4);
@@ -144,27 +144,27 @@ describe('EventService.getEventTreeContext (stats-backed)', () => {
       return null;
     });
 
-    mockStorageManager.getEventStats.mockImplementation(async (id: string) => {
+    mockStorageManager.getEventTreeIndex.mockImplementation(async (id: string) => {
       if (id === 'C') return { id: 'C', parentEventId: 'B' } as any; // no root yet
       if (id === 'B') return { id: 'B', parentEventId: 'A' } as any; // no root yet
       if (id === 'A') return { id: 'A', parentEventId: null, rootEventId: 'A' } as any;
       return null;
     });
 
-    mockStorageManager.countEventStatsByParentEventId.mockResolvedValue(0);
-    mockStorageManager.countEventStatsByRootEventId.mockResolvedValue(3);
+    mockStorageManager.countEventTreeIndexByParentEventId.mockResolvedValue(0);
+    mockStorageManager.countEventTreeIndexByRootEventId.mockResolvedValue(3);
 
     const ctx = await EventService.getEventTreeContext('C');
-    expect(mockStorageManager.getEventStats).toHaveBeenCalled();
+    expect(mockStorageManager.getEventTreeIndex).toHaveBeenCalled();
     expect(ctx!.rootEventId).toBe('A');
-    expect(mockStorageManager.updateEventStats).toHaveBeenCalled();
+    expect(mockStorageManager.updateEventTreeIndex).toHaveBeenCalled();
   });
 });
 
 describe('EventService.updateSubtreeRootEventId (stats-index BFS)', () => {
   beforeEach(() => {
-    mockStorageManager.getEventStatsByParentEventId.mockReset();
-    mockStorageManager.bulkPutEventStats.mockReset();
+    mockStorageManager.getEventTreeIndexByParentEventId.mockReset();
+    mockStorageManager.bulkPutEventTreeIndex.mockReset();
   });
 
   it('updates descendant stats rootEventId via BFS without full table scan', async () => {
@@ -178,16 +178,16 @@ describe('EventService.updateSubtreeRootEventId (stats-index BFS)', () => {
       E: [],
     };
 
-    mockStorageManager.getEventStatsByParentEventId.mockImplementation(async (parentId: string) => {
+    mockStorageManager.getEventTreeIndexByParentEventId.mockImplementation(async (parentId: string) => {
       return byParent[parentId] || [];
     });
 
-    await updateSubtreeRootEventIdUsingStatsIndex('B', 'A', {
+    await updateSubtreeRootEventIdUsingTreeIndex('B', 'A', {
       storage: mockStorageManager as any,
       log: () => undefined,
     });
-    expect(mockStorageManager.bulkPutEventStats).toHaveBeenCalledTimes(1);
-    const updates = mockStorageManager.bulkPutEventStats.mock.calls[0][0];
+    expect(mockStorageManager.bulkPutEventTreeIndex).toHaveBeenCalledTimes(1);
+    const updates = mockStorageManager.bulkPutEventTreeIndex.mock.calls[0][0];
     expect(updates.map((s: any) => s.id).sort()).toEqual(['C', 'D', 'E']);
     expect(updates.every((s: any) => s.rootEventId === 'A')).toBe(true);
   });
@@ -199,14 +199,14 @@ describe('EventService.updateSubtreeRootEventId (stats-index BFS)', () => {
       C: [{ id: 'B', parentEventId: 'C', rootEventId: 'OLD' }],
     };
 
-    mockStorageManager.getEventStatsByParentEventId.mockImplementation(async (parentId: string) => {
+    mockStorageManager.getEventTreeIndexByParentEventId.mockImplementation(async (parentId: string) => {
       return byParent[parentId] || [];
     });
 
-    await updateSubtreeRootEventIdUsingStatsIndex('B', 'A', {
+    await updateSubtreeRootEventIdUsingTreeIndex('B', 'A', {
       storage: mockStorageManager as any,
       log: () => undefined,
     });
-    expect(mockStorageManager.bulkPutEventStats).toHaveBeenCalled();
+    expect(mockStorageManager.bulkPutEventTreeIndex).toHaveBeenCalled();
   });
 });

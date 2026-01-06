@@ -14,6 +14,7 @@
  */
 
 import { Event, EventLog } from '@frontend/types';
+import { formatTimeForStorage } from './timeUtils';
 
 /**
  * 从 EventLog 中提取纯文本内容
@@ -307,7 +308,7 @@ export interface EventSnapshot {
 export function createSnapshot(event: Event): EventSnapshot {
   return {
     eventId: event.id,
-    capturedAt: new Date().toISOString(),
+    capturedAt: formatTimeForStorage(new Date()),
     title: event.title,
     tags: event.tags,
     eventLog: typeof event.eventlog === 'object' ? event.eventlog : undefined,

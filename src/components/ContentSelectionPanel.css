@@ -82,57 +82,7 @@
   text-align: left;
 }
 
-.panel-show-all-btn {
-  background: none !important;
-  border: none;
-  outline: none;
-  font-family: 'Inter', 'Noto Sans SC', 'Noto Sans JP', sans-serif;
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  color: #9ca3af;
-  cursor: pointer;
-  padding: 0;
-  white-space: normal;
-  line-height: 18px;
-  margin-left: auto;
-  text-align: right;
-  transition: color 0.2s ease;
-  box-shadow: none !important;
-}
-
-.panel-show-all-btn:hover {
-  background: none !important;
-  color: #374151;
-}
-
-.panel-show-all-btn:focus {
-  background: none !important;
-  outline: none;
-}
-
-.panel-show-all-btn:active {
-  background: none !important;
-}
-
 /* Notice Icon - 替换普通模式下的文字 */
-.panel-notice-icon-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-  margin-left: auto;
-  padding: 4px;
-  transition: opacity 0.2s ease;
-}
-
-.panel-notice-icon-wrapper:hover {
-  opacity: 0.8;
-}
-
-.panel-notice-icon {
-  pointer-events: none;
-}
 
 .panel-toggle-btn {
   width: 20px;
@@ -516,11 +466,6 @@
   border: 2px solid rgba(59, 130, 246, 0.3) !important;
 }
 
-.calendar-day-selected {
-  background: linear-gradient(to right, #22d3ee, #3b82f6);
-  color: white;
-}
-
 /* 日期范围选择样式 */
 .calendar-day-in-range {
   background: #dbeafe !important;
@@ -570,7 +515,6 @@
   border-radius: 8px;
   padding: 8px;
   border: 0.8px solid rgba(255, 255, 255, 0.6);
-  font-size: 14px;
 }
 
 .task-node {
@@ -680,9 +624,9 @@
   opacity: 1;
 }
 
-.task-tree .task-title {
+.task-title {
   flex: 1;
-  font-family: 'Microsoft YaHei', 'Inter', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  font-family: 'Microsoft YaHei', 'Inter', sans-serif;
   font-size: 14px;
   font-weight: 700;
   white-space: nowrap;
@@ -718,9 +662,9 @@
   height: 14px;
 }
 
-.task-tree .task-progress-text {
+.task-progress-text {
   font-family: 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   color: #4b5563;
 }
 
@@ -751,9 +695,9 @@
   background: #10b981;
 }
 
-.task-tree .task-hours {
+.task-hours {
   font-family: 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  font-size: 12px;
   color: #4b5563;
 }
 

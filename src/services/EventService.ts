@@ -35,7 +35,7 @@ import {
 } from '@backend/eventlogProcessing/outlookHtmlPipeline';
 import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
-import { updateSubtreeRootEventIdUsingStatsIndex, EventTreeAPI } from '@backend/eventTree'; // 🆕 EventTree Engine 集成
+import { updateSubtreeRootEventIdUsingTreeIndex, EventTreeAPI } from '@backend/eventTree'; // 🆕 EventTree Engine 集成
 
 type EventTreeNode = Event & { children: EventTreeNode[] };
 
@@ -263,18 +263,18 @@ export class EventService {
    * @param endDate ISO 格式的结束日期
    */
   /**
-   * 🚀 [PERFORMANCE] 获取统计数据（使用轻量级 EventStats）
+   * 🚀 [PERFORMANCE] 获取树索引数据（使用轻量级 EventTreeIndex）
    * @param startDate 开始日期（YYYY-MM-DD 或 ISO 格式）
    * @param endDate 结束日期（YYYY-MM-DD 或 ISO 格式）
-   * @returns EventStats 数组（90% 更小，5x 更快）
+   * @returns EventTreeIndex 数组（90% 更小，5x 更快）
    */
-  static async getEventStatsByDateRange(startDate: string, endDate: string): Promise<import('./storage/types').EventStats[]> {
+  static async getEventTreeIndexByDateRange(startDate: string, endDate: string): Promise<import('./storage/types').EventTreeIndex[]> {
     try {
       await this.ensureStorageReady();
       
       const perfStart = performance.now();
       
-      const stats = await storageManager.queryEventStats({
+      const stats = await storageManager.queryEventTreeIndex({
         startDate,
         endDate,
       });
@@ -282,12 +282,12 @@ export class EventService {
       const duration = performance.now() - perfStart;
       // 只在慢查询（>50ms）或有结果时输出日志，避免刷屏
       if (duration > 50 || stats.length > 0) {
-        eventLogger.log(`📊 [Performance] getEventStatsByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
+        eventLogger.log(`📊 [Performance] getEventTreeIndexByDateRange: ${duration.toFixed(1)}ms → ${stats.length} records`);
       }
       
       return stats;
     } catch (error) {
-      eventLogger.error('❌ [EventService] Failed to load event stats:', error);
+      eventLogger.error('❌ [EventService] Failed to load event tree index:', error);
       return [];
     }
   }
@@ -701,8 +701,8 @@ export class EventService {
         remainingInBuffer: this.pendingWrites.size
       });
       
-      // 🚀 [PERFORMANCE] 同步写入 EventStats（统计数据表）
-      await storageManager.createEventStats({
+      // 🚀 [PERFORMANCE] 同步写入 EventTreeIndex（树索引表）
+      await storageManager.createEventTreeIndex({
         id: finalEvent.id,
         tags: finalEvent.tags || [],
         calendarIds: (finalEvent as any).calendarIds || [],
@@ -711,7 +711,7 @@ export class EventService {
         source: finalEvent.source,
         updatedAt: finalEvent.updatedAt,
       });
-      eventLogger.log('📊 [EventService] EventStats synced');
+      eventLogger.log('🌳 [EventService] EventTreeIndex synced');
       
       // 🔍 立即读取验证
       const savedEvent = await storageManager.getEvent(storageEvent.id!);
@@ -1292,8 +1292,8 @@ export class EventService {
         remainingInBuffer: this.pendingWrites.size
       });
       
-      // 🚀 [PERFORMANCE] 同步更新 EventStats（仅更新必要字段）
-      const statsUpdates: Partial<import('./storage/types').EventStats> = {};
+      // 🚀 [PERFORMANCE] 同步更新 EventTreeIndex（仅更新必要字段）
+      const statsUpdates: Partial<import('./storage/types').EventTreeIndex> = {};
       if (filteredUpdates.tags !== undefined) statsUpdates.tags = updatedEvent.tags || [];
       if ((filteredUpdates as any).calendarIds !== undefined) statsUpdates.calendarIds = (updatedEvent as any).calendarIds || [];
       if (filteredUpdates.startTime !== undefined) statsUpdates.startTime = updatedEvent.startTime;
@@ -1302,8 +1302,8 @@ export class EventService {
       statsUpdates.updatedAt = updatedEvent.updatedAt;
       
       if (Object.keys(statsUpdates).length > 1) { // updatedAt 总是存在
-        await storageManager.updateEventStats(eventId, statsUpdates);
-        eventLogger.log('📊 [EventService] EventStats synced');
+        await storageManager.updateEventTreeIndex(eventId, statsUpdates);
+        eventLogger.log('🌳 [EventService] EventTreeIndex synced');
       }
       
       // 🆕 保存 EventLog 版本历史（如果 eventlog 有变更）
@@ -1555,9 +1555,9 @@ export class EventService {
       
       // 🆕 v2.16: 跳过池化占位事件的删除历史记录（已由上面的逻辑处理）
       
-      // 🚀 [PERFORMANCE] 同步删除 EventStats
-      await storageManager.deleteEventStats(eventId);
-      eventLogger.log('📊 [EventService] EventStats deleted');
+      // 🚀 [PERFORMANCE] 同步删除 EventTreeIndex
+      await storageManager.deleteEventTreeIndex(eventId);
+      eventLogger.log('🌳 [EventService] EventTreeIndex deleted');
 
       // 触发全局更新事件（标记为已删除）
       this.dispatchEventUpdate(eventId, { deleted: true, softDeleted: true });
@@ -5462,8 +5462,8 @@ export class EventService {
       const storageEvent = this.convertEventToStorageEvent(finalEvent);
       await storageManager.createEvent(storageEvent);
       
-      // 🚀 [PERFORMANCE] 同步写入 EventStats
-      await storageManager.createEventStats({
+      // 🚀 [PERFORMANCE] 同步写入 EventTreeIndex
+      await storageManager.createEventTreeIndex({
         id: finalEvent.id,
         tags: finalEvent.tags || [],
         calendarIds: (finalEvent as any).calendarIds || [],
@@ -5714,9 +5714,9 @@ export class EventService {
    * ✅ [EventTreeAPI] 使用 TreeAPI.getDirectChildren 统一树逻辑
    */
   static async getChildEvents(parentId: string): Promise<Event[]> {
-    // ADR-001: 通过 parentEventId 派生子列表（EventStats 索引 → 批量取全量 Event）
+    // ADR-001: 通过 parentEventId 派生子列表（EventTreeIndex 索引 → 批量取全量 Event）
     try {
-      const stats = await storageManager.getEventStatsByParentEventId(parentId);
+      const stats = await storageManager.getEventTreeIndexByParentEventId(parentId);
       if (!stats || stats.length === 0) return [];
 
       const childIds = stats.map(s => s.id).filter(Boolean);

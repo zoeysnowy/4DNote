@@ -97,7 +97,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
         };
 
         // 加载当前时间段数据
-        const currentStats = await EventService.getEventStatsByDateRange(
+        const currentStats = await EventService.getEventTreeIndexByDateRange(
           formatDate(timeRange.startDate),
           formatDate(timeRange.endDate)
         );
@@ -130,7 +130,7 @@ export const ComparisonCard: React.FC<ComparisonCardProps> = ({
 
         // 加载对比数据
         if (timeRange.compareWith) {
-          const compareStats = await EventService.getEventStatsByDateRange(
+          const compareStats = await EventService.getEventTreeIndexByDateRange(
             formatDate(timeRange.compareWith.startDate),
             formatDate(timeRange.compareWith.endDate)
           );

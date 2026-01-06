@@ -22,11 +22,13 @@
   --brand-accent-pink: #f48fb1;
   --brand-accent-neutral: #f1f0f8;
 
-  --brand-smoked-purple-1: #f5f3f7;
-  --brand-smoked-purple-2: #ebe8f0;
-  --brand-smoked-purple-3: #d6cfde;
-  --brand-smoked-purple-4: #9b8ca8;
-  --brand-smoked-purple-5: #6b5d7b;
+  /* Wisteria (Elegant Morandi) */
+  --brand-smoked-purple-1: #faf9fc;
+  --brand-smoked-purple-2: #f2eff6;
+  --brand-smoked-purple-3: #e4dfeb;
+  --brand-smoked-purple-4: #cfc6da;
+  --brand-smoked-purple-5: #9e8fab;
+  --brand-smoked-purple-6: #6e5d7e;
 
   --brand-rustic-red-1: #f9f4f4;
   --brand-rustic-red-2: #f2ebeb;
@@ -131,9 +133,10 @@
   --ui-danger-press: var(--tag-red-6);
 
   /* Button tokens */
-  --ui-btn-primary-bg: var(--ui-accent);
-  --ui-btn-primary-bg-hover: var(--ui-accent-hover);
-  --ui-btn-primary-bg-press: var(--ui-accent-press);
+  /* Primary: Smoked Purple base (Wisteria), deeper purple on hover/press */
+  --ui-btn-primary-bg: var(--brand-smoked-purple-5);
+  --ui-btn-primary-bg-hover: var(--brand-smoked-purple-6);
+  --ui-btn-primary-bg-press: color-mix(in srgb, var(--brand-smoked-purple-6) 82%, var(--brand-graphite-5));
   --ui-btn-primary-text: #ffffff;
 
   --ui-btn-secondary-bg: var(--ui-surface-soft);

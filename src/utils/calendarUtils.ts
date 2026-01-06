@@ -346,27 +346,21 @@ export function convertToCalendarEvent(
   }
   
   // 🎯 确定事件类型（category）
-  // TUI Calendar 支持: 'milestone', 'task', 'allday', 'time'
+  // 注意：这里的 category 是 **ToastUI Calendar 的渲染分类**。
+  // - 我们的业务概念叫「Deadline」面板
+  // - ToastUI 把它命名为 'milestone'
+  // TUI Calendar 支持: 'milestone'(Deadline), 'task', 'allday', 'time'
+  //
+  // 口径：不再使用/兼容 Event.category（legacy 展示字段），一律从规范字段推导。
   let category: 'milestone' | 'task' | 'allday' | 'time' = 'time';
-  
-  // 优先使用新的布尔字段（isDeadline, isTask）
+
   if (event.isDeadline) {
     category = 'milestone';
   } else if (event.isTask) {
     category = 'task';
-  } 
-  // 回退到旧的 category 字符串字段（向后兼容）
-  else if (event.category === 'milestone') {
-    category = 'milestone';
-  } else if (event.category === 'task') {
-    category = 'task';
-  } 
-  // 全天事件
-  else if (event.isAllDay) {
+  } else if (event.isAllDay) {
     category = 'allday';
-  } 
-  // 默认时间事件
-  else {
+  } else {
     category = 'time';
   }
   
@@ -451,7 +445,7 @@ export function convertToCalendarEvent(
       syncStatus: event.syncStatus,
       tags: event.tags,
       calendarIds: event.calendarIds,
-      category: event.category
+      // category 不再作为输入语义；保留 raw 的意义不大且容易误导
     }
   };
 }

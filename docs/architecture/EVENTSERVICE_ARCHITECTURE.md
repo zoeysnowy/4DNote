@@ -1269,14 +1269,14 @@ await this.clearRangeCache();
 
 **缓存策略**: 5 秒 TTL，变更时清除
 
-### 3. EventStats 表 (L650)
+### 3. EventTreeIndex 表 (L650)
 
 **问题**: 全表查询性能差，统计数据占用大
 
 **方案**:
 ```typescript
-// 创建 EventStats 表（只包含统计需要的字段）
-interface EventStats {
+// 创建 EventTreeIndex 表（只包含统计需要的字段）
+interface EventTreeIndex {
   id: string;
   tags: string[];
   calendarIds: string[];
@@ -1286,8 +1286,8 @@ interface EventStats {
   updatedAt: string;
 }
 
-// 查询时使用 EventStats
-const stats = await storageManager.queryEventStats({ tags: ['work'] });
+// 查询时使用 EventTreeIndex
+const stats = await storageManager.queryEventTreeIndex({ tags: ['work'] });
 ```
 
 **效果**: 
@@ -2532,7 +2532,7 @@ EventService 是 4DNote 的核心业务逻辑层，通过**中枢化规范化架
 - ✅ 三大规范化架构（Title、EventLog、Location）
 - ✅ EventTree 自动维护（父子关系、双向链接）
 - ✅ 智能同步集成（本地字段保护、条件 updatedAt）
-- ✅ 高性能查询（Promise 去重、范围缓存、EventStats）
+- ✅ 高性能查询（Promise 去重、范围缓存、EventTreeIndex）
 - ✅ 完整的历史追踪（EventHistoryService 集成）
 - ✅ **CompleteMeta V2 元数据保护**（三层容错匹配 + 增强hint + Base64存储）✨ **v2.21.0 新增**
 - ✅ **History爆炸六层防护**（v2.21.0）- eventlog Block-Level检测 + preserveSignature + 字段忽略 + 去重缓存

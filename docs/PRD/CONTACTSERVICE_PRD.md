@@ -865,7 +865,7 @@ getEventsByContact(contactId: string, options?: {
 }): Event[]
 
 // 获取联系人的事件统计
-getContactEventStats(contactId: string): {
+getContactEventTreeIndex(contactId: string): {
   totalEvents: number;
   upcomingEvents: number;
   completedEvents: number;
@@ -933,7 +933,7 @@ const handleHoverStart = async (person: Contact) => {
   
   // 获取最近 5 个事件
   const events = EventService.getEventsByContact(person.id, { limit: 5 });
-  const stats = EventService.getContactEventStats(person.id);
+  const stats = EventService.getContactEventTreeIndex(person.id);
   
   setRecentEvents(events);
   setTotalEvents(stats.totalEvents);

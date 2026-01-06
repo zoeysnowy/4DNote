@@ -2653,7 +2653,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
           useFormPopup={false}
           useDetailPopup={false}
           week={{
-            // 显示任务与里程碑面板
+            // 显示 Task 与 Deadline 面板（ToastUI 将 Deadline 命名为 'milestone'）
             taskView: calendarSettings.showTask !== false ? ['milestone', 'task'] : false,
             // 显示时间段与全天面板
             eventView: calendarSettings.showAllDay !== false ? ['time', 'allday'] : ['time'],
@@ -2806,7 +2806,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
               // 返回月视图风格的 HTML
               return `<span class="toastui-calendar-template-time"><strong>${timeDisplay}</strong>&nbsp;<span>${title}${attendeesDisplay}</span></span>`;
             },
-            // 🎯 Milestone 面板标题模板（显示 "Deadline" 而不是默认的 "Milestone"）
+            // 🎯 Deadline 面板标题模板（ToastUI key = milestoneTitle）
             milestoneTitle() {
               return '<span style="font-size: 11px;">Deadline</span>';
             }

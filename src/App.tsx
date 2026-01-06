@@ -9,11 +9,9 @@ import CalendarSync from './features/Calendar/components/CalendarSync';
 // import UnifiedTimeline from './components/UnifiedTimeline'; // 暂时未使用
 import AppLayout, { PageType } from '@frontend/components/layout/AppLayout';
 import PageContainer from '@frontend/components/common/PageContainer';
-import DesktopCalendarWidget from '@frontend/pages/Calendar/WidgetWindow';
 import { TimerCard } from '@frontend/features/Timer'; // 计时卡片组件
 import { DailyStatsCard } from '@frontend/features/Dashboard'; // 今日统计卡片组件
 import { HomePage } from '@frontend/pages/Home'; // 🆕 HomePage with stats dashboard
-import CalendarPage from '@frontend/pages/Calendar';
 import TimeLogPage from '@frontend/pages/TimeLog';
 import TagPage from '@frontend/pages/Tag';
 import PlanPage from '@frontend/pages/Plan';
@@ -32,7 +30,9 @@ import SettingsModal from './components/SettingsModal';
 import { SyncNotification } from '@frontend/components/shared/SyncNotification';
 import './App.css';
 
-// 🔧 暂时禁用懒加载，测试性能
+// 🚀 Calendar/Widget 做懒加载：避免 TimeCalendar + TUI dist/CSS 进入首屏 bundle
+const CalendarPage = React.lazy(() => import('@frontend/pages/Calendar'));
+const DesktopCalendarWidget = React.lazy(() => import('@frontend/pages/Calendar/WidgetWindow'));
 
 import { logger } from './utils/logger';
 
@@ -102,9 +102,9 @@ function App() {
         await EventHistoryService.initialize(storageManager);
         console.log('✅ [App] EventHistoryService initialized');
         
-        // 🚀 [PERFORMANCE] 一次性迁移：Event → EventStats
-        console.log('📊 [App] Checking EventStats migration...');
-        await storageManager.migrateToEventStats();
+        // 🚀 [PERFORMANCE] 一次性构建：Event → EventTreeIndex
+        console.log('🌳 [App] Checking EventTreeIndex migration...');
+        await storageManager.migrateToEventTreeIndex();
       } catch (error) {
         console.error('❌ [App] StorageManager initialization failed:', error);
         // 初始化失败不阻止应用启动，会降级到 localStorage
@@ -1834,18 +1834,26 @@ function App() {
 
       case 'timecalendar':
         content = (
-          <CalendarPage
-            microsoftService={microsoftService}
-            syncManager={syncManager}
-            lastSyncTime={lastSyncTime}
-            availableTags={hierarchicalTags}
-            globalTimer={globalTimer}
-            onTimerStart={handleTimerStart}
-            onTimerPause={handleTimerPause}
-            onTimerResume={handleTimerResume}
-            onTimerStop={handleTimerStop}
-            onTimerCancel={handleTimerCancel}
-          />
+          <React.Suspense
+            fallback={
+              <PageContainer title="时光" subtitle="时光日志与我的日历" className="time-calendar">
+                <div>加载中...</div>
+              </PageContainer>
+            }
+          >
+            <CalendarPage
+              microsoftService={microsoftService}
+              syncManager={syncManager}
+              lastSyncTime={lastSyncTime}
+              availableTags={hierarchicalTags}
+              globalTimer={globalTimer}
+              onTimerStart={handleTimerStart}
+              onTimerPause={handleTimerPause}
+              onTimerResume={handleTimerResume}
+              onTimerStop={handleTimerStop}
+              onTimerCancel={handleTimerCancel}
+            />
+          </React.Suspense>
         );
         break;
 
@@ -1898,8 +1906,7 @@ function App() {
         );
         break;
 
-      case 'ai-demo':
-        // 懒加载 AIDemo 组件
+      case 'ai-demo': {
         const AIDemo = React.lazy(() => import('@frontend/components/demos/AIDemo'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo"><div>加载中...</div></PageContainer>}>
@@ -1907,9 +1914,9 @@ function App() {
           </React.Suspense>
         );
         break;
-        
-      case 'ai-demo-v2':
-        // 懒加载 AIDemoV2 组件
+      }
+
+      case 'ai-demo-v2': {
         const AIDemoV2 = React.lazy(() => import('@frontend/components/demos/AIDemoV2'));
         content = (
           <React.Suspense fallback={<PageContainer title="AI Demo V2"><div>加载中...</div></PageContainer>}>
@@ -1917,6 +1924,7 @@ function App() {
           </React.Suspense>
         );
         break;
+      }
 
       case 'rag-demo':
         // 懒加载 RAGDemo 组件
@@ -2113,7 +2121,11 @@ export default function AppWrapper() {
   
   // 如果是悬浮窗口模式，渲染桌面日历组件
   if (isWidgetMode) {
-    return <DesktopCalendarWidget />;
+    return (
+      <React.Suspense fallback={<div>Loading...</div>}>
+        <DesktopCalendarWidget />
+      </React.Suspense>
+    );
   }
   
   // 否则渲染完整应用

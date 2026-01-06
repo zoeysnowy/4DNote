@@ -403,7 +403,7 @@ export interface Event {
   lastSyncTime?: string; // 🔧 修改：使用字符串存储本地时间
   createdAt: string;     // 🔧 修改：使用字符串存储本地时间
   updatedAt: string;     // 🔧 修改：使用字符串存储本地时间
-  deletedAt?: string | null; // 🆕 v3.0: 软删除时间戳（null=未删除，ISO 8601字符串=已删除）
+  deletedAt?: string | null; // 🆕 v3.0: 软删除时间戳（null=未删除，本地格式 YYYY-MM-DD HH:mm:ss=已删除）
   timerSessionId?: string;
   tags?: string[];       // 🆕 多标签支持
   category?: string;
@@ -514,7 +514,7 @@ export interface Event {
   /**
    * 最后一次非空白状态的时间戳
    * - undefined: 从未有过实质内容（创建后一直为空）
-   * - ISO 8601 字符串: 最后一次有实质内容的时间
+   * - 本地格式字符串 (YYYY-MM-DD HH:mm:ss): 最后一次有实质内容的时间
    * 
    * 用途：
    * - 空白事件清理时判断是否需要写 EventHistory
@@ -536,7 +536,7 @@ export interface Event {
    * ```typescript
    * {
    *   eventId: string;
-   *   capturedAt: string; // ISO 8601
+   *   capturedAt: string; // 本地格式 YYYY-MM-DD HH:mm:ss
    *   title, tags, eventLog, timeSpec, location, ...
    *   score: number; // contentScore 评分
    * }

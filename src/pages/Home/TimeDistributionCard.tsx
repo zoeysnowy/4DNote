@@ -52,7 +52,7 @@ export const TimeDistributionCard: React.FC<TimeDistributionCardProps> = ({ time
         };
 
         const todayStr = formatDate(today);
-        const eventStats = await EventService.getEventStatsByDateRange(todayStr, todayStr);
+        const eventStats = await EventService.getEventTreeIndexByDateRange(todayStr, todayStr);
 
         if (dimension === 'calendar') {
           // 按日历维度聚合

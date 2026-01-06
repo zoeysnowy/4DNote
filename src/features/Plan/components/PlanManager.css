@@ -100,22 +100,6 @@
 /* plan-items 样式已移至内联 style 标签 - 参考 TagManager */
 /* 使用 .plan-list-scroll-container 类名，支持隐藏滚动条 */
 
-.plan-item {
-  background: white;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 8px;
-  border-left: 4px solid #007AFF;
-  cursor: pointer;
-  transition: all 0.2s;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.plan-item:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  transform: translateX(2px);
-}
-
 .plan-item.selected {
   background: #F0F8FF;
   box-shadow: 0 0 0 2px #007AFF;
@@ -126,140 +110,10 @@
 }
 
 /* 新建输入框样式 */
-.plan-item-new {
-  border-left-color: #34C759 !important;
-  background: #F0FFF4 !important;
-  cursor: text !important;
-  box-shadow: 0 2px 8px rgba(52, 199, 89, 0.2) !important;
-}
-
-.plan-item-new:hover {
-  transform: none !important;
-  box-shadow: 0 2px 12px rgba(52, 199, 89, 0.3) !important;
-}
-
-.plan-item-new .plan-item-title:empty::before {
-  content: attr(data-placeholder);
-  color: #999;
-  font-style: italic;
-  pointer-events: none;
-}
-
-.plan-item-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.plan-item-icon {
-  font-size: 18px;
-  flex-shrink: 0;
-}
-
-.plan-item-emoji {
-  font-size: 20px;
-  line-height: 1;
-}
-
-.plan-item-title {
-  flex: 1;
-  font-size: 16px;
-  font-weight: 500;
-  color: #1D1D1F;
-  min-height: 24px;
-  outline: none;
-  cursor: text;
-  word-break: break-word;
-}
 
 /* 移除通用的 placeholder，使用 .plan-item-new 特定的 */
 
-.plan-item-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.plan-tag {
-  padding: 4px 10px;
-  background: #F0F0F0;
-  border-radius: 12px;
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-}
-
-.plan-item-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  font-size: 13px;
-  color: #666;
-  padding: 6px 10px;
-  background: #F8F9FA;
-  border-radius: 6px;
-  width: fit-content;
-}
-
 /* ==================== 右侧详情面板 ==================== */
-.plan-detail-panel {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  background: white;
-  min-width: 400px;
-}
-
-.plan-detail-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid #E5E5EA;
-}
-
-.plan-detail-header h3 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #1D1D1F;
-}
-
-.plan-detail-header button {
-  width: 32px;
-  height: 32px;
-  border: none;
-  background: transparent;
-  font-size: 20px;
-  cursor: pointer;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.plan-detail-header button:hover {
-  background: #F0F0F0;
-}
-
-.plan-detail-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 24px;
-}
-
-.plan-detail-section {
-  margin-bottom: 24px;
-}
-
-.plan-detail-section label {
-  display: block;
-  font-size: 14px;
-  font-weight: 600;
-  color: #666;
-  margin-bottom: 12px;
-}
 
 .plan-detail-section input[type="date"],
 .plan-detail-section input[type="datetime-local"],
@@ -281,38 +135,9 @@
   box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
 }
 
-.plan-detail-section textarea {
-  resize: vertical;
-  font-family: inherit;
-  line-height: 1.5;
-}
-
 /* 类型指示器 */
-.plan-type-indicator {
-  padding: 12px 16px;
-  background: #F8F9FA;
-  border-radius: 8px;
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-}
 
 /* 时间单选按钮 */
-.plan-time-radios {
-  display: flex;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.plan-time-radios label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  color: #666;
-}
 
 .plan-time-radios input[type="radio"] {
   width: auto;
@@ -320,22 +145,6 @@
 }
 
 /* 优先级按钮 */
-.plan-priority-buttons {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-}
-
-.plan-priority-buttons button {
-  padding: 10px;
-  border: 2px solid;
-  background: transparent;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: all 0.2s;
-  text-align: center;
-}
 
 .plan-priority-buttons button.active {
   color: white !important;
@@ -343,28 +152,6 @@
 }
 
 /* 标签选择器 */
-.plan-tags-selector {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.plan-tags-selector button {
-  padding: 8px 14px;
-  border: 1px solid #E5E5EA;
-  background: white;
-  color: #666;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  width: auto;
-}
-
-.plan-tags-selector button:hover {
-  border-color: #007AFF;
-  color: #007AFF;
-}
 
 .plan-tags-selector button.active {
   background: #007AFF;
@@ -373,13 +160,6 @@
 }
 
 /* 操作按钮 */
-.plan-detail-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px solid #E5E5EA;
-}
 
 .plan-save-btn,
 .plan-delete-btn {
@@ -393,55 +173,9 @@
   transition: all 0.2s;
 }
 
-.plan-save-btn {
-  background: #007AFF;
-  color: white;
-}
-
-.plan-save-btn:hover {
-  background: #0051D5;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3);
-}
-
-.plan-delete-btn {
-  background: #FF3B30;
-  color: white;
-}
-
-.plan-delete-btn:hover {
-  background: #D32F2F;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(255, 59, 48, 0.3);
-}
-
 /* ==================== Emoji Picker 弹窗 ==================== */
-.plan-picker-modal {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-  backdrop-filter: blur(4px);
-}
 
 /* Inline time mention inside editor */
-.time-mention {
-  color: #3B82F6;
-  font-weight: 600;
-  padding: 0 2px;
-  border-radius: 4px;
-  white-space: nowrap;
-}
-
-.plan-picker-modal > div {
-  animation: slideIn 0.2s ease;
-}
 
 @keyframes slideIn {
   from {
@@ -459,35 +193,12 @@
   .plan-manager {
     flex-direction: column;
   }
-
-  .plan-list {
-    max-width: 100%;
-    min-width: 0;
-    max-height: 50%;
-  }
-
-  .plan-detail-panel {
-    min-width: 0;
-  }
 }
 
 @media (max-width: 600px) {
   .plan-list-header,
   .plan-detail-header {
     padding: 16px;
-  }
-
-  .plan-detail-content {
-    padding: 16px;
-  }
-
-  .plan-time-radios {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .plan-priority-buttons {
-    grid-template-columns: repeat(2, 1fr);
   }
 }
 
@@ -514,20 +225,3 @@
 }
 
 /* ==================== 标签 Chip (Mention 样式) ==================== */
-.plan-tag-chip {
-  display: inline-block !important;
-  padding: 2px 8px !important;
-  margin: 0 2px !important;
-  border-radius: 4px !important;
-  font-weight: 500 !important;
-  font-size: 0.9em !important;
-  cursor: pointer !important;
-  user-select: none !important;
-  white-space: nowrap !important;
-  vertical-align: middle !important;
-}
-
-.plan-tag-chip:hover {
-  opacity: 0.8;
-  filter: brightness(0.95);
-}

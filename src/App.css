@@ -40,40 +40,9 @@ header h1 {
   gap: 10px;
 }
 
-.platform-indicator {
-  font-size: 1.5rem;
-  opacity: 0.7;
-  animation: pulse 2s infinite;
-}
-
 @keyframes pulse {
   0%, 100% { opacity: 0.7; }
   50% { opacity: 1; }
-}
-
-.daily-stats {
-  font-size: 1.1rem;
-  font-weight: 500;
-  color: #666;
-  background: rgba(255, 255, 255, 0.8);
-  padding: 12px 24px;
-  border-radius: 25px;
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(0, 0, 0, 0.1);
-  display: inline-block;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-}
-
-.electron-status {
-  font-size: 0.9rem;
-  color: #28a745;
-  background: rgba(40, 167, 69, 0.1);
-  padding: 4px 12px;
-  border-radius: 15px;
-  border: 1px solid rgba(40, 167, 69, 0.2);
 }
 
 .sync-status {
@@ -82,40 +51,11 @@ header h1 {
 }
 
 /* 首页主布局 - 重命名避免与AppLayout冲突 */
-.home-content-layout {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 30px;
-  align-items: start;
-}
 
 @media (max-width: 1024px) {
-  .home-content-layout {
-    grid-template-columns: 1fr;
-    gap: 20px;
-  }
 }
 
 /* 计时器区域样式 */
-.timer-section {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  padding: 40px;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    0 2px 8px rgba(0, 0, 0, 0.05);
-  text-align: center;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.timer-section:hover {
-  transform: translateY(-2px);
-  box-shadow: 
-    0 12px 40px rgba(0, 0, 0, 0.15),
-    0 4px 12px rgba(0, 0, 0, 0.08);
-}
 
 .timer-display {
   margin-bottom: 35px;
@@ -131,78 +71,7 @@ header h1 {
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.current-task-section {
-  margin: 20px 0 0 0;
-  padding: 15px 20px;
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-  border-radius: 15px;
-  border-left: 4px solid #667eea;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 15px;
-}
-
-.current-task {
-  color: #555;
-  font-size: 1.2rem;
-  margin: 0;
-  font-weight: 500;
-  flex: 1;
-}
-
-.btn-edit-task {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-  border: none;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-
-.btn-edit-task:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
-}
-
 /* 输入和控制区域 */
-.start-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.task-input {
-  padding: 18px 24px;
-  border: 2px solid rgba(102, 126, 234, 0.2);
-  border-radius: 15px;
-  font-size: 1.1rem;
-  transition: all 0.3s ease;
-  background: rgba(255, 255, 255, 0.9);
-  color: #333;
-  font-weight: 500;
-}
-
-.task-input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 
-    0 0 0 4px rgba(102, 126, 234, 0.1),
-    0 4px 12px rgba(102, 126, 234, 0.15);
-  transform: translateY(-2px);
-  background: white;
-}
-
-.task-input::placeholder {
-  color: #999;
-  font-weight: 400;
-}
 
 .controls {
   display: flex;
@@ -252,139 +121,10 @@ header h1 {
 }
 
 /* 按钮变体 */
-.btn-start {
-  background: linear-gradient(135deg, #52c41a, #389e0d);
-  color: white;
-  box-shadow: 0 4px 15px rgba(82, 196, 26, 0.3);
-}
-
-.btn-start:hover {
-  background: linear-gradient(135deg, #73d13d, #52c41a);
-  box-shadow: 0 8px 25px rgba(82, 196, 26, 0.4);
-}
-
-.btn-pause {
-  background: linear-gradient(135deg, #faad14, #fa8c16);
-  color: white;
-  box-shadow: 0 4px 15px rgba(250, 173, 20, 0.3);
-}
-
-.btn-pause:hover {
-  background: linear-gradient(135deg, #ffc53d, #faad14);
-  box-shadow: 0 8px 25px rgba(250, 173, 20, 0.4);
-}
-
-.btn-resume {
-  background: linear-gradient(135deg, #1890ff, #096dd9);
-  color: white;
-  box-shadow: 0 4px 15px rgba(24, 144, 255, 0.3);
-}
-
-.btn-resume:hover {
-  background: linear-gradient(135deg, #40a9ff, #1890ff);
-  box-shadow: 0 8px 25px rgba(24, 144, 255, 0.4);
-}
-
-.btn-stop {
-  background: linear-gradient(135deg, #ff4d4f, #cf1322);
-  color: white;
-  box-shadow: 0 4px 15px rgba(255, 77, 79, 0.3);
-}
-
-.btn-stop:hover {
-  background: linear-gradient(135deg, #ff7875, #ff4d4f);
-  box-shadow: 0 8px 25px rgba(255, 77, 79, 0.4);
-}
 
 /* Ongoing Events 区域样式 */
-.ongoing-logs {
-  margin-top: 35px;
-  padding: 25px;
-  background: transparent;
-  border-radius: 18px;
-  border: 1px solid rgba(102, 126, 234, 0.2);
-  text-align: left;
-}
-
-.ongoing-logs h4 {
-  color: #2c3e50;
-  font-size: 1.1rem;
-  font-weight: 600;
-  margin-bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.ongoing-log-item {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(102, 126, 234, 0.1);
-  border-radius: 12px;
-  padding: 15px 18px;
-  margin-bottom: 12px;
-  transition: all 0.3s ease;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 0.9rem;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-}
-
-.ongoing-log-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.15);
-  border-color: #667eea;
-  background: white;
-}
-
-.ongoing-log-item:last-child {
-  margin-bottom: 0;
-}
 
 /* 配置区域样式 */
-.ongoing-logs > div:first-child {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
-}
-
-.ongoing-logs button {
-  padding: 8px 16px;
-  border: 1px solid rgba(102, 126, 234, 0.3);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.8);
-  color: #667eea;
-  font-size: 0.8rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.ongoing-logs button:hover {
-  background: #667eea;
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
-}
-
-.ongoing-logs input {
-  padding: 6px 10px;
-  border: 1px solid rgba(102, 126, 234, 0.3);
-  border-radius: 6px;
-  font-size: 0.8rem;
-  width: 60px;
-  text-align: center;
-  transition: all 0.3s ease;
-}
-
-.ongoing-logs input:focus {
-  outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
-}
 
 /* 响应式设计优化 */
 @media (max-width: 768px) {
@@ -394,10 +134,6 @@ header h1 {
   
   header h1 {
     font-size: 2.5rem;
-  }
-  
-  .home-content-layout {
-    gap: 20px;
   }
   
   .timer-section, .feature-section {
@@ -417,15 +153,6 @@ header h1 {
     min-width: auto;
     width: 100%;
   }
-  
-  .tab-navigation {
-    flex-direction: column;
-    gap: 2px;
-  }
-  
-  .tab-button {
-    text-align: center;
-  }
 }
 
 @media (max-width: 480px) {
@@ -437,16 +164,7 @@ header h1 {
     font-size: 3rem;
   }
   
-  .daily-stats {
-    font-size: 1rem;
-    padding: 10px 20px;
-  }
-  
   .timer-section, .feature-section {
-    padding: 20px 15px;
-  }
-  
-  .ongoing-logs {
     padding: 20px 15px;
   }
 }
@@ -466,16 +184,6 @@ header h1 {
   
   .time {
     color: #f8f9fa;
-  }
-  
-  .task-input {
-    background: rgba(255, 255, 255, 0.1);
-    color: #f8f9fa;
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-  
-  .task-input::placeholder {
-    color: #ccc;
   }
 }
 
@@ -535,14 +243,6 @@ header h1 {
   animation: fadeIn 0.6s ease-out;
 }
 
-.timer-section {
-  animation-delay: 0.1s;
-}
-
-.feature-section {
-  animation-delay: 0.2s;
-}
-
 .time {
   animation: pulse 2s infinite;
 }
@@ -578,18 +278,6 @@ header h1 {
 }
 
 /* 成功状态指示 */
-.success-indicator {
-  position: fixed;
-  top: 20px;
-  right: 20px;
-  background: linear-gradient(135deg, #52c41a, #389e0d);
-  color: white;
-  padding: 12px 20px;
-  border-radius: 8px;
-  box-shadow: 0 4px 15px rgba(82, 196, 26, 0.3);
-  z-index: 1000;
-  animation: slideInRight 0.3s ease-out;
-}
 
 @keyframes slideInRight {
   from {
@@ -617,93 +305,10 @@ header h1 {
 }
 
 /* 最近的计时记录 */
-.recent-sessions {
-  margin-top: 30px;
-  text-align: left;
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
-}
-
-.recent-sessions h4 {
-  margin: 0 0 15px 0;
-  color: #666;
-  text-align: center;
-}
-
-.session-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px 0;
-  border-bottom: 1px solid #e9ecef;
-}
-
-.session-item:last-child {
-  border-bottom: none;
-}
-
-.session-task {
-  color: #333;
-  font-weight: 500;
-}
-
-.session-duration {
-  color: #666;
-  font-family: 'Courier New', monospace;
-}
 
 /* 功能区域 */
-.feature-section {
-  background: rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(20px);
-  border-radius: 20px;
-  box-shadow: 
-    0 8px 32px rgba(0, 0, 0, 0.1),
-    0 2px 8px rgba(0, 0, 0, 0.05);
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  transition: all 0.3s ease;
-}
-
-.feature-section:hover {
-  transform: translateY(-2px);
-  box-shadow: 
-    0 12px 40px rgba(0, 0, 0, 0.15),
-    0 4px 12px rgba(0, 0, 0, 0.08);
-}
 
 /* 选项卡导航 */
-.tab-navigation {
-  display: flex;
-  background: linear-gradient(135deg, #f8f9fa, #e9ecef);
-  border-bottom: 1px solid rgba(102, 126, 234, 0.1);
-  padding: 8px;
-  gap: 4px;
-}
-
-.tab-button {
-  flex: 1;
-  padding: 16px 12px;
-  border: none;
-  background: transparent;
-  color: #666;
-  cursor: pointer;
-  font-size: 0.95rem;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  border-radius: 12px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.tab-button:hover {
-  background: rgba(102, 126, 234, 0.1);
-  color: #667eea;
-  transform: translateY(-1px);
-}
 
 .tab-button.active {
   background: linear-gradient(135deg, #667eea, #764ba2);
@@ -718,11 +323,6 @@ header h1 {
   box-shadow: 
     0 6px 20px rgba(102, 126, 234, 0.4),
     inset 0 1px 0 rgba(255, 255, 255, 0.2);
-}
-
-.sync-indicator {
-  animation: spin 2s linear infinite;
-  font-size: 0.8em;
 }
 
 @keyframes spin {
@@ -745,51 +345,6 @@ header h1 {
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 100px;
-}
-
-.btn-start {
-  background: #28a745;
-  color: white;
-}
-
-.btn-start:hover {
-  background: #218838;
-  transform: translateY(-1px);
-}
-
-.btn-pause {
-  background: #ffc107;
-  color: #333;
-}
-
-.btn-pause:hover {
-  background: #e0a800;
-}
-
-.btn-resume {
-  background: #17a2b8;
-  color: white;
-}
-
-.btn-resume:hover {
-  background: #138496;
-}
-
-.btn-stop {
-  background: #dc3545;
-  color: white;
-}
-
-.btn-stop:hover {
-  background: #c82333;
-}
-
-.btn-timer {
-  background: #17a2b8;
-  color: white;
-  padding: 8px 12px;
-  min-width: auto;
-  font-size: 0.9rem;
 }
 
 .btn-delete {
@@ -842,80 +397,6 @@ header h1 {
 }
 
 /* 任务管理器样式 */
-.task-manager {
-  padding: 30px;
-}
-
-.task-manager h3 {
-  margin: 0 0 20px 0;
-  color: #333;
-  text-align: center;
-}
-
-.add-task-form {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 25px;
-}
-
-.task-textarea {
-  width: 100%;
-  padding: 10px;
-  border: 2px solid #e9ecef;
-  border-radius: 6px;
-  font-size: 1rem;
-  margin-bottom: 15px;
-  resize: vertical;
-  font-family: inherit;
-}
-
-.task-textarea:focus {
-  outline: none;
-  border-color: #007bff;
-}
-
-.task-priority-select {
-  margin-bottom: 15px;
-}
-
-.task-priority-select label {
-  margin-right: 10px;
-  font-weight: 600;
-}
-
-.task-priority-select select {
-  padding: 8px;
-  border: 2px solid #e9ecef;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.task-section {
-  margin-bottom: 25px;
-}
-
-.task-section h4 {
-  margin: 0 0 15px 0;
-  color: #666;
-  font-size: 1.1rem;
-}
-
-.task-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 15px;
-  margin-bottom: 10px;
-  border: 1px solid #e9ecef;
-  border-radius: 8px;
-  background: white;
-  transition: all 0.2s ease;
-}
-
-.task-item:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
 
 .task-item.completed {
   opacity: 0.7;
@@ -932,10 +413,6 @@ header h1 {
 .task-checkbox {
   margin-top: 5px;
   transform: scale(1.2);
-}
-
-.task-details {
-  flex: 1;
 }
 
 .task-header {
@@ -963,27 +440,6 @@ header h1 {
   font-weight: 600;
 }
 
-.task-description {
-  margin: 5px 0;
-  color: #666;
-  font-size: 0.9rem;
-  line-height: 1.4;
-}
-
-.task-date {
-  color: #999;
-  font-size: 0.8rem;
-}
-
-.task-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-left: 15px;
-  align-self: flex-start;
-  min-width: 40px;
-}
-
 .task-actions .btn-timer,
 .task-actions .btn-delete {
   height: 32px;
@@ -996,13 +452,6 @@ header h1 {
 }
 
 @media (max-width: 768px) {
-  .task-actions {
-    flex-direction: row;
-    justify-content: flex-end;
-    margin-top: 15px;
-    margin-left: 0;
-    gap: 8px;
-  }
 }
 
 .empty-state {
@@ -1029,24 +478,6 @@ header h1 {
   color: #333;
 }
 
-.add-event-form {
-  background: #f8f9fa;
-  padding: 20px;
-  border-radius: 8px;
-  margin-bottom: 25px;
-}
-
-.form-row {
-  margin-bottom: 0px;
-}
-
-.form-row label {
-  display: block;
-  margin-bottom: 5px;
-  font-weight: 600;
-  color: #333;
-}
-
 .checkbox-label {
   display: flex !important;
   align-items: center;
@@ -1068,44 +499,8 @@ header h1 {
   border-color: #007bff;
 }
 
-.time-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 15px;
-}
-
-.time-input-group label {
-  margin-bottom: 5px;
-}
-
 .form-actions {
   margin-top: 20px;
-}
-
-.event-section {
-  margin-bottom: 25px;
-}
-
-.event-section h4 {
-  margin: 0 0 15px 0;
-  color: #666;
-  font-size: 1.1rem;
-}
-
-.event-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 15px;
-  margin-bottom: 10px;
-  border: 1px solid #e9ecef;
-  border-radius: 8px;
-  background: white;
-  transition: all 0.2s ease;
-}
-
-.event-item:hover {
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .event-item.upcoming {
@@ -1114,15 +509,6 @@ header h1 {
 
 .event-item.synced {
   border-left: 3px solid #007bff;
-}
-
-.event-content {
-  flex: 1;
-  min-width: 0; /* 防止内容溢出 */
-}
-
-.event-details {
-  width: 100%;
 }
 
 .event-title-row {
@@ -1140,34 +526,6 @@ header h1 {
   font-weight: 600;
 }
 
-.sync-badge {
-  font-size: 0.8rem;
-  margin-left: 5px;
-}
-
-.sync-status-indicator {
-  font-size: 0.75rem;
-  padding: 2px 6px;
-  border-radius: 10px;
-  margin-left: 8px;
-  white-space: nowrap;
-}
-
-.sync-status-pending {
-  background: #ffeaa7;
-  color: #856404;
-}
-
-.sync-status-synced {
-  background: #d4edda;
-  color: #155724;
-}
-
-.sync-status-error {
-  background: #f8d7da;
-  color: #721c24;
-}
-
 .event-time, .event-date-time {
   color: #666;
   font-size: 0.9rem;
@@ -1175,26 +533,10 @@ header h1 {
   font-weight: 500;
 }
 
-.all-day-badge {
-  background: #28a745;
-  color: white;
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
 .event-location {
   color: #666;
   font-size: 0.9rem;
   margin-bottom: 5px;
-}
-
-.event-description {
-  color: #666;
-  font-size: 0.9rem;
-  line-height: 1.4;
-  margin: 5px 0 0 0;
 }
 
 .event-actions {
@@ -1207,68 +549,6 @@ header h1 {
 }
 
 /* 修复按钮样式 - 统一大小和对齐 */
-.btn-edit {
-  background: #ffc107;
-  color: #333;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-edit:hover {
-  background: #e0a800;
-}
-
-.btn-timer {
-  background: #17a2b8;
-  color: white;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-timer:hover {
-  background: #138496;
-}
-
-.btn-sync-single {
-  background: #17a2b8;
-  color: white;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-sync-single:hover {
-  background: #138496;
-}
 
 .btn-delete {
   background: #dc3545;
@@ -1293,10 +573,6 @@ header h1 {
 
 /* 移动端优化 */
 @media (max-width: 768px) {
-  .event-item {
-    flex-direction: column;
-    align-items: stretch;
-  }
   
   .event-actions {
     flex-direction: row;
@@ -1310,11 +586,6 @@ header h1 {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
-  }
-  
-  .sync-status-indicator {
-    align-self: flex-start;
-    margin-left: 0;
   }
 }
 
@@ -1423,26 +694,6 @@ header h1 {
   gap: 15px;
 }
 
-.sync-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.9rem;
-  color: #666;
-  cursor: pointer;
-}
-
-.manual-sync {
-  margin-bottom: 25px;
-}
-
-.last-sync {
-  text-align: center;
-  color: #666;
-  font-size: 0.9rem;
-  margin: 0;
-}
-
 .sync-info {
   background: #f8f9fa;
   padding: 20px;
@@ -1481,56 +732,6 @@ header h1 {
 }
 
 /* 设置说明样式 */
-.setup-notice {
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 25px;
-}
-
-.setup-notice h4 {
-  margin: 0 0 15px 0;
-  color: #856404;
-}
-
-.notice-content {
-  color: #856404;
-}
-
-.notice-content p {
-  margin-bottom: 10px;
-}
-
-.notice-content ol {
-  margin: 10px 0;
-  padding-left: 20px;
-}
-
-.notice-content code {
-  background: #f8f9fa;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  color: #e83e8c;
-}
-
-.setup-steps {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 6px;
-  margin-top: 10px;
-}
-
-.setup-steps p {
-  margin-bottom: 8px;
-  font-size: 0.9rem;
-}
-
-.setup-steps a {
-  color: #007bff;
-  text-decoration: underline;
-}
 
 details {
   margin-top: 15px;
@@ -1560,11 +761,6 @@ summary:hover {
     flex-direction: column;
   }
   
-  .tab-button {
-    font-size: 0.8rem;
-    padding: 12px 8px;
-  }
-  
   .task-item, .event-item, .provider-item {
     flex-direction: column;
     align-items: stretch;
@@ -1575,48 +771,16 @@ summary:hover {
     justify-content: flex-end;
   }
   
-  .time-row {
-    grid-template-columns: 1fr;
-  }
-  
   .provider-info {
     margin-bottom: 15px;
   }
 
  
 /* 同步设置样式 */
-.sync-settings {
-  background: #e7f3ff;
-  border: 1px solid #bee5eb;
-  border-radius: 8px;
-  padding: 20px;
-  margin-bottom: 25px;
-}
-
-.sync-settings h4 {
-  margin: 0 0 15px 0;
-  color: #0c5460;
-}
-
-.setting-description {
-  margin: 8px 0 0 0;
-  color: #0c5460;
-  font-size: 0.9rem;
-  opacity: 0.8;
-}
 
 /* ...existing code... */
 
 /* 同步相关样式 */
-.sync-badge {
-  font-size: 0.8rem;
-  margin-left: 5px;
-}
-
-.sync-indicator {
-  color: #28a745;
-  font-size: 0.9rem;
-}
 
 .sync-status {
   margin-left: 20px;
@@ -1634,31 +798,6 @@ summary:hover {
   margin-bottom: 8px;
 }
 
-.btn-edit {
-  background: #ffc107;
-  color: #333;
-  padding: 8px 12px;
-  min-width: auto;
-  font-size: 0.9rem;
-}
-
-.btn-edit:hover {
-  background: #e0a800;
-}
-
-.timer-sync-setting {
-  background: #f8f9fa;
-  padding: 15px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  text-align: left;
-}
-
-.timer-sync-setting .sync-toggle {
-  font-size: 0.9rem;
-  color: #666;
-}
-
 /* 批量同步和状态样式 */
 .event-header {
   display: flex;
@@ -1667,112 +806,16 @@ summary:hover {
   margin-bottom: 20px;
 }
 
-.event-header-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.btn-resync-all {
-  background: #17a2b8;
-  color: white;
-  padding: 8px 16px;
-  font-size: 0.9rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-resync-all:hover {
-  background: #138496;
-}
-
-.btn-sync-single {
-  background: #17a2b8;
-  color: white;
-  padding: 8px 12px;
-  min-width: auto;
-  font-size: 0.9rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.btn-sync-single:hover {
-  background: #138496;
-}
-
-.sync-status-banner {
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
-  border-radius: 8px;
-  padding: 15px;
-  margin-bottom: 20px;
-  text-align: center;
-}
-
-.sync-status-banner p {
-  margin: 0;
-  color: #856404;
-}
-
 @media (max-width: 768px) {
   .event-header {
     flex-direction: column;
     gap: 10px;
   }
-  
-  .event-header-actions {
-    flex-direction: column;
-    width: 100%;
-  }
-  
-  .btn-resync-all {
-    width: 100%;
-  }
 }
 
 /* 同步状态指示器样式 */
-.sync-status-indicator {
-  font-size: 0.75rem;
-  padding: 2px 6px;
-  border-radius: 10px;
-  margin-left: 8px;
-  white-space: nowrap;
-}
-
-.sync-status-pending {
-  background: #ffeaa7;
-  color: #856404;
-}
-
-.sync-status-synced {
-  background: #d4edda;
-  color: #155724;
-}
-
-.sync-status-error {
-  background: #f8d7da;
-  color: #721c24;
-}
 
 /* 修复事件项布局和按钮样式 */
-.event-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  padding: 15px;
-  margin-bottom: 10px;
-  border: 1px solid #e9ecef;
-  border-radius: 8px;
-  background: white;
-  transition: all 0.2s ease;
-}
-
-.event-content {
-  flex: 1;
-  min-width: 0;
-}
 
 .event-actions {
   display: flex;
@@ -1784,68 +827,6 @@ summary:hover {
 }
 
 /* 统一按钮样式 */
-.btn-edit {
-  background: #ffc107;
-  color: #333;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-edit:hover {
-  background: #e0a800;
-}
-
-.btn-timer {
-  background: #17a2b8;
-  color: white;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-timer:hover {
-  background: #138496;
-}
-
-.btn-sync-single {
-  background: #17a2b8;
-  color: white;
-  padding: 6px 10px;
-  min-width: 36px;
-  font-size: 0.85rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  text-align: center;
-  line-height: 1.2;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.btn-sync-single:hover {
-  background: #138496;
-}
 
 .btn-delete {
   background: #dc3545;
@@ -1870,10 +851,6 @@ summary:hover {
 
 /* 移动端优化 */
 @media (max-width: 768px) {
-  .event-item {
-    flex-direction: column;
-    align-items: stretch;
-  }
   
   .event-actions {
     flex-direction: row;
@@ -1889,12 +866,6 @@ summary:hover {
   font-size: 0.9rem;
   color: #28a745;
   margin-left: 20px;
-}
-
-.sync-indicator {
-  font-size: 0.8rem;
-  margin-left: 5px;
-  animation: spin 2s linear infinite;
 }
 
 @keyframes spin {
@@ -1950,69 +921,6 @@ summary:hover {
 }
 
 /* Timer Log 样式 */
-.timer-log-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 12px;
-  margin-bottom: 4px;
-  background: #f8f9fa;
-  border-left: 4px solid #007bff;
-  border-radius: 4px;
-  font-family: 'Courier New', monospace;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-}
-
-.timer-log-item:hover {
-  background: #e9ecef;
-  transform: translateX(2px);
-}
-
-.timer-log-content {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex: 1;
-}
-
-.timer-log-time {
-  color: #6c757d;
-  font-weight: 600;
-  min-width: 80px;
-}
-
-.timer-log-task {
-  color: #333;
-  font-weight: 500;
-  flex: 1;
-}
-
-.timer-log-duration {
-  color: #28a745;
-  font-weight: 600;
-  min-width: 80px;
-}
-
-.timer-log-tag {
-  padding: 2px 8px;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  min-width: 60px;
-  text-align: center;
-}
-
-.timer-log-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
-}
-
-.timer-log-item:hover .timer-log-actions {
-  opacity: 1;
-}
 
 .btn-edit-mini,
 .btn-delete-mini {
@@ -2025,186 +933,26 @@ summary:hover {
   transition: all 0.2s ease;
 }
 
-.btn-edit-mini:hover {
-  background: #007bff;
-  transform: scale(1.1);
-}
-
-.btn-delete-mini:hover {
-  background: #dc3545;
-  transform: scale(1.1);
-}
-
 /* Ongoing logs 容器样式 */
-.ongoing-logs {
-  background: transparent;
-  border: 1px solid #e9ecef;
-  border-radius: 6px;
-  padding: 8px;
-  max-height: 400px;
-  overflow-y: auto;
-}
-
-.ongoing-logs:empty::before {
-  content: "暂无计时记录";
-  color: #6c757d;
-  font-style: italic;
-  display: block;
-  text-align: center;
-  padding: 20px;
-}
 
 /* 滚动条样式 */
-.ongoing-logs::-webkit-scrollbar {
-  width: 6px;
-}
-
-.ongoing-logs::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 3px;
-}
-
-.ongoing-logs::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
-}
-
-.ongoing-logs::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
-}
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .timer-log-content {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
   
   .timer-log-time,
   .timer-log-duration {
     min-width: auto;
   }
-  
-  .timer-log-item {
-    font-size: 0.8rem;
-  }
 }
 
 /* 暗色主题支持 */
 @media (prefers-color-scheme: dark) {
-  .timer-log-item {
-    background: #2d3748;
-    border-left-color: #4299e1;
-    color: #e2e8f0;
-  }
-  
-  .timer-log-item:hover {
-    background: #4a5568;
-  }
-  
-  .timer-log-time {
-    color: #a0aec0;
-  }
-  
-  .timer-log-task {
-    color: #e2e8f0;
-  }
-  
-  .timer-log-duration {
-    color: #68d391;
-  }
-  
-  .ongoing-logs {
-    background: transparent;
-    border-color: #4a5568;
-  }
 }
 
 /* 在文件末尾添加以下样式，替换之前的 timer log 样式 */
 
 /* Ongoing Log 样式 - 一行显示 */
-.ongoing-log-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
-  margin-bottom: 4px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 0.85rem;
-  transition: all 0.2s ease;
-  border-left: 3px solid #e9ecef;
-}
-
-.ongoing-log-item:hover {
-  background: #e9ecef;
-  border-left-color: #007bff;
-  transform: translateX(2px);
-}
-
-.ongoing-log-item-detailed {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 10px 16px;
-  margin-bottom: 6px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  border-left: 4px solid #007bff;
-}
-
-.ongoing-log-item-detailed:hover {
-  background: #e9ecef;
-  transform: translateX(2px);
-}
-
-.log-time {
-  color: #6c757d;
-  font-weight: 600;
-  min-width: 70px;
-  font-variant-numeric: tabular-nums;
-}
-
-.log-task {
-  color: #333;
-  font-weight: 500;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.log-duration {
-  color: #28a745;
-  font-weight: 600;
-  min-width: 80px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.log-tag {
-  font-weight: 600;
-  font-size: 0.8rem;
-  min-width: 60px;
-  text-align: center;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.1);
-}
-
-.log-actions {
-  display: flex;
-  gap: 4px;
-  opacity: 0.7;
-  transition: opacity 0.2s ease;
-}
-
-.ongoing-log-item-detailed:hover .log-actions {
-  opacity: 1;
-}
 
 .btn-edit-mini,
 .btn-delete-mini {
@@ -2218,42 +966,7 @@ summary:hover {
   opacity: 0.7;
 }
 
-.btn-edit-mini:hover {
-  background: #007bff;
-  color: white;
-  opacity: 1;
-  transform: scale(1.1);
-}
-
-.btn-delete-mini:hover {
-  background: #dc3545;
-  color: white;
-  opacity: 1;
-  transform: scale(1.1);
-}
-
 /* 左侧计时器区域的 ongoing logs */
-.recent-sessions .ongoing-log-item {
-  margin-bottom: 2px;
-  padding: 6px 10px;
-  font-size: 0.8rem;
-  gap: 8px;
-}
-
-.recent-sessions .log-time {
-  min-width: 60px;
-  font-size: 0.75rem;
-}
-
-.recent-sessions .log-duration {
-  min-width: 70px;
-  font-size: 0.75rem;
-}
-
-.recent-sessions .log-tag {
-  min-width: 50px;
-  font-size: 0.7rem;
-}
 
 /* 响应式设计 */
 @media (max-width: 768px) {
@@ -2270,11 +983,6 @@ summary:hover {
     min-width: auto;
     text-align: left;
   }
-  
-  .log-actions {
-    align-self: flex-end;
-    margin-top: 4px;
-  }
 }
 
 /* 暗色主题支持 */
@@ -2290,86 +998,12 @@ summary:hover {
   .ongoing-log-item-detailed:hover {
     background: #4a5568;
   }
-  
-  .log-time {
-    color: #a0aec0;
-  }
-  
-  .log-task {
-    color: #e2e8f0;
-  }
-  
-  .log-duration {
-    color: #68d391;
-  }
 }
 
 /* 在文件末尾添加以下样式 */
 /* 在文件最底部添加，使用 !important 强制覆盖 */
 
 /* 强制应用 Ongoing Log 样式 */
-.ongoing-log-item {
-  display: flex !important;
-  align-items: center !important;
-  gap: 12px !important;
-  padding: 8px 12px !important;
-  margin-bottom: 4px !important;
-  background: #f8f9fa !important;
-  border-radius: 6px !important;
-  font-family: 'Courier New', monospace !important;
-  font-size: 0.85rem !important;
-  border-left: 3px solid #007bff !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-.ongoing-log-item:hover {
-  background: #e9ecef !important;
-  transform: translateX(2px) !important;
-}
-
-.ongoing-log-item .log-time {
-  color: #6c757d !important;
-  font-weight: 600 !important;
-  min-width: 70px !important;
-  flex-shrink: 0 !important;
-}
-
-.ongoing-log-item .log-task {
-  color: #333 !important;
-  font-weight: 500 !important;
-  flex: 1 !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
-  white-space: nowrap !important;
-}
-
-.ongoing-log-item .log-duration {
-  color: #28a745 !important;
-  font-weight: 600 !important;
-  min-width: 80px !important;
-  text-align: right !important;
-  flex-shrink: 0 !important;
-}
-
-.ongoing-log-item .log-tag {
-  font-weight: 600 !important;
-  font-size: 0.8rem !important;
-  min-width: 60px !important;
-  text-align: center !important;
-  flex-shrink: 0 !important;
-}
-
-.ongoing-log-item .log-actions {
-  display: flex !important;
-  gap: 4px !important;
-  opacity: 0.7 !important;
-  flex-shrink: 0 !important;
-}
-
-.ongoing-log-item:hover .log-actions {
-  opacity: 1 !important;
-}
 
 .ongoing-log-item .btn-edit-mini,
 .ongoing-log-item .btn-delete-mini {
@@ -2382,84 +1016,11 @@ summary:hover {
   opacity: 0.7 !important;
 }
 
-.ongoing-log-item .btn-edit-mini:hover {
-  background: #007bff !important;
-  color: white !important;
-  opacity: 1 !important;
-}
-
-.ongoing-log-item .btn-delete-mini:hover {
-  background: #dc3545 !important;
-  color: white !important;
-  opacity: 1 !important;
-}
-
 /* 确保容器也有正确的样式 */
-.recent-sessions {
-  width: 100% !important;
-}
-
-.recent-sessions .ongoing-log-item {
-  margin-bottom: 6px !important;
-  padding: 8px 12px !important;
-}
 
 }
 
 /* 任务管理器中的编辑按钮样式 */
-.btn-edit-small {
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  color: #6c757d;
-}
-
-.btn-edit-small:hover {
-  background: #17a2b8;
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(23, 162, 184, 0.3);
-}
-
-.btn-timer-small {
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  color: #6c757d;
-}
-
-.btn-timer-small:hover {
-  background: #28a745;
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(40, 167, 69, 0.3);
-}
-
-.btn-delete-small {
-  background: none;
-  border: none;
-  padding: 6px 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s ease;
-  color: #6c757d;
-}
-
-.btn-delete-small:hover {
-  background: #dc3545;
-  color: white;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(220, 53, 69, 0.3);
-}
 
 /* 日历和标签管理按钮样式 */
 .btn-calendar-manage {
@@ -2471,23 +1032,6 @@ summary:hover {
 }
 
 /* 标签选择器样式 */
-.tag-select {
-  position: relative;
-}
-
-.selected-tag-preview {
-  margin-top: 8px;
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border-radius: 6px;
-  border: 1px solid #dee2e6;
-  font-weight: 500;
-}
-
-.tag-select option {
-  padding: 8px 12px;
-  font-weight: 500;
-}
 
 .btn-calendar-manage {
   cursor: pointer;
@@ -2502,24 +1046,6 @@ summary:hover {
   box-shadow: 0 4px 12px rgba(23, 162, 184, 0.3);
 }
 
-.btn-tag-manage {
-  background: #8b5cf6;
-  color: white;
-  border: none;
-  padding: 8px 12px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 14px;
-  transition: all 0.2s ease;
-}
-
-.btn-tag-manage:hover {
-  background: #7c3aed;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
-}
-
 /* =============================
    新布局系统样式 (v1.0)
    ============================= */
@@ -2532,22 +1058,6 @@ body {
 }
 
 /* 首页内容样式 */
-.home-content {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-  background: transparent;
-  overflow: visible; /* 允许阴影溢出显示 */
-  /* 与page-content保持一致的背景 */
-}
-
-.timer-section {
-  background: white;
-  border-radius: 20px;
-  padding: 32px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
 
 .timer-display {
   text-align: center;
@@ -2562,58 +1072,6 @@ body {
   line-height: 1;
 }
 
-.current-task {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 16px;
-  color: #6b7280;
-}
-
-.edit-task-btn {
-  background: #6f42c1;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  padding: 6px 12px;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.edit-task-btn:hover {
-  background: #5a2f91;
-  transform: translateY(-1px);
-}
-
-.task-input-section {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.task-input {
-  flex: 1;
-  padding: 12px 16px;
-  border: 2px solid #e5e7eb;
-  border-radius: 12px;
-  font-size: 16px;
-  transition: all 0.2s ease;
-}
-
-.task-input:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.timer-controls {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-}
-
 .btn {
   padding: 12px 24px;
   border: none;
@@ -2623,26 +1081,6 @@ body {
   cursor: pointer;
   transition: all 0.2s ease;
   min-width: 100px;
-}
-
-.btn-start {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: white;
-}
-
-.btn-pause {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: white;
-}
-
-.btn-resume {
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: white;
-}
-
-.btn-stop {
-  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-  color: white;
 }
 
 .btn-primary {
@@ -2667,12 +1105,6 @@ body {
   margin: 0 0 16px 0;
   color: #374151;
   font-size: 1.2rem;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 16px;
 }
 
 .stat-item {
@@ -2770,12 +1202,6 @@ body {
 .tag-management-hint p:last-child,
 .focus-hint p:last-child {
   margin-bottom: 0;
-}
-
-.tag-list-placeholder {
-  text-align: center;
-  padding: 40px 20px;
-  color: #6b7280;
 }
 
 .focus-dials {
@@ -2878,42 +1304,12 @@ body {
 }
 
 /* ==================== 计划页面 - 新版设计 ==================== */
-.plan-page-layout {
-  position: relative;
-  height: 100%;
-  width: 100%;
-  overflow-y: auto;
-  padding: 20px;
-  box-sizing: border-box;
-}
-
-.plan-items-container {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding-bottom: 80px; /* 为 FloatingButton 留空间 */
-}
 
 /* 空状态 */
-.plan-empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  text-align: center;
-  color: #999;
-}
 
 .plan-empty-state .empty-icon {
   font-size: 64px;
   margin-bottom: 16px;
-}
-
-.plan-empty-state .empty-text {
-  font-size: 20px;
-  font-weight: 600;
-  margin-bottom: 8px;
-  color: #666;
 }
 
 .plan-empty-state .empty-hint {
@@ -2922,33 +1318,8 @@ body {
 }
 
 /* 计划项网格布局 */
-.plan-items-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
-  width: 100%;
-}
 
 /* 计划项卡片 */
-.plan-item-card {
-  background: white;
-  border-radius: 12px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-  border-left: 4px solid #007AFF;
-  min-height: 150px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.plan-item-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-}
 
 .plan-item-card.completed {
   opacity: 0.6;
@@ -2959,27 +1330,6 @@ body {
 }
 
 /* 卡片头部 */
-.plan-item-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.plan-item-emoji {
-  font-size: 24px;
-  line-height: 1;
-}
-
-.plan-item-priority {
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  color: white;
-  margin-left: auto;
-}
 
 .plan-item-priority.low {
   background: #34C759;
@@ -2997,143 +1347,23 @@ body {
   background: #FF3B30;
 }
 
-.plan-item-sync-badge {
-  font-size: 14px;
-  opacity: 0.7;
-}
-
 /* 标题 */
-.plan-item-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0;
-  line-height: 1.4;
-  color: #000;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.plan-bullet {
-  font-size: 16px;
-  line-height: 1.4;
-  flex-shrink: 0;
-}
 
 /* 内容 */
-.plan-item-content {
-  font-size: 14px;
-  color: #666;
-  line-height: 1.6;
-  margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
 
 /* 标签 */
-.plan-item-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: auto;
-}
-
-.plan-item-tag {
-  padding: 4px 10px;
-  background: #F0F0F0;
-  border-radius: 12px;
-  font-size: 12px;
-  color: #666;
-  font-weight: 500;
-}
 
 /* 时间信息 */
-.plan-item-time {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #666;
-  padding: 8px 12px;
-  background: #F8F9FA;
-  border-radius: 8px;
-  margin-top: 4px;
-}
-
-.plan-time-icon {
-  font-size: 14px;
-}
-
-.plan-time-text {
-  font-size: 13px;
-  font-weight: 500;
-}
 
 /* 时长信息 */
-.plan-item-duration {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #999;
-  padding: 6px 10px;
-  background: #FAFAFA;
-  border-radius: 6px;
-}
-
-.plan-duration-icon {
-  font-size: 13px;
-}
 
 /* 删除按钮 */
-.plan-item-delete {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  background: transparent;
-  border: none;
-  font-size: 18px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  padding: 4px;
-  line-height: 1;
-}
-
-.plan-item-card:hover .plan-item-delete {
-  opacity: 0.6;
-}
-
-.plan-item-delete:hover {
-  opacity: 1 !important;
-}
 
 /* 响应式设计 */
 @media (max-width: 768px) {
-  .plan-items-grid {
-    grid-template-columns: 1fr;
-    gap: 16px;
-  }
-
-  .plan-page-layout {
-    padding: 16px;
-  }
 }
 
 /* ==================== 旧版计划页面样式（保留兼容） ==================== */
-.plan-layout {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
-  grid-template-rows: 1fr !important;
-  gap: 16px !important;
-  height: 100% !important;
-  width: 100% !important;
-  align-items: stretch !important;
-  box-sizing: border-box;
-}
 
 .task-section,
 .event-section,
@@ -3151,18 +1381,6 @@ body {
   overflow: hidden;  /* 防止内容溢出影响布局 */
 }
 
-.log-placeholder {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  color: #6b7280;
-  font-size: 16px;
-  gap: 8px;
-}
-
 /* 响应式设计 - 只在很小的屏幕时改为单列布局 */
 /* 手机端 (600px及以下) */
 @media (max-width: 600px) {
@@ -3176,81 +1394,21 @@ body {
     min-height: 150px;
   }
 
-  .plan-layout {
-    grid-template-columns: 1fr !important;  /* 小屏幕单列布局 */
-    gap: 16px;
-  }
-
   .timer-display .time {
     font-size: 2.5rem;
-  }
-  
-  .task-input-section {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .timer-controls {
-    flex-direction: column;
-  }
-  
-  .stats-grid {
-    grid-template-columns: 1fr;
   }
 }
 
 /* 🏷️ 计时器标签显示样式 - 层级标签 */
-.timer-tag-display {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 1.3rem;
-  margin-top: 12px;
-  padding: 8px 16px;
-  background: linear-grada(135deg, #f8f9fa, #e9ecef);
-  border-radius: 12px;
-  border-left: 4px solid currentColor;
-}
 
 .timer-tag-display .tag-emoji {
   font-size: 1.5rem;
   line-height: 1;
 }
 
-.timer-tag-display .tag-path {
-  font-weight: 600;
-  letter-spacing: 0.5px;
-  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
-}
-
 /* 编辑任务按钮样式 */
-.edit-task-btn {
-  background: linear-gradient(135deg, #667eea, #764ba2);
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  margin-left: 12px;
-}
-
-.edit-task-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
 
 /* 🚀 懒加载占位符样式 */
-.loading-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 400px;
-  font-size: 1.5rem;
-  color: #667eea;
-  animation: pulse-loading 1.5s ease-in-out infinite;
-}
 
 @keyframes pulse-loading {
   0%, 100% {

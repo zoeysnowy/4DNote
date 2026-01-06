@@ -21,7 +21,7 @@ import type {
   QueryResult,
   BatchResult,
   StorageStats,
-  EventStats
+  EventTreeIndex
 } from './types';
 
 import { SyncStatus } from './types';
@@ -1481,87 +1481,87 @@ export class StorageManager {
     return itemsToDelete.length;
   }
 
-  // ========== EventStats Methods (Performance Optimization) ==========
+  // ========== EventTreeIndex Methods (Performance Optimization) ==========
   
   /**
    * 创建统计记录
    */
-  async createEventStats(stats: EventStats): Promise<void> {
+  async createEventTreeIndex(stats: EventTreeIndex): Promise<void> {
     await this.ensureInitialized();
-    await this.indexedDBService.createEventStats(stats);
+    await this.indexedDBService.createEventTreeIndex(stats);
   }
 
   /**
    * 批量创建统计记录（用于迁移）
    */
-  async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
+  async bulkCreateEventTreeIndex(statsList: EventTreeIndex[]): Promise<void> {
     await this.ensureInitialized();
-    await this.indexedDBService.bulkCreateEventStats(statsList);
+    await this.indexedDBService.bulkCreateEventTreeIndex(statsList);
   }
 
   /**
    * 更新统计记录
    */
-  async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+  async updateEventTreeIndex(id: string, updates: Partial<EventTreeIndex>): Promise<void> {
     await this.ensureInitialized();
-    await this.indexedDBService.updateEventStats(id, updates);
+    await this.indexedDBService.updateEventTreeIndex(id, updates);
   }
 
   /**
    * 获取单条 EventStats
    */
-  async getEventStats(id: string): Promise<EventStats | null> {
+  async getEventTreeIndex(id: string): Promise<EventTreeIndex | null> {
     await this.ensureInitialized();
-    return await this.indexedDBService.getEventStats(id);
+    return await this.indexedDBService.getEventTreeIndex(id);
   }
 
   /**
    * 获取某事件的直接子节点 stats（基于 parentEventId 索引）
    */
-  async getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]> {
+  async getEventTreeIndexByParentEventId(parentEventId: string): Promise<EventTreeIndex[]> {
     await this.ensureInitialized();
-    return await this.indexedDBService.getEventStatsByParentEventId(parentEventId);
+    return await this.indexedDBService.getEventTreeIndexByParentEventId(parentEventId);
   }
 
   /**
    * 统计直接子节点数量
    */
-  async countEventStatsByParentEventId(parentEventId: string): Promise<number> {
+  async countEventTreeIndexByParentEventId(parentEventId: string): Promise<number> {
     await this.ensureInitialized();
-    return await this.indexedDBService.countEventStatsByParentEventId(parentEventId);
+    return await this.indexedDBService.countEventTreeIndexByParentEventId(parentEventId);
   }
 
   /**
    * 统计子树节点总数（按 rootEventId 聚合）
    */
-  async countEventStatsByRootEventId(rootEventId: string): Promise<number> {
+  async countEventTreeIndexByRootEventId(rootEventId: string): Promise<number> {
     await this.ensureInitialized();
-    return await this.indexedDBService.countEventStatsByRootEventId(rootEventId);
+    return await this.indexedDBService.countEventTreeIndexByRootEventId(rootEventId);
   }
 
   /**
    * 批量 upsert EventStats
    */
-  async bulkPutEventStats(statsList: EventStats[]): Promise<void> {
+  async bulkPutEventTreeIndex(statsList: EventTreeIndex[]): Promise<void> {
     await this.ensureInitialized();
-    await this.indexedDBService.bulkPutEventStats(statsList);
+    await this.indexedDBService.bulkPutEventTreeIndex(statsList);
   }
 
   /**
    * 删除统计记录
    */
-  async deleteEventStats(id: string): Promise<void> {
+  async deleteEventTreeIndex(id: string): Promise<void> {
     await this.ensureInitialized();
-    await this.indexedDBService.deleteEventStats(id);
+    await this.indexedDBService.deleteEventTreeIndex(id);
   }
 
   /**
    * 查询统计记录（按时间范围）
    */
-  async queryEventStats(options: {
+  async queryEventTreeIndex(options: {
     startDate?: string;
     endDate?: string;
-  }): Promise<EventStats[]> {
+  }): Promise<EventTreeIndex[]> {
     await this.ensureInitialized();
     
     // 转换 string → Date（符合 QueryOptions 接口）
@@ -1570,42 +1570,42 @@ export class StorageManager {
       endDate: options.endDate ? new Date(options.endDate) : undefined,
     };
     
-    const result = await this.indexedDBService.queryEventStats(queryOptions);
+    const result = await this.indexedDBService.queryEventTreeIndex(queryOptions);
     return result.items;
   }
 
   /**
    * 一次性数据迁移：将现有 Event 转换为 EventStats
    */
-  async migrateToEventStats(): Promise<void> {
+  async migrateToEventTreeIndex(): Promise<void> {
     await this.ensureInitialized();
     
-    const migrationKey = '4dnote-stats-migrated';
+    const migrationKey = '4dnote-event-tree-index-migrated';
     if (localStorage.getItem(migrationKey) === 'true') {
-      console.log('[StorageManager] EventStats migration already completed');
+      console.log('[StorageManager] EventTreeIndex migration already completed');
       return;
     }
 
-    console.log('[StorageManager] Starting EventStats migration...');
+    console.log('[StorageManager] Starting EventTreeIndex migration...');
     const startTime = performance.now();
 
     // 🚀 直接从 IndexedDB 提取轻量级字段（避免读取完整 Event）
-    const statsList = await this.indexedDBService.extractEventStatsFromEvents();
+    const statsList = await this.indexedDBService.extractEventTreeIndexFromEvents();
     console.log(`[StorageManager] Migrating ${statsList.length} events...`);
 
     if (statsList.length === 0) {
-      console.log('[StorageManager] ⚠️ No events to migrate, skipping EventStats creation');
+      console.log('[StorageManager] ⚠️ No events to migrate, skipping EventTreeIndex creation');
       localStorage.setItem(migrationKey, 'true');
       return;
     }
 
     // 批量插入
     console.log('[StorageManager] 🚀 Starting bulk insert...');
-    await this.bulkCreateEventStats(statsList);
+    await this.bulkCreateEventTreeIndex(statsList);
     console.log('[StorageManager] ✅ Bulk insert completed');
 
     const elapsed = performance.now() - startTime;
-    console.log(`[StorageManager] ✅ EventStats migration completed in ${elapsed.toFixed(0)}ms`);
+    console.log(`[StorageManager] ✅ EventTreeIndex migration completed in ${elapsed.toFixed(0)}ms`);
     
     // 标记迁移完成
     localStorage.setItem(migrationKey, 'true');

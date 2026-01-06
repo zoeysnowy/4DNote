@@ -137,11 +137,6 @@
   color: #495057;
 }
 
-.opacity-value {
-  font-weight: 700;
-  color: #667eea;
-}
-
 .section-actions {
   display: flex;
   gap: 8px;
@@ -162,42 +157,6 @@
   background-color: #667eea;
   color: white;
   border-color: #667eea;
-}
-
-.opacity-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  background: linear-gradient(to right, rgba(102, 126, 234, 0.2) 0%, rgba(102, 126, 234, 1) 100%);
-}
-
-.opacity-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-  transition: transform 0.2s;
-}
-
-.opacity-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.2);
-}
-
-.opacity-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
 .filter-list {
@@ -335,13 +294,6 @@ label.filter-item {
 }
 
 /* 移除旧的 color-indicator 和 filter-name */
-.color-indicator {
-  display: none;
-}
-
-.filter-name {
-  display: none;
-}
 
 /* 🗑️ 日历列表样式已移至 CalendarPicker.css 作为通用样式 */
 
@@ -376,83 +328,11 @@ label.filter-item {
 }
 
 /* 事件类型设置 */
-.category-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.category-item {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  background-color: #f8f9fa;
-  border-radius: 6px;
-}
-
-.category-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  user-select: none;
-}
 
 .category-toggle input[type="checkbox"] {
   width: 16px;
   height: 16px;
   cursor: pointer;
-}
-
-.category-toggle span {
-  font-size: 13px;
-  font-weight: 500;
-  color: #495057;
-}
-
-.height-control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-left: 24px;
-}
-
-.height-label {
-  font-size: 12px;
-  color: #6c757d;
-  font-weight: 500;
-}
-
-.height-slider {
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  background: #dee2e6;
-}
-
-.height-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #667eea;
-  cursor: pointer;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
-}
-
-.height-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #667eea;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
 }
 
 /* 响应式 */

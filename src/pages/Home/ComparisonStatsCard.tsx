@@ -100,7 +100,7 @@ export const ComparisonStatsCard: React.FC = () => {
       return `${year}-${month}-${day}`;
     };
 
-    const eventStats = await EventService.getEventStatsByDateRange(
+    const eventStats = await EventService.getEventTreeIndexByDateRange(
       formatDate(startDate),
       formatDate(endDate)
     );

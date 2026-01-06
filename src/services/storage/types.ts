@@ -48,7 +48,7 @@ export interface Tag {
 /**
  * 浜嬩欢缁熻鏁版嵁锛堣交閲忕骇锛岀敤浜庣粺璁″垎鏋愶級
  */
-export interface EventStats {
+export interface EventTreeIndex {
   id: string;                    // 事件ID
 
   // Tree context (ADR-001): structure truth = parentEventId; derived root index = rootEventId

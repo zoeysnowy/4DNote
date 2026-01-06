@@ -84,7 +84,7 @@ export const INTERNAL_ONLY_FIELDS = new Set([
   'isTimeCalendar',
   'isTask',
   'isDeadline',
-  'isMilestone',
+  // Deadline 在 ToastUI 里叫 milestone；业务侧不使用 isMilestone
   
   // 同步配置
   'calendarIds',

@@ -15,7 +15,6 @@ import { /* ToolbarConfig, */ ToolbarFeatureType, FloatingToolbarProps, Floating
 import { TagPicker } from './pickers/TagPicker';
 import UnifiedDateTimePicker from './pickers/UnifiedDateTimePicker';
 // import { SimpleDatePicker } from './pickers/SimpleDatePicker';
-import { PriorityPicker } from './pickers/PriorityPicker';
 import { ColorPicker } from './pickers/ColorPicker';
 import { TextColorPicker } from './pickers/TextColorPicker'; // 🆕 文本颜色选择器
 import { BackgroundColorPicker } from './pickers/BackgroundColorPicker'; // 🆕 背景颜色选择器
@@ -40,7 +39,6 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
   onTagSelect,
   onEmojiSelect,
   onDateRangeSelect,
-  onPrioritySelect,
   onColorSelect,
   onTaskToggle,
   onRequestClose,
@@ -949,20 +947,6 @@ export const HeadlessFloatingToolbar: React.FC<FloatingToolbarProps & { mode?: F
               />
             )}
             
-            {activePicker === feature && feature === 'priority' && (
-              <PriorityPicker
-                onSelect={(priority) => {
-                  onPrioritySelect?.(priority);
-                  setActivePicker(null);
-                  onRequestClose?.(); // 🆕 选择后自动关闭 FloatingBar
-                }}
-                onClose={() => {
-                  setActivePicker(null);
-                  onRequestClose?.(); // 🆕 关闭 Picker 也关闭 FloatingBar
-                }}
-              />
-            )}
-
             {activePicker === feature && feature === 'color' && (
               <ColorPicker
                 onSelect={(color) => {

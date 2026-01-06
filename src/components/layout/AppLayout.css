@@ -122,11 +122,6 @@
   box-shadow: 0 4px 12px rgba(245, 158, 11, 0.15);
 }
 
-.timer-indicator {
-  font-size: 16px;
-  animation: pulse 2s infinite;
-}
-
 .global-timer.paused .timer-indicator {
   animation: none;
 }
@@ -138,20 +133,6 @@
   50% {
     opacity: 0.7;
   }
-}
-
-.timer-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 80px;
-}
-
-.timer-text {
-  font-size: 12px;
-  color: #059669;
-  font-weight: 500;
-  line-height: 1;
 }
 
 .global-timer.paused .timer-text {
@@ -441,12 +422,6 @@
 }
 
 /* 调试工具样式 */
-.sidebar-divider {
-  height: 1px;
-  background: #e5e7eb;
-  margin: 8px 12px;
-  opacity: 0.5;
-}
 
 .nav-item.debug-item {
   border: 1px dashed #6b7280;
@@ -681,10 +656,6 @@
     padding: 0 16px;
   }
   
-  .logo-text h1 {
-    font-size: 24px;
-  }
-  
   .app-statusbar {
     height: 32px;
     min-height: 32px; /* 🔧 [FIX] 强制最小高度 */
@@ -733,19 +704,6 @@
   
   .app-header {
     height: 60px;
-  }
-  
-  .logo-section {
-    gap: 8px;
-  }
-  
-  .logo-icon {
-    width: 40px;
-    height: 40px;
-  }
-  
-  .logo-text h1 {
-    font-size: 20px;
   }
   
   .app-statusbar {

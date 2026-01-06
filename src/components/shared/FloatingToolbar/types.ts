@@ -46,7 +46,6 @@ export type ToolbarFeatureType =
   | 'tag'           // # 标签选择器
   | 'emoji'         // Emoji 选择器
   | 'dateRange'     // 日期范围选择器
-  | 'priority'      // 优先级设置
   | 'calendar'      // 日历映射
   | 'color'         // 颜色选择
   | 'link'          // 链接
@@ -70,7 +69,6 @@ export interface FloatingToolbarProps {
   onTagSelect?: (tagIds: string[]) => void; // 改为数组（支持多选）
   onEmojiSelect?: (emoji: string) => void;
   onDateRangeSelect?: (startDate: Date, endDate: Date) => void;
-  onPrioritySelect?: (priority: 'low' | 'medium' | 'high' | 'urgent') => void;
   onColorSelect?: (color: string) => void;
   onTaskToggle?: (isTask: boolean) => void; // 🆕 任务开关回调
   onTimeApplied?: (startIso: string, endIso?: string, allDay?: boolean) => void; // 🆕 TimeHub 模式下，时间写入完成后的回调（用于插入可视化/保存非时间字段）

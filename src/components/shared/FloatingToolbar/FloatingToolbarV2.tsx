@@ -13,7 +13,6 @@ import data from '@emoji-mart/data';
 import { ToolbarConfig, ToolbarFeatureType, FloatingToolbarProps } from './types';
 import { TagPicker } from './pickers/TagPicker';
 import UnifiedDateTimePicker from './pickers/UnifiedDateTimePicker';
-import { PriorityPicker } from './pickers/PriorityPicker';
 import { ColorPicker } from './pickers/ColorPicker';
 import './FloatingToolbarV2.css';
 
@@ -24,7 +23,6 @@ export const FloatingToolbarV2: React.FC<FloatingToolbarProps> = ({
   onTagSelect,
   onEmojiSelect,
   onDateRangeSelect,
-  onPrioritySelect,
   onColorSelect,
   availableTags = [],
   currentTags = [],
@@ -118,7 +116,6 @@ export const FloatingToolbarV2: React.FC<FloatingToolbarProps> = ({
       tag: { icon: '#', label: '添加标签' },
       emoji: { icon: '😊', label: '添加表情' },
       dateRange: { icon: '📅', label: '选择日期' },
-      priority: { icon: '⚡', label: '设置优先级' },
       color: { icon: '🎨', label: '选择颜色' },
       link: { icon: '🔗', label: '插入链接' },
     };
@@ -237,16 +234,6 @@ export const FloatingToolbarV2: React.FC<FloatingToolbarProps> = ({
             if (start && end) {
               onDateRangeSelect?.(new Date(start), new Date(end));
             }
-            setActivePicker(null);
-          }}
-          onClose={() => setActivePicker(null)}
-        />
-      )}
-
-      {activePicker === 'priority' && (
-        <PriorityPicker
-          onSelect={(priority) => {
-            onPrioritySelect?.(priority);
             setActivePicker(null);
           }}
           onClose={() => setActivePicker(null)}

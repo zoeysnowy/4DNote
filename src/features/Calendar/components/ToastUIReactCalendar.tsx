@@ -1,6 +1,7 @@
 import type { EventObject, ExternalEventTypes, Options } from '@frontend/lib/tui.calendar/apps/calendar';
 import ToastUICalendar from '@frontend/lib/tui.calendar/apps/calendar';
 import React from 'react';
+import { recordDevUsage } from '@frontend/utils/devUsageLog';
 
 // Helper function to check equality
 function isEqual<T>(a: T, b: T): boolean {
@@ -60,6 +61,37 @@ const reactCalendarEventNames: ReactCalendarEventNames[] = [
   'onClickTimezonesCollapseBtn',
 ];
 
+function pickCalendarEventPayload(eventInfo: any): any {
+  if (!eventInfo || typeof eventInfo !== 'object') return eventInfo;
+
+  const event = (eventInfo as any).event;
+  if (event && typeof event === 'object') {
+    return {
+      event: {
+        id: event.id,
+        calendarId: event.calendarId,
+        category: event.category,
+        isAllday: event.isAllday,
+        title: event.title,
+        start: event.start?.toString?.() ?? event.start,
+        end: event.end?.toString?.() ?? event.end,
+      },
+      changes: (eventInfo as any).changes,
+      start: (eventInfo as any).start?.toString?.() ?? (eventInfo as any).start,
+      end: (eventInfo as any).end?.toString?.() ?? (eventInfo as any).end,
+      isAllday: (eventInfo as any).isAllday,
+      viewName: (eventInfo as any).viewName,
+    };
+  }
+
+  return {
+    start: (eventInfo as any).start?.toString?.() ?? (eventInfo as any).start,
+    end: (eventInfo as any).end?.toString?.() ?? (eventInfo as any).end,
+    isAllday: (eventInfo as any).isAllday,
+    viewName: (eventInfo as any).viewName,
+  };
+}
+
 class ToastUIReactCalendarClass extends React.Component<Props> {
   containerElementRef = React.createRef<HTMLDivElement>();
   calendarInstance: ToastUICalendar | null = null;
@@ -87,6 +119,8 @@ class ToastUIReactCalendarClass extends React.Component<Props> {
         ...calendarOptions, 
         defaultView: view || 'week' 
       });
+
+      recordDevUsage('tui:init', { defaultView: view || 'week' });
 
       // 添加 class 标记，方便调试
       container.classList.add('toastui-calendar');
@@ -140,7 +174,7 @@ class ToastUIReactCalendarClass extends React.Component<Props> {
     }
 
     if (view !== nextView && nextView) {
-
+      recordDevUsage('tui:changeView', { from: view, to: nextView });
       this.calendarInstance?.changeView(nextView);
     }
 
@@ -306,23 +340,27 @@ class ToastUIReactCalendarClass extends React.Component<Props> {
 
   bindEventHandlers = () => {
     const { props } = this;
+
+    if (!this.calendarInstance) return;
     
     // 绑定 clickEvent（已确认这是正确的事件名）
-    if (props.onClickEvent && this.calendarInstance) {
-      this.calendarInstance.on('clickEvent' as any, (eventInfo: any) => {
-        props.onClickEvent?.(eventInfo);
-      });
-    }
+    this.calendarInstance.on('clickEvent' as any, (eventInfo: any) => {
+      recordDevUsage('tui:event:clickEvent', pickCalendarEventPayload(eventInfo));
+      props.onClickEvent?.(eventInfo);
+    });
     
     // 绑定其他事件
     reactCalendarEventNames.forEach((eventName) => {
       const eventHandler = props[eventName];
-      if (eventHandler && this.calendarInstance && eventName !== 'onClickEvent') {
+      if (this.calendarInstance && eventName !== 'onClickEvent') {
         // 转换事件名：onSelectDateTime -> selectDateTime (保持驼峰)
         let calendarEventName = eventName.replace('on', '');
         calendarEventName = calendarEventName.charAt(0).toLowerCase() + calendarEventName.slice(1);
-        
-        this.calendarInstance.on(calendarEventName as any, eventHandler);
+
+        this.calendarInstance.on(calendarEventName as any, (eventInfo: any) => {
+          recordDevUsage(`tui:event:${calendarEventName}`, pickCalendarEventPayload(eventInfo));
+          (eventHandler as any)?.(eventInfo);
+        });
       }
     });
   };

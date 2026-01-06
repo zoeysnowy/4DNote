@@ -9,394 +9,77 @@
    GoldenLayout 容器基础样式
    ======================================== */
 
-.lm_root {
-  background: #FAFAFA;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Microsoft YaHei', 'Segoe UI', sans-serif;
-}
-
-.lm_content {
-  background: white;
-}
-
 /* ========================================
    标签栏头部
    ======================================== */
-
-.lm_header {
-  height: 32px;
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.05), rgba(59, 130, 246, 0.05));
-  border-bottom: 1px solid #E5E7EB;
-  overflow: visible;
-  position: relative;
-}
-
-.lm_header .lm_tabs {
-  display: flex;
-  height: 32px;
-}
 
 /* ========================================
    标签按钮
    ======================================== */
 
-.lm_header .lm_tab {
-  height: 32px;
-  padding: 0 16px;
-  margin-right: 4px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  font-weight: 500;
-  color: #6B7280;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.lm_header .lm_tab:hover {
-  background: rgba(168, 85, 247, 0.08);
-  color: #4B5563;
-}
-
 /* 激活状态的标签 */
-.lm_header .lm_tab.lm_active {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.12), rgba(59, 130, 246, 0.12));
-  color: #1F2937;
-  font-weight: 600;
-}
 
 /* 激活标签的底部指示线 */
-.lm_header .lm_tab.lm_active::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(to right, #a855f7, #3b82f6);
-  border-radius: 1px 1px 0 0;
-}
 
 /* ========================================
    标签标题
    ======================================== */
 
-.lm_header .lm_tab .lm_title {
-  font-size: 14px;
-  font-weight: inherit;
-  color: inherit;
-  display: inline-block;
-  vertical-align: middle;
-  line-height: 32px;
-}
-
 /* ========================================
    关闭按钮
    ======================================== */
 
-.lm_header .lm_tab .lm_close_tab {
-  width: 16px;
-  height: 16px;
-  margin-left: 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease, background 0.2s ease;
-  border-radius: 3px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-}
-
-.lm_header .lm_tab:hover .lm_close_tab {
-  opacity: 0.6;
-}
-
-.lm_header .lm_tab .lm_close_tab:hover {
-  opacity: 1;
-  background: rgba(239, 68, 68, 0.1);
-}
-
 /* 关闭按钮的 X 图标 */
-.lm_header .lm_tab .lm_close_tab::before {
-  content: '✕';
-  font-size: 12px;
-  color: #9CA3AF;
-  line-height: 1;
-  transition: color 0.2s ease;
-}
-
-.lm_header .lm_tab .lm_close_tab:hover::before {
-  color: #EF4444;
-}
 
 /* ========================================
    拖拽状态
    ======================================== */
 
-.lm_header .lm_tab.lm_dragging {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-  color: #1F2937;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  border-radius: 6px 6px 0 0;
-  z-index: 100;
-}
-
 /* ========================================
    下拉箭头（当标签过多时）
    ======================================== */
-
-.lm_header .lm_tabdropdown {
-  width: 24px;
-  height: 32px;
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.08), rgba(59, 130, 246, 0.08));
-  border: none;
-  border-radius: 0;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s ease;
-}
-
-.lm_header .lm_tabdropdown:hover {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-}
-
-.lm_header .lm_tabdropdown::after {
-  content: '▾';
-  font-size: 12px;
-  color: #6B7280;
-}
 
 /* ========================================
    标签下拉菜单
    ======================================== */
 
-.lm_header .lm_tabdropdown_list {
-  background: white;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  padding: 4px 0;
-  min-width: 180px;
-}
-
-.lm_header .lm_tabdropdown_list .lm_tab {
-  height: 32px;
-  padding: 0 12px;
-  background: none;
-  border: none;
-  border-radius: 0;
-  display: flex;
-  align-items: center;
-  font-size: 14px;
-  color: #4B5563;
-  transition: background 0.2s ease;
-}
-
-.lm_header .lm_tabdropdown_list .lm_tab:hover {
-  background: rgba(168, 85, 247, 0.08);
-}
-
-.lm_header .lm_tabdropdown_list .lm_tab.lm_active {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.12), rgba(59, 130, 246, 0.12));
-  color: #1F2937;
-  font-weight: 600;
-}
-
 /* ========================================
    控制按钮区（最大化、弹出、关闭等）
    ======================================== */
 
-.lm_header .lm_controls {
-  display: flex;
-  align-items: center;
-  height: 32px;
-  gap: 4px;
-  padding-right: 8px;
-}
-
-.lm_header .lm_controls > li {
-  width: 24px;
-  height: 24px;
-  background: none;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0.6;
-  transition: opacity 0.2s ease, background 0.2s ease;
-}
-
-.lm_header .lm_controls > li:hover {
-  opacity: 1;
-  background: rgba(168, 85, 247, 0.1);
-}
-
 /* 最大化按钮 */
-.lm_header .lm_maximise::before {
-  content: '⬜';
-  font-size: 14px;
-  color: #6B7280;
-}
 
 /* 弹出按钮 */
-.lm_header .lm_popout::before {
-  content: '⧉';
-  font-size: 14px;
-  color: #6B7280;
-}
 
 /* 关闭按钮 */
-.lm_header .lm_close::before {
-  content: '✕';
-  font-size: 14px;
-  color: #6B7280;
-}
-
-.lm_header .lm_close:hover {
-  background: rgba(239, 68, 68, 0.1);
-}
-
-.lm_header .lm_close:hover::before {
-  color: #EF4444;
-}
 
 /* ========================================
    分隔器（Splitter）
    ======================================== */
 
-.lm_splitter {
-  background: #E5E7EB;
-  transition: background 0.2s ease;
-}
-
-.lm_splitter:hover {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.3), rgba(59, 130, 246, 0.3));
-}
-
-.lm_vertical .lm_splitter {
-  width: 6px;
-}
-
-.lm_horizontal .lm_splitter {
-  height: 6px;
-}
-
 /* ========================================
    拖拽代理（Drag Proxy）
    ======================================== */
-
-.lm_dragProxy {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-  border: 1px solid rgba(168, 85, 247, 0.3);
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.lm_dragProxy .lm_header {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.2), rgba(59, 130, 246, 0.2));
-}
-
-.lm_dragProxy .lm_content {
-  background: rgba(255, 255, 255, 0.9);
-}
 
 /* ========================================
    放置指示器（Drop Indicator）
    ======================================== */
 
-.lm_dropTargetIndicator {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.2), rgba(59, 130, 246, 0.2));
-  border: 2px dashed rgba(168, 85, 247, 0.5);
-  border-radius: 8px;
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.3);
-}
-
 /* ========================================
    最大化占位符
    ======================================== */
-
-.lm_maximised_placeholder {
-  background: #F3F4F6;
-  border: 2px dashed #D1D5DB;
-  border-radius: 8px;
-}
 
 /* ========================================
    选中状态（多选）
    ======================================== */
 
-.lm_header .lm_selected .lm_tab {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-}
-
 /* ========================================
    滚动条美化（适用于标签栏）
    ======================================== */
-
-.lm_header::-webkit-scrollbar {
-  height: 4px;
-}
-
-.lm_header::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.lm_header::-webkit-scrollbar-thumb {
-  background: rgba(168, 85, 247, 0.3);
-  border-radius: 2px;
-}
-
-.lm_header::-webkit-scrollbar-thumb:hover {
-  background: rgba(168, 85, 247, 0.5);
-}
 
 /* ========================================
    暗色模式支持（可选）
    ======================================== */
 
 @media (prefers-color-scheme: dark) {
-  .lm_root {
-    background: #111827;
-  }
-
-  .lm_content {
-    background: #1F2937;
-  }
-
-  .lm_header {
-    background: linear-gradient(to right, rgba(168, 85, 247, 0.08), rgba(59, 130, 246, 0.08));
-    border-bottom-color: #374151;
-  }
-
-  .lm_header .lm_tab {
-    color: #D1D5DB;
-  }
-
-  .lm_header .lm_tab:hover {
-    background: rgba(168, 85, 247, 0.12);
-    color: #E5E7EB;
-  }
-
-  .lm_header .lm_tab.lm_active {
-    background: linear-gradient(to right, rgba(168, 85, 247, 0.2), rgba(59, 130, 246, 0.2));
-    color: #F9FAFB;
-  }
-
-  .lm_splitter {
-    background: #374151;
-  }
-
-  .lm_splitter:hover {
-    background: linear-gradient(to right, rgba(168, 85, 247, 0.4), rgba(59, 130, 246, 0.4));
-  }
 }

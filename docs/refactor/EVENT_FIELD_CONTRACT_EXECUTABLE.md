@@ -46,10 +46,13 @@
   - **展示/排序必须走 resolver**：时间轴位置用派生的 Timeline Anchor（见 5.2 #4），不改写 Core 时间字段。
 4) **数组默认保留 `undefined`**：除非用户显式清空（`intent=user_clear`），否则禁止把 `tags/calendarIds/todoListIds/attendees/...` 默认写成 `[]`。
 5) **Storage 被动持久化**：Storage 层不得覆盖 `updatedAt/startTime/endTime/syncStatus` 等业务字段。
-6) **时间字符串格式分层**：
-  - **除 `deletedAt` 外**，Core/Sync/Meta 的业务时间字符串（例如 `startTime/endTime/createdAt/updatedAt/dueDateTime/checked/unchecked`）必须使用本地格式 `YYYY-MM-DD HH:mm:ss`。
-  - `deletedAt` 作为 tombstone 字段：允许 `null` 或 ISO 8601 字符串（以 `src/types.ts` 注释为准）；只用于“是否删除/审计/回收站”语义，禁止作为时间真相参与排序/范围计算。
-  - Derived/Internal 的诊断/快照字段（例如 `lastNonBlankAt/bestSnapshot` 内部时间戳）允许使用 ISO 8601，但它们必须被视为“不可仲裁/不可同步/不可回写”的内部数据，严禁被业务逻辑当作时间真相使用。
+6) **时间字符串格式全局禁止 ISO**：
+  - **所有持久化时间字段**（Core/Sync/Meta/Derived/Snapshot）必须使用本地格式 `YYYY-MM-DD HH:mm:ss`，**严禁使用 ISO 8601**（禁止 `T` 分隔符、`Z` 后缀）。
+  - **业务字段**：`startTime/endTime/createdAt/updatedAt/dueDateTime/deletedAt/checked/unchecked` 必须使用 `formatTimeForStorage()`。
+  - **诊断/快照字段**：`lastNonBlankAt/bestSnapshot.capturedAt/EventSnapshot.capturedAt` 同样必须使用 `formatTimeForStorage()`，不得例外。
+  - **DO** ：`formatTimeForStorage(new Date())`  `"2024-03-21 14:30:00"`
+  - **DON'T** ：`new Date().toISOString()`  `"2024-03-21T14:30:00.123Z"`（禁止）
+  - **Lintable 检查**：全局搜索 `toISOString()`/`toJSON()`，确保仅出现在前端日志/调试代码，不得用于 Event 字段赋值。
   - Storage 层仍然禁止擅自改写任何业务时间字段的格式。
 
 ---

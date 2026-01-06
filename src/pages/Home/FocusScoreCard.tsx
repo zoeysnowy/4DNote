@@ -123,7 +123,7 @@ export const FocusScoreCard: React.FC<FocusScoreCardProps> = ({ timeRange }) => 
         };
 
         const todayStr = formatDate(today);
-        const eventStats = await EventService.getEventStatsByDateRange(todayStr, todayStr);
+        const eventStats = await EventService.getEventTreeIndexByDateRange(todayStr, todayStr);
 
         const focusData = calculateFocusScore(eventStats);
         setFocusData(focusData);

@@ -1,4 +1,4 @@
-﻿/* ========================================
+/* ========================================
    TimeLog 页面布局样式
    Figma: node-id=486-2661
    Refined: 2025-12-01 (Match Figma Design)
@@ -374,19 +374,6 @@
 }
 
 /* 单独1天空白的短preline样式 */
-.empty-day-preline {
-  display: flex;
-  justify-content: flex-start;
-  padding-left: 0;
-  margin: 12px 0;
-}
-
-.empty-day-line {
-  width: 2px;
-  height: 40px; /* 短preline高度 */
-  background: #E5E7EB;
-  margin-left: 19px; /* 与事件preline对齐 */
-}
 
 /* ========================================
    Event 条目样式 - 独立时间轴布局
@@ -478,25 +465,6 @@
 }
 
 /* Row 1: Time Info & Status */
-.event-time-row {
-  position: relative;
-  margin-bottom: 8px;
-  color: #4B5563;
-  font-size: 14px;
-  font-weight: 500;
-  height: 24px; /* 固定高度以便对齐 */
-}
-
-.time-status-icons {
-  display: flex;
-  gap: 4px;
-  margin-right: 12px;
-}
-
-.status-icon {
-  width: 16px;
-  height: 16px;
-}
 
 .time-range-display {
   display: flex;
@@ -522,16 +490,6 @@
 /* ========================================
    Time Row Actions (Right Aligned)
    ======================================== */
-
-.event-time-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  opacity: 0; /* 默认隐藏，hover时显示 */
-  transition: opacity 0.2s ease-in-out;
-  padding-right: 8px;
-}
 
 .timeline-event-wrapper:hover .event-time-actions {
   opacity: 1;
@@ -599,23 +557,6 @@
   flex-shrink: 0;
 }
 
-.event-right-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 12px;
-}
-
-.expand-btn img {
-  width: 20px;
-  height: 20px;
-  opacity: 0.5;
-  transition: opacity 0.2s;
-}
-
-.expand-btn:hover img {
-  opacity: 1;
-}
-
 /* Row 2: Title & Source */
 .event-title-row {
   position: relative;
@@ -647,33 +588,7 @@
   overflow: hidden;
 }
 
-.event-title-editing {
-  font-size: 16px;
-  font-weight: 600;
-  color: #1F2937;
-  margin-right: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  padding: 0;
-}
-
-.meta-text-editing {
-  font-size: 14px;
-  color: #1F2937;
-  border: none;
-  outline: none;
-  background: transparent;
-  flex: 1;
-  padding: 0;
-  min-height: 20px;
-}
-
 /* contentEditable placeholder support */
-.meta-text-editing:empty:before {
-  content: attr(data-placeholder);
-  color: #9ca3af;
-}
 
 /* 🆕 时间行 - 日历来源信息（右对齐） */
 .time-calendar-source-wrapper {
@@ -741,32 +656,6 @@
 }
 
 /* Log expand/collapse toggle button */
-.log-expand-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: 8px;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.log-expand-toggle:hover {
-  background: #f3f4f6;
-}
-
-.log-expand-toggle img {
-  width: 16px;
-  height: 16px;
-  opacity: 0.5;
-}
-
-.log-expand-toggle:hover img {
-  opacity: 0.8;
-}
 
 /* Tag Colors based on Figma */
 .tag-item:nth-child(3n+1) { color: #8b5cf6; } /* Purple */
@@ -809,10 +698,6 @@
 }
 
 /* 悬浮显示行：默认隐藏整行（无内容时） */
-.event-meta-hover-row {
-  opacity: 0;
-  transition: opacity 0.2s;
-}
 
 /* 悬浮在事件卡片时显示所有悬浮行 */
 .timeline-event-wrapper:hover .event-meta-hover-row {
@@ -868,19 +753,6 @@
    右侧按钮区
    ======================================== */
 
-.timelog-actions {
-  width: 60px;
-  flex-shrink: 0;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 20px 0;
-  gap: 16px;
-}
-
 .action-button {
   width: 40px;
   height: 40px;
@@ -931,78 +803,14 @@
 } */
 
 /* Ghost menu base styles */
-.ghost-menu {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 0;
-  background: transparent;
-  border-radius: 0;
-  z-index: 10;
-  transition: opacity 0.15s ease;
-}
 
 /* 🆕 三行分组布局 */
-.ghost-menu-grouped {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 4px;
-  background: #FAFAFA;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.ghost-menu-row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
 
 /* Time ghost menu positioning */
-.time-ghost-menu {
-  position: relative;
-  left: auto;
-  margin-left: 8px;
-  top: auto;
-  transform: none;
-}
 
 /* Title ghost menu positioning */
-.title-ghost-menu {
-  position: relative;
-  left: auto;
-  margin-left: 8px;
-  top: auto;
-  transform: none;
-  white-space: nowrap;
-}
 
 /* Ghost menu button styles */
-.ghost-menu-btn {
-  width: 24px;
-  height: 24px;
-  border: none;
-  background: transparent;
-  border-radius: 3px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease;
-  padding: 4px;
-}
-
-.ghost-menu-btn:hover {
-  background: rgba(0, 0, 0, 0.08);
-}
-
-.ghost-menu-btn img {
-  width: 16px;
-  height: 16px;
-  opacity: 1;
-  filter: brightness(0) saturate(100%) invert(45%) sepia(8%) saturate(646%) hue-rotate(182deg) brightness(93%) contrast(87%);
-}
 
 .ghost-menu-btn img[alt="favorite"] {
   width: 20px;
@@ -1014,41 +822,12 @@
   filter: none;
 }
 
-.ghost-menu-btn:hover img {
-  filter: brightness(0) saturate(100%) invert(27%) sepia(8%) saturate(1041%) hue-rotate(182deg) brightness(95%) contrast(89%);
-}
-
 .ghost-menu-btn:hover img[alt="timer start"] {
   filter: none;
   opacity: 0.9;
 }
 
-.ghost-menu-btn span {
-  font-size: 16px;
-  opacity: 0.7;
-}
-
-.ghost-menu-btn:hover span {
-  opacity: 1;
-}
-
 /* Title right menu wrapper */
-.title-right-menu-wrapper {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  vertical-align: middle;
-  margin-left: 4px;
-  padding: 2px;
-  border-radius: 8px;
-  margin: -2px 0 -2px 4px;
-  transition: background 0.15s ease;
-  line-height: 1;
-}
-
-.title-right-menu-wrapper:hover {
-  background: #FAFAFA;
-}
 
 /* Title right icon */
 .title-right-icon {
@@ -1058,19 +837,6 @@
 /* ========================================
    时间选择器遮罩层
    ======================================== */
-
-.datetime-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 100000;
-}
 
 /* ========================================
    Right按钮三组分层菜单样式

@@ -4,6 +4,11 @@
   gap: 16px;
 }
 
+.theme-demo {
+  --spec-surface: var(--ui-surface-strong);
+  --spec-border: var(--ui-border);
+}
+
 /* AppLayout main area is overflow:hidden; enable scrolling inside this page */
 .page-container.theme-demo-page-container {
   height: 100%;
@@ -116,4 +121,435 @@
 .theme-demo .theme-family-name {
   font-weight: 600;
   color: var(--ui-text);
+}
+
+.theme-demo .theme-demo-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .theme-demo .theme-demo-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-demo .theme-demo-subcard {
+  background: var(--ui-surface-soft);
+  border: 1px solid var(--ui-border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.theme-demo .theme-demo-subtitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ui-text);
+  margin-bottom: 10px;
+}
+
+.theme-demo .theme-demo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-strong);
+  color: var(--ui-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.theme-demo .theme-demo-pill--danger {
+  border-color: color-mix(in srgb, var(--ui-danger) 50%, var(--ui-border));
+  background: color-mix(in srgb, var(--ui-danger) 12%, var(--ui-surface-strong));
+}
+
+.theme-demo .theme-demo-details-list details {
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--ui-surface-strong);
+}
+
+.theme-demo .theme-demo-details-list details + details {
+  margin-top: 8px;
+}
+
+.theme-demo .theme-demo-details-list summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-weight: 700;
+  color: var(--ui-text);
+  list-style: none;
+}
+
+.theme-demo .theme-demo-details-list summary::-webkit-details-marker {
+  display: none;
+}
+
+.theme-demo .theme-demo-badge {
+  min-width: 28px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.theme-demo .theme-demo-filelist {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--ui-border);
+  max-height: 240px;
+  overflow: auto;
+}
+
+.theme-demo .theme-demo-file {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  padding: 4px 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--ui-border) 40%, transparent);
+}
+
+.theme-demo .theme-demo-file:last-child {
+  border-bottom: none;
+}
+
+.theme-demo .theme-demo-kv {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.theme-demo .theme-demo-kv-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .theme-demo .theme-demo-kv-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-demo .theme-demo-kv-key {
+  font-weight: 800;
+  color: var(--ui-text);
+  font-size: 12px;
+}
+
+.theme-demo .theme-demo-kv-val {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.theme-demo .theme-demo-kv-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-surface-strong);
+}
+
+.theme-demo .theme-demo-kv-item code {
+  font-size: 12px;
+  color: var(--ui-text);
+  white-space: pre-wrap;
+}
+
+.theme-demo .theme-demo-kv-count {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--ui-text-muted);
+}
+
+/* =====================
+   Spec Gallery (Demo-only)
+   ===================== */
+
+.theme-demo .spec-gallery {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.theme-demo .spec-block {
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+  border-radius: 14px;
+  padding: 12px;
+}
+
+.theme-demo .spec-header {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ui-text);
+  margin-bottom: 10px;
+}
+
+.theme-demo .spec-note {
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  margin: -4px 0 10px 0;
+}
+
+.theme-demo .spec-variants {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.theme-demo .spec-variant {
+  border: 1px solid color-mix(in srgb, var(--ui-border) 55%, transparent);
+  background: color-mix(in srgb, var(--ui-surface) 45%, transparent);
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.theme-demo .spec-variant-title {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--ui-text);
+  margin-bottom: 10px;
+}
+
+.theme-demo .spec-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .theme-demo .spec-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.theme-demo .spec-label {
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--ui-text-muted);
+  margin-bottom: 8px;
+}
+
+.theme-demo .spec-canvas {
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--ui-border) 60%, transparent);
+  padding: 14px;
+  min-height: 140px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-demo .spec-canvas--flat {
+  background: transparent;
+}
+
+.theme-demo .spec-modal {
+  width: min(420px, 100%);
+  background: var(--ui-surface-strong);
+  border: 1px solid var(--ui-border);
+  padding: 14px;
+}
+
+.theme-demo .spec-modal.spec-modal--after {
+  padding: 18px;
+}
+
+.theme-demo .spec-modal-title {
+  font-weight: 800;
+  color: var(--ui-text);
+  margin-bottom: 6px;
+}
+
+.theme-demo .spec-modal-body {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+}
+
+.theme-demo .spec-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.theme-demo .spec-card {
+  width: min(420px, 100%);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  padding: 14px;
+}
+
+.theme-demo .spec-card.spec-card--after {
+  padding: 18px;
+}
+
+.theme-demo .spec-card-title {
+  font-weight: 800;
+  color: var(--ui-text);
+  margin-bottom: 6px;
+}
+
+.theme-demo .spec-card-body {
+  font-size: 13px;
+  color: var(--ui-text-muted);
+}
+
+.theme-demo .spec-menu {
+  width: 240px;
+  background: var(--ui-surface-strong);
+  border: 1px solid var(--ui-border);
+  overflow: hidden;
+}
+
+/* After spec: container becomes a soft pad, items become individual frames */
+.theme-demo .spec-menu.spec-menu--after {
+  background: var(--ui-surface-soft);
+  border: none;
+  overflow: visible;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.theme-demo .spec-menu-item {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--ui-text);
+  border-bottom: 1px solid color-mix(in srgb, var(--ui-border) 50%, transparent);
+  cursor: pointer;
+  transition: background 120ms ease;
+}
+
+.theme-demo .spec-menu-item:hover {
+  background: var(--ui-surface-soft);
+}
+
+.theme-demo .spec-menu-item:last-child {
+  border-bottom: none;
+}
+
+.theme-demo .spec-menu-item--hover {
+  background: var(--ui-surface-soft);
+}
+
+/* After spec: each row is its own rounded frame (no separator borders) */
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item {
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 16px;
+  border-bottom: none;
+  border-radius: 12px;
+  background: var(--ui-surface-strong);
+  border: 1px solid transparent;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item--hover {
+  background: var(--brand-graphite-2);
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item:hover {
+  background: var(--brand-graphite-2);
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item:active {
+  background: var(--brand-graphite-3);
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item[aria-selected='true'] {
+  background: color-mix(in srgb, var(--brand-smoked-purple-4) 88%, var(--ui-surface-strong));
+  color: var(--brand-smoked-purple-6);
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item[aria-selected='true']:hover {
+  background: var(--brand-smoked-purple-4);
+}
+
+.theme-demo .spec-menu.spec-menu--after .spec-menu-item[aria-selected='true']:active {
+  background: color-mix(in srgb, var(--brand-smoked-purple-4) 70%, var(--brand-smoked-purple-5));
+}
+
+.theme-demo .spec-floatbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--ui-surface-strong);
+  border: 1px solid var(--ui-border);
+}
+
+.theme-demo .spec-floatbar.spec-floatbar--after {
+  border-color: color-mix(in srgb, var(--ui-border) 35%, transparent);
+  padding: 6px;
+}
+
+.theme-demo .spec-floatbar-btn {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-surface-soft);
+  color: var(--ui-text);
+  font-weight: 800;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.theme-demo .spec-floatbar-btn:hover {
+  background: var(--ui-btn-secondary-bg-hover);
+}
+
+.theme-demo .spec-floatbar-btn:active {
+  background: color-mix(in srgb, var(--ui-btn-secondary-bg-hover) 70%, var(--ui-surface-strong));
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after {
+  background: var(--ui-surface-strong);
+  border-color: transparent;
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after:hover {
+  background: var(--brand-graphite-2);
+  border-color: transparent;
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after:active {
+  background: var(--brand-graphite-3);
+  border-color: transparent;
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--brand-smoked-purple-4) 88%, var(--ui-surface-strong));
+  border-color: transparent;
+  color: var(--brand-smoked-purple-6);
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after[aria-pressed='true']:hover {
+  background: var(--brand-smoked-purple-4);
+}
+
+.theme-demo .spec-floatbar-btn.spec-floatbar-btn--after[aria-pressed='true']:active {
+  background: color-mix(in srgb, var(--brand-smoked-purple-4) 70%, var(--brand-smoked-purple-5));
 }

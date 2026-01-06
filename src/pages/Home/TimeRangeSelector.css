@@ -259,20 +259,8 @@
   background: #e5e5e5;
 }
 
-.btn-confirm {
-  background: #1890ff;
-  color: white;
-}
-
-.btn-confirm:hover {
-  background: #40a9ff;
-}
-
 /* 响应式 */
 @media (max-width: 768px) {
-  .chrome-tabs {
-    padding-left: 4px;
-  }
 
   .chrome-tab {
     padding: 10px 16px;
@@ -290,9 +278,5 @@
 
   .comparison-hint {
     padding: 10px 16px;
-  }
-
-  .hint-text {
-    font-size: 12px;
   }
 }

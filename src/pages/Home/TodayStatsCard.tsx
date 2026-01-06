@@ -63,7 +63,7 @@ export const TodayStatsCard: React.FC<TodayStatsCardProps> = ({ timeRange }) => 
 
         const startDateStr = formatDate(startDate);
         const endDateStr = formatDate(endDate);
-        const eventStats = await EventService.getEventStatsByDateRange(startDateStr, endDateStr);
+        const eventStats = await EventService.getEventTreeIndexByDateRange(startDateStr, endDateStr);
 
         // 计算统计数据
         let totalTime = 0;

@@ -1,0 +1,2277 @@
+# UI CSS 分类与清理报告
+
+> 生成时间：2026-01-06T10:11:58.809Z
+
+## 0. 摘要
+
+- 扫描 CSS：112 个（范围：src/**/*.css，包含 src/lib vendor）
+- 扫描代码：831 个（用于“保守使用判定”）
+- 自动删除规则：0 条（仅 --fix 时会实际删除）
+- 高相似文件对：3 条（按 prop 相似度排序，最多展示 40）
+
+本文件为自动整理结果：
+- 全量列出 `src/**/*.css` 中出现过的 **CSS class 选择器**（包含对 Ant/Tippy 等三方组件的覆盖类）。
+- 给出“疑似死代码”扫描（按 class 粒度）与“高置信可自动删除的死规则”记录。
+- 给出 CSS 文件相似度（高相似可合并候选）。
+
+## 1. 范围与方法
+
+- **CSS 文件范围**：扫描 `src/**/*.css`（包含 src/lib 供应商代码）。
+- **class 抽取方式**：通过 PostCSS 解析，仅从“规则选择器”提取 `.class-name`（避免误把 url/文件扩展名当成 class）。
+- **使用判定（保守）**：只要 class 名在 `src/**/*.{ts,tsx,js,jsx,html}` 任意位置出现过（含注释/字符串/模板字面量），就认为“可能被使用”，避免误删。
+- **自动清理（仅在 --fix）**：只删除“简单且高置信”的规则（单 selector、无逗号、无属性选择器、且 selector 中所有本地 class 都未出现过）。
+
+## 2. 分类清单（按文件）
+
+### App / Entry
+
+- src/index.css  | classes: 0 | referenced （importers: src/index.tsx）
+  - class list: (none)
+
+### App / Shell
+
+- src/App.css  | classes: 112 | referenced （importers: src/App.tsx）
+  - class list: active, add-dial, btn, btn-add-event, btn-add-task, btn-calendar-manage, btn-cancel, btn-connect, btn-delete, btn-delete-mini, btn-disconnect, btn-edit-mini, btn-primary, btn-save, btn-sync, btn-timer, calendar-sync, checkbox-label, completed, connected, connected-count, container, controls, daily-stats-card, dial-item, disconnected, edit-modal, edit-modal-overlay, empty-hint, empty-icon, empty-state, error, event-actions, event-date, event-date-time, event-header, event-input, event-item, event-location, event-manager, event-section, event-select, event-textarea, event-time, event-title, event-title-row, feature-section, figma-tag-manager-v4, focus-dials, focus-hint, focus-setting-section, form-actions, high, inactive, loading, log-duration, log-section, log-tag, log-time, low, medium, ongoing-log-item, ongoing-log-item-detailed, plan-empty-state, plan-item-card, plan-item-priority, plan-item-title, priority-badge, provider-actions, provider-details, provider-icon, provider-info, provider-item, providers-list, real-time-sync-status, section-header, stat-item, stat-label, stat-value, status, stop, success, sync-header, sync-info, sync-message, sync-status, sync-toggle-btn, synced, tab-button, tab-content, tag-emoji, tag-management-hint, tag-management-layout, tag-setting-section, task-actions, task-checkbox, task-content, task-header, task-input, task-item, task-section, task-title, time, timer-display, timer-log-duration, timer-log-time, timer-section, timer-tag-display, title-indicator, upcoming, urgent, user-info
+
+### Components / Common
+
+- src/components/common/AttendeeDisplay.css  | classes: 49 | referenced （importers: src/components/common/AttendeeDisplay.tsx, src/components/common/AttendeeDisplayDebug.tsx）
+  - class list: attendee-display, attendee-icon, attendee-input-container, attendee-search-dropdown, attendee-search-results, attendee-text-display, attendee-text-input, btn-delete, btn-primary, close-btn, contact-info-row, contact-name, contact-name-row, contact-preview-card, contact-preview-simple, contact-source, edit-icon, edit-icon-small, editable-field, expand-btn, field-label, field-line, field-line-readonly, field-row, field-row-inline, field-value, field-value-readonly, full-contact-modal, full-contact-modal-backdrop, modal-body, modal-body-editable, modal-footer, modal-header, modal-header-left, modal-hint, organizer, participant-name, placeholder-text, preview-header, preview-label, preview-name, preview-name-row, preview-row, preview-source, preview-value, search-result-item, selected, separator, source-info
+- src/components/common/ContactPreviewCard.css  | classes: 13 | referenced （importers: src/components/common/ContactPreviewCard.tsx）
+  - class list: contact-preview-card, contact-preview-event-date, contact-preview-event-emoji, contact-preview-event-item, contact-preview-event-title, contact-preview-events, contact-preview-expand-btn, contact-preview-fields, contact-preview-header, contact-preview-name, contact-preview-tippy, contact-preview-view-more, tippy-content
+- src/components/common/EditableField.css  | classes: 12 | referenced （importers: src/components/common/EditableField.tsx）
+  - class list: editable-field, editable-field-actions, editable-field-btn, editable-field-btn-cancel, editable-field-btn-save, editable-field-edit-mode, editable-field-input, editable-field-label, editable-field-placeholder, editable-field-textarea, editable-field-value, editable-field-view-mode
+- src/components/common/FullContactModal.css  | classes: 23 | referenced （importers: src/components/common/FullContactModal.tsx）
+  - class list: default, full-contact-event-content, full-contact-event-date, full-contact-event-emoji, full-contact-event-item, full-contact-event-title, full-contact-events, full-contact-fields, full-contact-modal, full-contact-modal-body, full-contact-modal-btn-cancel, full-contact-modal-btn-save, full-contact-modal-close, full-contact-modal-footer, full-contact-modal-header, full-contact-modal-overlay, full-contact-section, full-contact-sources, google, icloud, outlook, remarkable, source-tag
+- src/components/common/LocationInput.css  | classes: 12 | referenced （importers: src/components/common/LocationInput.tsx）
+  - class list: amap-loading-spinner, amap-location-go-btn, amap-location-input, amap-location-input-container, amap-location-input-wrapper, amap-location-loading, amap-location-suggestion-item, amap-location-suggestions, amap-suggestion-content, amap-suggestion-district, amap-suggestion-icon, amap-suggestion-name
+- src/components/common/Logo.css  | classes: 5 | not-referenced-by-static-import 
+  - class list: logo-border, logo-circle, logo-container, logo-symbol, small
+- src/components/common/PageContainer.css  | classes: 8 | referenced （importers: src/components/common/PageContainer.tsx）
+  - class list: full-width, home-page-container, page-container, page-content, plan-management, tag-management, time-calendar, timelog-page-container
+- src/components/common/QRCodeDisplay.css  | classes: 15 | referenced （importers: src/components/common/QRCodeDisplay.tsx）
+  - class list: qrcode-action, qrcode-actions, qrcode-btn, qrcode-btn-download, qrcode-btn-open, qrcode-btn-remove, qrcode-description, qrcode-display-container, qrcode-display-header, qrcode-display-list, qrcode-image, qrcode-info, qrcode-item, qrcode-title, qrcode-url
+- src/components/common/SyncModeSelector.css  | classes: 15 | referenced （importers: src/components/common/SyncModeSelector.tsx）
+  - class list: check-mark, disabled, dropdown-arrow, help-icon, help-item, help-text, selected, sync-icon, sync-label, sync-mode-button, sync-mode-dropdown, sync-mode-help, sync-mode-option, sync-mode-overlay, sync-mode-selector
+- src/components/common/TagInput.css  | classes: 13 | referenced （importers: src/components/common/TagInput.tsx）
+  - class list: highlighted, tag-dropdown-item, tag-emoji, tag-etc, tag-input-chip, tag-input-container, tag-input-dropdown, tag-input-field, tag-input-invisible, tag-level, tag-name, tag-remove-btn, tag-separator
+
+### Components / FloatingToolbar
+
+- src/components/shared/FloatingToolbar/FloatingToolbarV2.css  | classes: 9 | referenced （importers: src/components/shared/FloatingToolbar/FloatingToolbarV2.tsx）
+  - class list: active, floating-toolbar-v2, picker-cancel-btn, picker-close-btn, picker-confirm-btn, picker-header, picker-title, toolbar-btn, toolbar-main
+- src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css  | classes: 122 | referenced （importers: src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.tsx）
+  - class list: action-buttons, ant-btn, ant-btn-primary, ant-picker, ant-picker-cell-in-range, ant-picker-cell-in-view, ant-picker-cell-inner, ant-picker-cell-range-end, ant-picker-cell-range-start, ant-picker-cell-selected, ant-picker-cell-today, ant-picker-content, ant-picker-dropdown, ant-picker-dropdown-hidden, ant-picker-dropdown-in-tippy, ant-picker-footer, ant-picker-header, ant-picker-header-next-btn, ant-picker-header-prev-btn, ant-picker-header-super-next-btn, ant-picker-header-super-prev-btn, ant-picker-header-view, ant-picker-input, ant-picker-month-btn, ant-picker-next-icon, ant-picker-panel, ant-picker-panel-container, ant-picker-panels, ant-picker-prev-icon, ant-picker-range, ant-picker-range-wrapper, ant-picker-super-next-icon, ant-picker-super-prev-icon, ant-picker-time-panel, ant-picker-time-panel-cell, ant-picker-time-panel-cell-inner, ant-picker-time-panel-cell-selected, ant-picker-time-panel-column, ant-picker-year-btn, ant-slide-up-enter, ant-slide-up-enter-active, ant-slide-up-leave, ant-slide-up-leave-active, ant-style-datetime-picker, arrow, calendar-date, calendar-grid, calendar-header, calendar-weekdays, close-button, color-picker-wrapper, date-range-actions, date-range-content, date-range-header, datetime-item, datetime-range-popup, datetime-range-popup-in-tippy, duration-arrow, duration-text, em-picker, emoji-button, emoji-mart, emoji-mart-emoji, emoji-mart-emoji-native, emoji-mart-scroll, headless-date-range-popup, headless-date-tippy-content, headless-emoji-panel, headless-emoji-tippy-content, headless-floating-toolbar, headless-picker-tippy-content, headless-toolbar-action-btn, headless-toolbar-btn, headless-toolbar-btn-active, headless-toolbar-container, headless-toolbar-main, headless-toolbar-menu, headless-toolbar-popover, headless-toolbar-text-btn, in-range, month-year, nav-button, no-animation-dropdown, other-month, picker-actions, picker-content, picker-footer, picker-header, preview-label, preview-value, pure-datetime-range-picker, quick-btn, quick-select-buttons, range-end, range-start, safe-datetime-picker, safe-datetime-popup, safe-no-scroll-dropdown, selected, simple-datetime-range-picker, simple-time-selector, text-style-buttons, text-style-menu, time-column, time-column-header, time-column-item, time-column-list, time-columns, time-panel, time-panel-header, time-panels, time-selection-area, time-separator, tippy-arrow, tippy-box, tippy-content, tippy-date-range-picker, today, ultimate-datetime-picker, ultimate-datetime-popup, ultimate-no-scroll-dropdown, weekday
+- src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css  | classes: 5 | referenced （importers: src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.tsx）
+  - class list: bg-color-item, bg-color-item-active, bg-color-shortcut, color-picker-panel, no-bg
+- src/components/shared/FloatingToolbar/pickers/ColorPicker.css  | classes: 6 | referenced （importers: src/components/shared/FloatingToolbar/pickers/ColorPicker.tsx）
+  - class list: color-checkmark, color-grid, color-item, color-option, color-picker-panel, keyboard-focused
+- src/components/shared/FloatingToolbar/pickers/PriorityPicker.css  | classes: 7 | referenced （importers: src/components/shared/FloatingToolbar/pickers/PriorityPicker.tsx）
+  - class list: keyboard-focused, priority-badge, priority-icon, priority-item, priority-label, priority-list, priority-picker-panel
+- src/components/shared/FloatingToolbar/pickers/TagPicker.css  | classes: 9 | not-referenced-by-static-import 
+  - class list: create-new, eventlog-mode, floating-toolbar-tag-picker, selected, tag-checkmark, tag-content, tag-item, tag-option, tag-search-input
+- src/components/shared/FloatingToolbar/pickers/TextColorPicker.css  | classes: 11 | referenced （importers: src/components/shared/FloatingToolbar/pickers/TextColorPicker.tsx, src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css）
+  - class list: color-grid, color-item, color-item-active, color-label, color-picker-panel, color-sample, color-shortcut, picker-close-btn, picker-header, picker-header-tip, picker-title
+- src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css  | classes: 93 | referenced （importers: src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.tsx）
+  - class list: action-buttons, active, all-day-button, all-day-checkbox, all-day-icon, ant-btn, ant-btn-primary, ant-picker-cell-in-range, ant-picker-cell-in-view, ant-picker-cell-inner, ant-picker-cell-range-end, ant-picker-cell-range-start, ant-picker-cell-selected, ant-picker-cell-today, ant-picker-dropdown-hidden, ant-picker-dropdown-in-tippy, ant-picker-header, ant-picker-input, ant-picker-panel-container, ant-picker-range, arrow, arrow-icon, calendar-grid, calendar-header, calendar-section, cancel, close-button, confirm, cross-day-badge, date-cell, date-range-actions, date-range-content, dates, disabled, duration-arrow, duration-text, empty, end-time, headless-date-range-popup, headless-emoji-tippy-content, headless-picker-tippy-content, in-range, main-content, month-edit-btn, month-edit-container, month-edit-input, month-edit-separator, month-nav-btn, month-year, no-select, other-month, picker-header, picker-preview-header, preview-arrow-section, preview-end-time, preview-start-time, preview-time-display, quick-btn, quick-buttons-container, quick-buttons-row, quick-select-section, range, range-end, range-start, search-container, search-input, search-input-wrapper, selected, single, start-time, time-cell, time-column, time-column-content, time-columns, time-columns-container, time-display, time-main-title, time-main-titles, time-range-display, time-section, time-selector, time-selector-header, time-selectors, time-separator, time-single-display, tippy-arrow, tippy-box, tippy-content, tippy-date-range-picker, today, unified-datetime-picker, weekday, weekdays
+
+### Components / Other
+
+- src/components/ContentSelectionPanel.css  | classes: 82 | referenced （importers: src/components/ContentSelectionPanel.tsx）
+  - class list: blue, calendar-color-dot, calendar-container, calendar-day, calendar-day-empty, calendar-day-in-range, calendar-day-range-end, calendar-day-range-start, calendar-day-today, calendar-days, calendar-event-count, calendar-header, calendar-item, calendar-list, calendar-name, calendar-nav-btn, calendar-provider-count, calendar-provider-group, calendar-provider-header, calendar-provider-name, calendar-provider-toggle, calendar-provider-toggle-icon, calendar-stats, calendar-title, calendar-tree, calendar-visibility-btn, calendar-visibility-btn-hidden, calendar-visibility-btn-visible, calendar-visibility-container, calendar-week, calendar-weekday, calendar-weekdays, collapsed, collapsible-content, collapsible-section, content-selection-panel, exit-snapshot-btn, expanded, green, panel-pin-btn, panel-toggle-btn, placeholder-text, purple, search-border-rect, search-border-svg, search-container, search-icon, search-input, search-input-enhanced, search-input-wrapper, search-input-wrapper-enhanced, search-section, section-header-simple, section-title, selection-hint, snapshot-icon, snapshot-mode-banner, snapshot-mode-text, task-children, task-expand-btn, task-expand-spacer, task-hours, task-icon, task-icon-favorite, task-icon-hidden, task-icon-visible, task-node, task-node-row, task-pie-chart, task-progress-text, task-stats, task-stats-left, task-stats-top, task-time-bar, task-time-fill, task-title, task-tree, task-visibility-btn, task-visibility-btn-hidden, task-visibility-btn-visible, task-visibility-container, unpinned
+- src/components/demos/AIDemo.css  | classes: 15 | referenced （importers: src/components/demos/AIDemo.tsx）
+  - class list: active, ai-demo-container, ai-demo-header, api-provider-tabs, btn-primary, error-message, extraction-result, file-input-wrapper, file-upload-section, form-group, loading-spinner, offline, online, proxy-status, result-item
+- src/components/demos/AIDemoV2.css  | classes: 85 | referenced （importers: src/components/demos/AIDemoV2.tsx）
+  - class list: active, agenda, ai-demo-v2, attendee-tag, attendees-tags, batch-input-panel, batch-list, batch-textarea, btn-add-batch, btn-close, btn-config, btn-history, btn-process-batch, btn-prompt, btn-save, btn-start-proxy, btn-upload, btn-use-version, checking, completed, confidence-bar, confidence-fill, config-group, config-panel, demo-header, detail-body, detail-content, detail-header, detail-panel, empty-icon, empty-state, error, feedback-input, field-group, field-row, field-value, header-actions, hint, history-panel, improvement-tag, pending, processing, progress-bar, progress-fill, prompt-actions, prompt-editor, prompt-textarea, provider-selector, proxy-status-indicator, rating-section, rating-value, result-meta, result-title, running, selected, star, stars, stat-item, stat-label, stat-value, stats-panel, status-dot, stopped, subtitle, success, tabs, task-card, task-error, task-grid, task-header, task-result-preview, task-status-badge, task-type, upload-method, upload-methods, upload-section, url-input, version-date, version-header, version-improvements, version-info, version-item, version-list, version-number, version-rating
+- src/components/demos/AttendeeFeatureDemo.css  | classes: 9 | not-referenced-by-static-import 
+  - class list: default, event-card, event-time, google, icloud, outlook, remarkable, source-tag, usage-guide
+- src/components/demos/RAGDemo.css  | classes: 40 | referenced （importers: src/components/demos/RAGDemo.tsx）
+  - class list: ai-response, ai-response-section, checking, config-btn, config-form, config-hint, config-panel, data-info, empty-icon, empty-state, error-message, example-btn, example-queries, feature, feature-icon, features, form-group, proxy-status, rag-demo, rag-header, result-content, result-header, result-item, result-rank, result-similarity, result-title, results-list, results-section, running, search-box, search-btn, search-input, search-panel, start-proxy-btn, status-bar, status-dot, stopped, subtitle, timestamp, title
+- src/components/layout/AppLayout.css  | classes: 36 | referenced （importers: src/components/layout/AppLayout.tsx）
+  - class list: active, app-header, app-layout, app-main, app-sidebar, app-statusbar, connected, connection-indicators, debug-item, disconnected, global-timer, global-timer-compact, header-content, header-tools, nav-icon, nav-item, nav-label, notification-btn, outlook-connection, outlook-icon, paused, setting-btn, sidebar-nav, sidebar-panel-toggle, status-content, status-dot, status-text, sync-icon, sync-status, timer-display, timer-indicator, timer-tag, timer-tag-line, timer-text, timer-time-line, user-profile
+- src/components/LogSlate/LogSlate.css  | classes: 13 | referenced （importers: src/components/LogSlate/LogSlate.tsx）
+  - class list: date-mention, event-mention, eventlog-mode, hashtag-menu, log-slate-editable, log-slate-wrapper, mention-menu, slate-date-mention, slate-tag, tag-element, timestamp-divider, timestamp-text, title-mode
+- src/components/LogSlate/MentionMenu.css  | classes: 7 | referenced （importers: src/components/LogSlate/MentionMenu.tsx）
+  - class list: mention-item-color, mention-item-emoji, mention-item-name, mention-menu, mention-menu-empty, mention-menu-item, selected
+- src/components/ModalSlate/ModalSlate.css  | classes: 13 | referenced （importers: src/components/ModalSlate/ModalSlate.tsx）
+  - class list: bullet-level-0, bullet-level-1, bullet-level-2, bullet-level-3, bullet-level-4, bullet-paragraph, bullet-symbol, floating-toolbar, light-slate-editor, slate-editable, slate-paragraph, timestamp-divider, timestamp-text
+- src/components/ModalSlate/TitleSlate.css  | classes: 4 | referenced （importers: src/components/ModalSlate/TitleSlate.tsx）
+  - class list: tag-element, tag-emoji, title-slate-container, title-slate-editable
+- src/components/PlanItemEditor.css  | classes: 15 | not-referenced-by-static-import 
+  - class list: floating-button-container, plan-color-picker, plan-content-input, plan-detail-panel, plan-detail-toggle, plan-editor-footer, plan-editor-main, plan-editor-sidebar, plan-notes-input, plan-picker-container, plan-tag-list, plan-tag-option, plan-tag-selector, plan-title-input, selected
+- src/components/PlanSlate/EventLineElement.css  | classes: 6 | referenced （importers: src/components/PlanSlate/EventLineElement.tsx）
+  - class list: event-line-content, event-line-prefix, event-line-suffix, eventlog-mode, slate-bullet-paragraph, unified-event-line
+- src/components/PlanSlate/MentionPreview.css  | classes: 7 | referenced （importers: src/components/PlanSlate/MentionPreview.tsx）
+  - class list: mention-preview, mention-preview-content, mention-preview-display, mention-preview-hint, mention-preview-icon, mention-preview-raw, mention-preview-text
+- src/components/PlanSlate/PlanSlate.css  | classes: 8 | referenced （importers: src/components/PlanSlate/PlanSlate.tsx）
+  - class list: event-line-content, eventlog-mode, gray-text-placeholder, placeholder-line, slate-bullet-paragraph, unified-editable, unified-event-line, unified-slate-editor
+- src/components/SettingsModal.css  | classes: 13 | referenced （importers: src/components/SettingsModal.tsx）
+  - class list: settings-button, settings-button-primary, settings-checkbox, settings-description, settings-item, settings-loading, settings-modal, settings-modal-close, settings-modal-content, settings-modal-footer, settings-modal-header, settings-modal-overlay, settings-section
+- src/components/TimeHoverCard/TimeHoverCard.css  | classes: 7 | referenced （importers: src/components/TimeHoverCard/TimeHoverCard.tsx）
+  - class list: time-hover-card, time-hover-card__countdown, time-hover-card__countdown--overdue, time-hover-card__date, time-hover-card__edit-btn, time-hover-card__footer, time-hover-card__icon
+
+### Components / Shared
+
+- src/components/shared/GlassIconBar.css  | classes: 5 | referenced （importers: src/components/shared/GlassIconBar.tsx）
+  - class list: glass-btn-wrapper, glass-icon-bar, glass-icon-btn, glass-icon-group, glass-icon-label
+- src/components/shared/HierarchicalTagPicker.css  | classes: 25 | referenced （importers: src/components/shared/HierarchicalTagPicker.tsx）
+  - class list: action-btn, hierarchical-tag-picker, inline, keyboard-focused, no-tags, selected, selected-tags-chips, tag-checkmark, tag-chip, tag-chip-emoji, tag-chip-remove, tag-content, tag-emoji, tag-hash, tag-name, tag-option, tag-picker-actions, tag-picker-arrow, tag-picker-close, tag-picker-dropdown, tag-picker-header, tag-picker-list, tag-picker-placeholder, tag-picker-trigger, tag-search-input
+- src/components/shared/StatusLineContainer.css  | classes: 11 | referenced （importers: src/components/shared/StatusLineContainer.tsx）
+  - class list: deleted, done, missed, new, status-label, status-label-layer, status-line, status-line-container, status-line-content, status-line-layer, updated
+- src/components/shared/SyncNotification.css  | classes: 8 | referenced （importers: src/components/shared/SyncNotification.tsx）
+  - class list: sync-notification, sync-notification-close, sync-notification-header, sync-notification-icon, sync-notification-message, sync-notification-time, sync-notification-title, sync-notifications-container
+- src/components/shared/UnifiedMentionMenu.css  | classes: 13 | referenced （importers: src/components/shared/UnifiedMentionMenu.tsx）
+  - class list: loading-spinner, mention-badge, mention-content, mention-empty, mention-icon, mention-item, mention-loading, mention-section, mention-section-title, mention-subtitle, mention-title, selected, unified-mention-menu
+
+### Features / Calendar
+
+- src/features/Calendar/styles/CalendarGroupManager.css  | classes: 35 | referenced （importers: src/features/Calendar/components/CalendarGroupManager.tsx）
+  - class list: btn, btn-danger-small, btn-primary, btn-primary-small, btn-secondary, btn-secondary-small, calendar-color, calendar-count, calendar-group-content, calendar-group-footer, calendar-group-header, calendar-group-item, calendar-group-modal, calendar-group-overlay, calendar-groups-list, calendar-info, calendar-item, calendar-meta, calendar-name, calendars-list, capability, close-button, color-picker, create-form, error-message, form-actions, group-actions, group-header, group-name, loading, section, section-header, selected, selected-badge, selected-info
+- src/features/Calendar/styles/CalendarPicker.css  | classes: 18 | referenced （importers: src/features/Calendar/components/CalendarPicker.tsx, src/features/Calendar/components/CalendarSettingsPanel.tsx, src/features/Event/components/EventEditModal/SyncTargetPicker.tsx）
+  - class list: calendar-chip, calendar-chip-dot, calendar-content, calendar-dot, calendar-dropdown, calendar-dropdown-close, calendar-dropdown-header, calendar-dropdown-list, calendar-dropdown-title, calendar-item, calendar-name, calendar-picker, calendar-search-inline, disabled, filter-item, filter-list, no-calendars, selected-calendars-with-search
+- src/features/Calendar/styles/CalendarSettingsPanel.css  | classes: 34 | referenced （importers: src/features/Calendar/components/CalendarSettingsPanel.tsx）
+  - class list: action-btn, calendar-content, calendar-dot, calendar-item, calendar-name, calendar-settings-overlay, calendar-settings-panel, category-checkbox, category-settings-compact, category-toggle, close-btn, close-button, compact, compact-category-row, compact-section, compact-slider-row, empty-message, filter-item, filter-list, inline-slider, section-actions, section-title, settings-content, settings-header, settings-section, slider-label, slider-track-fill, slider-track-wrapper, slider-value, tag-content, tag-emoji, tag-hash, tag-name, widget-mode
+- src/features/Calendar/styles/DesktopCalendarWidget.css  | classes: 52 | referenced （importers: src/pages/Calendar/WidgetWindow.tsx）
+  - class list: control-bar, control-button, desktop-calendar-inner, desktop-calendar-widget, drag-bar, resize-handle, resize-handle-bottom, resize-handle-bottomleft, resize-handle-bottomright, resize-handle-left, resize-handle-right, resize-handle-top, resize-handle-topleft, resize-handle-topright, settings-panel, time-calendar-container, toastui-calendar, toastui-calendar-allday, toastui-calendar-allday-panel, toastui-calendar-day-name-container, toastui-calendar-day-name-item, toastui-calendar-day-names, toastui-calendar-day-view, toastui-calendar-event, toastui-calendar-event-allday, toastui-calendar-event-time, toastui-calendar-event-title, toastui-calendar-layout, toastui-calendar-milestone, toastui-calendar-month, toastui-calendar-month-day-event, toastui-calendar-month-daygrid, toastui-calendar-month-daygrid-cell, toastui-calendar-month-dayname, toastui-calendar-month-header, toastui-calendar-month-milestone, toastui-calendar-month-more-button, toastui-calendar-month-view, toastui-calendar-panel, toastui-calendar-panel-grid, toastui-calendar-panel-resizer, toastui-calendar-panel-title, toastui-calendar-task, toastui-calendar-template-monthDayName, toastui-calendar-template-monthGridHeader, toastui-calendar-template-time, toastui-calendar-timegrid-cell, toastui-calendar-timegrid-time, toastui-calendar-week-dayname, toastui-calendar-week-view, toastui-calendar-weekday-event, widget-mode
+
+### Features / Contact
+
+- src/features/Contact/styles/ContactModal.css  | classes: 15 | referenced （importers: src/features/Contact/components/ContactModal/ContactModal.tsx）
+  - class list: btn-delete, btn-primary, close-btn, contact-field, contact-label, contact-modal, contact-modal-backdrop, contact-modal-wrapper, contact-value, contact-value-readonly, modal-body-editable, modal-footer, modal-header, modal-header-left, modal-hint
+
+### Features / Dashboard
+
+- src/features/Dashboard/styles/DailyStatsCard.css  | classes: 24 | referenced （importers: src/features/Dashboard/components/DailyStatsCard.tsx）
+  - class list: daily-stats-card, date-input, date-selector, empty-hint, empty-icon, empty-stats, stats-content, stats-footer, stats-header, tag-stat-bar-background, tag-stat-bar-fill, tag-stat-bar-wrapper, tag-stat-duration, tag-stat-item, tag-stat-label, tag-stat-name, tag-stat-percentage, tag-stat-row, tag-stat-row-child, tag-stat-time, tag-stats-list, total-label, total-time, total-value
+- src/features/Dashboard/styles/UpcomingEventsPanel.css  | classes: 39 | referenced （importers: src/features/Dashboard/components/UpcomingEventsPanel.tsx）
+  - class list: event-attendees, event-attendees-icon, event-attendees-text, event-card, event-card-content, event-checkbox, event-countdown, event-date, event-header, event-indicator-line, event-list, event-location, event-location-icon, event-location-text, event-log-expand-icon, event-log-preview, event-log-text, event-row-1, event-row-2, event-tag, event-time-info, event-time-label, event-title, expanded, expired-divider, expired-divider-line, expired-expand-icon, expired-label, filter-btn, filter-btn-active, filter-buttons, panel-toggle-btn, paragraph-preline, section-header, slate-paragraph, title-indicator, upcoming-events-panel, with-preline, with-timestamp
+
+### Features / Event
+
+- src/features/Event/components/EventEditModal/EventEditModalV2.css  | classes: 63 | referenced （importers: src/features/Event/components/EventEditModal/EventEditModalV2.tsx）
+  - class list: active, arrow-icon, checked, collapse-button, collapse-icon, compact-footer, compact-view, custom-checkbox, demo-header, detail-footer, detail-view, duration-text, emoji-large, emoji-picker-overlay, emoji-picker-wrapper, event-edit-modal-v2, event-edit-modal-v2-overlay, event-log, event-log-editor-wrapper, event-log-header, event-overview, eventmodal-v2-footer-btn, eventmodal-v2-footer-btn-cancel, eventmodal-v2-footer-btn-delete, eventmodal-v2-footer-btn-expand, eventmodal-v2-footer-btn-save, eventmodal-v2-header-icon-btn, eventmodal-v2-header-text-btn, eventmodal-v2-plan-content, eventmodal-v2-plan-icon, eventmodal-v2-plan-row, eventmodal-v2-section-header, eventmodal-v2-section-header-buttons, eventmodal-v2-section-header-title, eventmodal-v2-tag-chip, eventmodal-v2-tag-etc, eventmodal-v2-tag-separator, eventmodal-v2-tags-row, modal-content, progress-section-wrapper, section-identity, show-top-shadow, tag-client, tag-mention, tag-picker-dropdown, tag-picker-placeholder, tag-placeholder, tag-work, tags-area, time-arrow-section, timer-btn, timer-button-start, timer-buttons, timer-check-icon, timer-display, timer-segment, timer-segments-list, tippy-box, tippy-content, title-checkbox-row, title-input, total-duration, view-switch-btn
+- src/features/Event/components/EventEditModal/SyncTargetPicker.css  | classes: 3 | referenced （importers: src/features/Event/components/EventEditModal/SyncTargetPicker.tsx）
+  - class list: sync-debug-info, sync-switch-hint, sync-target-picker-wrapper
+- src/features/Event/components/EventTabManager/EventTabManager.css  | classes: 13 | referenced （importers: src/features/Event/components/EventTabManager/EventTabManager.tsx）
+  - class list: chrome-tab, chrome-tab-active, chrome-tab-inactive, event-tab-manager, tab-close-btn, tab-content, tab-dirty-indicator, tab-emoji, tab-empty-hint, tab-empty-state, tab-header, tab-header-container, tab-title
+- src/features/Event/components/EventTree/EditableEventTree.css  | classes: 18 | referenced （importers: src/features/Event/components/EventTree/EditableEventTree.tsx）
+  - class list: circle-dot, connector-curve, connector-last, editable-event-tree, error, link-button, link-button-container, linked-cards-stack, loading, tippy-box, tippy-content, title-editor, toggle-button, tree-children, tree-node-content, tree-node-item, tree-root, vertical-line
+- src/features/Event/components/EventTree/EventTree.css  | classes: 32 | referenced （importers: src/features/Event/components/EventTree/CustomEventNode.tsx, src/features/Event/components/EventTree/EventTreeCanvas.tsx, src/features/Event/components/EventTree/EventTreeSlate.tsx, src/features/Event/components/EventTree/LinkedCard.tsx）
+  - class list: custom-event-node, event-node-checkbox, event-node-content, event-node-description, event-node-emoji, event-node-handle, event-node-header, event-node-link-badge, event-node-progress, event-node-progress-bar, event-node-progress-fill, event-node-title, event-node-title-area, event-node-type-badge, event-tree-canvas, linked-card, linked-card-arrow, linked-card-content, linked-card-header, linked-card-label, linked-card-progress, linked-card-progress-bar, linked-card-progress-fill, linked-card-title, linked-cards-container, react-flow__controls, react-flow__controls-button, react-flow__edge, react-flow__edge-path, react-flow__minimap, react-flow__node, selected
+- src/features/Event/components/EventTree/EventTreeViewer.css  | classes: 2 | referenced （importers: src/features/Event/components/EventTree/EventTreeViewer.tsx）
+  - class list: event-tree-viewer, tree-content
+
+### Features / Plan
+
+- src/features/Plan/components/PlanManager.css  | classes: 23 | referenced （importers: src/features/Plan/components/PlanManager.tsx）
+  - class list: active, completed, mention-picker-tippy, panel-hidden, plan-delete-btn, plan-detail-content, plan-detail-header, plan-detail-section, plan-item, plan-items, plan-list-header, plan-manager, plan-manager-container, plan-priority-buttons, plan-save-btn, plan-tags-selector, plan-time-radios, section-header, selected, tippy-box, tippy-content, title-indicator, unified-picker-tippy
+
+### Features / Tag
+
+- src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css  | classes: 25 | referenced （importers: src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.tsx）
+  - class list: hierarchical-tag-picker, hierarchical-tag-picker-popup, no-tags, popup-actions, popup-close-btn, popup-header, popup-tag-list, section-title, selected, selected-tags-with-search, tag-chip, tag-chip-emoji, tag-color, tag-content, tag-dropdown, tag-dropdown-actions, tag-dropdown-close, tag-dropdown-header, tag-dropdown-list, tag-dropdown-title, tag-emoji, tag-name, tag-option, tag-search-inline, tag-search-input
+- src/features/Tag/styles/TagManager.css  | classes: 24 | referenced （importers: src/features/Tag/components/TagManager.tsx）
+  - class list: active, avg-checkins, avg-duration, calendar-option, emoji-grid-v4, emoji-option-v4, emoji-picker-container, emoji-picker-header, emoji-picker-overlay, emoji-picker-v4, emoji-symbol, figma-tag-manager-v4, recurring-btn, search-icon, selected, stat-item, stats, tag-content, tag-editor, tag-emoji, tag-item, tag-name, tag-row, tag-stats
+
+### Features / TimeLog
+
+- src/features/TimeLog/components/CompressedDateRange.css  | classes: 8 | referenced （importers: src/features/TimeLog/components/CompressedDateRange.tsx）
+  - class list: compressed-date-cell, compressed-date-range, compressed-dates-grid, compressed-month-group, date-day, date-weekday, is-today, week-separator
+- src/features/TimeLog/components/TimeGap.css  | classes: 18 | referenced （importers: src/features/TimeLog/components/TimeGap.tsx）
+  - class list: active, attachment, btn-icon, btn-text, event, floating-menu-btn, floating-menu-time, hovered, note, small, time-gap, time-gap-add-btn, time-gap-axis, time-gap-axis-trigger, time-gap-content, time-gap-duration, time-gap-floating-menu, tippy-box
+- src/features/TimeLog/pages/TimeLog.css  | classes: 74 | referenced （importers: src/features/TimeLog/pages/TimeLogPage.tsx）
+  - class list: action-button, arrow-icon, duration-text, event-body-row, event-details-col, event-emoji, event-header-row, event-icon-col, event-line-col, event-log-box, event-meta-hover-row, event-meta-icon-bar, event-meta-row, event-row, event-tags-row, event-time-actions, event-time-col, event-title, event-title-row, ghost-menu-btn, has-tabs, keep-hover, log-slate-editable, meta-icon, month-number, month-year, panel-hidden, right-menu-group-btn, right-menu-groups, right-menu-wrapper, right-submenu, right-submenu-icon, right-submenu-item, right-submenu-text, row-icon, single-time, slate-editable, tab-close, tab-title, tag-item, time-action-btn, time-calendar-source, time-calendar-source-wrapper, time-display-wrapper, time-duration-arrow, time-range-display, time-sync-mode-icon, time-text, timeline-compressed-segment, timeline-date-group, timeline-date-header, timeline-date-title, timeline-event-wrapper, timeline-line, timeline-month-header, timeline-month-info, timeline-status-icon, timelog-card-container, timelog-date-display, timelog-date-text, timelog-events-list, timelog-gradient-bar, timelog-header-border, timelog-header-section, timelog-header-with-tabs, timelog-main-card, timelog-page, timelog-slate-editor, timelog-tab, timelog-tab-active, timelog-tab-bar, timelog-tab-content, timelog-title, title-right-icon
+- src/features/TimeLog/pages/TimeLogPage_new.css  | classes: 55 | referenced （importers: src/features/TimeLog/pages/TimeLogPage_new.tsx）
+  - class list: active, attendee-icon, attendee-text, btn-expand, btn-favorite, calendar-day, calendar-week, event-action-btn, event-actions, event-attendees, event-card-content, event-card-new, event-duration-badge, event-emoji, event-location, event-log-content, event-log-timestamp, event-related-tasks, event-source, event-tag, event-tags, event-task-info, event-time-arrow, event-time-icons, event-time-label, event-time-text, event-timeline-line, event-title, link-icon, location-icon, location-text, month-calendar, month-divider, month-number, month-year, related-text, source-label, source-name, source-status, source-sync, tag-green, tag-orange, task-icon, task-meta, timelog-date-display, timelog-date-text, timelog-gradient-bar, timelog-header-border, timelog-header-section, timelog-main-container, timelog-page-new, timelog-title, timestamp-options, timestamp-time, timestamp-toggle
+
+### Features / Timer
+
+- src/features/Timer/components/TimerCard.css  | classes: 10 | referenced （importers: src/features/Timer/components/TimerCard.tsx）
+  - class list: pulse, start-btn, timer-btn, timer-buttons, timer-card, timer-display, timer-emoji, timer-start, timer-tags, timer-title
+
+### Pages / Calendar
+
+- src/pages/Calendar/WidgetSettings.css  | classes: 0 | referenced （importers: src/pages/Calendar/WidgetSettings.tsx）
+  - class list: (none)
+
+### Pages / Event
+
+- src/pages/Event/DetailTab.css  | classes: 106 | referenced （importers: src/pages/Event/DetailTab.tsx）
+  - class list: active, arrow-icon, checked, collapse-button, collapse-icon, compact-footer, compact-view, custom-checkbox, demo-header, detail-footer, detail-view, duration-text, emoji-large, emoji-picker-overlay, emoji-picker-wrapper, event-edit-modal-v2, event-edit-modal-v2-overlay, event-log, event-log-editor-wrapper, event-log-header, event-overview, eventlog-editor, eventmodal-v2-footer-btn, eventmodal-v2-footer-btn-cancel, eventmodal-v2-footer-btn-delete, eventmodal-v2-footer-btn-expand, eventmodal-v2-footer-btn-save, eventmodal-v2-header-icon-btn, eventmodal-v2-header-text-btn, eventmodal-v2-plan-content, eventmodal-v2-plan-icon, eventmodal-v2-plan-row, eventmodal-v2-section-header, eventmodal-v2-section-header-buttons, eventmodal-v2-section-header-title, eventmodal-v2-tag-chip, eventmodal-v2-tag-etc, eventmodal-v2-tag-separator, eventmodal-v2-tags-row, floating, has-toc, info-emoji, info-location-text, info-meta-arrow, info-meta-clickable, info-meta-content, info-meta-icon, info-meta-label, info-meta-row, info-metadata-col, info-metadata-grid, info-metadata-left, info-metadata-right, info-tags-input, info-tags-wrapper, info-title-row, info-title-slate, level-1, level-2, level-3, level-4, logtab-container, logtab-editor-wrapper, logtab-eventlog-section, logtab-info-section, logtab-toc, logtab-toc-actions, logtab-toc-content, logtab-toc-empty, logtab-toc-empty-hint, logtab-toc-empty-icon, logtab-toc-empty-text, logtab-toc-header, logtab-toc-item, logtab-toc-menu, logtab-toc-menu-btn, logtab-toc-menu-divider, logtab-toc-menu-item, logtab-toc-pin-btn, logtab-toc-title, modal-content, pinned, progress-section-wrapper, section-identity, show-top-shadow, tag-client, tag-mention, tag-picker-dropdown, tag-picker-placeholder, tag-placeholder, tag-work, tags-area, time-arrow-section, timer-btn, timer-button-start, timer-buttons, timer-check-icon, timer-display, timer-segment, timer-segments-list, tippy-box, tippy-content, title-checkbox-row, title-input, total-duration, view-switch-btn
+- src/pages/Event/EditorWindow.css  | classes: 5 | referenced （importers: src/pages/Event/EditorWindow.tsx）
+  - class list: error, error-message, event-editor-window, loading, loading-spinner
+
+### Pages / Home
+
+- src/pages/Home/CalendarSidebar.css  | classes: 17 | referenced （importers: src/pages/Home/CalendarSidebar.tsx）
+  - class list: calendar-day, calendar-grid, calendar-sidebar, calendar-sidebar-overlay, clear-btn, close-btn, in-range, month-nav, other-month, quick-select, range-text, selected, selected-range-info, sidebar-header, today, weekday, weekday-header
+- src/pages/Home/CardConfigModal.css  | classes: 23 | referenced （importers: src/pages/Home/CardConfigModal.tsx）
+  - class list: active, btn-cancel, btn-save, card-config-modal, card-config-modal-overlay, card-type-grid, card-type-option, checkbox-label, close-btn, config-section, data-source-tabs, filter-option, filter-options, modal-content, modal-footer, modal-header, section-label, select-input, source-tab, title-input, type-desc, type-icon, type-label
+- src/pages/Home/charts/LineChartView.css  | classes: 12 | referenced （importers: src/pages/Home/charts/LineChartView.tsx）
+  - class list: chart-area, chart-grid, chart-label, chart-line, chart-point, chart-title, chart-tooltip, empty-icon, empty-state, line-chart-container, line-chart-svg, line-chart-view
+- src/pages/Home/charts/PieChartView.css  | classes: 21 | referenced （importers: src/pages/Home/charts/PieChartView.tsx）
+  - class list: chart-footer, chart-title, chart-tooltip, empty-icon, empty-state, item-color, item-content, item-duration, item-footer, item-header, item-name, pie-chart-center, pie-chart-container, pie-chart-view, pie-chart-wrapper, progress-bar, progress-fill, stats-list, stats-list-item, total-count, total-duration
+- src/pages/Home/charts/PixelView.css  | classes: 22 | referenced （importers: src/pages/Home/charts/PixelView.tsx）
+  - class list: chart-title, empty-icon, empty-state, legend-item, legend-label, legend-scale, level-0, level-1, level-2, level-3, level-4, pixel-container, pixel-date, pixel-day, pixel-grid, pixel-legend, pixel-summary, pixel-view, pixel-week, summary-item, summary-label, summary-value
+- src/pages/Home/ComparisonCard.css  | classes: 21 | referenced （importers: src/pages/Home/ComparisonCard.tsx）
+  - class list: arrow-indicator, bar-container, bar-fill, bar-label, bar-row, change-percentage, compare, compare-badge, comparison-arrow, comparison-bars, comparison-card-content, comparison-section, current, down, same, section-badge, section-header, section-label, section-meta, section-value, up
+- src/pages/Home/ComparisonStatsCard.css  | classes: 9 | referenced （importers: src/pages/Home/ComparisonStatsCard.tsx）
+  - class list: change-icon, change-text, comparison-stats-content, stat-change, stat-comparison-item, stat-current, stat-label, stat-previous, stats-comparison
+- src/pages/Home/DashboardCard.css  | classes: 8 | referenced （importers: src/pages/Home/DashboardCard.tsx）
+  - class list: dashboard-card, dashboard-card__actions, dashboard-card__body, dashboard-card__header, dashboard-card__icon, dashboard-card__loading, dashboard-card__title, spinner
+- src/pages/Home/DashboardGridStack.css  | classes: 11 | referenced （importers: src/pages/Home/DashboardGridStack.tsx）
+  - class list: dashboard-gridstack, grid-stack, grid-stack-drag-in-progress, grid-stack-item, grid-stack-item-content, grid-stack-placeholder, placeholder-content, ui-draggable-dragging, ui-resizable-handle, ui-resizable-resizing, ui-resizable-se
+- src/pages/Home/FocusScoreCard.css  | classes: 9 | referenced （importers: src/pages/Home/FocusScoreCard.tsx）
+  - class list: focus-metric-item, focus-metrics, focus-score-center, focus-score-content, focus-score-level, focus-score-ring, focus-score-value, metric-label, metric-value
+- src/pages/Home/HomePage.css  | classes: 5 | referenced （importers: src/pages/Home/HomePage.tsx）
+  - class list: homepage-container, homepage-toolbar, primary, toolbar-actions, toolbar-btn
+- src/pages/Home/StatsControlBar.css  | classes: 10 | referenced （importers: src/pages/Home/StatsControlBar.tsx）
+  - class list: active, apply-btn, button-group, cancel-btn, control-btn, control-group, control-label, custom-date-picker, date-input, stats-control-bar
+- src/pages/Home/StatsPanel.css  | classes: 3 | referenced （importers: src/pages/Home/StatsPanel.tsx）
+  - class list: stats-loading, stats-panel, stats-view-container
+- src/pages/Home/TimeDistributionCard.css  | classes: 15 | referenced （importers: src/pages/Home/TimeDistributionCard.tsx）
+  - class list: active, dimension-switch, distribution-item, distribution-list, empty-state, item-color, item-header, item-info, item-name, item-percentage, item-progress, item-value, progress-bar-fill, switch-btn, time-distribution-content
+- src/pages/Home/TimeRangeSelector.css  | classes: 23 | referenced （importers: src/pages/Home/TimeRangeSelector.tsx）
+  - class list: active, btn-cancel, capsule-container, capsule-tab, capsule-wrapper, chrome-tab, compare-badge, comparison-hint, comparison-toggle, custom-modal, custom-modal-overlay, date-inputs, input-group, modal-actions, nav-arrow, nav-next, nav-prev, no-arrows, tab-icon, time-range-selector, toggle-label, toggle-slider, toggle-switch
+- src/pages/Home/TodayStatsCard.css  | classes: 10 | referenced （importers: src/pages/Home/TodayStatsCard.tsx）
+  - class list: progress-bar, progress-fill, stat-item, stat-label, stat-value, stat-value-large, today-stats-content, today-stats-primary, today-stats-progress, today-stats-secondary
+
+### Pages / ThemeDemo
+
+- src/pages/ThemeDemo/ThemeDemoPage.css  | classes: 61 | referenced （importers: src/pages/ThemeDemo/index.tsx）
+  - class list: danger, page-container, page-content, primary, secondary, spec-block, spec-canvas, spec-canvas--flat, spec-card, spec-card--after, spec-card-body, spec-card-title, spec-columns, spec-floatbar, spec-floatbar--after, spec-floatbar-btn, spec-floatbar-btn--after, spec-gallery, spec-header, spec-label, spec-menu, spec-menu--after, spec-menu-item, spec-menu-item--hover, spec-modal, spec-modal--after, spec-modal-actions, spec-modal-body, spec-modal-title, spec-note, spec-variant, spec-variant-title, spec-variants, theme-demo, theme-demo-badge, theme-demo-btn, theme-demo-card, theme-demo-card--transparent, theme-demo-details-list, theme-demo-file, theme-demo-filelist, theme-demo-grid, theme-demo-kv, theme-demo-kv-count, theme-demo-kv-item, theme-demo-kv-key, theme-demo-kv-row, theme-demo-kv-val, theme-demo-muted, theme-demo-page-container, theme-demo-pill, theme-demo-pill--danger, theme-demo-row, theme-demo-subcard, theme-demo-subtitle, theme-demo-title, theme-family, theme-family-name, theme-palette, theme-palette--5, theme-swatch
+
+### Styles / Global
+
+- src/styles/calendar.css  | classes: 61 | referenced （importers: src/features/Calendar/TimeCalendar.tsx）
+  - class list: active, is-electron, is-today, remarkable-task-checkbox, remarkable-task-content, toastui-calendar, toastui-calendar-add-button, toastui-calendar-allday-panel, toastui-calendar-controls, toastui-calendar-day, toastui-calendar-day-name-container, toastui-calendar-day-name-item, toastui-calendar-day-names, toastui-calendar-day-view, toastui-calendar-day-view-day-names, toastui-calendar-daygrid-cell, toastui-calendar-event, toastui-calendar-event-allday, toastui-calendar-event-time, toastui-calendar-hour-row, toastui-calendar-layout, toastui-calendar-month, toastui-calendar-month-body, toastui-calendar-month-date, toastui-calendar-month-date-number, toastui-calendar-month-daygrid, toastui-calendar-month-dayname, toastui-calendar-month-grid-line, toastui-calendar-month-header, toastui-calendar-month-week, toastui-calendar-month-week-item, toastui-calendar-nav-button, toastui-calendar-navigation, toastui-calendar-other-month, toastui-calendar-panel, toastui-calendar-panel-resizer, toastui-calendar-panel-title, toastui-calendar-task, toastui-calendar-template-monthDayName, toastui-calendar-template-task, toastui-calendar-time, toastui-calendar-time-date, toastui-calendar-time-hour, toastui-calendar-time-label, toastui-calendar-time-scroll, toastui-calendar-title, toastui-calendar-today, toastui-calendar-view-button, toastui-calendar-view-controls, toastui-calendar-week, toastui-calendar-week-header, toastui-calendar-week-view, toastui-calendar-week-view-day-names, toastui-calendar-weekday-event, toastui-calendar-weekday-event-block, toastui-calendar-weekday-event-dot-task, toastui-calendar-weekday-event-title, toastui-calendar-weekend, week-date-label, week-day-label, week-day-name-wrapper
+- src/styles/goldenlayout-theme.css  | classes: 0 | not-referenced-by-static-import 
+  - class list: (none)
+- src/styles/theme.css  | classes: 0 | referenced （importers: src/index.css）
+  - class list: (none)
+
+### Vendor / ToastUI Calendar
+
+- src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css  | classes: 152 | referenced （importers: src/features/Calendar/TimeCalendar.tsx）
+  - class list: toastui-calendar-allday-panel, toastui-calendar-bottom, toastui-calendar-calendar-dot, toastui-calendar-calendar-section, toastui-calendar-collapse-btn-icon, toastui-calendar-column, toastui-calendar-columns, toastui-calendar-content, toastui-calendar-datepicker-container, toastui-calendar-day-name__date, toastui-calendar-day-name__name, toastui-calendar-day-name-container, toastui-calendar-day-name-item, toastui-calendar-day-names, toastui-calendar-day-view, toastui-calendar-day-view-day-names, toastui-calendar-daygrid-cell, toastui-calendar-delete-button, toastui-calendar-detail-container, toastui-calendar-detail-item-indent, toastui-calendar-dot, toastui-calendar-dragging--move-event, toastui-calendar-dragging--resize-horizontal-event, toastui-calendar-dragging--resize-vertical-event, toastui-calendar-dropdown-menu, toastui-calendar-dropdown-menu-item, toastui-calendar-dropdown-section, toastui-calendar-edit-button, toastui-calendar-event-background, toastui-calendar-event-calendar, toastui-calendar-event-state, toastui-calendar-event-time, toastui-calendar-event-time-content, toastui-calendar-event-title, toastui-calendar-events, toastui-calendar-floating-layer, toastui-calendar-form-container, toastui-calendar-grid-cell-date, toastui-calendar-grid-cell-footer, toastui-calendar-grid-cell-more-events, toastui-calendar-grid-selection, toastui-calendar-grid-selection-label, toastui-calendar-gridline-half, toastui-calendar-handle-y, toastui-calendar-hidden-input, toastui-calendar-holiday, toastui-calendar-horizontal, toastui-calendar-ic-arrow-left, toastui-calendar-ic-arrow-right, toastui-calendar-ic-arrow-solid-top, toastui-calendar-ic-checkbox-checked, toastui-calendar-ic-checkbox-normal, toastui-calendar-ic-close, toastui-calendar-ic-date, toastui-calendar-ic-delete, toastui-calendar-ic-dropdown-arrow, toastui-calendar-ic-edit, toastui-calendar-ic-handle-y, toastui-calendar-ic-location, toastui-calendar-ic-location-b, toastui-calendar-ic-milestone, toastui-calendar-ic-private, toastui-calendar-ic-public, toastui-calendar-ic-repeat-b, toastui-calendar-ic-state, toastui-calendar-ic-state-b, toastui-calendar-ic-title, toastui-calendar-ic-user-b, toastui-calendar-icon, toastui-calendar-layout, toastui-calendar-left, toastui-calendar-left-content, toastui-calendar-month, toastui-calendar-month-daygrid, toastui-calendar-month-more-list, toastui-calendar-month-week-item, toastui-calendar-more-title-date, toastui-calendar-more-title-day, toastui-calendar-open, toastui-calendar-panel, toastui-calendar-panel-event, toastui-calendar-panel-event-wrapper, toastui-calendar-panel-grid, toastui-calendar-panel-grid-wrapper, toastui-calendar-panel-resizer, toastui-calendar-panel-resizer-guide, toastui-calendar-panel-title, toastui-calendar-popup-arrow, toastui-calendar-popup-arrow-border, toastui-calendar-popup-arrow-fill, toastui-calendar-popup-button, toastui-calendar-popup-close, toastui-calendar-popup-confirm, toastui-calendar-popup-container, toastui-calendar-popup-date-dash, toastui-calendar-popup-date-picker, toastui-calendar-popup-overlay, toastui-calendar-popup-section, toastui-calendar-popup-section-allday, toastui-calendar-popup-section-item, toastui-calendar-popup-section-location, toastui-calendar-popup-section-private, toastui-calendar-popup-section-title, toastui-calendar-popup-top-line, toastui-calendar-resize-handler-x, toastui-calendar-right, toastui-calendar-section-button, toastui-calendar-section-detail, toastui-calendar-section-header, toastui-calendar-see-more, toastui-calendar-see-more-container, toastui-calendar-see-more-header, toastui-calendar-state-section, toastui-calendar-time, toastui-calendar-timegrid, toastui-calendar-timegrid-current-time, toastui-calendar-timegrid-day-difference, toastui-calendar-timegrid-hour-rows, toastui-calendar-timegrid-now-indicator, toastui-calendar-timegrid-now-indicator-left, toastui-calendar-timegrid-now-indicator-marker, toastui-calendar-timegrid-now-indicator-right, toastui-calendar-timegrid-now-indicator-today, toastui-calendar-timegrid-scroll-area, toastui-calendar-timegrid-time, toastui-calendar-timegrid-time-column, toastui-calendar-timegrid-time-first, toastui-calendar-timegrid-time-hidden, toastui-calendar-timegrid-time-label, toastui-calendar-timegrid-time-last, toastui-calendar-timegrid-time-past, toastui-calendar-timegrid-timezone-collapse-button, toastui-calendar-timegrid-timezone-label, toastui-calendar-timezone-labels-slot, toastui-calendar-top, toastui-calendar-travel-time, toastui-calendar-vertical-line, toastui-calendar-week, toastui-calendar-week-view, toastui-calendar-week-view-day-names, toastui-calendar-weekday, toastui-calendar-weekday-event, toastui-calendar-weekday-event-block, toastui-calendar-weekday-event-dot, toastui-calendar-weekday-event-title, toastui-calendar-weekday-events, toastui-calendar-weekday-exceed-in-week, toastui-calendar-weekday-exceed-right, toastui-calendar-weekday-grid, toastui-calendar-weekday-grid-date, toastui-calendar-weekday-grid-date-decorator, toastui-calendar-weekday-resize-handle
+- src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css  | classes: 152 | not-referenced-by-static-import 
+  - class list: toastui-calendar-allday-panel, toastui-calendar-bottom, toastui-calendar-calendar-dot, toastui-calendar-calendar-section, toastui-calendar-collapse-btn-icon, toastui-calendar-column, toastui-calendar-columns, toastui-calendar-content, toastui-calendar-datepicker-container, toastui-calendar-day-name__date, toastui-calendar-day-name__name, toastui-calendar-day-name-container, toastui-calendar-day-name-item, toastui-calendar-day-names, toastui-calendar-day-view, toastui-calendar-day-view-day-names, toastui-calendar-daygrid-cell, toastui-calendar-delete-button, toastui-calendar-detail-container, toastui-calendar-detail-item-indent, toastui-calendar-dot, toastui-calendar-dragging--move-event, toastui-calendar-dragging--resize-horizontal-event, toastui-calendar-dragging--resize-vertical-event, toastui-calendar-dropdown-menu, toastui-calendar-dropdown-menu-item, toastui-calendar-dropdown-section, toastui-calendar-edit-button, toastui-calendar-event-background, toastui-calendar-event-calendar, toastui-calendar-event-state, toastui-calendar-event-time, toastui-calendar-event-time-content, toastui-calendar-event-title, toastui-calendar-events, toastui-calendar-floating-layer, toastui-calendar-form-container, toastui-calendar-grid-cell-date, toastui-calendar-grid-cell-footer, toastui-calendar-grid-cell-more-events, toastui-calendar-grid-selection, toastui-calendar-grid-selection-label, toastui-calendar-gridline-half, toastui-calendar-handle-y, toastui-calendar-hidden-input, toastui-calendar-holiday, toastui-calendar-horizontal, toastui-calendar-ic-arrow-left, toastui-calendar-ic-arrow-right, toastui-calendar-ic-arrow-solid-top, toastui-calendar-ic-checkbox-checked, toastui-calendar-ic-checkbox-normal, toastui-calendar-ic-close, toastui-calendar-ic-date, toastui-calendar-ic-delete, toastui-calendar-ic-dropdown-arrow, toastui-calendar-ic-edit, toastui-calendar-ic-handle-y, toastui-calendar-ic-location, toastui-calendar-ic-location-b, toastui-calendar-ic-milestone, toastui-calendar-ic-private, toastui-calendar-ic-public, toastui-calendar-ic-repeat-b, toastui-calendar-ic-state, toastui-calendar-ic-state-b, toastui-calendar-ic-title, toastui-calendar-ic-user-b, toastui-calendar-icon, toastui-calendar-layout, toastui-calendar-left, toastui-calendar-left-content, toastui-calendar-month, toastui-calendar-month-daygrid, toastui-calendar-month-more-list, toastui-calendar-month-week-item, toastui-calendar-more-title-date, toastui-calendar-more-title-day, toastui-calendar-open, toastui-calendar-panel, toastui-calendar-panel-event, toastui-calendar-panel-event-wrapper, toastui-calendar-panel-grid, toastui-calendar-panel-grid-wrapper, toastui-calendar-panel-resizer, toastui-calendar-panel-resizer-guide, toastui-calendar-panel-title, toastui-calendar-popup-arrow, toastui-calendar-popup-arrow-border, toastui-calendar-popup-arrow-fill, toastui-calendar-popup-button, toastui-calendar-popup-close, toastui-calendar-popup-confirm, toastui-calendar-popup-container, toastui-calendar-popup-date-dash, toastui-calendar-popup-date-picker, toastui-calendar-popup-overlay, toastui-calendar-popup-section, toastui-calendar-popup-section-allday, toastui-calendar-popup-section-item, toastui-calendar-popup-section-location, toastui-calendar-popup-section-private, toastui-calendar-popup-section-title, toastui-calendar-popup-top-line, toastui-calendar-resize-handler-x, toastui-calendar-right, toastui-calendar-section-button, toastui-calendar-section-detail, toastui-calendar-section-header, toastui-calendar-see-more, toastui-calendar-see-more-container, toastui-calendar-see-more-header, toastui-calendar-state-section, toastui-calendar-time, toastui-calendar-timegrid, toastui-calendar-timegrid-current-time, toastui-calendar-timegrid-day-difference, toastui-calendar-timegrid-hour-rows, toastui-calendar-timegrid-now-indicator, toastui-calendar-timegrid-now-indicator-left, toastui-calendar-timegrid-now-indicator-marker, toastui-calendar-timegrid-now-indicator-right, toastui-calendar-timegrid-now-indicator-today, toastui-calendar-timegrid-scroll-area, toastui-calendar-timegrid-time, toastui-calendar-timegrid-time-column, toastui-calendar-timegrid-time-first, toastui-calendar-timegrid-time-hidden, toastui-calendar-timegrid-time-label, toastui-calendar-timegrid-time-last, toastui-calendar-timegrid-time-past, toastui-calendar-timegrid-timezone-collapse-button, toastui-calendar-timegrid-timezone-label, toastui-calendar-timezone-labels-slot, toastui-calendar-top, toastui-calendar-travel-time, toastui-calendar-vertical-line, toastui-calendar-week, toastui-calendar-week-view, toastui-calendar-week-view-day-names, toastui-calendar-weekday, toastui-calendar-weekday-event, toastui-calendar-weekday-event-block, toastui-calendar-weekday-event-dot, toastui-calendar-weekday-event-title, toastui-calendar-weekday-events, toastui-calendar-weekday-exceed-in-week, toastui-calendar-weekday-exceed-right, toastui-calendar-weekday-grid, toastui-calendar-weekday-grid-date, toastui-calendar-weekday-grid-date-decorator, toastui-calendar-weekday-resize-handle
+- src/lib/tui.calendar/apps/calendar/examples/styles/app.css  | classes: 24 | not-referenced-by-static-import 
+  - class list: app-column, app-container, app-footer, button, checkbox, checkbox-1, checkbox-2, checkbox-3, checkbox-4, checkbox-5, checkbox-all, checkbox-calendar, content, dropdown, header, nav-checkbox, navbar, navbar--range, next, prev, sidebar, sidebar-item, toastui-calendar-icon, toastui-calendar-template-time
+- src/lib/tui.calendar/apps/calendar/examples/styles/icons.css  | classes: 16 | not-referenced-by-static-import 
+  - class list: calendar-font-icon, calendar-icon, ic_view_day, ic_view_month, ic_view_week, ic-arrow-line-left, ic-arrow-line-right, ic-location-b, ic-lock-b, ic-milestone-b, ic-readonly-b, ic-repeat-b, ic-state-b, ic-travel-time, ic-user-b, img-bi
+- src/lib/tui.calendar/apps/calendar/examples/styles/reset.css  | classes: 0 | not-referenced-by-static-import 
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/common.css  | classes: 1 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: holiday
+- src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css  | classes: 14 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/daygrid/index.css）
+  - class list: day-names, daygrid-cell, grid-cell-date, grid-cell-footer, grid-cell-more-events, grid-selection, layout, month, month-daygrid, month-week-item, weekday, weekday-event, weekday-events, weekday-grid
+- src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css  | classes: 9 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/daygrid/index.css）
+  - class list: day-name__date, day-name__name, day-name-container, day-name-item, day-names, day-view-day-names, month, week, week-view-day-names
+- src/lib/tui.calendar/apps/calendar/src/css/daygrid/index.css  | classes: 0 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/events/background.css  | classes: 1 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/events/index.css）
+  - class list: event-background
+- src/lib/tui.calendar/apps/calendar/src/css/events/grid.css  | classes: 7 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/events/index.css）
+  - class list: grid-cell-date, handle-y, weekday-event-dot, weekday-event-title, weekday-grid-date, weekday-grid-date-decorator, weekday-resize-handle
+- src/lib/tui.calendar/apps/calendar/src/css/events/index.css  | classes: 0 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/events/time.css  | classes: 4 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/events/index.css）
+  - class list: event-time, event-time-content, resize-handler-x, travel-time
+- src/lib/tui.calendar/apps/calendar/src/css/icons.css  | classes: 23 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: ic-arrow-left, ic-arrow-right, ic-arrow-solid-top, ic-checkbox-checked, ic-checkbox-normal, ic-close, ic-date, ic-delete, ic-dropdown-arrow, ic-edit, ic-handle-y, ic-location, ic-location-b, ic-milestone, ic-private, ic-public, ic-repeat-b, ic-state, ic-state-b, ic-title, ic-user-b, icon, open
+- src/lib/tui.calendar/apps/calendar/src/css/index.css  | classes: 0 | not-referenced-by-static-import 
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/layout.css  | classes: 8 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: dragging--move-event, dragging--resize-horizontal-event, dragging--resize-vertical-event, horizontal, layout, panel, panel-resizer, panel-resizer-guide
+- src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css  | classes: 17 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/panel/index.css）
+  - class list: allday-panel, collapse-btn-icon, day-view, grid-selection, left-content, panel, panel-event, panel-event-wrapper, panel-grid, panel-grid-wrapper, panel-title, time, week-view, weekday-event, weekday-event-block, weekday-exceed-in-week, weekday-exceed-right
+- src/lib/tui.calendar/apps/calendar/src/css/panel/index.css  | classes: 0 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/popup/common.css  | classes: 12 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/popup/index.css）
+  - class list: dropdown-menu, dropdown-menu-item, floating-layer, open, popup-arrow-border, popup-arrow-fill, popup-button, popup-close, popup-confirm, popup-container, popup-overlay, popup-section
+- src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css  | classes: 18 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/popup/index.css）
+  - class list: calendar-dot, content, delete-button, detail-container, detail-item-indent, edit-button, event-title, icon, left, popup-arrow, popup-arrow-border, popup-arrow-fill, popup-top-line, right, section-button, section-detail, section-header, vertical-line
+- src/lib/tui.calendar/apps/calendar/src/css/popup/form.css  | classes: 26 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/popup/index.css）
+  - class list: bottom, calendar-section, content, datepicker-container, dot, dropdown-menu-item, dropdown-section, event-calendar, event-state, form-container, grid-selection, hidden-input, ic-checkbox-normal, popup-arrow, popup-arrow-border, popup-arrow-fill, popup-button, popup-date-dash, popup-date-picker, popup-section-allday, popup-section-item, popup-section-location, popup-section-private, popup-section-title, state-section, top
+- src/lib/tui.calendar/apps/calendar/src/css/popup/index.css  | classes: 0 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css  | classes: 6 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/popup/index.css）
+  - class list: month-more-list, more-title-date, more-title-day, see-more, see-more-container, see-more-header
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css  | classes: 5 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/timegrid/index.css）
+  - class list: column, events, grid-selection, grid-selection-label, gridline-half
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/index.css  | classes: 0 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/index.css）
+  - class list: (none)
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css  | classes: 14 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/timegrid/index.css）
+  - class list: icon, timegrid-current-time, timegrid-day-difference, timegrid-hour-rows, timegrid-time, timegrid-time-column, timegrid-time-first, timegrid-time-hidden, timegrid-time-label, timegrid-time-last, timegrid-time-past, timegrid-timezone-collapse-button, timegrid-timezone-label, timezone-labels-slot
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css  | classes: 12 | referenced （importers: src/lib/tui.calendar/apps/calendar/src/css/timegrid/index.css）
+  - class list: column, columns, gridline-half, panel, time, timegrid, timegrid-now-indicator, timegrid-now-indicator-left, timegrid-now-indicator-marker, timegrid-now-indicator-right, timegrid-now-indicator-today, timegrid-scroll-area
+
+## 3. 疑似死代码（class 级别）
+
+说明：这里是“**class 名从未在代码中出现过**”的候选（仍可能是动态生成/运行期注入），用于人工复核与未来简化。
+
+- src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css | unused local classes: 33/69
+  - calendar-date, date-range-actions, date-range-content, date-range-header, datetime-item, datetime-range-popup, datetime-range-popup-in-tippy, duration-arrow, headless-emoji-panel, headless-toolbar-menu, headless-toolbar-popover, nav-button, no-animation-dropdown, picker-actions, picker-content, picker-footer, pure-datetime-range-picker, quick-select-buttons, safe-datetime-picker, safe-datetime-popup, safe-no-scroll-dropdown, simple-datetime-range-picker, simple-time-selector, time-column-header, time-column-item, time-column-list, time-panel, time-panel-header, time-panels, time-selection-area, ultimate-datetime-picker, ultimate-datetime-popup, ultimate-no-scroll-dropdown
+- src/App.css | unused local classes: 31/112
+  - btn-add-event, btn-add-task, btn-delete-mini, btn-edit-mini, btn-timer, event-date-time, event-input, event-item, event-section, event-select, event-textarea, feature-section, log-duration, log-section, log-tag, log-time, ongoing-log-item, ongoing-log-item-detailed, plan-empty-state, plan-item-card, plan-item-priority, plan-item-title, tab-button, task-actions, task-input, task-item, task-section, timer-log-duration, timer-log-time, timer-section, timer-tag-display
+- src/components/PlanItemEditor.css | unused local classes: 14/15
+  - floating-button-container, plan-color-picker, plan-content-input, plan-detail-panel, plan-detail-toggle, plan-editor-footer, plan-editor-main, plan-editor-sidebar, plan-notes-input, plan-picker-container, plan-tag-list, plan-tag-option, plan-tag-selector, plan-title-input
+- src/features/Plan/components/PlanManager.css | unused local classes: 11/21
+  - mention-picker-tippy, plan-delete-btn, plan-detail-content, plan-detail-header, plan-detail-section, plan-item, plan-list-header, plan-priority-buttons, plan-save-btn, plan-tags-selector, plan-time-radios
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css | unused local classes: 11/14
+  - timegrid-current-time, timegrid-day-difference, timegrid-hour-rows, timegrid-time, timegrid-time-first, timegrid-time-hidden, timegrid-time-label, timegrid-time-last, timegrid-time-past, timegrid-timezone-collapse-button, timegrid-timezone-label
+- src/components/common/AttendeeDisplay.css | unused local classes: 9/49
+  - contact-preview-simple, expand-btn, field-label, field-line, field-line-readonly, field-row-inline, field-value-readonly, modal-body, source-info
+- src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css | unused local classes: 9/74
+  - date-range-actions, date-range-content, duration-arrow, month-edit-btn, month-edit-container, quick-buttons-row, quick-select-section, time-selectors, time-single-display
+- src/lib/tui.calendar/apps/calendar/examples/styles/icons.css | unused local classes: 7/16
+  - calendar-icon, ic_view_day, ic_view_month, ic_view_week, ic-milestone-b, ic-readonly-b, ic-travel-time
+- src/features/Calendar/styles/DesktopCalendarWidget.css | unused local classes: 6/17
+  - control-bar, resize-handle, resize-handle-top, resize-handle-topleft, resize-handle-topright, settings-panel
+- src/features/Tag/styles/TagManager.css | unused local classes: 6/17
+  - avg-checkins, avg-duration, calendar-option, recurring-btn, tag-editor, tag-row
+- src/components/ModalSlate/ModalSlate.css | unused local classes: 5/13
+  - bullet-level-0, bullet-level-1, bullet-level-2, bullet-level-3, bullet-level-4
+- src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css | unused local classes: 5/12
+  - timegrid-now-indicator-left, timegrid-now-indicator-marker, timegrid-now-indicator-right, timegrid-now-indicator-today, timegrid-scroll-area
+- src/pages/Event/DetailTab.css | unused local classes: 5/101
+  - info-meta-clickable, info-metadata-left, info-metadata-right, logtab-toc-item, view-switch-btn
+- src/pages/Home/DashboardGridStack.css | unused local classes: 4/6
+  - ui-draggable-dragging, ui-resizable-handle, ui-resizable-resizing, ui-resizable-se
+- src/components/common/Logo.css | unused local classes: 3/5
+  - logo-border, logo-circle, logo-symbol
+- src/components/common/PageContainer.css | unused local classes: 3/8
+  - home-page-container, plan-management, timelog-page-container
+- src/components/layout/AppLayout.css | unused local classes: 3/36
+  - debug-item, timer-indicator, timer-text
+- src/features/TimeLog/pages/TimeLog.css | unused local classes: 3/74
+  - event-meta-hover-row, event-time-actions, ghost-menu-btn
+- src/components/demos/AIDemo.css | unused local classes: 2/15
+  - api-provider-tabs, file-input-wrapper
+- src/components/LogSlate/LogSlate.css | unused local classes: 2/13
+  - hashtag-menu, tag-element
+- src/components/shared/FloatingToolbar/FloatingToolbarV2.css | unused local classes: 2/9
+  - picker-cancel-btn, picker-confirm-btn
+- src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css | unused local classes: 2/17
+  - panel-event, panel-event-wrapper
+- src/styles/calendar.css | unused local classes: 2/8
+  - remarkable-task-checkbox, remarkable-task-content
+- src/components/ModalSlate/TitleSlate.css | unused local classes: 1/4
+  - tag-element
+- src/components/PlanSlate/PlanSlate.css | unused local classes: 1/8
+  - gray-text-placeholder
+- src/components/shared/FloatingToolbar/pickers/ColorPicker.css | unused local classes: 1/6
+  - color-option
+- src/components/shared/FloatingToolbar/pickers/TagPicker.css | unused local classes: 1/9
+  - create-new
+- src/components/shared/FloatingToolbar/pickers/TextColorPicker.css | unused local classes: 1/11
+  - color-label
+- src/features/Calendar/styles/CalendarSettingsPanel.css | unused local classes: 1/34
+  - category-toggle
+- src/features/Event/components/EventEditModal/EventEditModalV2.css | unused local classes: 1/58
+  - view-switch-btn
+- src/features/TimeLog/components/TimeGap.css | unused local classes: 1/17
+  - time-gap-add-btn
+- src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css | unused local classes: 1/14
+  - grid-cell-footer
+- src/lib/tui.calendar/apps/calendar/src/css/icons.css | unused local classes: 1/23
+  - ic-arrow-solid-top
+- src/pages/Home/ComparisonCard.css | unused local classes: 1/21
+  - up
+
+## 4. 已自动删除的死规则（仅 --fix 时会有）
+
+- （本次未自动删除任何规则）
+
+## 5. 高相似 CSS 文件（未来可合并候选）
+
+- props 92.9% / values 83.3%  src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css  ↔  src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- props 82.9% / values 37.6%  src/pages/Home/CalendarSidebar.css  ↔  src/pages/Home/CardConfigModal.css
+- props 78.3% / values 34.8%  src/features/Calendar/styles/CalendarPicker.css  ↔  src/features/Calendar/styles/CalendarSettingsPanel.css
+
+## 6. 全局索引（class → 定义文件）
+
+说明：同名 class 可能在多个文件里出现（覆盖/重复/冲突风险）。
+
+- .action-btn → src/components/shared/HierarchicalTagPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .action-button → src/features/TimeLog/pages/TimeLog.css
+- .action-buttons → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .active → src/App.css, src/components/demos/AIDemo.css, src/components/demos/AIDemoV2.css, src/components/layout/AppLayout.css, src/components/shared/FloatingToolbar/FloatingToolbarV2.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Plan/components/PlanManager.css, src/features/Tag/styles/TagManager.css, src/features/TimeLog/components/TimeGap.css, src/features/TimeLog/pages/TimeLogPage_new.css, src/pages/Event/DetailTab.css, src/pages/Home/CardConfigModal.css, src/pages/Home/StatsControlBar.css, src/pages/Home/TimeDistributionCard.css, src/pages/Home/TimeRangeSelector.css, src/styles/calendar.css
+- .add-dial → src/App.css
+- .agenda → src/components/demos/AIDemoV2.css
+- .ai-demo-container → src/components/demos/AIDemo.css
+- .ai-demo-header → src/components/demos/AIDemo.css
+- .ai-demo-v2 → src/components/demos/AIDemoV2.css
+- .ai-response → src/components/demos/RAGDemo.css
+- .ai-response-section → src/components/demos/RAGDemo.css
+- .all-day-button → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .all-day-checkbox → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .all-day-icon → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .allday-panel → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .amap-loading-spinner → src/components/common/LocationInput.css
+- .amap-location-go-btn → src/components/common/LocationInput.css
+- .amap-location-input → src/components/common/LocationInput.css
+- .amap-location-input-container → src/components/common/LocationInput.css
+- .amap-location-input-wrapper → src/components/common/LocationInput.css
+- .amap-location-loading → src/components/common/LocationInput.css
+- .amap-location-suggestion-item → src/components/common/LocationInput.css
+- .amap-location-suggestions → src/components/common/LocationInput.css
+- .amap-suggestion-content → src/components/common/LocationInput.css
+- .amap-suggestion-district → src/components/common/LocationInput.css
+- .amap-suggestion-icon → src/components/common/LocationInput.css
+- .amap-suggestion-name → src/components/common/LocationInput.css
+- .ant-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-btn-primary → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-cell-in-range → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-in-view → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-inner → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-range-end → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-range-start → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-selected → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-cell-today → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-dropdown → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-dropdown-hidden → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-dropdown-in-tippy → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-footer → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-header → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-header-next-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-header-prev-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-header-super-next-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-header-super-prev-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-header-view → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-input → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-month-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-next-icon → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-panel → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-panel-container → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-panels → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-prev-icon → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-range → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .ant-picker-range-wrapper → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-super-next-icon → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-super-prev-icon → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-time-panel → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-time-panel-cell → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-time-panel-cell-inner → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-time-panel-cell-selected → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-time-panel-column → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-picker-year-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-slide-up-enter → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-slide-up-enter-active → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-slide-up-leave → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-slide-up-leave-active → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ant-style-datetime-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .api-provider-tabs → src/components/demos/AIDemo.css
+- .app-column → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .app-container → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .app-footer → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .app-header → src/components/layout/AppLayout.css
+- .app-layout → src/components/layout/AppLayout.css
+- .app-main → src/components/layout/AppLayout.css
+- .app-sidebar → src/components/layout/AppLayout.css
+- .app-statusbar → src/components/layout/AppLayout.css
+- .apply-btn → src/pages/Home/StatsControlBar.css
+- .arrow → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .arrow-icon → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/TimeLog/pages/TimeLog.css, src/pages/Event/DetailTab.css
+- .arrow-indicator → src/pages/Home/ComparisonCard.css
+- .attachment → src/features/TimeLog/components/TimeGap.css
+- .attendee-display → src/components/common/AttendeeDisplay.css
+- .attendee-icon → src/components/common/AttendeeDisplay.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .attendee-input-container → src/components/common/AttendeeDisplay.css
+- .attendee-search-dropdown → src/components/common/AttendeeDisplay.css
+- .attendee-search-results → src/components/common/AttendeeDisplay.css
+- .attendee-tag → src/components/demos/AIDemoV2.css
+- .attendee-text → src/features/TimeLog/pages/TimeLogPage_new.css
+- .attendee-text-display → src/components/common/AttendeeDisplay.css
+- .attendee-text-input → src/components/common/AttendeeDisplay.css
+- .attendees-tags → src/components/demos/AIDemoV2.css
+- .avg-checkins → src/features/Tag/styles/TagManager.css
+- .avg-duration → src/features/Tag/styles/TagManager.css
+- .bar-container → src/pages/Home/ComparisonCard.css
+- .bar-fill → src/pages/Home/ComparisonCard.css
+- .bar-label → src/pages/Home/ComparisonCard.css
+- .bar-row → src/pages/Home/ComparisonCard.css
+- .batch-input-panel → src/components/demos/AIDemoV2.css
+- .batch-list → src/components/demos/AIDemoV2.css
+- .batch-textarea → src/components/demos/AIDemoV2.css
+- .bg-color-item → src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css
+- .bg-color-item-active → src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css
+- .bg-color-shortcut → src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css
+- .blue → src/components/ContentSelectionPanel.css
+- .bottom → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .btn → src/App.css, src/features/Calendar/styles/CalendarGroupManager.css
+- .btn-add-batch → src/components/demos/AIDemoV2.css
+- .btn-add-event → src/App.css
+- .btn-add-task → src/App.css
+- .btn-calendar-manage → src/App.css
+- .btn-cancel → src/App.css, src/pages/Home/CardConfigModal.css, src/pages/Home/TimeRangeSelector.css
+- .btn-close → src/components/demos/AIDemoV2.css
+- .btn-config → src/components/demos/AIDemoV2.css
+- .btn-connect → src/App.css
+- .btn-danger-small → src/features/Calendar/styles/CalendarGroupManager.css
+- .btn-delete → src/App.css, src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css
+- .btn-delete-mini → src/App.css
+- .btn-disconnect → src/App.css
+- .btn-edit-mini → src/App.css
+- .btn-expand → src/features/TimeLog/pages/TimeLogPage_new.css
+- .btn-favorite → src/features/TimeLog/pages/TimeLogPage_new.css
+- .btn-history → src/components/demos/AIDemoV2.css
+- .btn-icon → src/features/TimeLog/components/TimeGap.css
+- .btn-primary → src/App.css, src/components/common/AttendeeDisplay.css, src/components/demos/AIDemo.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Contact/styles/ContactModal.css
+- .btn-primary-small → src/features/Calendar/styles/CalendarGroupManager.css
+- .btn-process-batch → src/components/demos/AIDemoV2.css
+- .btn-prompt → src/components/demos/AIDemoV2.css
+- .btn-save → src/App.css, src/components/demos/AIDemoV2.css, src/pages/Home/CardConfigModal.css
+- .btn-secondary → src/features/Calendar/styles/CalendarGroupManager.css
+- .btn-secondary-small → src/features/Calendar/styles/CalendarGroupManager.css
+- .btn-start-proxy → src/components/demos/AIDemoV2.css
+- .btn-sync → src/App.css
+- .btn-text → src/features/TimeLog/components/TimeGap.css
+- .btn-timer → src/App.css
+- .btn-upload → src/components/demos/AIDemoV2.css
+- .btn-use-version → src/components/demos/AIDemoV2.css
+- .bullet-level-0 → src/components/ModalSlate/ModalSlate.css
+- .bullet-level-1 → src/components/ModalSlate/ModalSlate.css
+- .bullet-level-2 → src/components/ModalSlate/ModalSlate.css
+- .bullet-level-3 → src/components/ModalSlate/ModalSlate.css
+- .bullet-level-4 → src/components/ModalSlate/ModalSlate.css
+- .bullet-paragraph → src/components/ModalSlate/ModalSlate.css
+- .bullet-symbol → src/components/ModalSlate/ModalSlate.css
+- .button → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .button-group → src/pages/Home/StatsControlBar.css
+- .calendar-chip → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-chip-dot → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-color → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-color-dot → src/components/ContentSelectionPanel.css
+- .calendar-container → src/components/ContentSelectionPanel.css
+- .calendar-content → src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .calendar-count → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-date → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .calendar-day → src/components/ContentSelectionPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css, src/pages/Home/CalendarSidebar.css
+- .calendar-day-empty → src/components/ContentSelectionPanel.css
+- .calendar-day-in-range → src/components/ContentSelectionPanel.css
+- .calendar-day-range-end → src/components/ContentSelectionPanel.css
+- .calendar-day-range-start → src/components/ContentSelectionPanel.css
+- .calendar-day-today → src/components/ContentSelectionPanel.css
+- .calendar-days → src/components/ContentSelectionPanel.css
+- .calendar-dot → src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .calendar-dropdown → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-dropdown-close → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-dropdown-header → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-dropdown-list → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-dropdown-title → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-event-count → src/components/ContentSelectionPanel.css
+- .calendar-font-icon → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .calendar-grid → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/pages/Home/CalendarSidebar.css
+- .calendar-group-content → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-group-footer → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-group-header → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-group-item → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-group-modal → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-group-overlay → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-groups-list → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-header → src/components/ContentSelectionPanel.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .calendar-icon → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .calendar-info → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-item → src/components/ContentSelectionPanel.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .calendar-list → src/components/ContentSelectionPanel.css
+- .calendar-meta → src/features/Calendar/styles/CalendarGroupManager.css
+- .calendar-name → src/components/ContentSelectionPanel.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .calendar-nav-btn → src/components/ContentSelectionPanel.css
+- .calendar-option → src/features/Tag/styles/TagManager.css
+- .calendar-picker → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-provider-count → src/components/ContentSelectionPanel.css
+- .calendar-provider-group → src/components/ContentSelectionPanel.css
+- .calendar-provider-header → src/components/ContentSelectionPanel.css
+- .calendar-provider-name → src/components/ContentSelectionPanel.css
+- .calendar-provider-toggle → src/components/ContentSelectionPanel.css
+- .calendar-provider-toggle-icon → src/components/ContentSelectionPanel.css
+- .calendar-search-inline → src/features/Calendar/styles/CalendarPicker.css
+- .calendar-section → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .calendar-settings-overlay → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .calendar-settings-panel → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .calendar-sidebar → src/pages/Home/CalendarSidebar.css
+- .calendar-sidebar-overlay → src/pages/Home/CalendarSidebar.css
+- .calendar-stats → src/components/ContentSelectionPanel.css
+- .calendar-sync → src/App.css
+- .calendar-title → src/components/ContentSelectionPanel.css
+- .calendar-tree → src/components/ContentSelectionPanel.css
+- .calendar-visibility-btn → src/components/ContentSelectionPanel.css
+- .calendar-visibility-btn-hidden → src/components/ContentSelectionPanel.css
+- .calendar-visibility-btn-visible → src/components/ContentSelectionPanel.css
+- .calendar-visibility-container → src/components/ContentSelectionPanel.css
+- .calendar-week → src/components/ContentSelectionPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .calendar-weekday → src/components/ContentSelectionPanel.css
+- .calendar-weekdays → src/components/ContentSelectionPanel.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .calendars-list → src/features/Calendar/styles/CalendarGroupManager.css
+- .cancel → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .cancel-btn → src/pages/Home/StatsControlBar.css
+- .capability → src/features/Calendar/styles/CalendarGroupManager.css
+- .capsule-container → src/pages/Home/TimeRangeSelector.css
+- .capsule-tab → src/pages/Home/TimeRangeSelector.css
+- .capsule-wrapper → src/pages/Home/TimeRangeSelector.css
+- .card-config-modal → src/pages/Home/CardConfigModal.css
+- .card-config-modal-overlay → src/pages/Home/CardConfigModal.css
+- .card-type-grid → src/pages/Home/CardConfigModal.css
+- .card-type-option → src/pages/Home/CardConfigModal.css
+- .category-checkbox → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .category-settings-compact → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .category-toggle → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .change-icon → src/pages/Home/ComparisonStatsCard.css
+- .change-percentage → src/pages/Home/ComparisonCard.css
+- .change-text → src/pages/Home/ComparisonStatsCard.css
+- .chart-area → src/pages/Home/charts/LineChartView.css
+- .chart-footer → src/pages/Home/charts/PieChartView.css
+- .chart-grid → src/pages/Home/charts/LineChartView.css
+- .chart-label → src/pages/Home/charts/LineChartView.css
+- .chart-line → src/pages/Home/charts/LineChartView.css
+- .chart-point → src/pages/Home/charts/LineChartView.css
+- .chart-title → src/pages/Home/charts/LineChartView.css, src/pages/Home/charts/PieChartView.css, src/pages/Home/charts/PixelView.css
+- .chart-tooltip → src/pages/Home/charts/LineChartView.css, src/pages/Home/charts/PieChartView.css
+- .check-mark → src/components/common/SyncModeSelector.css
+- .checkbox → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-1 → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-2 → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-3 → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-4 → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-5 → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-all → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-calendar → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .checkbox-label → src/App.css, src/pages/Home/CardConfigModal.css
+- .checked → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .checking → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .chrome-tab → src/features/Event/components/EventTabManager/EventTabManager.css, src/pages/Home/TimeRangeSelector.css
+- .chrome-tab-active → src/features/Event/components/EventTabManager/EventTabManager.css
+- .chrome-tab-inactive → src/features/Event/components/EventTabManager/EventTabManager.css
+- .circle-dot → src/features/Event/components/EventTree/EditableEventTree.css
+- .clear-btn → src/pages/Home/CalendarSidebar.css
+- .close-btn → src/components/common/AttendeeDisplay.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Contact/styles/ContactModal.css, src/pages/Home/CalendarSidebar.css, src/pages/Home/CardConfigModal.css
+- .close-button → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .collapse-btn-icon → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .collapse-button → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .collapse-icon → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .collapsed → src/components/ContentSelectionPanel.css
+- .collapsible-content → src/components/ContentSelectionPanel.css
+- .collapsible-section → src/components/ContentSelectionPanel.css
+- .color-checkmark → src/components/shared/FloatingToolbar/pickers/ColorPicker.css
+- .color-grid → src/components/shared/FloatingToolbar/pickers/ColorPicker.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-item → src/components/shared/FloatingToolbar/pickers/ColorPicker.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-item-active → src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-label → src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-option → src/components/shared/FloatingToolbar/pickers/ColorPicker.css
+- .color-picker → src/features/Calendar/styles/CalendarGroupManager.css
+- .color-picker-panel → src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css, src/components/shared/FloatingToolbar/pickers/ColorPicker.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-picker-wrapper → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .color-sample → src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .color-shortcut → src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .column → src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .columns → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .compact → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .compact-category-row → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .compact-footer → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .compact-section → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .compact-slider-row → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .compact-view → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .compare → src/pages/Home/ComparisonCard.css
+- .compare-badge → src/pages/Home/ComparisonCard.css, src/pages/Home/TimeRangeSelector.css
+- .comparison-arrow → src/pages/Home/ComparisonCard.css
+- .comparison-bars → src/pages/Home/ComparisonCard.css
+- .comparison-card-content → src/pages/Home/ComparisonCard.css
+- .comparison-hint → src/pages/Home/TimeRangeSelector.css
+- .comparison-section → src/pages/Home/ComparisonCard.css
+- .comparison-stats-content → src/pages/Home/ComparisonStatsCard.css
+- .comparison-toggle → src/pages/Home/TimeRangeSelector.css
+- .completed → src/App.css, src/components/demos/AIDemoV2.css, src/features/Plan/components/PlanManager.css
+- .compressed-date-cell → src/features/TimeLog/components/CompressedDateRange.css
+- .compressed-date-range → src/features/TimeLog/components/CompressedDateRange.css
+- .compressed-dates-grid → src/features/TimeLog/components/CompressedDateRange.css
+- .compressed-month-group → src/features/TimeLog/components/CompressedDateRange.css
+- .confidence-bar → src/components/demos/AIDemoV2.css
+- .confidence-fill → src/components/demos/AIDemoV2.css
+- .config-btn → src/components/demos/RAGDemo.css
+- .config-form → src/components/demos/RAGDemo.css
+- .config-group → src/components/demos/AIDemoV2.css
+- .config-hint → src/components/demos/RAGDemo.css
+- .config-panel → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .config-section → src/pages/Home/CardConfigModal.css
+- .confirm → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .connected → src/App.css, src/components/layout/AppLayout.css
+- .connected-count → src/App.css
+- .connection-indicators → src/components/layout/AppLayout.css
+- .connector-curve → src/features/Event/components/EventTree/EditableEventTree.css
+- .connector-last → src/features/Event/components/EventTree/EditableEventTree.css
+- .contact-field → src/features/Contact/styles/ContactModal.css
+- .contact-info-row → src/components/common/AttendeeDisplay.css
+- .contact-label → src/features/Contact/styles/ContactModal.css
+- .contact-modal → src/features/Contact/styles/ContactModal.css
+- .contact-modal-backdrop → src/features/Contact/styles/ContactModal.css
+- .contact-modal-wrapper → src/features/Contact/styles/ContactModal.css
+- .contact-name → src/components/common/AttendeeDisplay.css
+- .contact-name-row → src/components/common/AttendeeDisplay.css
+- .contact-preview-card → src/components/common/AttendeeDisplay.css, src/components/common/ContactPreviewCard.css
+- .contact-preview-event-date → src/components/common/ContactPreviewCard.css
+- .contact-preview-event-emoji → src/components/common/ContactPreviewCard.css
+- .contact-preview-event-item → src/components/common/ContactPreviewCard.css
+- .contact-preview-event-title → src/components/common/ContactPreviewCard.css
+- .contact-preview-events → src/components/common/ContactPreviewCard.css
+- .contact-preview-expand-btn → src/components/common/ContactPreviewCard.css
+- .contact-preview-fields → src/components/common/ContactPreviewCard.css
+- .contact-preview-header → src/components/common/ContactPreviewCard.css
+- .contact-preview-name → src/components/common/ContactPreviewCard.css
+- .contact-preview-simple → src/components/common/AttendeeDisplay.css
+- .contact-preview-tippy → src/components/common/ContactPreviewCard.css
+- .contact-preview-view-more → src/components/common/ContactPreviewCard.css
+- .contact-source → src/components/common/AttendeeDisplay.css
+- .contact-value → src/features/Contact/styles/ContactModal.css
+- .contact-value-readonly → src/features/Contact/styles/ContactModal.css
+- .container → src/App.css
+- .content → src/lib/tui.calendar/apps/calendar/examples/styles/app.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .content-selection-panel → src/components/ContentSelectionPanel.css
+- .control-bar → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .control-btn → src/pages/Home/StatsControlBar.css
+- .control-button → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .control-group → src/pages/Home/StatsControlBar.css
+- .control-label → src/pages/Home/StatsControlBar.css
+- .controls → src/App.css
+- .create-form → src/features/Calendar/styles/CalendarGroupManager.css
+- .create-new → src/components/shared/FloatingToolbar/pickers/TagPicker.css
+- .cross-day-badge → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .current → src/pages/Home/ComparisonCard.css
+- .custom-checkbox → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .custom-date-picker → src/pages/Home/StatsControlBar.css
+- .custom-event-node → src/features/Event/components/EventTree/EventTree.css
+- .custom-modal → src/pages/Home/TimeRangeSelector.css
+- .custom-modal-overlay → src/pages/Home/TimeRangeSelector.css
+- .daily-stats-card → src/App.css, src/features/Dashboard/styles/DailyStatsCard.css
+- .danger → src/pages/ThemeDemo/ThemeDemoPage.css
+- .dashboard-card → src/pages/Home/DashboardCard.css
+- .dashboard-card__actions → src/pages/Home/DashboardCard.css
+- .dashboard-card__body → src/pages/Home/DashboardCard.css
+- .dashboard-card__header → src/pages/Home/DashboardCard.css
+- .dashboard-card__icon → src/pages/Home/DashboardCard.css
+- .dashboard-card__loading → src/pages/Home/DashboardCard.css
+- .dashboard-card__title → src/pages/Home/DashboardCard.css
+- .dashboard-gridstack → src/pages/Home/DashboardGridStack.css
+- .data-info → src/components/demos/RAGDemo.css
+- .data-source-tabs → src/pages/Home/CardConfigModal.css
+- .date-cell → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .date-day → src/features/TimeLog/components/CompressedDateRange.css
+- .date-input → src/features/Dashboard/styles/DailyStatsCard.css, src/pages/Home/StatsControlBar.css
+- .date-inputs → src/pages/Home/TimeRangeSelector.css
+- .date-mention → src/components/LogSlate/LogSlate.css
+- .date-range-actions → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .date-range-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .date-range-header → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .date-selector → src/features/Dashboard/styles/DailyStatsCard.css
+- .date-weekday → src/features/TimeLog/components/CompressedDateRange.css
+- .datepicker-container → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .dates → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .datetime-item → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .datetime-range-popup → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .datetime-range-popup-in-tippy → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .day-name__date → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .day-name__name → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .day-name-container → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .day-name-item → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .day-names → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .day-view → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .day-view-day-names → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .daygrid-cell → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .debug-item → src/components/layout/AppLayout.css
+- .default → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .delete-button → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .deleted → src/components/shared/StatusLineContainer.css
+- .demo-header → src/components/demos/AIDemoV2.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .desktop-calendar-inner → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .desktop-calendar-widget → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .detail-body → src/components/demos/AIDemoV2.css
+- .detail-container → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .detail-content → src/components/demos/AIDemoV2.css
+- .detail-footer → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .detail-header → src/components/demos/AIDemoV2.css
+- .detail-item-indent → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .detail-panel → src/components/demos/AIDemoV2.css
+- .detail-view → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .dial-item → src/App.css
+- .dimension-switch → src/pages/Home/TimeDistributionCard.css
+- .disabled → src/components/common/SyncModeSelector.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Calendar/styles/CalendarPicker.css
+- .disconnected → src/App.css, src/components/layout/AppLayout.css
+- .distribution-item → src/pages/Home/TimeDistributionCard.css
+- .distribution-list → src/pages/Home/TimeDistributionCard.css
+- .done → src/components/shared/StatusLineContainer.css
+- .dot → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .down → src/pages/Home/ComparisonCard.css
+- .drag-bar → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .dragging--move-event → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .dragging--resize-horizontal-event → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .dragging--resize-vertical-event → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .dropdown → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .dropdown-arrow → src/components/common/SyncModeSelector.css
+- .dropdown-menu → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .dropdown-menu-item → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .dropdown-section → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .duration-arrow → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .duration-text → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/TimeLog/pages/TimeLog.css, src/pages/Event/DetailTab.css
+- .edit-button → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .edit-icon → src/components/common/AttendeeDisplay.css
+- .edit-icon-small → src/components/common/AttendeeDisplay.css
+- .edit-modal → src/App.css
+- .edit-modal-overlay → src/App.css
+- .editable-event-tree → src/features/Event/components/EventTree/EditableEventTree.css
+- .editable-field → src/components/common/AttendeeDisplay.css, src/components/common/EditableField.css
+- .editable-field-actions → src/components/common/EditableField.css
+- .editable-field-btn → src/components/common/EditableField.css
+- .editable-field-btn-cancel → src/components/common/EditableField.css
+- .editable-field-btn-save → src/components/common/EditableField.css
+- .editable-field-edit-mode → src/components/common/EditableField.css
+- .editable-field-input → src/components/common/EditableField.css
+- .editable-field-label → src/components/common/EditableField.css
+- .editable-field-placeholder → src/components/common/EditableField.css
+- .editable-field-textarea → src/components/common/EditableField.css
+- .editable-field-value → src/components/common/EditableField.css
+- .editable-field-view-mode → src/components/common/EditableField.css
+- .em-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-button → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-grid-v4 → src/features/Tag/styles/TagManager.css
+- .emoji-large → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .emoji-mart → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-mart-emoji → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-mart-emoji-native → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-mart-scroll → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .emoji-option-v4 → src/features/Tag/styles/TagManager.css
+- .emoji-picker-container → src/features/Tag/styles/TagManager.css
+- .emoji-picker-header → src/features/Tag/styles/TagManager.css
+- .emoji-picker-overlay → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Tag/styles/TagManager.css, src/pages/Event/DetailTab.css
+- .emoji-picker-v4 → src/features/Tag/styles/TagManager.css
+- .emoji-picker-wrapper → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .emoji-symbol → src/features/Tag/styles/TagManager.css
+- .empty → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .empty-hint → src/App.css, src/features/Dashboard/styles/DailyStatsCard.css
+- .empty-icon → src/App.css, src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css, src/features/Dashboard/styles/DailyStatsCard.css, src/pages/Home/charts/LineChartView.css, src/pages/Home/charts/PieChartView.css, src/pages/Home/charts/PixelView.css
+- .empty-message → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .empty-state → src/App.css, src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css, src/pages/Home/charts/LineChartView.css, src/pages/Home/charts/PieChartView.css, src/pages/Home/charts/PixelView.css, src/pages/Home/TimeDistributionCard.css
+- .empty-stats → src/features/Dashboard/styles/DailyStatsCard.css
+- .end-time → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .error → src/App.css, src/components/demos/AIDemoV2.css, src/features/Event/components/EventTree/EditableEventTree.css, src/pages/Event/EditorWindow.css
+- .error-message → src/components/demos/AIDemo.css, src/components/demos/RAGDemo.css, src/features/Calendar/styles/CalendarGroupManager.css, src/pages/Event/EditorWindow.css
+- .event → src/features/TimeLog/components/TimeGap.css
+- .event-action-btn → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-actions → src/App.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-attendees → src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-attendees-icon → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-attendees-text → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-background → src/lib/tui.calendar/apps/calendar/src/css/events/background.css
+- .event-body-row → src/features/TimeLog/pages/TimeLog.css
+- .event-calendar → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .event-card → src/components/demos/AttendeeFeatureDemo.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-card-content → src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-card-new → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-checkbox → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-countdown → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-date → src/App.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-date-time → src/App.css
+- .event-details-col → src/features/TimeLog/pages/TimeLog.css
+- .event-duration-badge → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-edit-modal-v2 → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-edit-modal-v2-overlay → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-editor-window → src/pages/Event/EditorWindow.css
+- .event-emoji → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-header → src/App.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-header-row → src/features/TimeLog/pages/TimeLog.css
+- .event-icon-col → src/features/TimeLog/pages/TimeLog.css
+- .event-indicator-line → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-input → src/App.css
+- .event-item → src/App.css
+- .event-line-col → src/features/TimeLog/pages/TimeLog.css
+- .event-line-content → src/components/PlanSlate/EventLineElement.css, src/components/PlanSlate/PlanSlate.css
+- .event-line-prefix → src/components/PlanSlate/EventLineElement.css
+- .event-line-suffix → src/components/PlanSlate/EventLineElement.css
+- .event-list → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-location → src/App.css, src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-location-icon → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-location-text → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-log → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-log-box → src/features/TimeLog/pages/TimeLog.css
+- .event-log-content → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-log-editor-wrapper → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-log-expand-icon → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-log-header → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-log-preview → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-log-text → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-log-timestamp → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-manager → src/App.css
+- .event-mention → src/components/LogSlate/LogSlate.css
+- .event-meta-hover-row → src/features/TimeLog/pages/TimeLog.css
+- .event-meta-icon-bar → src/features/TimeLog/pages/TimeLog.css
+- .event-meta-row → src/features/TimeLog/pages/TimeLog.css
+- .event-node-checkbox → src/features/Event/components/EventTree/EventTree.css
+- .event-node-content → src/features/Event/components/EventTree/EventTree.css
+- .event-node-description → src/features/Event/components/EventTree/EventTree.css
+- .event-node-emoji → src/features/Event/components/EventTree/EventTree.css
+- .event-node-handle → src/features/Event/components/EventTree/EventTree.css
+- .event-node-header → src/features/Event/components/EventTree/EventTree.css
+- .event-node-link-badge → src/features/Event/components/EventTree/EventTree.css
+- .event-node-progress → src/features/Event/components/EventTree/EventTree.css
+- .event-node-progress-bar → src/features/Event/components/EventTree/EventTree.css
+- .event-node-progress-fill → src/features/Event/components/EventTree/EventTree.css
+- .event-node-title → src/features/Event/components/EventTree/EventTree.css
+- .event-node-title-area → src/features/Event/components/EventTree/EventTree.css
+- .event-node-type-badge → src/features/Event/components/EventTree/EventTree.css
+- .event-overview → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .event-related-tasks → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-row → src/features/TimeLog/pages/TimeLog.css
+- .event-row-1 → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-row-2 → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-section → src/App.css
+- .event-select → src/App.css
+- .event-source → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-state → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .event-tab-manager → src/features/Event/components/EventTabManager/EventTabManager.css
+- .event-tag → src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-tags → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-tags-row → src/features/TimeLog/pages/TimeLog.css
+- .event-task-info → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-textarea → src/App.css
+- .event-time → src/App.css, src/components/demos/AttendeeFeatureDemo.css, src/lib/tui.calendar/apps/calendar/src/css/events/time.css
+- .event-time-actions → src/features/TimeLog/pages/TimeLog.css
+- .event-time-arrow → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-time-col → src/features/TimeLog/pages/TimeLog.css
+- .event-time-content → src/lib/tui.calendar/apps/calendar/src/css/events/time.css
+- .event-time-icons → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-time-info → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .event-time-label → src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-time-text → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-timeline-line → src/features/TimeLog/pages/TimeLogPage_new.css
+- .event-title → src/App.css, src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .event-title-row → src/App.css, src/features/TimeLog/pages/TimeLog.css
+- .event-tree-canvas → src/features/Event/components/EventTree/EventTree.css
+- .event-tree-viewer → src/features/Event/components/EventTree/EventTreeViewer.css
+- .eventlog-editor → src/pages/Event/DetailTab.css
+- .eventlog-mode → src/components/LogSlate/LogSlate.css, src/components/PlanSlate/EventLineElement.css, src/components/PlanSlate/PlanSlate.css, src/components/shared/FloatingToolbar/pickers/TagPicker.css
+- .eventmodal-v2-footer-btn → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-footer-btn-cancel → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-footer-btn-delete → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-footer-btn-expand → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-footer-btn-save → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-header-icon-btn → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-header-text-btn → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-plan-content → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-plan-icon → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-plan-row → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-section-header → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-section-header-buttons → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-section-header-title → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-tag-chip → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-tag-etc → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-tag-separator → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .eventmodal-v2-tags-row → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .events → src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css
+- .example-btn → src/components/demos/RAGDemo.css
+- .example-queries → src/components/demos/RAGDemo.css
+- .exit-snapshot-btn → src/components/ContentSelectionPanel.css
+- .expand-btn → src/components/common/AttendeeDisplay.css
+- .expanded → src/components/ContentSelectionPanel.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .expired-divider → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .expired-divider-line → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .expired-expand-icon → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .expired-label → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .extraction-result → src/components/demos/AIDemo.css
+- .feature → src/components/demos/RAGDemo.css
+- .feature-icon → src/components/demos/RAGDemo.css
+- .feature-section → src/App.css
+- .features → src/components/demos/RAGDemo.css
+- .feedback-input → src/components/demos/AIDemoV2.css
+- .field-group → src/components/demos/AIDemoV2.css
+- .field-label → src/components/common/AttendeeDisplay.css
+- .field-line → src/components/common/AttendeeDisplay.css
+- .field-line-readonly → src/components/common/AttendeeDisplay.css
+- .field-row → src/components/common/AttendeeDisplay.css, src/components/demos/AIDemoV2.css
+- .field-row-inline → src/components/common/AttendeeDisplay.css
+- .field-value → src/components/common/AttendeeDisplay.css, src/components/demos/AIDemoV2.css
+- .field-value-readonly → src/components/common/AttendeeDisplay.css
+- .figma-tag-manager-v4 → src/App.css, src/features/Tag/styles/TagManager.css
+- .file-input-wrapper → src/components/demos/AIDemo.css
+- .file-upload-section → src/components/demos/AIDemo.css
+- .filter-btn → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .filter-btn-active → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .filter-buttons → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .filter-item → src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .filter-list → src/features/Calendar/styles/CalendarPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .filter-option → src/pages/Home/CardConfigModal.css
+- .filter-options → src/pages/Home/CardConfigModal.css
+- .floating → src/pages/Event/DetailTab.css
+- .floating-button-container → src/components/PlanItemEditor.css
+- .floating-layer → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .floating-menu-btn → src/features/TimeLog/components/TimeGap.css
+- .floating-menu-time → src/features/TimeLog/components/TimeGap.css
+- .floating-toolbar → src/components/ModalSlate/ModalSlate.css
+- .floating-toolbar-tag-picker → src/components/shared/FloatingToolbar/pickers/TagPicker.css
+- .floating-toolbar-v2 → src/components/shared/FloatingToolbar/FloatingToolbarV2.css
+- .focus-dials → src/App.css
+- .focus-hint → src/App.css
+- .focus-metric-item → src/pages/Home/FocusScoreCard.css
+- .focus-metrics → src/pages/Home/FocusScoreCard.css
+- .focus-score-center → src/pages/Home/FocusScoreCard.css
+- .focus-score-content → src/pages/Home/FocusScoreCard.css
+- .focus-score-level → src/pages/Home/FocusScoreCard.css
+- .focus-score-ring → src/pages/Home/FocusScoreCard.css
+- .focus-score-value → src/pages/Home/FocusScoreCard.css
+- .focus-setting-section → src/App.css
+- .form-actions → src/App.css, src/features/Calendar/styles/CalendarGroupManager.css
+- .form-container → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .form-group → src/components/demos/AIDemo.css, src/components/demos/RAGDemo.css
+- .full-contact-event-content → src/components/common/FullContactModal.css
+- .full-contact-event-date → src/components/common/FullContactModal.css
+- .full-contact-event-emoji → src/components/common/FullContactModal.css
+- .full-contact-event-item → src/components/common/FullContactModal.css
+- .full-contact-event-title → src/components/common/FullContactModal.css
+- .full-contact-events → src/components/common/FullContactModal.css
+- .full-contact-fields → src/components/common/FullContactModal.css
+- .full-contact-modal → src/components/common/AttendeeDisplay.css, src/components/common/FullContactModal.css
+- .full-contact-modal-backdrop → src/components/common/AttendeeDisplay.css
+- .full-contact-modal-body → src/components/common/FullContactModal.css
+- .full-contact-modal-btn-cancel → src/components/common/FullContactModal.css
+- .full-contact-modal-btn-save → src/components/common/FullContactModal.css
+- .full-contact-modal-close → src/components/common/FullContactModal.css
+- .full-contact-modal-footer → src/components/common/FullContactModal.css
+- .full-contact-modal-header → src/components/common/FullContactModal.css
+- .full-contact-modal-overlay → src/components/common/FullContactModal.css
+- .full-contact-section → src/components/common/FullContactModal.css
+- .full-contact-sources → src/components/common/FullContactModal.css
+- .full-width → src/components/common/PageContainer.css
+- .ghost-menu-btn → src/features/TimeLog/pages/TimeLog.css
+- .glass-btn-wrapper → src/components/shared/GlassIconBar.css
+- .glass-icon-bar → src/components/shared/GlassIconBar.css
+- .glass-icon-btn → src/components/shared/GlassIconBar.css
+- .glass-icon-group → src/components/shared/GlassIconBar.css
+- .glass-icon-label → src/components/shared/GlassIconBar.css
+- .global-timer → src/components/layout/AppLayout.css
+- .global-timer-compact → src/components/layout/AppLayout.css
+- .google → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .gray-text-placeholder → src/components/PlanSlate/PlanSlate.css
+- .green → src/components/ContentSelectionPanel.css
+- .grid-cell-date → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .grid-cell-footer → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .grid-cell-more-events → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .grid-selection → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css
+- .grid-selection-label → src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css
+- .grid-stack → src/pages/Home/DashboardGridStack.css
+- .grid-stack-drag-in-progress → src/pages/Home/DashboardGridStack.css
+- .grid-stack-item → src/pages/Home/DashboardGridStack.css
+- .grid-stack-item-content → src/pages/Home/DashboardGridStack.css
+- .grid-stack-placeholder → src/pages/Home/DashboardGridStack.css
+- .gridline-half → src/lib/tui.calendar/apps/calendar/src/css/timegrid/column.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .group-actions → src/features/Calendar/styles/CalendarGroupManager.css
+- .group-header → src/features/Calendar/styles/CalendarGroupManager.css
+- .group-name → src/features/Calendar/styles/CalendarGroupManager.css
+- .handle-y → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .has-tabs → src/features/TimeLog/pages/TimeLog.css
+- .has-toc → src/pages/Event/DetailTab.css
+- .hashtag-menu → src/components/LogSlate/LogSlate.css
+- .header → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .header-actions → src/components/demos/AIDemoV2.css
+- .header-content → src/components/layout/AppLayout.css
+- .header-tools → src/components/layout/AppLayout.css
+- .headless-date-range-popup → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .headless-date-tippy-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-emoji-panel → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-emoji-tippy-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .headless-floating-toolbar → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-picker-tippy-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .headless-toolbar-action-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-btn-active → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-container → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-main → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-menu → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-popover → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .headless-toolbar-text-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .help-icon → src/components/common/SyncModeSelector.css
+- .help-item → src/components/common/SyncModeSelector.css
+- .help-text → src/components/common/SyncModeSelector.css
+- .hidden-input → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .hierarchical-tag-picker → src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .hierarchical-tag-picker-popup → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .high → src/App.css
+- .highlighted → src/components/common/TagInput.css
+- .hint → src/components/demos/AIDemoV2.css
+- .history-panel → src/components/demos/AIDemoV2.css
+- .holiday → src/lib/tui.calendar/apps/calendar/src/css/common.css
+- .home-page-container → src/components/common/PageContainer.css
+- .homepage-container → src/pages/Home/HomePage.css
+- .homepage-toolbar → src/pages/Home/HomePage.css
+- .horizontal → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .hovered → src/features/TimeLog/components/TimeGap.css
+- .ic_view_day → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic_view_month → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic_view_week → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-arrow-left → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-arrow-line-left → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-arrow-line-right → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-arrow-right → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-arrow-solid-top → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-checkbox-checked → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-checkbox-normal → src/lib/tui.calendar/apps/calendar/src/css/icons.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .ic-close → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-date → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-delete → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-dropdown-arrow → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-edit → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-handle-y → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-location → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-location-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css, src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-lock-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-milestone → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-milestone-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-private → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-public → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-readonly-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-repeat-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css, src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-state → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-state-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css, src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-title → src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .ic-travel-time → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .ic-user-b → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css, src/lib/tui.calendar/apps/calendar/src/css/icons.css
+- .icloud → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .icon → src/lib/tui.calendar/apps/calendar/src/css/icons.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .img-bi → src/lib/tui.calendar/apps/calendar/examples/styles/icons.css
+- .improvement-tag → src/components/demos/AIDemoV2.css
+- .in-range → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/pages/Home/CalendarSidebar.css
+- .inactive → src/App.css
+- .info-emoji → src/pages/Event/DetailTab.css
+- .info-location-text → src/pages/Event/DetailTab.css
+- .info-meta-arrow → src/pages/Event/DetailTab.css
+- .info-meta-clickable → src/pages/Event/DetailTab.css
+- .info-meta-content → src/pages/Event/DetailTab.css
+- .info-meta-icon → src/pages/Event/DetailTab.css
+- .info-meta-label → src/pages/Event/DetailTab.css
+- .info-meta-row → src/pages/Event/DetailTab.css
+- .info-metadata-col → src/pages/Event/DetailTab.css
+- .info-metadata-grid → src/pages/Event/DetailTab.css
+- .info-metadata-left → src/pages/Event/DetailTab.css
+- .info-metadata-right → src/pages/Event/DetailTab.css
+- .info-tags-input → src/pages/Event/DetailTab.css
+- .info-tags-wrapper → src/pages/Event/DetailTab.css
+- .info-title-row → src/pages/Event/DetailTab.css
+- .info-title-slate → src/pages/Event/DetailTab.css
+- .inline → src/components/shared/HierarchicalTagPicker.css
+- .inline-slider → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .input-group → src/pages/Home/TimeRangeSelector.css
+- .is-electron → src/styles/calendar.css
+- .is-today → src/features/TimeLog/components/CompressedDateRange.css, src/styles/calendar.css
+- .item-color → src/pages/Home/charts/PieChartView.css, src/pages/Home/TimeDistributionCard.css
+- .item-content → src/pages/Home/charts/PieChartView.css
+- .item-duration → src/pages/Home/charts/PieChartView.css
+- .item-footer → src/pages/Home/charts/PieChartView.css
+- .item-header → src/pages/Home/charts/PieChartView.css, src/pages/Home/TimeDistributionCard.css
+- .item-info → src/pages/Home/TimeDistributionCard.css
+- .item-name → src/pages/Home/charts/PieChartView.css, src/pages/Home/TimeDistributionCard.css
+- .item-percentage → src/pages/Home/TimeDistributionCard.css
+- .item-progress → src/pages/Home/TimeDistributionCard.css
+- .item-value → src/pages/Home/TimeDistributionCard.css
+- .keep-hover → src/features/TimeLog/pages/TimeLog.css
+- .keyboard-focused → src/components/shared/FloatingToolbar/pickers/ColorPicker.css, src/components/shared/FloatingToolbar/pickers/PriorityPicker.css, src/components/shared/HierarchicalTagPicker.css
+- .layout → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .left → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .left-content → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .legend-item → src/pages/Home/charts/PixelView.css
+- .legend-label → src/pages/Home/charts/PixelView.css
+- .legend-scale → src/pages/Home/charts/PixelView.css
+- .level-0 → src/pages/Home/charts/PixelView.css
+- .level-1 → src/pages/Event/DetailTab.css, src/pages/Home/charts/PixelView.css
+- .level-2 → src/pages/Event/DetailTab.css, src/pages/Home/charts/PixelView.css
+- .level-3 → src/pages/Event/DetailTab.css, src/pages/Home/charts/PixelView.css
+- .level-4 → src/pages/Event/DetailTab.css, src/pages/Home/charts/PixelView.css
+- .light-slate-editor → src/components/ModalSlate/ModalSlate.css
+- .line-chart-container → src/pages/Home/charts/LineChartView.css
+- .line-chart-svg → src/pages/Home/charts/LineChartView.css
+- .line-chart-view → src/pages/Home/charts/LineChartView.css
+- .link-button → src/features/Event/components/EventTree/EditableEventTree.css
+- .link-button-container → src/features/Event/components/EventTree/EditableEventTree.css
+- .link-icon → src/features/TimeLog/pages/TimeLogPage_new.css
+- .linked-card → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-arrow → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-content → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-header → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-label → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-progress → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-progress-bar → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-progress-fill → src/features/Event/components/EventTree/EventTree.css
+- .linked-card-title → src/features/Event/components/EventTree/EventTree.css
+- .linked-cards-container → src/features/Event/components/EventTree/EventTree.css
+- .linked-cards-stack → src/features/Event/components/EventTree/EditableEventTree.css
+- .loading → src/App.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Event/components/EventTree/EditableEventTree.css, src/pages/Event/EditorWindow.css
+- .loading-spinner → src/components/demos/AIDemo.css, src/components/shared/UnifiedMentionMenu.css, src/pages/Event/EditorWindow.css
+- .location-icon → src/features/TimeLog/pages/TimeLogPage_new.css
+- .location-text → src/features/TimeLog/pages/TimeLogPage_new.css
+- .log-duration → src/App.css
+- .log-section → src/App.css
+- .log-slate-editable → src/components/LogSlate/LogSlate.css, src/features/TimeLog/pages/TimeLog.css
+- .log-slate-wrapper → src/components/LogSlate/LogSlate.css
+- .log-tag → src/App.css
+- .log-time → src/App.css
+- .logo-border → src/components/common/Logo.css
+- .logo-circle → src/components/common/Logo.css
+- .logo-container → src/components/common/Logo.css
+- .logo-symbol → src/components/common/Logo.css
+- .logtab-container → src/pages/Event/DetailTab.css
+- .logtab-editor-wrapper → src/pages/Event/DetailTab.css
+- .logtab-eventlog-section → src/pages/Event/DetailTab.css
+- .logtab-info-section → src/pages/Event/DetailTab.css
+- .logtab-toc → src/pages/Event/DetailTab.css
+- .logtab-toc-actions → src/pages/Event/DetailTab.css
+- .logtab-toc-content → src/pages/Event/DetailTab.css
+- .logtab-toc-empty → src/pages/Event/DetailTab.css
+- .logtab-toc-empty-hint → src/pages/Event/DetailTab.css
+- .logtab-toc-empty-icon → src/pages/Event/DetailTab.css
+- .logtab-toc-empty-text → src/pages/Event/DetailTab.css
+- .logtab-toc-header → src/pages/Event/DetailTab.css
+- .logtab-toc-item → src/pages/Event/DetailTab.css
+- .logtab-toc-menu → src/pages/Event/DetailTab.css
+- .logtab-toc-menu-btn → src/pages/Event/DetailTab.css
+- .logtab-toc-menu-divider → src/pages/Event/DetailTab.css
+- .logtab-toc-menu-item → src/pages/Event/DetailTab.css
+- .logtab-toc-pin-btn → src/pages/Event/DetailTab.css
+- .logtab-toc-title → src/pages/Event/DetailTab.css
+- .low → src/App.css
+- .main-content → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .medium → src/App.css
+- .mention-badge → src/components/shared/UnifiedMentionMenu.css
+- .mention-content → src/components/shared/UnifiedMentionMenu.css
+- .mention-empty → src/components/shared/UnifiedMentionMenu.css
+- .mention-icon → src/components/shared/UnifiedMentionMenu.css
+- .mention-item → src/components/shared/UnifiedMentionMenu.css
+- .mention-item-color → src/components/LogSlate/MentionMenu.css
+- .mention-item-emoji → src/components/LogSlate/MentionMenu.css
+- .mention-item-name → src/components/LogSlate/MentionMenu.css
+- .mention-loading → src/components/shared/UnifiedMentionMenu.css
+- .mention-menu → src/components/LogSlate/LogSlate.css, src/components/LogSlate/MentionMenu.css
+- .mention-menu-empty → src/components/LogSlate/MentionMenu.css
+- .mention-menu-item → src/components/LogSlate/MentionMenu.css
+- .mention-picker-tippy → src/features/Plan/components/PlanManager.css
+- .mention-preview → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-content → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-display → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-hint → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-icon → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-raw → src/components/PlanSlate/MentionPreview.css
+- .mention-preview-text → src/components/PlanSlate/MentionPreview.css
+- .mention-section → src/components/shared/UnifiedMentionMenu.css
+- .mention-section-title → src/components/shared/UnifiedMentionMenu.css
+- .mention-subtitle → src/components/shared/UnifiedMentionMenu.css
+- .mention-title → src/components/shared/UnifiedMentionMenu.css
+- .meta-icon → src/features/TimeLog/pages/TimeLog.css
+- .metric-label → src/pages/Home/FocusScoreCard.css
+- .metric-value → src/pages/Home/FocusScoreCard.css
+- .missed → src/components/shared/StatusLineContainer.css
+- .modal-actions → src/pages/Home/TimeRangeSelector.css
+- .modal-body → src/components/common/AttendeeDisplay.css
+- .modal-body-editable → src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css
+- .modal-content → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css, src/pages/Home/CardConfigModal.css
+- .modal-footer → src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css, src/pages/Home/CardConfigModal.css
+- .modal-header → src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css, src/pages/Home/CardConfigModal.css
+- .modal-header-left → src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css
+- .modal-hint → src/components/common/AttendeeDisplay.css, src/features/Contact/styles/ContactModal.css
+- .month → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .month-calendar → src/features/TimeLog/pages/TimeLogPage_new.css
+- .month-daygrid → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .month-divider → src/features/TimeLog/pages/TimeLogPage_new.css
+- .month-edit-btn → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .month-edit-container → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .month-edit-input → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .month-edit-separator → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .month-more-list → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .month-nav → src/pages/Home/CalendarSidebar.css
+- .month-nav-btn → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .month-number → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .month-week-item → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .month-year → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .more-title-date → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .more-title-day → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .nav-arrow → src/pages/Home/TimeRangeSelector.css
+- .nav-button → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .nav-checkbox → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .nav-icon → src/components/layout/AppLayout.css
+- .nav-item → src/components/layout/AppLayout.css
+- .nav-label → src/components/layout/AppLayout.css
+- .nav-next → src/pages/Home/TimeRangeSelector.css
+- .nav-prev → src/pages/Home/TimeRangeSelector.css
+- .navbar → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .navbar--range → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .new → src/components/shared/StatusLineContainer.css
+- .next → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .no-animation-dropdown → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .no-arrows → src/pages/Home/TimeRangeSelector.css
+- .no-bg → src/components/shared/FloatingToolbar/pickers/BackgroundColorPicker.css
+- .no-calendars → src/features/Calendar/styles/CalendarPicker.css
+- .no-select → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .no-tags → src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .note → src/features/TimeLog/components/TimeGap.css
+- .notification-btn → src/components/layout/AppLayout.css
+- .offline → src/components/demos/AIDemo.css
+- .ongoing-log-item → src/App.css
+- .ongoing-log-item-detailed → src/App.css
+- .online → src/components/demos/AIDemo.css
+- .open → src/lib/tui.calendar/apps/calendar/src/css/icons.css, src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .organizer → src/components/common/AttendeeDisplay.css
+- .other-month → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/pages/Home/CalendarSidebar.css
+- .outlook → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .outlook-connection → src/components/layout/AppLayout.css
+- .outlook-icon → src/components/layout/AppLayout.css
+- .page-container → src/components/common/PageContainer.css, src/pages/ThemeDemo/ThemeDemoPage.css
+- .page-content → src/components/common/PageContainer.css, src/pages/ThemeDemo/ThemeDemoPage.css
+- .panel → src/lib/tui.calendar/apps/calendar/src/css/layout.css, src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .panel-event → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .panel-event-wrapper → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .panel-grid → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .panel-grid-wrapper → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .panel-hidden → src/features/Plan/components/PlanManager.css, src/features/TimeLog/pages/TimeLog.css
+- .panel-pin-btn → src/components/ContentSelectionPanel.css
+- .panel-resizer → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .panel-resizer-guide → src/lib/tui.calendar/apps/calendar/src/css/layout.css
+- .panel-title → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .panel-toggle-btn → src/components/ContentSelectionPanel.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .paragraph-preline → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .participant-name → src/components/common/AttendeeDisplay.css
+- .paused → src/components/layout/AppLayout.css
+- .pending → src/components/demos/AIDemoV2.css
+- .picker-actions → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .picker-cancel-btn → src/components/shared/FloatingToolbar/FloatingToolbarV2.css
+- .picker-close-btn → src/components/shared/FloatingToolbar/FloatingToolbarV2.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .picker-confirm-btn → src/components/shared/FloatingToolbar/FloatingToolbarV2.css
+- .picker-content → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .picker-footer → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .picker-header → src/components/shared/FloatingToolbar/FloatingToolbarV2.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .picker-header-tip → src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .picker-preview-header → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .picker-title → src/components/shared/FloatingToolbar/FloatingToolbarV2.css, src/components/shared/FloatingToolbar/pickers/TextColorPicker.css
+- .pie-chart-center → src/pages/Home/charts/PieChartView.css
+- .pie-chart-container → src/pages/Home/charts/PieChartView.css
+- .pie-chart-view → src/pages/Home/charts/PieChartView.css
+- .pie-chart-wrapper → src/pages/Home/charts/PieChartView.css
+- .pinned → src/pages/Event/DetailTab.css
+- .pixel-container → src/pages/Home/charts/PixelView.css
+- .pixel-date → src/pages/Home/charts/PixelView.css
+- .pixel-day → src/pages/Home/charts/PixelView.css
+- .pixel-grid → src/pages/Home/charts/PixelView.css
+- .pixel-legend → src/pages/Home/charts/PixelView.css
+- .pixel-summary → src/pages/Home/charts/PixelView.css
+- .pixel-view → src/pages/Home/charts/PixelView.css
+- .pixel-week → src/pages/Home/charts/PixelView.css
+- .placeholder-content → src/pages/Home/DashboardGridStack.css
+- .placeholder-line → src/components/PlanSlate/PlanSlate.css
+- .placeholder-text → src/components/common/AttendeeDisplay.css, src/components/ContentSelectionPanel.css
+- .plan-color-picker → src/components/PlanItemEditor.css
+- .plan-content-input → src/components/PlanItemEditor.css
+- .plan-delete-btn → src/features/Plan/components/PlanManager.css
+- .plan-detail-content → src/features/Plan/components/PlanManager.css
+- .plan-detail-header → src/features/Plan/components/PlanManager.css
+- .plan-detail-panel → src/components/PlanItemEditor.css
+- .plan-detail-section → src/features/Plan/components/PlanManager.css
+- .plan-detail-toggle → src/components/PlanItemEditor.css
+- .plan-editor-footer → src/components/PlanItemEditor.css
+- .plan-editor-main → src/components/PlanItemEditor.css
+- .plan-editor-sidebar → src/components/PlanItemEditor.css
+- .plan-empty-state → src/App.css
+- .plan-item → src/features/Plan/components/PlanManager.css
+- .plan-item-card → src/App.css
+- .plan-item-priority → src/App.css
+- .plan-item-title → src/App.css
+- .plan-items → src/features/Plan/components/PlanManager.css
+- .plan-list-header → src/features/Plan/components/PlanManager.css
+- .plan-management → src/components/common/PageContainer.css
+- .plan-manager → src/features/Plan/components/PlanManager.css
+- .plan-manager-container → src/features/Plan/components/PlanManager.css
+- .plan-notes-input → src/components/PlanItemEditor.css
+- .plan-picker-container → src/components/PlanItemEditor.css
+- .plan-priority-buttons → src/features/Plan/components/PlanManager.css
+- .plan-save-btn → src/features/Plan/components/PlanManager.css
+- .plan-tag-list → src/components/PlanItemEditor.css
+- .plan-tag-option → src/components/PlanItemEditor.css
+- .plan-tag-selector → src/components/PlanItemEditor.css
+- .plan-tags-selector → src/features/Plan/components/PlanManager.css
+- .plan-time-radios → src/features/Plan/components/PlanManager.css
+- .plan-title-input → src/components/PlanItemEditor.css
+- .popup-actions → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .popup-arrow → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-arrow-border → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-arrow-fill → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-button → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css, src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-close → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .popup-close-btn → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .popup-confirm → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .popup-container → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .popup-date-dash → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-date-picker → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-header → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .popup-overlay → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .popup-section → src/lib/tui.calendar/apps/calendar/src/css/popup/common.css
+- .popup-section-allday → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-section-item → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-section-location → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-section-private → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-section-title → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .popup-tag-list → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .popup-top-line → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .prev → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .preview-arrow-section → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .preview-end-time → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .preview-header → src/components/common/AttendeeDisplay.css
+- .preview-label → src/components/common/AttendeeDisplay.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .preview-name → src/components/common/AttendeeDisplay.css
+- .preview-name-row → src/components/common/AttendeeDisplay.css
+- .preview-row → src/components/common/AttendeeDisplay.css
+- .preview-source → src/components/common/AttendeeDisplay.css
+- .preview-start-time → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .preview-time-display → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .preview-value → src/components/common/AttendeeDisplay.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .primary → src/pages/Home/HomePage.css, src/pages/ThemeDemo/ThemeDemoPage.css
+- .priority-badge → src/App.css, src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .priority-icon → src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .priority-item → src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .priority-label → src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .priority-list → src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .priority-picker-panel → src/components/shared/FloatingToolbar/pickers/PriorityPicker.css
+- .processing → src/components/demos/AIDemoV2.css
+- .progress-bar → src/components/demos/AIDemoV2.css, src/pages/Home/charts/PieChartView.css, src/pages/Home/TodayStatsCard.css
+- .progress-bar-fill → src/pages/Home/TimeDistributionCard.css
+- .progress-fill → src/components/demos/AIDemoV2.css, src/pages/Home/charts/PieChartView.css, src/pages/Home/TodayStatsCard.css
+- .progress-section-wrapper → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .prompt-actions → src/components/demos/AIDemoV2.css
+- .prompt-editor → src/components/demos/AIDemoV2.css
+- .prompt-textarea → src/components/demos/AIDemoV2.css
+- .provider-actions → src/App.css
+- .provider-details → src/App.css
+- .provider-icon → src/App.css
+- .provider-info → src/App.css
+- .provider-item → src/App.css
+- .provider-selector → src/components/demos/AIDemoV2.css
+- .providers-list → src/App.css
+- .proxy-status → src/components/demos/AIDemo.css, src/components/demos/RAGDemo.css
+- .proxy-status-indicator → src/components/demos/AIDemoV2.css
+- .pulse → src/features/Timer/components/TimerCard.css
+- .pure-datetime-range-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .purple → src/components/ContentSelectionPanel.css
+- .qrcode-action → src/components/common/QRCodeDisplay.css
+- .qrcode-actions → src/components/common/QRCodeDisplay.css
+- .qrcode-btn → src/components/common/QRCodeDisplay.css
+- .qrcode-btn-download → src/components/common/QRCodeDisplay.css
+- .qrcode-btn-open → src/components/common/QRCodeDisplay.css
+- .qrcode-btn-remove → src/components/common/QRCodeDisplay.css
+- .qrcode-description → src/components/common/QRCodeDisplay.css
+- .qrcode-display-container → src/components/common/QRCodeDisplay.css
+- .qrcode-display-header → src/components/common/QRCodeDisplay.css
+- .qrcode-display-list → src/components/common/QRCodeDisplay.css
+- .qrcode-image → src/components/common/QRCodeDisplay.css
+- .qrcode-info → src/components/common/QRCodeDisplay.css
+- .qrcode-item → src/components/common/QRCodeDisplay.css
+- .qrcode-title → src/components/common/QRCodeDisplay.css
+- .qrcode-url → src/components/common/QRCodeDisplay.css
+- .quick-btn → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .quick-buttons-container → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .quick-buttons-row → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .quick-select → src/pages/Home/CalendarSidebar.css
+- .quick-select-buttons → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .quick-select-section → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .rag-demo → src/components/demos/RAGDemo.css
+- .rag-header → src/components/demos/RAGDemo.css
+- .range → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .range-end → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .range-start → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .range-text → src/pages/Home/CalendarSidebar.css
+- .rating-section → src/components/demos/AIDemoV2.css
+- .rating-value → src/components/demos/AIDemoV2.css
+- .react-flow__controls → src/features/Event/components/EventTree/EventTree.css
+- .react-flow__controls-button → src/features/Event/components/EventTree/EventTree.css
+- .react-flow__edge → src/features/Event/components/EventTree/EventTree.css
+- .react-flow__edge-path → src/features/Event/components/EventTree/EventTree.css
+- .react-flow__minimap → src/features/Event/components/EventTree/EventTree.css
+- .react-flow__node → src/features/Event/components/EventTree/EventTree.css
+- .real-time-sync-status → src/App.css
+- .recurring-btn → src/features/Tag/styles/TagManager.css
+- .related-text → src/features/TimeLog/pages/TimeLogPage_new.css
+- .remarkable → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .remarkable-task-checkbox → src/styles/calendar.css
+- .remarkable-task-content → src/styles/calendar.css
+- .resize-handle → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-bottom → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-bottomleft → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-bottomright → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-left → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-right → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-top → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-topleft → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handle-topright → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .resize-handler-x → src/lib/tui.calendar/apps/calendar/src/css/events/time.css
+- .result-content → src/components/demos/RAGDemo.css
+- .result-header → src/components/demos/RAGDemo.css
+- .result-item → src/components/demos/AIDemo.css, src/components/demos/RAGDemo.css
+- .result-meta → src/components/demos/AIDemoV2.css
+- .result-rank → src/components/demos/RAGDemo.css
+- .result-similarity → src/components/demos/RAGDemo.css
+- .result-title → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .results-list → src/components/demos/RAGDemo.css
+- .results-section → src/components/demos/RAGDemo.css
+- .right → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .right-menu-group-btn → src/features/TimeLog/pages/TimeLog.css
+- .right-menu-groups → src/features/TimeLog/pages/TimeLog.css
+- .right-menu-wrapper → src/features/TimeLog/pages/TimeLog.css
+- .right-submenu → src/features/TimeLog/pages/TimeLog.css
+- .right-submenu-icon → src/features/TimeLog/pages/TimeLog.css
+- .right-submenu-item → src/features/TimeLog/pages/TimeLog.css
+- .right-submenu-text → src/features/TimeLog/pages/TimeLog.css
+- .row-icon → src/features/TimeLog/pages/TimeLog.css
+- .running → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .safe-datetime-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .safe-datetime-popup → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .safe-no-scroll-dropdown → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .same → src/pages/Home/ComparisonCard.css
+- .search-border-rect → src/components/ContentSelectionPanel.css
+- .search-border-svg → src/components/ContentSelectionPanel.css
+- .search-box → src/components/demos/RAGDemo.css
+- .search-btn → src/components/demos/RAGDemo.css
+- .search-container → src/components/ContentSelectionPanel.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .search-icon → src/components/ContentSelectionPanel.css, src/features/Tag/styles/TagManager.css
+- .search-input → src/components/ContentSelectionPanel.css, src/components/demos/RAGDemo.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .search-input-enhanced → src/components/ContentSelectionPanel.css
+- .search-input-wrapper → src/components/ContentSelectionPanel.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .search-input-wrapper-enhanced → src/components/ContentSelectionPanel.css
+- .search-panel → src/components/demos/RAGDemo.css
+- .search-result-item → src/components/common/AttendeeDisplay.css
+- .search-section → src/components/ContentSelectionPanel.css
+- .secondary → src/pages/ThemeDemo/ThemeDemoPage.css
+- .section → src/features/Calendar/styles/CalendarGroupManager.css
+- .section-actions → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .section-badge → src/pages/Home/ComparisonCard.css
+- .section-button → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .section-detail → src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .section-header → src/App.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/Plan/components/PlanManager.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css, src/pages/Home/ComparisonCard.css
+- .section-header-simple → src/components/ContentSelectionPanel.css
+- .section-identity → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .section-label → src/pages/Home/CardConfigModal.css, src/pages/Home/ComparisonCard.css
+- .section-meta → src/pages/Home/ComparisonCard.css
+- .section-title → src/components/ContentSelectionPanel.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .section-value → src/pages/Home/ComparisonCard.css
+- .see-more → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .see-more-container → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .see-more-header → src/lib/tui.calendar/apps/calendar/src/css/popup/seeMore.css
+- .select-input → src/pages/Home/CardConfigModal.css
+- .selected → src/components/common/AttendeeDisplay.css, src/components/common/SyncModeSelector.css, src/components/demos/AIDemoV2.css, src/components/LogSlate/MentionMenu.css, src/components/PlanItemEditor.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/components/shared/HierarchicalTagPicker.css, src/components/shared/UnifiedMentionMenu.css, src/features/Calendar/styles/CalendarGroupManager.css, src/features/Event/components/EventTree/EventTree.css, src/features/Plan/components/PlanManager.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css, src/features/Tag/styles/TagManager.css, src/pages/Home/CalendarSidebar.css
+- .selected-badge → src/features/Calendar/styles/CalendarGroupManager.css
+- .selected-calendars-with-search → src/features/Calendar/styles/CalendarPicker.css
+- .selected-info → src/features/Calendar/styles/CalendarGroupManager.css
+- .selected-range-info → src/pages/Home/CalendarSidebar.css
+- .selected-tags-chips → src/components/shared/HierarchicalTagPicker.css
+- .selected-tags-with-search → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .selection-hint → src/components/ContentSelectionPanel.css
+- .separator → src/components/common/AttendeeDisplay.css
+- .setting-btn → src/components/layout/AppLayout.css
+- .settings-button → src/components/SettingsModal.css
+- .settings-button-primary → src/components/SettingsModal.css
+- .settings-checkbox → src/components/SettingsModal.css
+- .settings-content → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .settings-description → src/components/SettingsModal.css
+- .settings-header → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .settings-item → src/components/SettingsModal.css
+- .settings-loading → src/components/SettingsModal.css
+- .settings-modal → src/components/SettingsModal.css
+- .settings-modal-close → src/components/SettingsModal.css
+- .settings-modal-content → src/components/SettingsModal.css
+- .settings-modal-footer → src/components/SettingsModal.css
+- .settings-modal-header → src/components/SettingsModal.css
+- .settings-modal-overlay → src/components/SettingsModal.css
+- .settings-panel → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .settings-section → src/components/SettingsModal.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .show-top-shadow → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .sidebar → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .sidebar-header → src/pages/Home/CalendarSidebar.css
+- .sidebar-item → src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .sidebar-nav → src/components/layout/AppLayout.css
+- .sidebar-panel-toggle → src/components/layout/AppLayout.css
+- .simple-datetime-range-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .simple-time-selector → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .single → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .single-time → src/features/TimeLog/pages/TimeLog.css
+- .slate-bullet-paragraph → src/components/PlanSlate/EventLineElement.css, src/components/PlanSlate/PlanSlate.css
+- .slate-date-mention → src/components/LogSlate/LogSlate.css
+- .slate-editable → src/components/ModalSlate/ModalSlate.css, src/features/TimeLog/pages/TimeLog.css
+- .slate-paragraph → src/components/ModalSlate/ModalSlate.css, src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .slate-tag → src/components/LogSlate/LogSlate.css
+- .slider-label → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .slider-track-fill → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .slider-track-wrapper → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .slider-value → src/features/Calendar/styles/CalendarSettingsPanel.css
+- .small → src/components/common/Logo.css, src/features/TimeLog/components/TimeGap.css
+- .snapshot-icon → src/components/ContentSelectionPanel.css
+- .snapshot-mode-banner → src/components/ContentSelectionPanel.css
+- .snapshot-mode-text → src/components/ContentSelectionPanel.css
+- .source-info → src/components/common/AttendeeDisplay.css
+- .source-label → src/features/TimeLog/pages/TimeLogPage_new.css
+- .source-name → src/features/TimeLog/pages/TimeLogPage_new.css
+- .source-status → src/features/TimeLog/pages/TimeLogPage_new.css
+- .source-sync → src/features/TimeLog/pages/TimeLogPage_new.css
+- .source-tab → src/pages/Home/CardConfigModal.css
+- .source-tag → src/components/common/FullContactModal.css, src/components/demos/AttendeeFeatureDemo.css
+- .spec-block → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-canvas → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-canvas--flat → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-card → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-card--after → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-card-body → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-card-title → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-columns → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-floatbar → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-floatbar--after → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-floatbar-btn → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-floatbar-btn--after → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-gallery → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-header → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-label → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-menu → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-menu--after → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-menu-item → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-menu-item--hover → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-modal → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-modal--after → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-modal-actions → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-modal-body → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-modal-title → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-note → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-variant → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-variant-title → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spec-variants → src/pages/ThemeDemo/ThemeDemoPage.css
+- .spinner → src/pages/Home/DashboardCard.css
+- .star → src/components/demos/AIDemoV2.css
+- .stars → src/components/demos/AIDemoV2.css
+- .start-btn → src/features/Timer/components/TimerCard.css
+- .start-proxy-btn → src/components/demos/RAGDemo.css
+- .start-time → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .stat-change → src/pages/Home/ComparisonStatsCard.css
+- .stat-comparison-item → src/pages/Home/ComparisonStatsCard.css
+- .stat-current → src/pages/Home/ComparisonStatsCard.css
+- .stat-item → src/App.css, src/components/demos/AIDemoV2.css, src/features/Tag/styles/TagManager.css, src/pages/Home/TodayStatsCard.css
+- .stat-label → src/App.css, src/components/demos/AIDemoV2.css, src/pages/Home/ComparisonStatsCard.css, src/pages/Home/TodayStatsCard.css
+- .stat-previous → src/pages/Home/ComparisonStatsCard.css
+- .stat-value → src/App.css, src/components/demos/AIDemoV2.css, src/pages/Home/TodayStatsCard.css
+- .stat-value-large → src/pages/Home/TodayStatsCard.css
+- .state-section → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .stats → src/features/Tag/styles/TagManager.css
+- .stats-comparison → src/pages/Home/ComparisonStatsCard.css
+- .stats-content → src/features/Dashboard/styles/DailyStatsCard.css
+- .stats-control-bar → src/pages/Home/StatsControlBar.css
+- .stats-footer → src/features/Dashboard/styles/DailyStatsCard.css
+- .stats-header → src/features/Dashboard/styles/DailyStatsCard.css
+- .stats-list → src/pages/Home/charts/PieChartView.css
+- .stats-list-item → src/pages/Home/charts/PieChartView.css
+- .stats-loading → src/pages/Home/StatsPanel.css
+- .stats-panel → src/components/demos/AIDemoV2.css, src/pages/Home/StatsPanel.css
+- .stats-view-container → src/pages/Home/StatsPanel.css
+- .status → src/App.css
+- .status-bar → src/components/demos/RAGDemo.css
+- .status-content → src/components/layout/AppLayout.css
+- .status-dot → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css, src/components/layout/AppLayout.css
+- .status-label → src/components/shared/StatusLineContainer.css
+- .status-label-layer → src/components/shared/StatusLineContainer.css
+- .status-line → src/components/shared/StatusLineContainer.css
+- .status-line-container → src/components/shared/StatusLineContainer.css
+- .status-line-content → src/components/shared/StatusLineContainer.css
+- .status-line-layer → src/components/shared/StatusLineContainer.css
+- .status-text → src/components/layout/AppLayout.css
+- .stop → src/App.css
+- .stopped → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .subtitle → src/components/demos/AIDemoV2.css, src/components/demos/RAGDemo.css
+- .success → src/App.css, src/components/demos/AIDemoV2.css
+- .summary-item → src/pages/Home/charts/PixelView.css
+- .summary-label → src/pages/Home/charts/PixelView.css
+- .summary-value → src/pages/Home/charts/PixelView.css
+- .switch-btn → src/pages/Home/TimeDistributionCard.css
+- .sync-debug-info → src/features/Event/components/EventEditModal/SyncTargetPicker.css
+- .sync-header → src/App.css
+- .sync-icon → src/components/common/SyncModeSelector.css, src/components/layout/AppLayout.css
+- .sync-info → src/App.css
+- .sync-label → src/components/common/SyncModeSelector.css
+- .sync-message → src/App.css
+- .sync-mode-button → src/components/common/SyncModeSelector.css
+- .sync-mode-dropdown → src/components/common/SyncModeSelector.css
+- .sync-mode-help → src/components/common/SyncModeSelector.css
+- .sync-mode-option → src/components/common/SyncModeSelector.css
+- .sync-mode-overlay → src/components/common/SyncModeSelector.css
+- .sync-mode-selector → src/components/common/SyncModeSelector.css
+- .sync-notification → src/components/shared/SyncNotification.css
+- .sync-notification-close → src/components/shared/SyncNotification.css
+- .sync-notification-header → src/components/shared/SyncNotification.css
+- .sync-notification-icon → src/components/shared/SyncNotification.css
+- .sync-notification-message → src/components/shared/SyncNotification.css
+- .sync-notification-time → src/components/shared/SyncNotification.css
+- .sync-notification-title → src/components/shared/SyncNotification.css
+- .sync-notifications-container → src/components/shared/SyncNotification.css
+- .sync-status → src/App.css, src/components/layout/AppLayout.css
+- .sync-switch-hint → src/features/Event/components/EventEditModal/SyncTargetPicker.css
+- .sync-target-picker-wrapper → src/features/Event/components/EventEditModal/SyncTargetPicker.css
+- .sync-toggle-btn → src/App.css
+- .synced → src/App.css
+- .tab-button → src/App.css
+- .tab-close → src/features/TimeLog/pages/TimeLog.css
+- .tab-close-btn → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-content → src/App.css, src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-dirty-indicator → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-emoji → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-empty-hint → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-empty-state → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-header → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-header-container → src/features/Event/components/EventTabManager/EventTabManager.css
+- .tab-icon → src/pages/Home/TimeRangeSelector.css
+- .tab-title → src/features/Event/components/EventTabManager/EventTabManager.css, src/features/TimeLog/pages/TimeLog.css
+- .tabs → src/components/demos/AIDemoV2.css
+- .tag-checkmark → src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/components/shared/HierarchicalTagPicker.css
+- .tag-chip → src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-chip-emoji → src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-chip-remove → src/components/shared/HierarchicalTagPicker.css
+- .tag-client → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tag-color → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-content → src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/components/shared/HierarchicalTagPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css, src/features/Tag/styles/TagManager.css
+- .tag-dropdown → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-dropdown-actions → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-dropdown-close → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-dropdown-header → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-dropdown-item → src/components/common/TagInput.css
+- .tag-dropdown-list → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-dropdown-title → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-editor → src/features/Tag/styles/TagManager.css
+- .tag-element → src/components/LogSlate/LogSlate.css, src/components/ModalSlate/TitleSlate.css
+- .tag-emoji → src/App.css, src/components/common/TagInput.css, src/components/ModalSlate/TitleSlate.css, src/components/shared/HierarchicalTagPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css, src/features/Tag/styles/TagManager.css
+- .tag-etc → src/components/common/TagInput.css
+- .tag-green → src/features/TimeLog/pages/TimeLogPage_new.css
+- .tag-hash → src/components/shared/HierarchicalTagPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css
+- .tag-input-chip → src/components/common/TagInput.css
+- .tag-input-container → src/components/common/TagInput.css
+- .tag-input-dropdown → src/components/common/TagInput.css
+- .tag-input-field → src/components/common/TagInput.css
+- .tag-input-invisible → src/components/common/TagInput.css
+- .tag-item → src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/features/Tag/styles/TagManager.css, src/features/TimeLog/pages/TimeLog.css
+- .tag-level → src/components/common/TagInput.css
+- .tag-management → src/components/common/PageContainer.css
+- .tag-management-hint → src/App.css
+- .tag-management-layout → src/App.css
+- .tag-mention → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tag-name → src/components/common/TagInput.css, src/components/shared/HierarchicalTagPicker.css, src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css, src/features/Tag/styles/TagManager.css
+- .tag-option → src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-orange → src/features/TimeLog/pages/TimeLogPage_new.css
+- .tag-picker-actions → src/components/shared/HierarchicalTagPicker.css
+- .tag-picker-arrow → src/components/shared/HierarchicalTagPicker.css
+- .tag-picker-close → src/components/shared/HierarchicalTagPicker.css
+- .tag-picker-dropdown → src/components/shared/HierarchicalTagPicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tag-picker-header → src/components/shared/HierarchicalTagPicker.css
+- .tag-picker-list → src/components/shared/HierarchicalTagPicker.css
+- .tag-picker-placeholder → src/components/shared/HierarchicalTagPicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tag-picker-trigger → src/components/shared/HierarchicalTagPicker.css
+- .tag-placeholder → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tag-remove-btn → src/components/common/TagInput.css
+- .tag-row → src/features/Tag/styles/TagManager.css
+- .tag-search-inline → src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-search-input → src/components/shared/FloatingToolbar/pickers/TagPicker.css, src/components/shared/HierarchicalTagPicker.css, src/features/Tag/components/HierarchicalTagPicker/HierarchicalTagPicker.css
+- .tag-separator → src/components/common/TagInput.css
+- .tag-setting-section → src/App.css
+- .tag-stat-bar-background → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-bar-fill → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-bar-wrapper → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-duration → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-item → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-label → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-name → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-percentage → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-row → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-row-child → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stat-time → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-stats → src/features/Tag/styles/TagManager.css
+- .tag-stats-list → src/features/Dashboard/styles/DailyStatsCard.css
+- .tag-work → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .tags-area → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .task-actions → src/App.css
+- .task-card → src/components/demos/AIDemoV2.css
+- .task-checkbox → src/App.css
+- .task-children → src/components/ContentSelectionPanel.css
+- .task-content → src/App.css
+- .task-error → src/components/demos/AIDemoV2.css
+- .task-expand-btn → src/components/ContentSelectionPanel.css
+- .task-expand-spacer → src/components/ContentSelectionPanel.css
+- .task-grid → src/components/demos/AIDemoV2.css
+- .task-header → src/App.css, src/components/demos/AIDemoV2.css
+- .task-hours → src/components/ContentSelectionPanel.css
+- .task-icon → src/components/ContentSelectionPanel.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .task-icon-favorite → src/components/ContentSelectionPanel.css
+- .task-icon-hidden → src/components/ContentSelectionPanel.css
+- .task-icon-visible → src/components/ContentSelectionPanel.css
+- .task-input → src/App.css
+- .task-item → src/App.css
+- .task-meta → src/features/TimeLog/pages/TimeLogPage_new.css
+- .task-node → src/components/ContentSelectionPanel.css
+- .task-node-row → src/components/ContentSelectionPanel.css
+- .task-pie-chart → src/components/ContentSelectionPanel.css
+- .task-progress-text → src/components/ContentSelectionPanel.css
+- .task-result-preview → src/components/demos/AIDemoV2.css
+- .task-section → src/App.css
+- .task-stats → src/components/ContentSelectionPanel.css
+- .task-stats-left → src/components/ContentSelectionPanel.css
+- .task-stats-top → src/components/ContentSelectionPanel.css
+- .task-status-badge → src/components/demos/AIDemoV2.css
+- .task-time-bar → src/components/ContentSelectionPanel.css
+- .task-time-fill → src/components/ContentSelectionPanel.css
+- .task-title → src/App.css, src/components/ContentSelectionPanel.css
+- .task-tree → src/components/ContentSelectionPanel.css
+- .task-type → src/components/demos/AIDemoV2.css
+- .task-visibility-btn → src/components/ContentSelectionPanel.css
+- .task-visibility-btn-hidden → src/components/ContentSelectionPanel.css
+- .task-visibility-btn-visible → src/components/ContentSelectionPanel.css
+- .task-visibility-container → src/components/ContentSelectionPanel.css
+- .text-style-buttons → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .text-style-menu → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .theme-demo → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-badge → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-btn → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-card → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-card--transparent → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-details-list → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-file → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-filelist → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-grid → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv-count → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv-item → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv-key → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv-row → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-kv-val → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-muted → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-page-container → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-pill → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-pill--danger → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-row → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-subcard → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-subtitle → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-demo-title → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-family → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-family-name → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-palette → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-palette--5 → src/pages/ThemeDemo/ThemeDemoPage.css
+- .theme-swatch → src/pages/ThemeDemo/ThemeDemoPage.css
+- .time → src/App.css, src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css, src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .time-action-btn → src/features/TimeLog/pages/TimeLog.css
+- .time-arrow-section → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .time-calendar → src/components/common/PageContainer.css
+- .time-calendar-container → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .time-calendar-source → src/features/TimeLog/pages/TimeLog.css
+- .time-calendar-source-wrapper → src/features/TimeLog/pages/TimeLog.css
+- .time-cell → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-column → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-column-content → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-column-header → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-column-item → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-column-list → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-columns → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-columns-container → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-display → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-display-wrapper → src/features/TimeLog/pages/TimeLog.css
+- .time-distribution-content → src/pages/Home/TimeDistributionCard.css
+- .time-duration-arrow → src/features/TimeLog/pages/TimeLog.css
+- .time-gap → src/features/TimeLog/components/TimeGap.css
+- .time-gap-add-btn → src/features/TimeLog/components/TimeGap.css
+- .time-gap-axis → src/features/TimeLog/components/TimeGap.css
+- .time-gap-axis-trigger → src/features/TimeLog/components/TimeGap.css
+- .time-gap-content → src/features/TimeLog/components/TimeGap.css
+- .time-gap-duration → src/features/TimeLog/components/TimeGap.css
+- .time-gap-floating-menu → src/features/TimeLog/components/TimeGap.css
+- .time-hover-card → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__countdown → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__countdown--overdue → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__date → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__edit-btn → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__footer → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-hover-card__icon → src/components/TimeHoverCard/TimeHoverCard.css
+- .time-main-title → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-main-titles → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-panel → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-panel-header → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-panels → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-range-display → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/TimeLog/pages/TimeLog.css
+- .time-range-selector → src/pages/Home/TimeRangeSelector.css
+- .time-section → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-selection-area → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .time-selector → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-selector-header → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-selectors → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-separator → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-single-display → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .time-sync-mode-icon → src/features/TimeLog/pages/TimeLog.css
+- .time-text → src/features/TimeLog/pages/TimeLog.css
+- .timegrid → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-current-time → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-day-difference → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-hour-rows → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-now-indicator → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-now-indicator-left → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-now-indicator-marker → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-now-indicator-right → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-now-indicator-today → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-scroll-area → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timegrid.css
+- .timegrid-time → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-column → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-first → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-hidden → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-label → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-last → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-time-past → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-timezone-collapse-button → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timegrid-timezone-label → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .timeline-compressed-segment → src/features/TimeLog/pages/TimeLog.css
+- .timeline-date-group → src/features/TimeLog/pages/TimeLog.css
+- .timeline-date-header → src/features/TimeLog/pages/TimeLog.css
+- .timeline-date-title → src/features/TimeLog/pages/TimeLog.css
+- .timeline-event-wrapper → src/features/TimeLog/pages/TimeLog.css
+- .timeline-line → src/features/TimeLog/pages/TimeLog.css
+- .timeline-month-header → src/features/TimeLog/pages/TimeLog.css
+- .timeline-month-info → src/features/TimeLog/pages/TimeLog.css
+- .timeline-status-icon → src/features/TimeLog/pages/TimeLog.css
+- .timelog-card-container → src/features/TimeLog/pages/TimeLog.css
+- .timelog-date-display → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-date-text → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-events-list → src/features/TimeLog/pages/TimeLog.css
+- .timelog-gradient-bar → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-header-border → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-header-section → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-header-with-tabs → src/features/TimeLog/pages/TimeLog.css
+- .timelog-main-card → src/features/TimeLog/pages/TimeLog.css
+- .timelog-main-container → src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-page → src/features/TimeLog/pages/TimeLog.css
+- .timelog-page-container → src/components/common/PageContainer.css
+- .timelog-page-new → src/features/TimeLog/pages/TimeLogPage_new.css
+- .timelog-slate-editor → src/features/TimeLog/pages/TimeLog.css
+- .timelog-tab → src/features/TimeLog/pages/TimeLog.css
+- .timelog-tab-active → src/features/TimeLog/pages/TimeLog.css
+- .timelog-tab-bar → src/features/TimeLog/pages/TimeLog.css
+- .timelog-tab-content → src/features/TimeLog/pages/TimeLog.css
+- .timelog-title → src/features/TimeLog/pages/TimeLog.css, src/features/TimeLog/pages/TimeLogPage_new.css
+- .timer-btn → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Timer/components/TimerCard.css, src/pages/Event/DetailTab.css
+- .timer-button-start → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .timer-buttons → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Timer/components/TimerCard.css, src/pages/Event/DetailTab.css
+- .timer-card → src/features/Timer/components/TimerCard.css
+- .timer-check-icon → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .timer-display → src/App.css, src/components/layout/AppLayout.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Timer/components/TimerCard.css, src/pages/Event/DetailTab.css
+- .timer-emoji → src/features/Timer/components/TimerCard.css
+- .timer-indicator → src/components/layout/AppLayout.css
+- .timer-log-duration → src/App.css
+- .timer-log-time → src/App.css
+- .timer-section → src/App.css
+- .timer-segment → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .timer-segments-list → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .timer-start → src/features/Timer/components/TimerCard.css
+- .timer-tag → src/components/layout/AppLayout.css
+- .timer-tag-display → src/App.css
+- .timer-tag-line → src/components/layout/AppLayout.css
+- .timer-tags → src/features/Timer/components/TimerCard.css
+- .timer-text → src/components/layout/AppLayout.css
+- .timer-time-line → src/components/layout/AppLayout.css
+- .timer-title → src/features/Timer/components/TimerCard.css
+- .timestamp → src/components/demos/RAGDemo.css
+- .timestamp-divider → src/components/LogSlate/LogSlate.css, src/components/ModalSlate/ModalSlate.css
+- .timestamp-options → src/features/TimeLog/pages/TimeLogPage_new.css
+- .timestamp-text → src/components/LogSlate/LogSlate.css, src/components/ModalSlate/ModalSlate.css
+- .timestamp-time → src/features/TimeLog/pages/TimeLogPage_new.css
+- .timestamp-toggle → src/features/TimeLog/pages/TimeLogPage_new.css
+- .timezone-labels-slot → src/lib/tui.calendar/apps/calendar/src/css/timegrid/timeColumn.css
+- .tippy-arrow → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .tippy-box → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Event/components/EventTree/EditableEventTree.css, src/features/Plan/components/PlanManager.css, src/features/TimeLog/components/TimeGap.css, src/pages/Event/DetailTab.css
+- .tippy-content → src/components/common/ContactPreviewCard.css, src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/features/Event/components/EventEditModal/EventEditModalV2.css, src/features/Event/components/EventTree/EditableEventTree.css, src/features/Plan/components/PlanManager.css, src/pages/Event/DetailTab.css
+- .tippy-date-range-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .title → src/components/demos/RAGDemo.css
+- .title-checkbox-row → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .title-editor → src/features/Event/components/EventTree/EditableEventTree.css
+- .title-indicator → src/App.css, src/features/Dashboard/styles/UpcomingEventsPanel.css, src/features/Plan/components/PlanManager.css
+- .title-input → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css, src/pages/Home/CardConfigModal.css
+- .title-mode → src/components/LogSlate/LogSlate.css
+- .title-right-icon → src/features/TimeLog/pages/TimeLog.css
+- .title-slate-container → src/components/ModalSlate/TitleSlate.css
+- .title-slate-editable → src/components/ModalSlate/TitleSlate.css
+- .toastui-calendar → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-add-button → src/styles/calendar.css
+- .toastui-calendar-allday → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-allday-panel → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-bottom → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-calendar-dot → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-calendar-section → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-collapse-btn-icon → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-column → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-columns → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-content → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-controls → src/styles/calendar.css
+- .toastui-calendar-datepicker-container → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-day → src/styles/calendar.css
+- .toastui-calendar-day-name__date → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-day-name__name → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-day-name-container → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-day-name-item → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-day-names → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-day-view → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-day-view-day-names → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-daygrid-cell → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-delete-button → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-detail-container → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-detail-item-indent → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dot → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dragging--move-event → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dragging--resize-horizontal-event → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dragging--resize-vertical-event → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dropdown-menu → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dropdown-menu-item → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-dropdown-section → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-edit-button → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-event → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-event-allday → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-event-background → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-event-calendar → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-event-state → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-event-time → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-event-time-content → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-event-title → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-events → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-floating-layer → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-form-container → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-grid-cell-date → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-grid-cell-footer → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-grid-cell-more-events → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-grid-selection → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-grid-selection-label → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-gridline-half → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-handle-y → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-hidden-input → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-holiday → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-horizontal → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-hour-row → src/styles/calendar.css
+- .toastui-calendar-ic-arrow-left → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-arrow-right → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-arrow-solid-top → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-checkbox-checked → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-checkbox-normal → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-close → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-date → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-delete → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-dropdown-arrow → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-edit → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-handle-y → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-location → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-location-b → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-milestone → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-private → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-public → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-repeat-b → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-state → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-state-b → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-title → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-ic-user-b → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-icon → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .toastui-calendar-layout → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-left → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-left-content → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-milestone → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-month-body → src/styles/calendar.css
+- .toastui-calendar-month-date → src/styles/calendar.css
+- .toastui-calendar-month-date-number → src/styles/calendar.css
+- .toastui-calendar-month-day-event → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month-daygrid → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-month-daygrid-cell → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month-dayname → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-month-grid-line → src/styles/calendar.css
+- .toastui-calendar-month-header → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-month-milestone → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month-more-button → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month-more-list → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-month-view → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-month-week → src/styles/calendar.css
+- .toastui-calendar-month-week-item → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-more-title-date → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-more-title-day → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-nav-button → src/styles/calendar.css
+- .toastui-calendar-navigation → src/styles/calendar.css
+- .toastui-calendar-open → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-other-month → src/styles/calendar.css
+- .toastui-calendar-panel → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-panel-event → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-panel-event-wrapper → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-panel-grid → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-panel-grid-wrapper → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-panel-resizer → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-panel-resizer-guide → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-panel-title → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-popup-arrow → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-arrow-border → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-arrow-fill → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-button → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-close → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-confirm → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-container → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-date-dash → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-date-picker → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-overlay → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section-allday → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section-item → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section-location → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section-private → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-section-title → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-popup-top-line → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-resize-handler-x → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-right → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-section-button → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-section-detail → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-section-header → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-see-more → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-see-more-container → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-see-more-header → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-state-section → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-task → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-template-monthDayName → src/features/Calendar/styles/DesktopCalendarWidget.css, src/styles/calendar.css
+- .toastui-calendar-template-monthGridHeader → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-template-task → src/styles/calendar.css
+- .toastui-calendar-template-time → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/examples/styles/app.css
+- .toastui-calendar-time → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-time-date → src/styles/calendar.css
+- .toastui-calendar-time-hour → src/styles/calendar.css
+- .toastui-calendar-time-label → src/styles/calendar.css
+- .toastui-calendar-time-scroll → src/styles/calendar.css
+- .toastui-calendar-timegrid → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-cell → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-timegrid-current-time → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-day-difference → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-hour-rows → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-now-indicator → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-now-indicator-left → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-now-indicator-marker → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-now-indicator-right → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-now-indicator-today → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-scroll-area → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-column → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-first → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-hidden → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-label → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-last → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-time-past → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-timezone-collapse-button → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timegrid-timezone-label → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-timezone-labels-slot → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-title → src/styles/calendar.css
+- .toastui-calendar-today → src/styles/calendar.css
+- .toastui-calendar-top → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-travel-time → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-vertical-line → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-view-button → src/styles/calendar.css
+- .toastui-calendar-view-controls → src/styles/calendar.css
+- .toastui-calendar-week → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-week-dayname → src/features/Calendar/styles/DesktopCalendarWidget.css
+- .toastui-calendar-week-header → src/styles/calendar.css
+- .toastui-calendar-week-view → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-week-view-day-names → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-weekday → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-event → src/features/Calendar/styles/DesktopCalendarWidget.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-weekday-event-block → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-weekday-event-dot → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-event-dot-task → src/styles/calendar.css
+- .toastui-calendar-weekday-event-title → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css, src/styles/calendar.css
+- .toastui-calendar-weekday-events → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-exceed-in-week → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-exceed-right → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-grid → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-grid-date → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-grid-date-decorator → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekday-resize-handle → src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.css, src/lib/tui.calendar/apps/calendar/dist/toastui-calendar.min.css
+- .toastui-calendar-weekend → src/styles/calendar.css
+- .today → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/pages/Home/CalendarSidebar.css
+- .today-stats-content → src/pages/Home/TodayStatsCard.css
+- .today-stats-primary → src/pages/Home/TodayStatsCard.css
+- .today-stats-progress → src/pages/Home/TodayStatsCard.css
+- .today-stats-secondary → src/pages/Home/TodayStatsCard.css
+- .toggle-button → src/features/Event/components/EventTree/EditableEventTree.css
+- .toggle-label → src/pages/Home/TimeRangeSelector.css
+- .toggle-slider → src/pages/Home/TimeRangeSelector.css
+- .toggle-switch → src/pages/Home/TimeRangeSelector.css
+- .toolbar-actions → src/pages/Home/HomePage.css
+- .toolbar-btn → src/components/shared/FloatingToolbar/FloatingToolbarV2.css, src/pages/Home/HomePage.css
+- .toolbar-main → src/components/shared/FloatingToolbar/FloatingToolbarV2.css
+- .top → src/lib/tui.calendar/apps/calendar/src/css/popup/form.css
+- .total-count → src/pages/Home/charts/PieChartView.css
+- .total-duration → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css, src/pages/Home/charts/PieChartView.css
+- .total-label → src/features/Dashboard/styles/DailyStatsCard.css
+- .total-time → src/features/Dashboard/styles/DailyStatsCard.css
+- .total-value → src/features/Dashboard/styles/DailyStatsCard.css
+- .travel-time → src/lib/tui.calendar/apps/calendar/src/css/events/time.css
+- .tree-children → src/features/Event/components/EventTree/EditableEventTree.css
+- .tree-content → src/features/Event/components/EventTree/EventTreeViewer.css
+- .tree-node-content → src/features/Event/components/EventTree/EditableEventTree.css
+- .tree-node-item → src/features/Event/components/EventTree/EditableEventTree.css
+- .tree-root → src/features/Event/components/EventTree/EditableEventTree.css
+- .type-desc → src/pages/Home/CardConfigModal.css
+- .type-icon → src/pages/Home/CardConfigModal.css
+- .type-label → src/pages/Home/CardConfigModal.css
+- .ui-draggable-dragging → src/pages/Home/DashboardGridStack.css
+- .ui-resizable-handle → src/pages/Home/DashboardGridStack.css
+- .ui-resizable-resizing → src/pages/Home/DashboardGridStack.css
+- .ui-resizable-se → src/pages/Home/DashboardGridStack.css
+- .ultimate-datetime-picker → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ultimate-datetime-popup → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .ultimate-no-scroll-dropdown → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css
+- .unified-datetime-picker → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .unified-editable → src/components/PlanSlate/PlanSlate.css
+- .unified-event-line → src/components/PlanSlate/EventLineElement.css, src/components/PlanSlate/PlanSlate.css
+- .unified-mention-menu → src/components/shared/UnifiedMentionMenu.css
+- .unified-picker-tippy → src/features/Plan/components/PlanManager.css
+- .unified-slate-editor → src/components/PlanSlate/PlanSlate.css
+- .unpinned → src/components/ContentSelectionPanel.css
+- .up → src/pages/Home/ComparisonCard.css
+- .upcoming → src/App.css
+- .upcoming-events-panel → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .updated → src/components/shared/StatusLineContainer.css
+- .upload-method → src/components/demos/AIDemoV2.css
+- .upload-methods → src/components/demos/AIDemoV2.css
+- .upload-section → src/components/demos/AIDemoV2.css
+- .urgent → src/App.css
+- .url-input → src/components/demos/AIDemoV2.css
+- .usage-guide → src/components/demos/AttendeeFeatureDemo.css
+- .user-info → src/App.css
+- .user-profile → src/components/layout/AppLayout.css
+- .version-date → src/components/demos/AIDemoV2.css
+- .version-header → src/components/demos/AIDemoV2.css
+- .version-improvements → src/components/demos/AIDemoV2.css
+- .version-info → src/components/demos/AIDemoV2.css
+- .version-item → src/components/demos/AIDemoV2.css
+- .version-list → src/components/demos/AIDemoV2.css
+- .version-number → src/components/demos/AIDemoV2.css
+- .version-rating → src/components/demos/AIDemoV2.css
+- .vertical-line → src/features/Event/components/EventTree/EditableEventTree.css, src/lib/tui.calendar/apps/calendar/src/css/popup/detail.css
+- .view-switch-btn → src/features/Event/components/EventEditModal/EventEditModalV2.css, src/pages/Event/DetailTab.css
+- .week → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .week-date-label → src/styles/calendar.css
+- .week-day-label → src/styles/calendar.css
+- .week-day-name-wrapper → src/styles/calendar.css
+- .week-separator → src/features/TimeLog/components/CompressedDateRange.css
+- .week-view → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .week-view-day-names → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayNames.css
+- .weekday → src/components/shared/FloatingToolbar/HeadlessFloatingToolbar.css, src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css, src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/pages/Home/CalendarSidebar.css
+- .weekday-event → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css, src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .weekday-event-block → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .weekday-event-dot → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .weekday-event-title → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .weekday-events → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .weekday-exceed-in-week → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .weekday-exceed-right → src/lib/tui.calendar/apps/calendar/src/css/panel/allday.css
+- .weekday-grid → src/lib/tui.calendar/apps/calendar/src/css/daygrid/dayGrid.css
+- .weekday-grid-date → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .weekday-grid-date-decorator → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .weekday-header → src/pages/Home/CalendarSidebar.css
+- .weekday-resize-handle → src/lib/tui.calendar/apps/calendar/src/css/events/grid.css
+- .weekdays → src/components/shared/FloatingToolbar/pickers/UnifiedDateTimePicker.css
+- .widget-mode → src/features/Calendar/styles/CalendarSettingsPanel.css, src/features/Calendar/styles/DesktopCalendarWidget.css
+- .with-preline → src/features/Dashboard/styles/UpcomingEventsPanel.css
+- .with-timestamp → src/features/Dashboard/styles/UpcomingEventsPanel.css

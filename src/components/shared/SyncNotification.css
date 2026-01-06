@@ -20,22 +20,6 @@
   border-left: 4px solid;
 }
 
-.sync-notification-success {
-  border-left-color: #52c41a;
-}
-
-.sync-notification-warning {
-  border-left-color: #faad14;
-}
-
-.sync-notification-error {
-  border-left-color: #f5222d;
-}
-
-.sync-notification-info {
-  border-left-color: #1890ff;
-}
-
 .sync-notification-header {
   display: flex;
   align-items: center;

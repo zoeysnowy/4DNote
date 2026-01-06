@@ -27,8 +27,8 @@ export { EventTreePerformanceMonitor, perfMonitor } from './PerformanceMonitor';
 // EventNode Service
 export { EventNodeService } from './EventNodeService';
 
-// Stats helpers
-export { updateSubtreeRootEventIdUsingStatsIndex } from './stats/eventTreeStats';
+// Tree index helpers
+export { updateSubtreeRootEventIdUsingTreeIndex } from './stats/eventTreeStats';
 
 // Types
 export type {

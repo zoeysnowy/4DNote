@@ -19,17 +19,6 @@
 }
 
 /* 高度模式 */
-.dashboard-card--auto {
-  height: auto;
-}
-
-.dashboard-card--full {
-  height: 100%;
-}
-
-.dashboard-card--compact {
-  height: fit-content;
-}
 
 /* 卡片头部 */
 .dashboard-card__header {

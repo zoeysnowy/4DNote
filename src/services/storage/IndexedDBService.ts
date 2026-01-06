@@ -32,13 +32,13 @@ import type {
   StorageStats,
   QueryOptions,
   QueryResult,
-  EventStats
+  EventTreeIndex
 } from './types';
 
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 
 const DB_NAME = '4DNoteDB';
-const DB_VERSION = 4; // v4: event_stats adds parentEventId/rootEventId indexes for tree context
+const DB_VERSION = 5; // v5: rename event_stats -> event_tree (no compatibility; rebuildable derived index)
 
 export class IndexedDBService {
   private db: IDBDatabase | null = null;
@@ -171,27 +171,34 @@ export class IndexedDBService {
           historyStore.createIndex('timestamp', 'timestamp', { unique: false });
           historyStore.createIndex('source', 'source', { unique: false });
           console.log('[IndexedDBService] Created event_history store');
-        }        // 10. Event Stats Store (v4) - lightweight derived index
-        if (!db.objectStoreNames.contains('event_stats')) {
-          const statsStore = db.createObjectStore('event_stats', { keyPath: 'id' });
-          statsStore.createIndex('startTime', 'startTime', { unique: false });
-          statsStore.createIndex('endTime', 'endTime', { unique: false });
-          statsStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
-          statsStore.createIndex('calendarIds', 'calendarIds', { unique: false, multiEntry: true });
-          statsStore.createIndex('source', 'source', { unique: false });
-          statsStore.createIndex('parentEventId', 'parentEventId', { unique: false });
-          statsStore.createIndex('rootEventId', 'rootEventId', { unique: false });
-          console.log('[IndexedDBService] Created event_stats store');
+        }
+
+        // 10. Event Tree Index Store (v5) - lightweight derived index (rebuildable)
+        // No compatibility: delete old store and recreate new store.
+        if (db.objectStoreNames.contains('event_stats')) {
+          db.deleteObjectStore('event_stats');
+          console.log('[IndexedDBService] Deleted legacy event_stats store');
+        }
+
+        if (!db.objectStoreNames.contains('event_tree')) {
+          const treeStore = db.createObjectStore('event_tree', { keyPath: 'id' });
+          treeStore.createIndex('startTime', 'startTime', { unique: false });
+          treeStore.createIndex('endTime', 'endTime', { unique: false });
+          treeStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
+          treeStore.createIndex('calendarIds', 'calendarIds', { unique: false, multiEntry: true });
+          treeStore.createIndex('source', 'source', { unique: false });
+          treeStore.createIndex('parentEventId', 'parentEventId', { unique: false });
+          treeStore.createIndex('rootEventId', 'rootEventId', { unique: false });
+          console.log('[IndexedDBService] Created event_tree store');
         } else {
-          // Ensure new indexes exist after upgrading DB_VERSION
           const tx = (event.target as IDBOpenDBRequest).transaction;
           if (tx) {
-            const statsStore = tx.objectStore('event_stats');
-            if (!statsStore.indexNames.contains('parentEventId')) {
-              statsStore.createIndex('parentEventId', 'parentEventId', { unique: false });
+            const treeStore = tx.objectStore('event_tree');
+            if (!treeStore.indexNames.contains('parentEventId')) {
+              treeStore.createIndex('parentEventId', 'parentEventId', { unique: false });
             }
-            if (!statsStore.indexNames.contains('rootEventId')) {
-              statsStore.createIndex('rootEventId', 'rootEventId', { unique: false });
+            if (!treeStore.indexNames.contains('rootEventId')) {
+              treeStore.createIndex('rootEventId', 'rootEventId', { unique: false });
             }
           }
         }
@@ -1189,12 +1196,12 @@ export class IndexedDBService {
     });
   }
 
-  // ==================== EventStats CRUD ====================
+  // ==================== EventTreeIndex CRUD ====================
 
   /**
-   * 获取单条 EventStats
+   * 获取单条 EventTreeIndex
    */
-  async getEventStats(id: string): Promise<EventStats | null> {
+  async getEventTreeIndex(id: string): Promise<EventTreeIndex | null> {
     await this.initialize();
 
     return new Promise((resolve, reject) => {
@@ -1203,8 +1210,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readonly');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readonly');
+      const store = transaction.objectStore('event_tree');
       const request = store.get(id);
 
       request.onsuccess = () => resolve(request.result || null);
@@ -1213,9 +1220,9 @@ export class IndexedDBService {
   }
 
   /**
-   * 按 parentEventId 查询子节点 stats（仅直接子节点）
+   * 按 parentEventId 查询子节点 index（仅直接子节点）
    */
-  async getEventStatsByParentEventId(parentEventId: string): Promise<EventStats[]> {
+  async getEventTreeIndexByParentEventId(parentEventId: string): Promise<EventTreeIndex[]> {
     await this.initialize();
 
     return new Promise((resolve, reject) => {
@@ -1224,8 +1231,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readonly');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readonly');
+      const store = transaction.objectStore('event_tree');
       const index = store.index('parentEventId');
       const request = index.getAll(IDBKeyRange.only(parentEventId));
 
@@ -1237,7 +1244,7 @@ export class IndexedDBService {
   /**
    * 统计某事件的直接子节点数量（基于 parentEventId 索引）
    */
-  async countEventStatsByParentEventId(parentEventId: string): Promise<number> {
+  async countEventTreeIndexByParentEventId(parentEventId: string): Promise<number> {
     await this.initialize();
 
     return new Promise((resolve, reject) => {
@@ -1246,8 +1253,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readonly');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readonly');
+      const store = transaction.objectStore('event_tree');
       const index = store.index('parentEventId');
       const request = index.count(IDBKeyRange.only(parentEventId));
 
@@ -1259,7 +1266,7 @@ export class IndexedDBService {
   /**
    * 统计某 rootEventId 下的子树节点总数（包含 root 本身，基于 rootEventId 索引）
    */
-  async countEventStatsByRootEventId(rootEventId: string): Promise<number> {
+  async countEventTreeIndexByRootEventId(rootEventId: string): Promise<number> {
     await this.initialize();
 
     return new Promise((resolve, reject) => {
@@ -1268,8 +1275,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readonly');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readonly');
+      const store = transaction.objectStore('event_tree');
       const index = store.index('rootEventId');
       const request = index.count(IDBKeyRange.only(rootEventId));
 
@@ -1279,9 +1286,9 @@ export class IndexedDBService {
   }
 
   /**
-   * 批量 upsert EventStats（用于 reparent 后子树 rootEventId 传播）
+   * 批量 upsert EventTreeIndex（用于 reparent 后子树 rootEventId 传播）
    */
-  async bulkPutEventStats(statsList: EventStats[]): Promise<void> {
+  async bulkPutEventTreeIndex(statsList: EventTreeIndex[]): Promise<void> {
     await this.initialize();
 
     const BATCH_SIZE = 200;
@@ -1294,8 +1301,8 @@ export class IndexedDBService {
           return;
         }
 
-        const transaction = this.db.transaction('event_stats', 'readwrite');
-        const store = transaction.objectStore('event_stats');
+        const transaction = this.db.transaction('event_tree', 'readwrite');
+        const store = transaction.objectStore('event_tree');
 
         for (const stats of batch) {
           store.put(stats);
@@ -1311,7 +1318,7 @@ export class IndexedDBService {
   /**
    * 鍒涘缓 EventStats
    */
-  async createEventStats(stats: EventStats): Promise<void> {
+  async createEventTreeIndex(stats: EventTreeIndex): Promise<void> {
     await this.initialize();
     
     return new Promise((resolve, reject) => {
@@ -1320,8 +1327,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readwrite');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readwrite');
+      const store = transaction.objectStore('event_tree');
       const request = store.put(stats); // 浣跨敤 put 鍏佽瑕嗙洊锛堢敤浜庤ˉ鍏ㄧ己澶辩殑 stats锛?
 
       request.onsuccess = () => resolve();
@@ -1332,7 +1339,7 @@ export class IndexedDBService {
   /**
    * 鎵归噺鍒涘缓 EventStats锛堝垎鎵瑰啓鍏ワ紝閬垮厤浜嬪姟瓒呮椂锛?
    */
-  async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
+  async bulkCreateEventTreeIndex(statsList: EventTreeIndex[]): Promise<void> {
     await this.initialize();
     
     const BATCH_SIZE = 100; // 姣忔壒 100 鏉★紝閬垮厤浜嬪姟瓒呮椂
@@ -1349,8 +1356,8 @@ export class IndexedDBService {
           return;
         }
 
-        const transaction = this.db.transaction('event_stats', 'readwrite');
-        const store = transaction.objectStore('event_stats');
+        const transaction = this.db.transaction('event_tree', 'readwrite');
+        const store = transaction.objectStore('event_tree');
         
         let successCount = 0;
         let errorCount = 0;
@@ -1360,7 +1367,7 @@ export class IndexedDBService {
           request.onsuccess = () => successCount++;
           request.onerror = (event) => {
             errorCount++;
-            console.error(`[IndexedDB] Failed to add EventStats[${i + index}]:`, stats.id, request.error);
+            console.error(`[IndexedDB] Failed to add EventTreeIndex[${i + index}]:`, stats.id, request.error);
             event.stopPropagation();
           };
         });
@@ -1389,7 +1396,7 @@ export class IndexedDBService {
   /**
    * 鏇存柊 EventStats
    */
-  async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+  async updateEventTreeIndex(id: string, updates: Partial<EventTreeIndex>): Promise<void> {
     await this.initialize();
     
     return new Promise((resolve, reject) => {
@@ -1398,15 +1405,15 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction(['event_stats', 'events'], 'readwrite');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction(['event_tree', 'events'], 'readwrite');
+      const store = transaction.objectStore('event_tree');
       const getRequest = store.get(id);
 
       getRequest.onsuccess = () => {
         const existing = getRequest.result;
         if (!existing) {
-          // 馃敡 濡傛灉 EventStats 涓嶅瓨鍦紝浠?events 琛ㄦ彁鍙栧苟鍒涘缓
-          console.warn(`[IndexedDB] EventStats not found, creating from event: ${id}`);
+          // 馃敡 濡傛灉 EventTreeIndex 涓嶅瓨鍦紝浠?events 琛ㄦ彁鍙栧苟鍒涘缓
+          console.warn(`[IndexedDB] EventTreeIndex not found, creating from event: ${id}`);
           
           const eventsStore = transaction.objectStore('events');
           const eventRequest = eventsStore.get(id);
@@ -1418,8 +1425,8 @@ export class IndexedDBService {
               return;
             }
             
-            // 鍒涘缓鏂扮殑 EventStats 璁板綍
-            const newStats: EventStats = {
+            // 鍒涘缓鏂扮殑 EventTreeIndex 璁板綍
+            const newStats: EventTreeIndex = {
               id: event.id,
               tags: event.tags || [],
               calendarIds: event.calendarIds || [],
@@ -1453,7 +1460,7 @@ export class IndexedDBService {
   /**
    * 鍒犻櫎 EventStats
    */
-  async deleteEventStats(id: string): Promise<void> {
+  async deleteEventTreeIndex(id: string): Promise<void> {
     await this.initialize();
     
     return new Promise((resolve, reject) => {
@@ -1462,8 +1469,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readwrite');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readwrite');
+      const store = transaction.objectStore('event_tree');
       const request = store.delete(id);
 
       // 馃敡 delete 鎿嶄綔鍗充娇璁板綍涓嶅瓨鍦ㄤ篃浼氭垚鍔燂紝鏃犻渶棰濆瀹归敊
@@ -1473,9 +1480,9 @@ export class IndexedDBService {
   }
 
   /**
-   * 鎸夋棩鏈熻寖鍥存煡璇?EventStats
+   * 鎸夋棩鏈熻寖鍥存煡璇?EventTreeIndex
    */
-  async queryEventStats(options: QueryOptions): Promise<QueryResult<EventStats>> {
+  async queryEventTreeIndex(options: QueryOptions): Promise<QueryResult<EventTreeIndex>> {
     await this.initialize();
     
     const perfStart = performance.now();
@@ -1504,8 +1511,8 @@ export class IndexedDBService {
         return;
       }
 
-      const transaction = this.db.transaction('event_stats', 'readonly');
-      const store = transaction.objectStore('event_stats');
+      const transaction = this.db.transaction('event_tree', 'readonly');
+      const store = transaction.objectStore('event_tree');
       const index = store.index('startTime');
       
       const range = IDBKeyRange.bound(startTimeStr, endTimeStr);
@@ -1517,7 +1524,7 @@ export class IndexedDBService {
         
         // 鍙湪鎱㈡煡璇紙>50ms锛夋垨鏈夌粨鏋滄椂杈撳嚭鏃ュ織锛岄伩鍏嶅埛灞?
         if (duration > 50 || results.length > 0) {
-          console.log(`[IndexedDB] 鈿?EventStats query: ${duration.toFixed(1)}ms 鈫?${results.length} records`);
+          console.log(`[IndexedDB] 鈿?EventTreeIndex query: ${duration.toFixed(1)}ms 鈫?${results.length} records`);
         }
         
         resolve({
@@ -1532,10 +1539,10 @@ export class IndexedDBService {
   }
 
   /**
-   * 馃殌 [MIGRATION] 浠?events 琛ㄦ彁鍙?EventStats锛堜粎璇诲彇蹇呰瀛楁锛?
+   * 馃殌 [MIGRATION] 浠?events 琛ㄦ彁鍙?EventTreeIndex锛堜粎璇诲彇蹇呰瀛楁锛?
    * 閬垮厤鍙嶅簭鍒楀寲瀹屾暣 Event 瀵硅薄锛坋ventlog銆乼itle 绛夊ぇ瀛楁锛?
    */
-  async extractEventStatsFromEvents(): Promise<EventStats[]> {
+  async extractEventTreeIndexFromEvents(): Promise<EventTreeIndex[]> {
     await this.initialize();
 
     return new Promise((resolve, reject) => {
@@ -1547,7 +1554,7 @@ export class IndexedDBService {
       const transaction = this.db.transaction('events', 'readonly');
       const store = transaction.objectStore('events');
       const request = store.openCursor();
-      const statsList: EventStats[] = [];
+      const statsList: EventTreeIndex[] = [];
 
       request.onsuccess = (event) => {
         const cursor = (event.target as IDBRequest<IDBCursorWithValue>).result;
@@ -1555,7 +1562,7 @@ export class IndexedDBService {
         if (cursor) {
           const event = cursor.value;
           
-          // 鍙彁鍙?EventStats 闇€瑕佺殑瀛楁锛堣烦杩?eventlog銆乼itle 绛夊ぇ瀵硅薄锛?
+          // 鍙彁鍙?EventTreeIndex 闇€瑕佺殑瀛楁锛堣跳杩?eventlog銆乼itle 绛夊ぇ瀵硅薄锛?
           statsList.push({
             id: event.id,
             tags: event.tags || [],
@@ -1569,7 +1576,7 @@ export class IndexedDBService {
           cursor.continue();
         } else {
           // 閬嶅巻瀹屾垚
-          console.log(`[IndexedDB] 馃搳 Extracted ${statsList.length} EventStats records`);
+          console.log(`[IndexedDB] 馃搳 Extracted ${statsList.length} EventTreeIndex records`);
           resolve(statsList);
         }
       };
@@ -1578,7 +1585,7 @@ export class IndexedDBService {
     });
   }
 
-  // ==================== End EventStats CRUD ====================
+  // ==================== End EventTreeIndex CRUD ====================
 }
 
 // 瀵煎嚭鍗曚緥瀹炰緥

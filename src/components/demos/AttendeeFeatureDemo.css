@@ -2,60 +2,7 @@
  * AttendeeFeatureDemo Styles
  */
 
-.attendee-feature-demo {
-  min-height: 100vh;
-  background: #f5f5f5;
-  padding: 40px 20px;
-}
-
-.demo-container {
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.demo-container h1 {
-  font-size: 32px;
-  font-weight: 700;
-  color: #1a1a1a;
-  margin-bottom: 32px;
-  text-align: center;
-}
-
-.demo-section {
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-.demo-section h2 {
-  font-size: 20px;
-  font-weight: 600;
-  color: #1a1a1a;
-  margin: 0 0 16px 0;
-  padding-bottom: 12px;
-  border-bottom: 2px solid #f0f0f0;
-}
-
 /* 功能列表 */
-.feature-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.feature-list li {
-  padding: 8px 0;
-  font-size: 14px;
-  color: #595959;
-  line-height: 1.6;
-}
-
-.feature-list li strong {
-  color: #1a1a1a;
-  margin-right: 8px;
-}
 
 /* 事件卡片 */
 .event-card {
@@ -108,19 +55,6 @@
 }
 
 /* 数据来源图例 */
-.source-legend {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.source-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 14px;
-  color: #595959;
-}
 
 .source-tag {
   display: inline-flex;

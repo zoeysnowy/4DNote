@@ -18,7 +18,7 @@ EventTree 负责事件的“树结构关系”和“关联关系”展示/编辑
 
 - 结构真相（Source of Truth）: `parentEventId`
 - `childEventIds` **不是**真相，且因为无法长期正确维护，已作为 legacy 机制移除/不再依赖
-- 统计/索引（Derived Index）: `event_stats`（可重建），用于全量树上下文、快速计数、root 缓存等
+- 统计/索引（Derived Index）: `event_tree`（可重建），用于全量树上下文、快速计数、root 缓存等
 
 ---
 
@@ -42,12 +42,12 @@ export interface Event {
 }
 ```
 
-### 1.2 EventStats（派生索引，可重建）
+### 1.2 EventTreeIndex（派生索引，可重建）
 
-`event_stats` 是轻量索引层，允许重建，不要求 100% 实时完美，但必须可自洽且可修复。
+`event_tree` 是轻量索引层，允许重建，不要求 100% 实时完美，但必须可自洽且可修复。
 
 ```ts
-export interface EventStats {
+export interface EventTreeIndex {
   id: string;
 
   // ✅ 与 Event 同步的派生字段（用于索引/计数/快速爬链）
@@ -61,8 +61,8 @@ export interface EventStats {
 
 索引要求（IndexedDB）:
 
-- `event_stats.parentEventId`（children 查询）
-- `event_stats.rootEventId`（subtree 计数）
+- `event_tree.parentEventId`（children 查询）
+- `event_tree.rootEventId`（subtree 计数）
 
 ---
 
@@ -107,17 +107,17 @@ EventService.getEventTreeContext(eventId)
 
 实现要求:
 
-- 优先使用 `event_stats.rootEventId`（缓存）
-- 缺失时沿 `parentEventId` 上溯计算，并回写 `event_stats.rootEventId`（path compression）
-- `directChildCount` 通过 `event_stats.parentEventId` 索引计数
-- `subtreeCount` 通过 `event_stats.rootEventId` 索引计数
+- 优先使用 `event_tree.rootEventId`（缓存）
+- 缺失时沿 `parentEventId` 上溯计算，并回写 `event_tree.rootEventId`（path compression）
+- `directChildCount` 通过 `event_tree.parentEventId` 索引计数
+- `subtreeCount` 通过 `event_tree.rootEventId` 索引计数
 
 ### 3.3 写入/同步（create/update）
 
 在 `createEvent/updateEvent` 路径：
 
-- 同步写 `event_stats.parentEventId`
-- 同步写 `event_stats.rootEventId`
+- 同步写 `event_tree.parentEventId`
+- 同步写 `event_tree.rootEventId`
   - 新建事件：root =（parent 的 root）或自身
   - reparent（parent 改变）：可能引发整棵子树 root 变化
 
@@ -128,8 +128,8 @@ EventService.getEventTreeContext(eventId)
 约束:
 
 - **禁止**扫描全表事件
-- 只能使用 `event_stats.parentEventId` 索引逐层查 children（BFS）
-- 批量 upsert 写回 `event_stats`（bulkPut）
+- 只能使用 `event_tree.parentEventId` 索引逐层查 children（BFS）
+- 批量 upsert 写回 `event_tree`（bulkPut）
 - 必须有 cycle 防护（visited set）
 
 实现位置:
@@ -192,7 +192,7 @@ Vitest 单测覆盖重点：
 ## 7. 关键约束总结（必须遵守）
 
 - `parentEventId` 是唯一树结构真相
-- `event_stats` 是派生索引，可重建，不能反向成为真相
+- `event_tree` 是派生索引，可重建，不能反向成为真相
 - reparent 子树 root 传播必须 BFS + stats 索引，不扫全表
 - UI gate 不能依赖 `allEvents` 的预加载来决定“是否显示 EventTree”
 

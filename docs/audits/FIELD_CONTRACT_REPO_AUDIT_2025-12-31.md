@@ -17,7 +17,7 @@
   - 搜索违约模式：`childEventIds` 依赖、`isAllDay || false`、`tags || [] / calendarIds || []`、`startTime/endTime` 回退 `createdAt`、`updatedAt` 自动覆盖。
   - 对命中点进行“是否写回 canonical”的判断：
     - **写回**：最终进入 `StorageManager.createEvent/updateEvent` 的对象。
-    - **不写回**：仅 UI state / 仅派生排序 / 仅索引/缓存表（EventStats）。
+    - **不写回**：仅 UI state / 仅派生排序 / 仅索引/缓存表（EventTreeIndex）。
 
 ## Findings
 
@@ -41,7 +41,7 @@ Hard Rule：Storage 不得覆盖业务字段（尤其是 `updatedAt`）。
 
 已实施修复：
 - IndexedDBService.updateEvent 不再改写 `updatedAt`（完全尊重应用层传入/已有值）。
-- 若需要“存储写入时间”，应使用单独字段（如 `_dbUpdatedAt`）或在 EventStats/SyncQueue 里记录；不要污染 canonical Event。
+- 若需要“存储写入时间”，应使用单独字段（如 `_dbUpdatedAt`）或在 EventTreeIndex/SyncQueue 里记录；不要污染 canonical Event。
 - 参考 SQLite 的实现：允许使用 `updates.updatedAt`，否则才 fallback。
   - 位置：[src/services/storage/SQLiteService.ts](../../src/services/storage/SQLiteService.ts#L918-L923)
 

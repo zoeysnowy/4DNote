@@ -20,10 +20,10 @@
   3. 数据传输量过大（90%字段浪费）
 
 ### 解决方案
-创建轻量级 `event_stats` 表，仅存储统计所需字段：
-- **EventStats 接口** (7 字段):
+创建轻量级 `event_tree` 表，仅存储统计所需字段：
+- **EventTreeIndex 接口** (7 字段):
   ```typescript
-  interface EventStats {
+  interface EventTreeIndex {
     id: string;
     tags: string[];
     calendarIds: string[];
@@ -43,10 +43,10 @@
 ### Phase 1: Schema 更新 ✅
 **文件**: `src/services/storage/types.ts`, `src/services/storage/IndexedDBService.ts`
 
-#### 1.1 定义 EventStats 接口
+#### 1.1 定义 EventTreeIndex 接口
 ```typescript
 // src/services/storage/types.ts
-export interface EventStats {
+export interface EventTreeIndex {
   id: string;
   tags: string[];
   calendarIds: string[];
@@ -62,8 +62,8 @@ export interface EventStats {
 // src/services/storage/IndexedDBService.ts
 // DB_VERSION: 2 → 3 (触发 schema 升级)
 
-if (!db.objectStoreNames.contains('event_stats')) {
-  const statsStore = db.createObjectStore('event_stats', { keyPath: 'id' });
+if (!db.objectStoreNames.contains('event_tree')) {
+  const statsStore = db.createObjectStore('event_tree', { keyPath: 'id' });
   
   // 创建索引（用于快速查询）
   statsStore.createIndex('startTime', 'startTime', { unique: false });
@@ -84,11 +84,11 @@ if (!db.objectStoreNames.contains('event_stats')) {
 // src/services/storage/IndexedDBService.ts
 
 // 创建单条记录
-async createEventStats(stats: EventStats): Promise<void> {
+async createEventTreeIndex(stats: EventTreeIndex): Promise<void> {
   await this.initialize();
   return new Promise((resolve, reject) => {
-    const tx = this.db!.transaction(['event_stats'], 'readwrite');
-    const store = tx.objectStore('event_stats');
+    const tx = this.db!.transaction(['event_tree'], 'readwrite');
+    const store = tx.objectStore('event_tree');
     const request = store.add(stats);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);
@@ -96,25 +96,25 @@ async createEventStats(stats: EventStats): Promise<void> {
 }
 
 // 批量创建（用于迁移）
-async bulkCreateEventStats(statsList: EventStats[]): Promise<void> {
+async bulkCreateEventTreeIndex(statsList: EventTreeIndex[]): Promise<void> {
   // ... 批量插入实现
 }
 
 // 更新记录
-async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+async updateEventTreeIndex(id: string, updates: Partial<EventTreeIndex>): Promise<void> {
   // ... 部分更新实现
 }
 
 // 删除记录
-async deleteEventStats(id: string): Promise<void> {
+async deleteEventTreeIndex(id: string): Promise<void> {
   // ... 删除实现
 }
 
 // 查询记录（按时间范围）
-async queryEventStats(options: {
+async queryEventTreeIndex(options: {
   startDate?: string;
   endDate?: string;
-}): Promise<EventStats[]> {
+}): Promise<EventTreeIndex[]> {
   // ... 使用 startTime 索引快速查询
 }
 ```
@@ -123,27 +123,27 @@ async queryEventStats(options: {
 ```typescript
 // src/services/storage/StorageManager.ts
 
-async createEventStats(stats: EventStats): Promise<void> {
+async createEventTreeIndex(stats: EventTreeIndex): Promise<void> {
   await this.ensureInitialized();
-  await this.indexedDBService.createEventStats(stats);
+  await this.indexedDBService.createEventTreeIndex(stats);
 }
 
-async updateEventStats(id: string, updates: Partial<EventStats>): Promise<void> {
+async updateEventTreeIndex(id: string, updates: Partial<EventTreeIndex>): Promise<void> {
   await this.ensureInitialized();
-  await this.indexedDBService.updateEventStats(id, updates);
+  await this.indexedDBService.updateEventTreeIndex(id, updates);
 }
 
-async deleteEventStats(id: string): Promise<void> {
+async deleteEventTreeIndex(id: string): Promise<void> {
   await this.ensureInitialized();
-  await this.indexedDBService.deleteEventStats(id);
+  await this.indexedDBService.deleteEventTreeIndex(id);
 }
 
-async queryEventStats(options: {
+async queryEventTreeIndex(options: {
   startDate?: string;
   endDate?: string;
-}): Promise<EventStats[]> {
+}): Promise<EventTreeIndex[]> {
   await this.ensureInitialized();
-  return await this.indexedDBService.queryEventStats(options);
+  return await this.indexedDBService.queryEventTreeIndex(options);
 }
 ```
 
@@ -151,13 +151,13 @@ async queryEventStats(options: {
 ```typescript
 // src/services/EventService.ts
 
-// 创建事件时同步写入 EventStats
+// 创建事件时同步写入 EventTreeIndex
 static async createEvent(event: Event, ...): Promise<...> {
   // ... 创建 Event
   await storageManager.createEvent(storageEvent);
   
-  // 🚀 同步写入 EventStats
-  await storageManager.createEventStats({
+  // 🚀 同步写入 EventTreeIndex
+  await storageManager.createEventTreeIndex({
     id: finalEvent.id,
     tags: finalEvent.tags || [],
     calendarIds: (finalEvent as any).calendarIds || [],
@@ -170,13 +170,13 @@ static async createEvent(event: Event, ...): Promise<...> {
   // ...
 }
 
-// 更新事件时同步更新 EventStats（仅更新变化字段）
+// 更新事件时同步更新 EventTreeIndex（仅更新变化字段）
 static async updateEvent(eventId: string, updates: Partial<Event>, ...): Promise<...> {
   // ... 更新 Event
   await storageManager.updateEvent(eventId, storageEvent);
   
-  // 🚀 同步更新 EventStats（仅必要字段）
-  const statsUpdates: Partial<EventStats> = {};
+  // 🚀 同步更新 EventTreeIndex（仅必要字段）
+  const statsUpdates: Partial<EventTreeIndex> = {};
   if (filteredUpdates.tags !== undefined) statsUpdates.tags = updatedEvent.tags || [];
   if ((filteredUpdates as any).calendarIds !== undefined) statsUpdates.calendarIds = (updatedEvent as any).calendarIds || [];
   if (filteredUpdates.startTime !== undefined) statsUpdates.startTime = updatedEvent.startTime;
@@ -185,18 +185,18 @@ static async updateEvent(eventId: string, updates: Partial<Event>, ...): Promise
   statsUpdates.updatedAt = updatedEvent.updatedAt;
   
   if (Object.keys(statsUpdates).length > 1) {
-    await storageManager.updateEventStats(eventId, statsUpdates);
+    await storageManager.updateEventTreeIndex(eventId, statsUpdates);
   }
   
   // ...
 }
 
-// 删除事件时同步删除 EventStats
+// 删除事件时同步删除 EventTreeIndex
 static async deleteEvent(eventId: string, ...): Promise<...> {
   // ... 软删除 Event
   
-  // 🚀 同步删除 EventStats
-  await storageManager.deleteEventStats(eventId);
+  // 🚀 同步删除 EventTreeIndex
+  await storageManager.deleteEventTreeIndex(eventId);
   
   // ...
 }
@@ -207,16 +207,16 @@ static async deleteEvent(eventId: string, ...): Promise<...> {
 // src/services/EventService.ts
 
 /**
- * 🚀 [PERFORMANCE] 获取统计数据（使用轻量级 EventStats）
+ * 🚀 [PERFORMANCE] 获取统计数据（使用轻量级 EventTreeIndex）
  */
-static async getEventStatsByDateRange(startDate: string, endDate: string): Promise<EventStats[]> {
+static async getEventTreeIndexByDateRange(startDate: string, endDate: string): Promise<EventTreeIndex[]> {
   await this.ensureStorageReady();
   
   const perfStart = performance.now();
-  const stats = await storageManager.queryEventStats({ startDate, endDate });
+  const stats = await storageManager.queryEventTreeIndex({ startDate, endDate });
   const duration = performance.now() - perfStart;
   
-  eventLogger.log(`📊 [Performance] getEventStatsByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
+  eventLogger.log(`📊 [Performance] getEventTreeIndexByDateRange: ${duration.toFixed(1)}ms → ${stats.length} stats`);
   
   return stats;
 }
@@ -227,29 +227,29 @@ static async getEventStatsByDateRange(startDate: string, endDate: string): Promi
 ### Phase 3: StatsPanel 优化 ✅
 **文件**: `src/pages/HomePage/StatsPanel.tsx`
 
-#### 3.1 切换到 EventStats 查询
+#### 3.1 切换到 EventTreeIndex 查询
 ```typescript
 // 修改前（使用完整 Event）
 const [events, setEvents] = useState<any[]>([]);
 const eventsData = await EventService.getEventsByDateRange(startDate, endDate);
 setEvents(eventsData);
 
-// 修改后（使用轻量级 EventStats）
-const [eventStats, setEventStats] = useState<EventStats[]>([]);
-const statsData = await EventService.getEventStatsByDateRange(startDate, endDate);
-setEventStats(statsData);
+// 修改后（使用轻量级 EventTreeIndex）
+const [eventTreeIndex, setEventTreeIndex] = useState<EventTreeIndex[]>([]);
+const statsData = await EventService.getEventTreeIndexByDateRange(startDate, endDate);
+setEventTreeIndex(statsData);
 ```
 
 #### 3.2 更新数据聚合逻辑
 ```typescript
-// 计算时长（从 EventStats）
-const getEventDuration = (stats: EventStats): number => {
+// 计算时长（从 EventTreeIndex）
+const getEventDuration = (stats: EventTreeIndex): number => {
   if (!stats.startTime || !stats.endTime) return 0;
   return new Date(stats.endTime).getTime() - new Date(stats.startTime).getTime();
 };
 
-// 标签统计（使用 eventStats）
-eventStats.forEach(stats => {
+// 标签统计（使用 eventTreeIndex）
+eventTreeIndex.forEach(stats => {
   const duration = getEventDuration(stats);
   
   if (stats.tags && stats.tags.length > 0) {
@@ -259,8 +259,8 @@ eventStats.forEach(stats => {
   }
 });
 
-// 日历统计（使用 eventStats）
-eventStats.forEach(stats => {
+// 日历统计（使用 eventTreeIndex）
+eventTreeIndex.forEach(stats => {
   const duration = getEventDuration(stats);
   
   if (stats.calendarIds && stats.calendarIds.length > 0) {
@@ -274,10 +274,10 @@ eventStats.forEach(stats => {
 #### 3.3 性能日志
 ```typescript
 const perfStart = performance.now();
-const statsData = await EventService.getEventStatsByDateRange(...);
+const statsData = await EventService.getEventTreeIndexByDateRange(...);
 const duration = performance.now() - perfStart;
 
-console.log('[StatsPanel] 📊 Loaded EventStats:', {
+console.log('[StatsPanel] 📊 Loaded EventTreeIndex:', {
   count: statsData.length,
   duration: `${duration.toFixed(1)}ms`,
   improvement: `${((1082 / duration) * 100).toFixed(0)}% faster than before`
@@ -293,25 +293,25 @@ console.log('[StatsPanel] 📊 Loaded EventStats:', {
 ```typescript
 // src/services/storage/StorageManager.ts
 
-async migrateToEventStats(): Promise<void> {
+async migrateToEventTreeIndex(): Promise<void> {
   await this.ensureInitialized();
   
   // 检查是否已迁移
   const migrationKey = '4dnote-stats-migrated';
   if (localStorage.getItem(migrationKey) === 'true') {
-    console.log('[StorageManager] EventStats migration already completed');
+    console.log('[StorageManager] EventTreeIndex migration already completed');
     return;
   }
 
-  console.log('[StorageManager] Starting EventStats migration...');
+  console.log('[StorageManager] Starting EventTreeIndex migration...');
   const startTime = performance.now();
 
   // 获取所有事件
   const allEvents = await this.indexedDBService.getAllEvents();
   console.log(`[StorageManager] Migrating ${allEvents.length} events...`);
 
-  // 转换为 EventStats
-  const statsList: EventStats[] = allEvents.map(event => ({
+  // 转换为 EventTreeIndex
+  const statsList: EventTreeIndex[] = allEvents.map(event => ({
     id: event.id,
     tags: event.tags || [],
     calendarIds: event.calendarIds || [],
@@ -322,10 +322,10 @@ async migrateToEventStats(): Promise<void> {
   }));
 
   // 批量插入
-  await this.bulkCreateEventStats(statsList);
+  await this.bulkCreateEventTreeIndex(statsList);
 
   const elapsed = performance.now() - startTime;
-  console.log(`[StorageManager] ✅ EventStats migration completed in ${elapsed.toFixed(0)}ms`);
+  console.log(`[StorageManager] ✅ EventTreeIndex migration completed in ${elapsed.toFixed(0)}ms`);
   
   // 标记迁移完成
   localStorage.setItem(migrationKey, 'true');
@@ -340,9 +340,9 @@ useEffect(() => {
   const initializeApp = async () => {
     // ... 初始化 StorageManager
     
-    // 🚀 [PERFORMANCE] 一次性迁移：Event → EventStats
-    console.log('📊 [App] Checking EventStats migration...');
-    await storageManager.migrateToEventStats();
+    // 🚀 [PERFORMANCE] 一次性迁移：Event → EventTreeIndex
+    console.log('📊 [App] Checking EventTreeIndex migration...');
+    await storageManager.migrateToEventTreeIndex();
     
     // ... 其他初始化
   };
@@ -364,7 +364,7 @@ useEffect(() => {
 
 ### 内存占用
 - **Event 对象**: ~500 字节/个
-- **EventStats 对象**: ~50 字节/个
+- **EventTreeIndex 对象**: ~50 字节/个
 - **内存减少**: 90%
 
 ### 索引效率
@@ -377,10 +377,10 @@ useEffect(() => {
 ## 测试验证
 
 ### 功能测试
-1. ✅ 创建事件 → EventStats 自动同步
-2. ✅ 更新事件（tags/calendarIds/时间）→ EventStats 自动更新
-3. ✅ 删除事件 → EventStats 自动删除
-4. ✅ 统计查询使用 EventStats → 数据正确
+1. ✅ 创建事件 → EventTreeIndex 自动同步
+2. ✅ 更新事件（tags/calendarIds/时间）→ EventTreeIndex 自动更新
+3. ✅ 删除事件 → EventTreeIndex 自动删除
+4. ✅ 统计查询使用 EventTreeIndex → 数据正确
 5. ✅ 数据迁移 → 一次性转换成功
 
 ### 性能测试
@@ -400,37 +400,37 @@ useEffect(() => {
 
 ### 修改文件
 1. **src/services/storage/types.ts**
-   - 新增 `EventStats` 接口定义
+   - 新增 `EventTreeIndex` 接口定义
 
 2. **src/services/storage/IndexedDBService.ts**
    - DB_VERSION: 2 → 3
-   - 新增 `event_stats` objectStore + 5 个索引
-   - 新增 6 个 EventStats CRUD 方法
+   - 新增 `event_tree` objectStore + 5 个索引
+   - 新增 6 个 EventTreeIndex CRUD 方法
 
 3. **src/services/storage/StorageManager.ts**
-   - 新增 5 个 EventStats 包装方法
-   - 新增 `migrateToEventStats()` 迁移逻辑
+   - 新增 5 个 EventTreeIndex 包装方法
+   - 新增 `migrateToEventTreeIndex()` 迁移逻辑
 
 4. **src/services/EventService.ts**
-   - `createEvent()`: 双写 EventStats
-   - `updateEvent()`: 同步更新 EventStats
-   - `deleteEvent()`: 同步删除 EventStats
-   - 新增 `getEventStatsByDateRange()` 查询方法
+   - `createEvent()`: 双写 EventTreeIndex
+   - `updateEvent()`: 同步更新 EventTreeIndex
+   - `deleteEvent()`: 同步删除 EventTreeIndex
+   - 新增 `getEventTreeIndexByDateRange()` 查询方法
 
 5. **src/pages/HomePage/StatsPanel.tsx**
-   - 切换到 `getEventStatsByDateRange()` 查询
-   - 更新数据聚合逻辑（使用 EventStats）
+   - 切换到 `getEventTreeIndexByDateRange()` 查询
+   - 更新数据聚合逻辑（使用 EventTreeIndex）
    - 添加性能日志
 
 6. **src/App.tsx**
-   - 应用启动时调用 `migrateToEventStats()`
+   - 应用启动时调用 `migrateToEventTreeIndex()`
 
 ---
 
 ## 后续优化建议
 
 ### 1. 定期清理
-- EventStats 不需要保留软删除记录（deletedAt）
+- EventTreeIndex 不需要保留软删除记录（deletedAt）
 - 可定期清理 30 天前的统计数据（如果不需要长期趋势分析）
 
 ### 2. 更多索引
@@ -448,7 +448,7 @@ useEffect(() => {
 
 ## 总结
 
-本次优化通过引入轻量级 `EventStats` 表，实现了统计查询性能的**5倍提升**，同时保持了数据完整性和一致性。
+本次优化通过引入轻量级 `EventTreeIndex` 表，实现了统计查询性能的**5倍提升**，同时保持了数据完整性和一致性。
 
 **关键成功因素**:
 1. 精准识别性能瓶颈（90%字段浪费）
