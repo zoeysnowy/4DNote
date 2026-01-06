@@ -809,6 +809,13 @@ interface EventTitle {
     | 'icloud:calendar';     // iCloud Calendar 同步（预留）
   ```
   
+  **不变性规则（Immutable）**：
+  - `source` 只在**创建时设置**，永远不变（immutable）
+  - **Inbound 创建**：`source='outlook:calendar'` 或 `'outlook:todo'`（外部同步进来）
+  - **本地创建后同步**：`source='local:plan'` 等（即使后来同步到 Outlook 也不变）
+  - **语义**：`source` 表示"初始来源"，而不是"当前同步状态"（同步状态由 `externalId/syncStatus/calendarIds/todoListIds` 表达）
+  - **禁止**：不得在后续更新中修改 `source` 字段（包括 Sync merge/UI 编辑）
+  
   **使用示例**：
   ```typescript
   // 判断是否 Plan 创建
@@ -2401,10 +2408,39 @@ applyLocalActionToRemote(action) {
 - 远端执行（outbound）：N/A。
 
 **变更检测口径（避免历史爆炸）**
-- 忽略自动字段与派生噪音：例如 `updatedAt/position/fourDNoteSource/localVersion/lastSyncTime/...`。
-- `tags`：排序+去重后比较。
+
+**完整忽略字段清单**（代码实现应使用此列表）：
+```typescript
+const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
+  // Meta 自动字段
+  'updatedAt',           // 自动更新时间戳
+  'localVersion',        // 本地版本号
+  'lastSyncTime',        // 同步时间戳
+  'lastNonBlankAt',      // 诊断字段
+  
+  // Sync 系统态字段
+  'syncStatus',          // 同步状态（pending/synced/error 等）
+  'externalId',          // 外部映射键（系统生成）
+  
+  // Structure 派生字段
+  'position',            // 结构位置（自动计算）
+  
+  // Snapshot 诊断字段
+  'bestSnapshot',        // 快照缓存（不应记录业务变更）
+  
+  // Legacy/Internal 字段
+  'fourDNoteSource',     // 已废弃
+  '_isTempId',           // 内部临时标记
+  '_originalTempId',     // 内部临时 ID
+  // 任何以 _ 开头的内部字段
+]);
+```
+
+**特殊比较规则**：
+- `tags`：排序+去重后比较（避免顺序差异制造噪音）。
 - `description`：可按实现忽略或剥离签名后比较（避免签名重写制造噪音）。
 - `eventlog`：只比较核心文本/忽略 block timestamp 元数据（按实现策略）。
+- 以 `_` 开头的字段：全部忽略（内部字段约定）。
 
 **参考**
 - docs/PRD/EVENTHISTORY_MODULE_PRD.md
