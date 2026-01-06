@@ -741,10 +741,27 @@ interface EventTitle {
    - derived anchor：`resolveCalendarDateRange(event)`
 4) **Timeline Anchor（时间轴锚点：派生、只读、不可落库）**：`resolveTimelineAnchor(event, scope)`
   - 目的：TimeLog/Timeline 等视图需要一个“可排序的位置”，但不能用“落库注入虚拟 startTime”来达成。
-  - 推荐优先级（scope='timelog' 的默认口径）：
-    - 有 calendar block：用 `startTime`（发生区间的开始）
-    - 否则若有 `timeSpec.resolved`：用其 resolved（允许 Note/Task/Plan 仅用于锚点展示）
-    - 否则：用 `createdAt`（Meta；所有事件必须有，作为稳定 fallback）
+  - 推荐优先级：
+    - `startTime`（优先级 1）：Calendar block，实际发生时间
+    - `timeSpec.resolved`（优先级 2）：时间意图
+    - `dueDateTime`（优先级 3）：截止时间（大多数 scope 使用，library 跳过）
+    - `createdAt`（fallback）：所有事件必须有，作为稳定 fallback
+  - **类型定义**：
+    ```typescript
+    type TimelineScope = 'timelog' | 'library' | 'plan' | 'search' | 'timecalendar';
+    
+    function resolveTimelineAnchor(event: Event, scope: TimelineScope): string {
+      if (event.startTime) return event.startTime;                      // 优先级 1
+      if (event.timeSpec?.resolved) return event.timeSpec.resolved;     // 优先级 2
+      if (event.dueDateTime && scope !== 'library') return event.dueDateTime;  // 优先级 3
+      return event.createdAt;  // fallback
+    }
+    ```
+  - **Scope 差异说明**：
+    - `'timelog'`：使用 dueDateTime（截止时间在时间轴上是重要的时间点，用户需要看到任务什么时候到期）
+    - `'plan'`：使用 dueDateTime（任务管理中，截止时间是核心排序依据）
+    - `'search'`：使用 dueDateTime（按时间排序时，截止时间也是有效的时间锚点）
+    - `'library'`：跳过 dueDateTime（文档库通常用 updatedAt 排序，截止时间不是主要关注点）
   - 不变量：Timeline Anchor **只用于展示/排序/分组**，不得回写到 `startTime/endTime`。
 
 > 说明：这四种 anchor 是“语义口径”，不是“页面特例”。页面不应定义“哪些页面时间可以为空”；任何事件都可以为空，页面只需选择合适的 anchor 与过滤规则。
