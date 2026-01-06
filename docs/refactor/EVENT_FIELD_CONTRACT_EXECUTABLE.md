@@ -816,11 +816,15 @@ interface EventTitle {
   - `'outlook'`：从 Outlook 同步而来
   - `'google'`：从 Google Calendar 同步而来（预留）
   - `'icloud'`：从 iCloud 同步而来（预留）
-- **`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | undefined`
+- **`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | 'workspace' | 'sky' | 'ChatCard' | 'InlineChat' | undefined`
   - `'plan'`：Plan 页面创建（都是 Task，即 `checkType !== 'none'`）
   - `'timecalendar'`：TimeCalendar 页面创建（通常有 calendar block）
   - `'timelog'`：TimeLog 页面创建（系统轨迹记录，通常是 subordinate）
   - `'library'`：Library 页面创建（文档/笔记型事件，通常无时间）
+  - `'workspace'`：Workspace 侧边栏创建（文档型，自动归入 lib_store + workspace_store）
+  - `'sky'`：Sky Pin 入口创建（任意类型，自动归入 sky_store）
+  - `'ChatCard'`：AI 对话卡片形式创建（Sprout/Root，需配合 conversationType 字段）
+  - `'InlineChat'`：文档内 @AI 创建（Sprout/Root，自动插入 mention element）
   - `undefined`：外部同步事件、EventEditModal创建、或无明确来源
 - Legacy 字段（必须删除，禁止任何引用）：
   - `source`（已废弃，迁移到 `creator`）
@@ -1628,6 +1632,7 @@ async generateSproutSummary(sproutId: string): Promise<void> {
 
 **过滤（Filter/Scope）**
 - N/A（编辑入口不做列表过滤；仅在打开时遵循上层传入 eventId 的可见性 gate）。
+- **AI 卡片**：可以编辑（Sprout/Root 也是标准 Event，支持所有编辑功能）
 
 **时间锚点（Time Anchor）**
 - 编辑 UI 展示：Calendar block（`startTime/endTime/isAllDay`）+ TimeHub intent（`timeSpec`）。
@@ -2099,6 +2104,7 @@ applyLocalActionToRemote(action) {
 
 **过滤（Filter/Scope）**
 - 默认排除 `deletedAt != null` 与 subordinate；若展示“系统事件/计时记录”，必须显式声明纳入集合。
+- **AI 卡片**：默认不显示，只有加入 Library 才显示（`ViewMembershipService.isInLibrary()`）
 
 **时间锚点（Time Anchor）**
 - N/A（结构模块不以时间为主锚；如需在树中展示时间，只能读 `resolveCalendarDateRange(event)`，禁止回写）。
@@ -2192,6 +2198,7 @@ applyLocalActionToRemote(action) {
 **过滤（Filter/Scope）**
 - Timer 事件会在 TimeLog 时间轴中显示（TimeLog 是时间聚合视图，显示所有事件）
 - TimeCalendar/Plan 是否显示 Timer 取决于 UI 策略（另案）
+- **AI 卡片**：与 Timer 无关（Timer 模块不处理 AI 卡片）
 
 **时间锚点（Time Anchor）**
 - Calendar block：`startTime/endTime`（Timer 的发生区间）；写入必须使用本地时间格式。
@@ -2230,6 +2237,7 @@ applyLocalActionToRemote(action) {
 
 **过滤（Filter/Scope）**
 - N/A（标签实体本身的过滤不在本文；与 Event 的关系仅通过查询呈现）。
+- **AI 卡片**：可以有 tags，标签统计时应排除 AI 卡片（除非显式声明纳入）
 
 **时间锚点（Time Anchor）**
 - N/A。
@@ -2263,6 +2271,7 @@ applyLocalActionToRemote(action) {
 
 **过滤（Filter/Scope）**
 - N/A（服务层提供查询能力；过滤策略由各模块通过 query 参数表达，但默认规则必须一致：排除 `deletedAt/subordinate`，除非显式声明）。
+- **AI 卡片**：EventService 支持创建/查询/更新 AI 卡片（与普通 Event 相同），过滤由调用方决定
 
 **时间锚点（Time Anchor）**
 - `TimeHub` 负责 time intent（`timeSpec`）与 calendar block 写入代理；派生锚点（如 `resolveCalendarDateRange`）只能读。
@@ -2302,6 +2311,7 @@ applyLocalActionToRemote(action) {
 
 **过滤（Filter/Scope）**
 - 同步目标由 `syncRouter` 决定（receive-only 不推送；**单一 target**；并受 `calendarIds/todoListIds` 用户意图门禁约束；见 Section 8.1）。
+- **AI 卡片**：强制 `syncMode: 'local-only'`，不同步到 Outlook/To Do
 
 **时间锚点（Time Anchor）**
 - Calendar outbound 使用 calendar block（`startTime/endTime/isAllDay`）；Todo outbound 使用 deadline（优先 `dueDateTime`）。
@@ -2342,6 +2352,7 @@ applyLocalActionToRemote(action) {
 
 **过滤（Filter/Scope）**
 - 仅记录“有意义”的业务变更；忽略噪音字段（见下）。
+- **AI 卡片**：正常记录 Sprout/Root 的创建/编辑/删除历史
 
 **时间锚点（Time Anchor）**
 - 使用 `updatedAt` 作为变更时间主锚（必要时可记录来源时间，如 external lastModified），但不得改变 Event 的时间真相。
