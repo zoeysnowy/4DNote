@@ -1652,9 +1652,14 @@ async generateSproutSummary(sproutId: string): Promise<void> {
 - 外部回灌字段（`location/organizer/attendees/reminder/startTime/endTime/isAllDay/title/description`）只能通过 Sync merge → `EventService` 写入，不得绕过。
 
 **禁止项（Forbidden）**
-- 时间完整性：`startTime` 和 `endTime` 必须同时存在或同时为空（禁止只写一个）。
 - 禁止默认值注入：不得在 UI 保存时把缺失数组写为 `[]`、把缺失字符串写为 `''`。
 - 禁止写系统态：不得直接写 `externalId/syncStatus/lastSyncTime`。
+- 禁止回写派生字段：不得把 `resolveDisplayTitle/resolveSyncTitle/resolveTimelineAnchor` 等派生结果写回 Event。
+
+**时间字段说明**
+- `startTime/endTime/isAllDay` 完全允许任意组合（包括只写一个、都不写、只写 isAllDay 等）。
+- Event 数据模型本身没有硬性时间规则，只有 view_membership 会根据字段组合把 event 放到不同的视图分区。
+- 路由规则：只有 `startTime && endTime` 才允许同步到 Outlook Calendar（见 Section 8.1），但这是同步层的约束，不是编辑器的约束。
 
 **动作（Actions）**
 - 本地发起 Create：通过 `EventService.createEvent`（或等价入口）；最小写集为用户输入（Content/Context/Time/Task/Sync-intent），其余保持 `undefined` 并交由 normalize。
