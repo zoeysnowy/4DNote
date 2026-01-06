@@ -349,54 +349,23 @@ flowchart LR
 
 ---
 
-## 4. View Membership & PageOrigin（视图纳入与创建来源）
+## 4. View Membership（视图纳入）
 
 > **架构原则**：Event 不应该用字段表达"是否属于某个页面"，而应该用 **facet（派生谓词）** + **view_membership（引用表）**。
 
 ### 4.1 View Membership 全量清单
 
-| View/Module | 引用表/索引 | 纳入规则（facet） | PageOrigin 值 | 说明 |
+| View/Module | 引用表/索引 | 纳入规则（facet） | source 典型值 | 说明 |
 |------------|-----------|----------------|--------------|------|
-| **Plan** | `view_membership(viewId='plan')` | `checkType !== 'none'` | `'plan'` | Plan 页面创建的事件都是 Task |
-| **TimeCalendar** | `view_membership(viewId='timecalendar')` | `startTime && endTime` | `'timecalendar'` | 日历视图显示有时间锚点的事件 |
-| **TimeLog** | `view_membership(viewId='timelog')` | 所有事件（按时间轴显示） | `'timelog'` | 时间轴视图，所有事件（包括Note）都可显示 |
-| **Library** | `lib_store` (独立引用表) | 用户显式添加 | `'library'` | Library 页面可以创建文档/笔记型事件 |
-| **Workspace** | `workspace_store` (独立引用表) | 用户显式固定 | `'workspace'` | Workspace 侧边栏快捷方式，可创建事件（自动归入 lib_store） |
-| **Sky Pin** | `sky_store` (独立引用表) | 用户显式 pin | `'sky'` | 全局顶部快捷入口，可创建任意类型事件 |
+| **Plan** | `view_membership(viewId='plan')` | `checkType !== 'none'` | `'local:plan'` | Plan 页面创建的事件都是 Task |
+| **TimeCalendar** | `view_membership(viewId='timecalendar')` | `startTime && endTime` | `'local:timecalendar'` | 日历视图显示有时间锚点的事件 |
+| **TimeLog** | `view_membership(viewId='timelog')` | 所有事件（按时间轴显示） | `'local:timelog'` | 时间轴视图，所有事件（包括Note）都可显示 |
+| **Library** | `lib_store` (独立引用表) | 用户显式添加 | `'local:library'` | Library 页面可以创建文档/笔记型事件 |
+| **Workspace** | `workspace_store` (独立引用表) | 用户显式固定 | `'local:workspace'` | Workspace 侧边栏快捷方式，可创建事件（自动归入 lib_store） |
+| **Sky Pin** | `sky_store` (独立引用表) | 用户显式 pin | `'local:sky'` | 全局顶部快捷入口，可创建任意类型事件 |
 | **EventTree** | 无（结构视图） | 所有 Event | N/A | EventTree 不创建事件，只维护结构 |
 
-### 4.2 PageOrigin 字段定义（完整枚举）
-
-**`pageOrigin`**：本地创建页面来源（枚举）`'plan' | 'timecalendar' | 'timelog' | 'library' | 'workspace' | 'sky' | undefined`
-
-| 值 | 创建入口 | 默认facet特征 | 备注 |
-|----|---------|-------------|------|
-| `'plan'` | Plan 页面 | `checkType !== 'none'` | Plan 创建的事件都是 Task |
-| `'timecalendar'` | TimeCalendar 拖拽 | `startTime && endTime` | 通常有完整时间块 |
-| `'timelog'` | TimeLog Gap 创建 | 通常是 subordinate | 系统轨迹记录 |
-| `'library'` | Library 页面 | 通常无时间（文档/笔记型） | Library 创建的长期维护内容 |
-| `'workspace'` | Workspace 侧边栏 | 通常无时间（文档型） | Workspace 创建的事件自动归入 lib_store |
-| `'sky'` | Sky Pin 入口 | 无默认假设（任意类型） | Sky 创建的事件可以是任何类型 |
-| `undefined` | 外部同步/EventEditModal/无明确来源 | 无默认假设 | 包括 Outlook 同步、用户通过通用编辑器创建等 |
-**创建入口与引用操作的区分**：
-
-- **真实创建入口**（设置对应 `pageOrigin`）：
-  - Plan/TimeCalendar/TimeLog/Library/Workspace/Sky 都可以直接创建事件
-  - Library/Workspace 创建：通常是文档/笔记型事件（无时间），自动加入对应 store
-  - Workspace 特殊：创建的事件同时归入 `lib_store` 和 `workspace_store`
-  - Sky 创建：可以是任意类型（Task/Calendar/Note），自动加入 `sky_store`
-  - TimeCalendar 特殊：虽然通过 EventEditModal 创建，但 `pageOrigin` 标记为 `'timecalendar'`（标记真实来源页面）
-  - EventEditModal 直接创建（无明确页面上下文）：`pageOrigin = 'event_edit'`
-
-- **引用操作**（不改变 `pageOrigin`）：
-  - 将已有事件"添加到 Library/Workspace/Sky"只在对应 store 中添加引用
-  - 不会改变原事件的 `pageOrigin`
-
-- **EventTree**：不是创建入口，只维护层级结构
-
-- **外部同步**：`pageOrigin = undefined`（仅限外部系统）
-
-### 4.3 监控字段与增量更新机制
+### 4.2 监控字段与增量更新机制
 
 **设计原则**：shouldShow 作为纯函数，仅在影响 membership 的字段变化时调用，避免无效计算。
 
@@ -695,7 +664,7 @@ async function deleteEvent(eventId: string): Promise<void> {
   - `rootEventId?: string`（派生 root 索引，可重建）
   - `tags: string[]`、`calendarIds: string[]`
   - `startTime: string`、`endTime: string`（用于范围查询/性能；**不是语义真相**）
-  - `creator?: string`（外部系统来源）、`pageOrigin?: string`（本地创建页面）、`updatedAt: string`
+  - `source?: EventSource`（事件来源）、`updatedAt: string`
 - **索引（必须理解）**：
   - `parentEventId`、`rootEventId`（已存在：用于 count/query）。
   - 范围查询通常依赖 `startTime`（按 IndexedDB schema 实现）。
@@ -803,8 +772,8 @@ interface EventTitle {
 | `reminder` | Core | 默认 `undefined` | Context | 提醒（分钟） | Calendar.reminderMinutesBeforeStart 等 |
 | `dueDateTime` | Core | `undefined` | Task/Plan | 截止（deadline） | Todo.dueDateTime（推荐唯一来源） |
 | `syncMode` | Sync | `undefined` | Sync | receive-only 等策略 | 路由阻断（receive-only 不推送） |
-| `calendarIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Outlook Calendar（数组） | 表单显示规则：`(startTime && endTime) \|\| pageOrigin==='note'` |
-| `todoListIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Microsoft To Do List（数组） | 表单显示规则：`pageOrigin !== 'timelog'`；用户选择后自动补 `checkType='once'` |
+| `calendarIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Outlook Calendar（数组） | 表单显示规则：`(startTime && endTime) \|\| source==='local:library'` |
+| `todoListIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Microsoft To Do List（数组） | 表单显示规则：`source !== 'local:timelog'`；用户选择后自动补 `checkType='once'` |
 | `externalId` | Sync | `undefined` | Sync | 外部映射（outlook-/todo-） | 双向映射 key |
 | `syncStatus` | Sync | `undefined` | Sync | pending/synced/error 等 | Sync 状态 |
 | `createdAt` | Meta | create 时写入 | Meta | 创建时间（本地格式） | inbound 可来自远端 |
@@ -883,20 +852,20 @@ interface EventTitle {
 > 2. **Calendar 能力（时间锚点）**：`startTime && endTime`
 >    - 显示位置：TimeCalendar 日历视图、Timeline
 >    - 同步目标：Outlook Calendar（当 `calendarIds` 非空时）
->    - 特例：`pageOrigin='library'` 且无时间 → Sync 时允许虚拟时间（仅 payload，不落库）
-> 
-> 3. **Note 虚拟时间**：`pageOrigin='library' && !startTime && !endTime`
+>    - 特例：`source='local:library'` 且无时间 → Sync 时允许虚拟时间（仅 payload，不落库）
+>
+> 3. **Note 虚拟时间**：`source='local:library' && !startTime && !endTime`
 >    - Sync outbound：临时派生 `startTime=createdAt, endTime=createdAt+1h`（仅 payload）
 >    - 禁止落库：虚拟时间不得写回本地 Event（见 Hard Rule #3）
 > 
 > 4. **Plan 页面纳入规则**：`checkType !== 'none'`
->    - Plan 页面只显示 Task 能力的事件（不管 `pageOrigin` 是什么）
+>    - Plan 页面只显示 Task 能力的事件（不管 `source` 是什么）
 >    - 即：Calendar 创建的事件，如果后来添加了 `checkType`，会自动出现在 Plan
 > 
 > 5. **TimeLog 时间轴视图**：所有事件都可纳入（不过滤类型）
 >    - TimeLog 是时间轴聚合视图，不是类型过滤器
 >    - 排序锚点：使用 `resolveTimelineAnchor(event, 'timelog')`（派生，不落库）
->    - 说明：`pageOrigin='timelog'` 创建的事件通常是 subordinate，但 TimeLog 视图本身不过滤任何类型
+>    - 说明：`source='local:timelog'` 创建的事件通常是 subordinate，但 TimeLog 视图本身不过滤任何类型
 > 
 > **禁止**新增 `isTask/isPlan/isNote` 或任何"task-like"枚举/布尔字段
 > 
@@ -1131,7 +1100,7 @@ function shouldShow_TimeLog(event: Event): boolean {
 - Readers：Sync（选择目标容器）
 - 默认值：保持 `undefined`；只有用户显式清空才写 `[]`（`intent=user_clear`）
 - **表单显示规则**（EventEditModal）：
-  - **`calendarIds` 显示条件**：`(startTime && endTime) || pageOrigin === 'library'`
+  - **`calendarIds` 显示条件**：`(startTime && endTime) || source === 'local:library'`
     - 理由：Calendar 同步需要时间锚点（或 Note 可虚拟时间）
   - **`todoListIds` 显示条件**：`!isSubordinateEvent(event)`
     - 理由：所有用户创建的事件都可同步到 To Do（仅排除系统轨迹）
@@ -1170,7 +1139,7 @@ function shouldShow_TimeLog(event: Event): boolean {
     - 且用户意图选择了目标容器：`todoListIds` 非空（`undefined` 表示未选择，不应默认推送）
   - calendar 目标（Outlook Calendar）：
     - `startTime && endTime`
-    - 或 Library 虚拟时间：`pageOrigin === 'library' && !startTime && !endTime && calendarIds 非空`（临时注入 payload，不持久化）
+    - 或 Library 虚拟时间：`source === 'local:library' && !startTime && !endTime && calendarIds 非空`（临时注入 payload，不持久化）
     - 且用户意图选择了目标容器：`calendarIds` 非空
   - 若上述都不满足 → target=none（local-only）
   - **降级策略**：若用户选择 calendar 目标但 `!(startTime && endTime)`，仅在 EditModal 关闭时弹窗提示用户"需要设置时间才能同步到日历"，不强制设置时间
@@ -1246,9 +1215,9 @@ interface SproutEvent extends Event {
   
   // ===== Type Markers =====
   conversationType: 'sprout';      // 标识这是Sprout卡片
-  pageOrigin: 'ai_chat_card' | 'ai_inline';  // 创建方式标识
-                                   // 'ai_chat_card': 卡片形式创建
-                                   // 'ai_inline': 文本中通过@AI创建
+  source: 'local:ai_chat_card' | 'local:ai_inline';  // 创建方式标识
+                                   // 'local:ai_chat_card': 卡片形式创建
+                                   // 'local:ai_inline': 文本中通过@AI创建
   
   // ===== AI Metadata =====
   aiModel?: string;                // AI模型（如 'gpt-4'）
@@ -1267,9 +1236,9 @@ interface SproutEvent extends Event {
 - **Sprout 的 `id` 就是对话链ID**
 - **Sprout 是 Level 1**（挂宿主 Event，与初始 Roots 同级）
 - **生成 Sprout 时，会把关联的 Roots 重新挂载到 Sprout 下**（变成 Level 2）
-- **`pageOrigin` 标识创建方式**：
-  - `'ai_chat_card'`：卡片形式创建（独立对话操作）
-  - `'ai_inline'`：文档内 @AI 创建（自动插入 mention element）
+- **`source` 标识创建方式**：
+  - `'local:ai_chat_card'`：卡片形式创建（独立对话操作）
+  - `'local:ai_inline'`：文档内 @AI 创建（自动插入 mention element）
 - **显示规则**：两种方式相同，都需要加入 Library 才在 EventTree 中显示
 
 #### Root（对话卡片）
@@ -1293,7 +1262,7 @@ interface RootEvent extends Event {
   
   // ===== Type Markers =====
   conversationType: 'root';        // 标识这是Root卡片
-  pageOrigin: 'ai_chat_card' | 'ai_inline';  // 创建方式标识（继承自Sprout）
+  source: 'local:ai_chat_card' | 'local:ai_inline';  // 创建方式标识（继承自Sprout）
   
   // ===== Conversation Data =====
   userQuestion: string;            // 用户问题（纯文本）
@@ -1323,7 +1292,7 @@ interface RootEvent extends Event {
 
 #### EventLog 中的 AI 对话引用
 
-**位置**：宿主 Event 的 `eventlog.slateJson` 中（`pageOrigin: 'ai_inline'` 时自动插入）。
+**位置**：宿主 Event 的 `eventlog.slateJson` 中（`source: 'local:ai_inline'` 时自动插入）。
 
 ```typescript
 {
@@ -1341,8 +1310,8 @@ interface RootEvent extends Event {
 ```
 
 **说明**：
-- `pageOrigin: 'ai_inline'` 创建时，自动在正文插入此 mention 元素
-- `pageOrigin: 'ai_chat_card'` 创建时，不插入 mention（卡片独立存在）
+- `source: 'local:ai_inline'` 创建时，自动在正文插入此 mention 元素
+- `source: 'local:ai_chat_card'` 创建时，不插入 mention（卡片独立存在）
 - 两种方式的 Sprout/Roots 在 EventTree 中显示规则相同（都需要加入 Library）
 
 ### 8.4.3 EventTree 结构示例
@@ -1432,7 +1401,7 @@ async createRoot(params: {
   const root = await EventService.createEvent({
     parentEventId: params.hostEventId,  // 初始挂宿主Event（Level 1）
     conversationType: 'root',
-    pageOrigin: 'ai_chat_card',
+    source: 'local:ai_chat_card',
     userQuestion: params.userQuestion,
     aiResponse: params.aiResponse,
     syncMode: 'local-only',
@@ -1454,7 +1423,7 @@ async createSprout(params: {
   const sprout = await EventService.createEvent({
     parentEventId: params.hostEventId,
     conversationType: 'sprout',
-    pageOrigin: 'ai_chat_card',
+    source: 'local:ai_chat_card',
     syncMode: 'local-only',
     // title/eventlog 由AI生成
   });
@@ -1600,7 +1569,7 @@ async generateSproutSummary(sproutId: string): Promise<void> {
   - **Library/Workspace/Sky/TimeLog**：完全排除（不独立显示）
   - **EventTree 组件**：默认不显示，只有加入 Library 才显示（`ViewMembershipService.isInLibrary()`）
   - **判定**：通过 `conversationType` 字段识别
-  - **`pageOrigin` 不影响显示逻辑**，只标识创建方式（`ai_chat_card` vs `ai_inline`）
+  - **`source` 不影响显示逻辑**，只标识创建方式（`local:ai_chat_card` vs `local:ai_inline`）
 
 **默认值（避免 diff 噪音）**
 - 数组字段（`tags/calendarIds/todoListIds/attendees/...`）：默认必须保持 `undefined`；只有用户显式清空时才允许写 `[]`（`intent=user_clear`）。
@@ -1711,13 +1680,13 @@ async generateSproutSummary(sproutId: string): Promise<void> {
 **写（Write）**
 - 创建（用户拖拽选择时间段）：至少提供 `title`（空）、`startTime/endTime/isAllDay`、`createdAt/updatedAt`；其余字段保持 `undefined`，并交由 `EventService.normalizeEvent` 做缺省归一化。
 - 拖拽/拉伸更新时间：只允许修改时间字段（走 `TimeHub`/`EventHub.setEventTime`）。
-  - 本地创建标记（`creator='local'`）且命中本地可见组；或
+  - 本地创建标记（`source?.startsWith('local:')`）且命中本地可见组；或
 
 **过滤（Filter/Scope：TimeCalendar 显示过滤，架构口径）**
 - 默认排除：`deletedAt != null`、subordinate、**AI 卡片**（`conversationType === 'sprout' || 'root'`）
 - 事件需要满足以下任一条件才可见：
   - `calendarIds` 命中可见日历；或
-  - 本地创建标记（`creator='local'`）且命中本地可见组；或
+  - 本地创建标记（`source?.startsWith('local:')`）且命中本地可见组；或
   - `tags` 命中可见标签。
 
 **时间锚点（Time Anchor）**
@@ -1814,10 +1783,10 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
      - `src/services/sync/ActionBasedSyncManager.ts`：Sync 合并逻辑（L3519, L5483）
    - **迁移策略**：直接删除所有 `isTask` 读取和写入逻辑，改为 `checkType !== 'none'`
 
-2. **`isPlan` → `pageOrigin='plan' || checkType` 推导**（50+ 处使用）
+2. **`isPlan` → `source='local:plan' || checkType` 推导**（50+ 处使用）
    - **替代方案**：
      - Plan 页面显示：`checkType !== 'none'`（无需 `isPlan`）
-     - 创建来源追踪：`pageOrigin='plan'`（用于统计/分析）
+     - 创建来源追踪：`source='local:plan'`（用于统计/分析）
    - **清理位置**：
      - `src/features/Plan/helpers/planManagerFilters.ts`：过滤逻辑改用 `checkType`（L31）
      - `src/features/Plan/components/PlanManager.tsx`：创建/更新逻辑（L469, L625, L669, L1476, L2318）
@@ -1826,9 +1795,9 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
      - `src/App.tsx`：Plan 页面创建逻辑（L902, L913, L1404）
    - **数据迁移**：PlanManager 已有迁移逻辑（L468-479），为旧的 `isPlan` 事件补充 `checkType`
 
-3. **`isTimeCalendar` → `pageOrigin='timecalendar'`**
+3. **`isTimeCalendar` → `source='local:timecalendar'`**
    - 仅用于创建来源追踪，不影响显示逻辑
-   - 清理后统一用 `pageOrigin` 字段
+   - 清理后统一用 `source` 字段
 
 4. **清理优先级**：
    - **Phase 1**（高优先级）：核心逻辑层（EventService, TimeResolver, syncRouter）
@@ -1840,7 +1809,7 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
    ```sql
    -- 为所有 isPlan=true 的事件补充 checkType（如果没有）
    UPDATE events 
-   SET checkType = 'once', pageOrigin = 'plan' 
+   SET checkType = 'once', source = 'local:plan' 
    WHERE isPlan = 1 AND (checkType IS NULL OR checkType = 'none');
    
    -- 为所有 isTask=true 的事件补充 checkType
@@ -1848,10 +1817,10 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
    SET checkType = 'once' 
    WHERE isTask = 1 AND (checkType IS NULL OR checkType = 'none');
    
-   -- 为所有 isTimeCalendar=true 的事件设置 pageOrigin
-   UPDATE events 
-   SET pageOrigin = 'timecalendar' 
-   WHERE isTimeCalendar = 1 AND pageOrigin IS NULL;
+   -- 为所有 isTimeCalendar=true 的事件设置 source
+   UPDATE events
+   SET source = 'local:timecalendar' 
+   WHERE isTimeCalendar = 1 AND source IS NULL;
    ```
 
 **同步边界（Sync Boundary：契约口径）**
@@ -1933,7 +1902,7 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
      - `status` → `isCompleted`（`completed` → `true`）
      - `id` → `externalId: 'todo-{id}'`
      - _自动赋予_：`checkType='once'`（标记为可打钩任务）
-     - _自动赋予_：`creator='outlook'`（标记外部来源）
+     - _自动赋予_：`source='outlook:calendar'`（标记外部来源）
      - _保留_：`todoListIds: [listId]`（来源列表 ID）
 
 2. **同步流程**（`fetchRemoteChanges` → `recordRemoteAction` → `applyRemoteActionToLocal`）：
@@ -1960,7 +1929,7 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
 | **TimeCalendar - Deadline Marker** | `dueDateTime` | 显示截止时间标记线 | 若 To Do 任务有截止时间 |
 | **Plan** | `checkType !== 'none'` | 显示 checkbox | facet 推导：可打钩任务 |
 | **EventTree** | 无默认显示 | 除非手动挂载 | 需要用户显式关联父事件 |
-| **Search** | 全局搜索 | 正常显示 | 可通过 `creator='outlook'` 筛选 |
+| **Search** | 全局搜索 | 正常显示 | 可通过 `source?.startsWith('outlook:')` 筛选 |
 | **Detail View** | 点击任意位置 | 显示完整字段 | 右上角显示 "来自 Outlook" 标签 |
 
 4. **双向同步行为**（实际代码逻辑）：
@@ -1989,7 +1958,7 @@ fetchRemoteChanges() {
         createdAt: formatTimeForStorage(remoteEvent.createdDateTime),
         updatedAt: formatTimeForStorage(remoteEvent.lastModifiedDateTime),
         syncStatus: 'synced',
-        // creator: 'outlook' // 未来添加，用于标记外部来源
+        // source: 'outlook:calendar' // 未来添加，用于标记外部来源
       });
     } else {
       // 现有事件：检查 syncMode 和变化
@@ -2083,7 +2052,7 @@ applyLocalActionToRemote(action) {
   createdAt: '2026-01-05 18:00:00',
   updatedAt: '2026-01-05 18:00:00',
   syncStatus: 'synced',
-  // creator: 'outlook',  // 未来添加
+  // source: 'outlook:calendar',  // 未来添加
 }
 
 // → TimeCalendar: 显示在 Calendar Block (14:00-15:00 北京时间 = 22:00-23:00)
@@ -2114,7 +2083,7 @@ applyLocalActionToRemote(action) {
   isCompleted: false,
   todoListIds: ['list-work'],  // 保留原始列表 ID
   syncStatus: 'synced',
-  creator: 'outlook',  // 标记外部来源
+  source: 'outlook:todo',  // 标记外部来源
   // startTime/endTime: undefined（To Do 任务通常无时间段）
 }
 
@@ -2207,7 +2176,7 @@ applyLocalActionToRemote(action) {
 >   - AI 卡片是"对话记录"，应该在宿主 Event 的 EventTree 中查看
 >   - 如果 hostEvent 已经在 TimeLog 显示，再显示 AI 卡片会造成信息重复和混乱
 >   - 用户想快速访问 AI 对话：通过 Sky Pin/Workspace 快捷方式，而不是在时间轴中查看
->   - 判定依据：`conversationType`（标识事件类型），不是 `pageOrigin`（标识创建方式）
+>   - 判定依据：`conversationType`（标识事件类型），不是 `source`（标识创建方式）
   - 不因 `parentEventId` 排除：用户子事件也应纳入 TimeLog（树结构用于组织/展开，不是纳入开关）。
   - 其余事件默认全部纳入（包括“无 calendar block 的笔记/碎碎念”与无时间的 task）。
 
@@ -2561,9 +2530,10 @@ applyLocalActionToRemote(action) {
 - `type`：已废弃，必须从代码中删除所有引用。
 - `content`：已废弃，使用 `title.fullTitle` 替代，必须删除所有引用。
 - `childEventIds`：已移除，历史数据若存在会被忽略，结构真相来自 `parentEventId + position`。
-- `fourDNoteSource`：已废弃，必须删除。新逻辑使用 `creator='local'` 表示本地创建。
-- `source`：已废弃，必须删除。已重命名为 `creator`。
-- `isPlan/isTimeCalendar/isTask/...`：已废弃，必须删除所有引用。新逻辑使用 `pageOrigin` + facet 推导（`checkType !== 'none'`）。
+- `fourDNoteSource`：已废弃，必须删除。新逻辑使用 `source?.startsWith('local:')` 表示本地创建。
+- `creator`：已废弃，已合并到 `source` 字段。
+- `pageOrigin`：已废弃，已合并到 `source` 字段。
+- `isPlan/isTimeCalendar/isTask/...`：已废弃，必须删除所有引用。新逻辑使用 `source` + facet 推导（`checkType !== 'none'`）。
 
 ---
 
