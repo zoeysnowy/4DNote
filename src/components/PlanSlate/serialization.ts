@@ -424,13 +424,12 @@ function parseHtmlToParagraphs(html: string): ParagraphNode[] {
  * @param position 位置权重
  */
 export function createEmptyEventLine(level: number = 0, parentEventId?: string, position?: number): EventLineNode {
-  // 🔥 FIX: Enter键应该创建placeholder，不是真实事件！
-  // 只有当用户输入内容后，onChange才会给它分配真实的eventId
-  
+  const newEventId = generateEventId();
+
   return {
     type: 'event-line',
-    lineId: '__placeholder__', // 🔥 临时ID，标记为placeholder
-    eventId: '__placeholder__', // 🔥 临时ID
+    lineId: newEventId,
+    eventId: newEventId,
     level,
     mode: 'title',
     children: [
@@ -440,11 +439,10 @@ export function createEmptyEventLine(level: number = 0, parentEventId?: string, 
       },
     ],
     metadata: {
-      isPlaceholder: true,        // 🔥 标记为placeholder
-      checkType: 'once',          // 新建事件默认显示 checkbox
-      bulletLevel: level,         // 同步 bulletLevel 到 metadata
-      parentEventId,              // 传入父事件ID
-      position,                   // 传入位置权重
+      checkType: 'once',
+      bulletLevel: level,
+      parentEventId,
+      position,
     },
   };
 }
@@ -540,7 +538,12 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         
         calendarIds: metadata.calendarIds || [],
         todoListIds: metadata.todoListIds || [], // 🆕 To Do List IDs
-        source: metadata.source || 'local',
+        source:
+          metadata.source === 'local'
+            ? 'local:plan'
+            : metadata.source === 'outlook'
+              ? 'outlook:calendar'
+              : (metadata.source || 'local:plan'),
         syncStatus: metadata.syncStatus || 'local-only',
         externalId: metadata.externalId,
         fourDNoteSource: metadata.fourDNoteSource ?? true,
