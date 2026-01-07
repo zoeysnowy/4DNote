@@ -37,6 +37,7 @@ import {
 import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
 import { updateSubtreeRootEventIdUsingTreeIndex, EventTreeAPI } from '@backend/eventTree'; // 🆕 EventTree Engine 集成
+import { migrateEventSource, needsSourceMigration } from '@frontend/utils/migrations/migrateSourceField';
 
 type EventTreeNode = Event & { children: EventTreeNode[] };
 
@@ -239,14 +240,55 @@ export class EventService {
         const activeEvents = result.items.filter(event => !event.deletedAt);
         
         // 🔧 自动规范化所有事件的 title 字段（处理旧数据中的 undefined）
-        const events = activeEvents.map(event => this.convertStorageEventToEvent(event));
+        const convertedEvents = activeEvents.map(event => this.convertStorageEventToEvent(event));
+
+        // Phase 2.2: source 字段命名空间迁移（只做一次；并对返回值做内存级升级）
+        const migratedEvents = convertedEvents.map(migrateEventSource);
+
+        // One-time writeback to persist migrated source values
+        try {
+          const MIGRATION_FLAG = '4dnote_migrated_source_namespace_v1';
+          const alreadyMigrated = typeof localStorage !== 'undefined' && localStorage.getItem(MIGRATION_FLAG) === 'true';
+
+          if (!alreadyMigrated) {
+            const toPersist: StorageEvent[] = [];
+
+            for (let i = 0; i < migratedEvents.length; i++) {
+              const before = convertedEvents[i];
+              const after = migratedEvents[i];
+              if (!after?.id) continue;
+
+              // Only write back if it was a legacy, non-namespaced value
+              if (needsSourceMigration(before) && after.source !== (before as any).source) {
+                toPersist.push(this.convertEventToStorageEvent(after));
+              }
+            }
+
+            if (toPersist.length > 0) {
+              // Fire-and-forget to avoid blocking initial render
+              queueMicrotask(async () => {
+                try {
+                  await storageManager.batchUpdateEvents(toPersist);
+                  localStorage.setItem(MIGRATION_FLAG, 'true');
+                  eventLogger.log(`✅ [Migration] source namespace migrated: ${toPersist.length} events`);
+                } catch (e) {
+                  eventLogger.warn('⚠️ [Migration] source namespace writeback failed:', e);
+                }
+              });
+            } else {
+              localStorage.setItem(MIGRATION_FLAG, 'true');
+            }
+          }
+        } catch (e) {
+          // Ignore migration failures; keep runtime behavior safe.
+        }
         
         // ✅ v2.21.1: 使用 queueMicrotask 清除 Promise，避免阻塞
         queueMicrotask(() => {
           this.getAllEventsPromise = null;
         });
         
-        return events;
+        return migratedEvents;
       } catch (error) {
         eventLogger.error('❌ [EventService] Failed to load events:', error);
         this.getAllEventsPromise = null; // 查询失败，立即清除
