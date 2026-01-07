@@ -373,6 +373,28 @@ export interface EventTitle {
   formatMap?: TextFormatSegment[];
 }
 
+// Phase 2.1 (SSOT Contract): source 字段扩展为命名空间格式（同时保留 legacy 值向后兼容）
+export type EventSource =
+  | 'local:plan'
+  | 'local:timecalendar'
+  | 'local:timelog'
+  | 'local:library'
+  | 'local:workspace'
+  | 'local:sky'
+  | 'local:event_edit'
+  | 'local:ai_chat_card'
+  | 'local:ai_inline'
+  | 'local:unknown'
+  | 'outlook:calendar'
+  | 'outlook:todo'
+  | 'google:calendar'
+  | 'icloud:calendar'
+  // legacy (backward compatibility)
+  | 'local'
+  | 'outlook'
+  | 'google'
+  | 'icloud';
+
 export interface Event {
   id: string;
   // ========== 标题字段（三层架构 v2.14） ==========
@@ -398,7 +420,7 @@ export interface Event {
   };
   hasCustomSyncConfig?: boolean; // 🆕 标记用户是否手动修改过同步配置（用于手动子事件继承逻辑）
   todoListIds?: string[]; // 🆕 To Do List 分组支持（用于任务同步到 To Do）
-  source?: 'local' | 'outlook' | 'google' | 'icloud'; // 🆕 事件来源
+  source?: EventSource; // 🆕 事件来源（命名空间格式 + 向后兼容）
   syncStatus?: SyncStatusType; // 🔧 unified: 'pending' 表示所有待同步状态（新建或更新）
   lastSyncTime?: string; // 🔧 修改：使用字符串存储本地时间
   createdAt: string;     // 🔧 修改：使用字符串存储本地时间
