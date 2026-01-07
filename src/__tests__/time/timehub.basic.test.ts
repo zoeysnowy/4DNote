@@ -11,6 +11,7 @@ describe('TimeHub basic set/get/subscribe', () => {
     // Seed an event
     const seeded = await EventService.createEvent({
       title: 'Test',
+      source: 'local:timelog',
       startTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 0, 0)),
       endTime: formatTimeForStorage(new Date(2025, 9, 20, 10, 0, 0)),
       isAllDay: false,
@@ -46,6 +47,7 @@ describe('TimeHub basic set/get/subscribe', () => {
   test('setTimerWindow updates locally and marks isTimer', async () => {
     const seeded = await EventService.createEvent({
       title: 'Timer Event',
+      source: 'local:timelog',
       startTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 0, 0)),
       endTime: formatTimeForStorage(new Date(2025, 9, 20, 9, 15, 0)),
       isAllDay: false,

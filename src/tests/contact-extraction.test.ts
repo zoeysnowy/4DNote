@@ -17,6 +17,7 @@ describe('Contact extraction (smoke)', () => {
     const testEvent: Event = {
       id: 'temp-test-event-' + Date.now(),
       title: '产品评审会',
+      source: 'local:timecalendar',
       startTime: formatTimeForStorage(new Date()),
       endTime: formatTimeForStorage(new Date(Date.now() + 3600000)),
       organizer: {
@@ -43,7 +44,7 @@ describe('Contact extraction (smoke)', () => {
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
       tags: [],
-        checkType: 'none',
+      checkType: 'none',
     } as any;
 
     // Use EventHub as the UI-facing save path.

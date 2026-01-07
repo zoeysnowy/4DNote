@@ -169,6 +169,7 @@ describe('EventService 订阅 ContactService 事件', () => {
     // 2. 创建包含该联系人的事件
     const created = await EventService.createEvent({
       title: { fullTitle: '会议' } as any,
+      source: 'local:timecalendar',
       startTime: formatTimeForStorage(new Date()),
       endTime: formatTimeForStorage(new Date(Date.now() + 60 * 60 * 1000)),
       tags: [],
@@ -200,6 +201,7 @@ describe('EventService 订阅 ContactService 事件', () => {
     // 2. 创建包含该联系人的事件
     const created = await EventService.createEvent({
       title: { fullTitle: '会议' } as any,
+      source: 'local:timecalendar',
       startTime: formatTimeForStorage(new Date()),
       endTime: formatTimeForStorage(new Date(Date.now() + 60 * 60 * 1000)),
       tags: [],
@@ -231,6 +233,7 @@ describe('EventService 订阅 ContactService 事件', () => {
     // 2. 创建事件（该联系人是发起人）
     const created = await EventService.createEvent({
       title: { fullTitle: '会议' } as any,
+      source: 'local:timecalendar',
       startTime: formatTimeForStorage(new Date()),
       endTime: formatTimeForStorage(new Date(Date.now() + 60 * 60 * 1000)),
       tags: [],

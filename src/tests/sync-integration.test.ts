@@ -11,6 +11,7 @@ import { describe, it, expect } from 'vitest';
 const testEvent: Event = {
   id: 'test-sync-event-001',
   title: '🚀 产品同步会议',
+  source: 'local:timecalendar',
   createdAt: '2025-01-20T09:00:00Z',
   updatedAt: '2025-01-20T09:00:00Z',
   startTime: '2025-01-21T14:00:00Z',

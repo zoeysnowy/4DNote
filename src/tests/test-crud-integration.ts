@@ -181,6 +181,7 @@ export async function testCRUDIntegration() {
     const testEvent: Partial<Event> = {
       id: generateEventId(), // 🔧 生成唯一 ID
       title: { simpleTitle: '🧪 CRUD测试事件' },
+      source: 'local:timecalendar',
       startTime: formatTime(new Date('2025-12-01T14:00:00')),
       endTime: formatTime(new Date('2025-12-01T15:00:00')),
       description: '这是一个集成测试事件，验证StorageManager双写机制',
@@ -254,6 +255,7 @@ export async function testCRUDIntegration() {
     const batchEvents: Event[] = Array.from({ length: 5 }, (_, i) => ({
       id: generateEventId(), // 🔧 生成唯一 ID
       title: { simpleTitle: `🧪 批量测试事件 #${i + 1}` },
+      source: 'local:timecalendar',
       startTime: formatTime(new Date(Date.now() + i * 3600000)),
       endTime: formatTime(new Date(Date.now() + (i + 1) * 3600000)),
       description: `批量创建的测试事件 ${i + 1}`,

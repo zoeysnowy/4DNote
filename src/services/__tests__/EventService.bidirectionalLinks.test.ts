@@ -43,6 +43,7 @@ describe('EventService - 双向链接功能', () => {
   const createTestEvent = async (label: string) => {
     const result = await EventService.createEvent({
       title: { fullTitle: label },
+      source: 'local:event_edit',
       startTime: formatTimeForStorage(new Date()),
       endTime: formatTimeForStorage(new Date()),
     } as any, true);
@@ -172,12 +173,14 @@ describe('EventService - 双向链接功能', () => {
       const taskEvent: Event = {
         id: '1',
         title: { fullTitle: 'Task' },
+        source: 'local:plan',
         checkType: 'once',
       } as Event;
 
       const docEvent: Event = {
         id: '2',
         title: { fullTitle: 'Document' },
+        source: 'local:event_edit',
       } as Event;
 
       expect(EventService.shouldShowInEventTree(taskEvent)).toBe(true);
@@ -188,18 +191,21 @@ describe('EventService - 双向链接功能', () => {
       const timerEvent: Event = {
         id: '1',
         title: { fullTitle: 'Timer' },
+        source: 'local:timelog',
         isTimer: true,
       } as Event;
 
       const outsideAppEvent: Event = {
         id: '2',
         title: { fullTitle: 'OutsideApp' },
+        source: 'outlook:calendar',
         isOutsideApp: true,
       } as Event;
 
       const timeLogEvent: Event = {
         id: '3',
         title: { fullTitle: 'TimeLog' },
+        source: 'local:timelog',
         isTimeLog: true,
       } as Event;
 
