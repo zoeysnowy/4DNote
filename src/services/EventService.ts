@@ -463,18 +463,18 @@ export class EventService {
             // eventLogger.log('🔽 [EventService] 过滤无时间的 Plan 事件:', {
             //   id: event.id,
             //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
-            //   isPlan: event.isPlan,
-            //   isTask: event.isTask,
+            //   inPlan: shouldShowInPlan(event),
+            //   hasTaskFacet: hasTaskFacet(event),
             //   startTime: event.startTime,
             //   endTime: event.endTime,
-            //   checkTime: event.checkTime
+            //   checkType: event.checkType
             // });
             return false;
           }
         }
         
         // 3. Task 事件必须有时间才显示
-        if (event.isTask === true) {
+        if (hasTaskFacet(event)) {
           const hasTime = (event.startTime && event.startTime !== '') || 
                          (event.endTime && event.endTime !== '');
           
@@ -482,11 +482,11 @@ export class EventService {
             // eventLogger.log('🔽 [EventService] 过滤无时间的 Task 事件:', {
             //   id: event.id,
             //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
-            //   isPlan: event.isPlan,
-            //   isTask: event.isTask,
+            //   inPlan: shouldShowInPlan(event),
+            //   hasTaskFacet: hasTaskFacet(event),
             //   startTime: event.startTime,
             //   endTime: event.endTime,
-            //   checkTime: event.checkTime
+            //   checkType: event.checkType
             // });
             return false;
           }
@@ -496,8 +496,8 @@ export class EventService {
         // eventLogger.log('✅ [EventService] 显示事件:', {
         //   id: event.id,
         //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
-        //   isPlan: event.isPlan,
-        //   isTask: event.isTask,
+        //   inPlan: shouldShowInPlan(event),
+        //   hasTaskFacet: hasTaskFacet(event),
         //   isTimer: event.isTimer,
         //   isTimeLog: event.isTimeLog,
         //   isOutsideApp: event.isOutsideApp,
@@ -3291,7 +3291,7 @@ export class EventService {
     const finalSource = extractedCreator.source || event.source;
     
     // 🆕 [v2.19] Note 事件时间标准化：仅对「非任务」且无时间的事件派生虚拟时间
-    // 重要：Task(isTask=true) 允许无时间；不能被默认注入 startTime/endTime。
+    // 重要：Task(hasTaskFacet=true) 允许无时间；不能被默认注入 startTime/endTime。
     let isVirtualTime = false;
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
@@ -3302,7 +3302,6 @@ export class EventService {
     // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
     // Note: legacy call sites may set only some of these fields; check a small set of hints.
     const isTaskLikeEvent =
-      event.isTask === true ||
       (event as Event).id && shouldShowInPlan(event as Event) ||
       event.type === 'todo' ||
       event.type === 'task' ||
@@ -3454,7 +3453,6 @@ export class EventService {
       isDeadline: event.isDeadline,
       
       // 任务模式
-      isTask: event.isTask,
       isCompleted: event.isCompleted,
       
       // Timer 关联

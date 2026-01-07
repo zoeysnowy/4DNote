@@ -43,7 +43,7 @@ describe('Contact extraction (smoke)', () => {
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
       tags: [],
-      isTask: false,
+        checkType: 'none',
     } as any;
 
     // Use EventHub as the UI-facing save path.

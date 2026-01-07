@@ -8,6 +8,7 @@
  */
 
 import { Event } from '@frontend/types';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 export type SyncTarget = 'calendar' | 'todo' | 'none';
 
@@ -24,7 +25,7 @@ export interface SyncRoute {
  *    - receive-only: 不推送到远端（仅接收远端更新）
  *    - send-only / send-only-private: 推送到远端（不接收远端更新）
  *    - bidirectional / bidirectional-private: 双向同步
- * 1. Task 类型（isTask=true）→ Microsoft To Do
+ * 1. Task 类型（hasTaskFacet()=true）→ Microsoft To Do
  * 2. Calendar 事件且有时间 → Outlook Calendar
  * 3. Calendar 事件但无时间 → 不同步
  * 
@@ -41,7 +42,7 @@ export function determineSyncTarget(event: Event): SyncRoute {
   }
   
   // 1. Task 类型 → Microsoft To Do
-  if (event.isTask === true) {
+  if (hasTaskFacet(event)) {
     return {
       target: 'todo',
       reason: 'Task event syncs to Microsoft To Do',

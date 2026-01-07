@@ -348,7 +348,7 @@ aiMetadata?: {                            // AI 元数据
 - `src/features/Dashboard/components/UpcomingEventsPanel.tsx`
 
 **影响范围**: 
-- DetailTab.tsx: 3处 (L1762, L1767, isTask相关逻辑保留暂不改)
+- DetailTab.tsx: 3处 (L1762, L1767)
 - EventEditModalV2.tsx: 2处 (L1688, L1693)
 - TimeLogPage.tsx: 2处 (L1061, L1970, L1971)
 - UpcomingEventsPanel.tsx: 1处 (L74)
@@ -384,22 +384,19 @@ aiMetadata?: {                            // AI 元数据
 #### Step 1.7: 从 types.ts 删除分类 flags（最后一步）
 **文件**: `src/types.ts`
 
-**删除字段**:
+**删除字段（本阶段已完成）**:
 ```typescript
-// ❌ 删除以下字段：
-isTimer?: boolean;
-isTimeLog?: boolean;
-isOutsideApp?: boolean;
-isDeadline?: boolean;
-isTask?: boolean;          // ⚠️ isTask 暂时保留（DetailTab 大量使用）
+// ❌ 已删除以下字段（Legacy 分类 flags）：
+isTask?: boolean;
 isPlan?: boolean;
 isTimeCalendar?: boolean;
-isNote?: boolean;
-type?: 'todo' | 'task' | 'event';
-category?: string;
 ```
 
-**⚠️ 注意**: `isTask` 在 DetailTab.tsx 中有独立语义（Task vs Calendar），暂不删除，留待后续专门处理
+**说明**: 以上字段属于 Legacy 分类 flags，按 SSOT Contract 必须删除；后续所有语义判断必须改为 facet 推导（主要基于 `checkType !== 'none'`）。
+
+**待评估（仍存在于类型/代码中）**:
+- `isTimer/isTimeLog/isOutsideApp/isDeadline/isNote`：如果这些字段继续作为“系统轨迹/子事件”判定标记，需要在 Contract/Plan 中明确其 Owner、适用范围与是否允许长期保留；否则应纳入后续清理。
+- `type/category`：目前仍有向后兼容/历史代码依赖，若要严格落地 Contract，需要配套迁移与逐步收敛策略。
 
 **测试**:
 ```bash
@@ -408,6 +405,30 @@ npm run build
 ```
 
 **提交**: `refactor(types): 删除废弃的分类 flags (Phase 1.7)`
+
+---
+
+#### Step 1.8: 清理 isTask 依赖（用 facet 推导替换）
+
+**目标**: 彻底移除所有 `event.isTask` 的读/写依赖；UI/Service/Sync 路由均改为使用 `hasTaskFacet(event)` 或 `checkType !== 'none'`。
+
+**替代口径**:
+- Task facet: `hasTaskFacet(event)`（底层基于 `checkType !== 'none'`）
+- “Task toggle”的持久化：写 `checkType`（例如 `'none'` vs `'once'`），禁止写 `isTask`
+
+**影响范围（已覆盖的主要模块）**:
+- `src/utils/syncRouter.ts`：sync target 判定
+- `src/utils/eventValidation.ts` / `src/utils/calendarUtils.ts` / `src/utils/TimeResolver.ts`：时间/日历相关的 task 语义判断
+- `src/services/sync/ActionBasedSyncManager.ts` / `src/services/EventService.ts` / `src/services/EventHistoryService.ts`
+- `src/pages/Event/DetailTab.tsx`、`src/features/Event/components/EventEditModal/*`、`src/features/Calendar/TimeCalendar.tsx`
+- `src/components/PlanSlate/PlanSlate.tsx`、`src/features/Plan/components/PlanManager.tsx`、`src/features/TimeLog/pages/TimeLogPage.tsx`
+
+**测试**:
+```bash
+npm run build
+```
+
+**提交**: （待提交）
 
 ---
 
@@ -1133,13 +1154,31 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 ### Phase 1: Legacy Flags 清理（细化版）
 - [x] Step 1.1: 添加 facet 推导函数 ✅ commit 166b798
-- [ ] Step 1.2: planManagerFilters.ts 筛选逻辑
-- [ ] Step 1.3a: PlanManager 移除创建时 flag 赋值
-- [ ] Step 1.3b: PlanManager 筛选逻辑用 facet
-- [ ] Step 1.4: App.tsx 移除分类 flags
-- [ ] Step 1.5: 各页面移除 isPlan/isTimeCalendar
-- [ ] Step 1.6: Service 层移除分类 flags
-- [ ] Step 1.7: types.ts 删除 flags (⚠️ isTask 保留)
+- [x] Step 1.2: planManagerFilters.ts 筛选逻辑 ✅ commit 6ae3eae
+- [x] Step 1.3a: PlanManager 移除创建时 flag 赋值 ✅ commit 6af1770
+- [x] Step 1.3b: PlanManager 筛选逻辑用 facet ✅ commit 04c2198
+- [x] Step 1.4: App.tsx 移除分类 flags ✅ commit 5d85705
+- [x] Step 1.5: 各页面移除 isPlan/isTimeCalendar ✅ commit 7061baa
+- [x] Step 1.6: Service 层移除分类 flags ✅ commit b7e344f
+- [x] Step 1.7: types.ts 删除 flags（包含 isTask）✅ commit 26a6395
+- [ ] Step 1.8: 清理 isTask 依赖（用 facet 推导替换）（已完成，待提交）
+
+---
+
+## ✅ 审阅意见（Phase 1.1–1.8）
+
+1) **与 SSOT Contract 的一致性**
+- Contract 明确要求：分类/角色/视图纳入不得依赖 `isXxx`（包含 `isTask/isPlan/isTimeCalendar`），必须改用 `source + facet`（Task facet 以 `checkType !== 'none'` 为准）。
+- 本计划中 Step 1.7 原先的“isTask 暂时保留”与 Contract 冲突；现已按 Contract 口径更正，并补充 Step 1.8 作为系统性清理步骤。
+
+2) **行为等价性（Task vs Calendar）**
+- 现有实现将“是否任务”的语义锚定到 `checkType`，并通过 `hasTaskFacet(event)` 派生；这符合 Contract 的 canonical/derived 分离。
+- UI 侧若存在“任务开关”能力，必须通过写 `checkType` 表达（例如 `'none'` ↔ `'once'`），不得再写回 `isTask`。
+
+3) **风险点（建议补充在后续步骤/迁移中显式处理）**
+- **历史数据兼容风险**：若存量数据存在 `isTask=true` 但 `checkType='none'`（或缺失），“删除 isTask”会导致任务语义丢失。Contract 文档中已给出把 `isTask=true` 的事件补齐 `checkType` 的迁移示例；建议在后续增加一次性 migration/repair 路径（仅 migration 写入，正常业务路径禁止回写派生）。
+- **计划文档一致性**：Phase 2.2 的 source 迁移示例仍引用 `event.isPlan/isTimeCalendar/isTimeLog/isNote`，而 Phase 1 已删除这些 flags；建议在执行 Phase 2 前先更新该迁移示例为“基于 source 现状 + facet/其它 SSOT 字段推导”。
+- **遗留字段范围不一致**：本计划开头将多个 `isXxx` 与 `type/category` 视为“必须删除”；但当前 Phase 1 实际只完成了 `isTask/isPlan/isTimeCalendar` 的清理。建议后续把“允许长期保留的系统轨迹字段”和“必须迁移删除的 legacy 字段”分组写清楚，避免执行口径歧义。
 
 ### Phase 2: source 字段扩展
 - [ ] Step 2.1: 更新 source 类型定义

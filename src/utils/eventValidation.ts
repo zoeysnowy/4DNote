@@ -8,6 +8,7 @@
  */
 
 import { Event } from '@frontend/types';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { parseLocalTimeString } from './timeUtils';
 
 export interface ValidationResult {
@@ -20,8 +21,8 @@ export interface ValidationResult {
  * 验证事件的时间字段
  * 
  * 规则：
- * - Task 类型（isTask=true）：时间可选
- * - Calendar 事件（isTask=false/undefined）：时间必需
+ * - Task 类型（hasTaskFacet()=true）：时间可选
+ * - Calendar 事件（hasTaskFacet()=false）：时间必需
  * 
  * @param event - 待验证的事件对象
  * @returns 验证结果
@@ -30,7 +31,7 @@ export function validateEventTime(event: Event): ValidationResult {
   const warnings: string[] = [];
   
   // Task 类型：时间可选
-  if (event.isTask === true) {
+  if (hasTaskFacet(event)) {
     // Task 允许任意时间组合：
     // - 无时间: {startTime: undefined, endTime: undefined}
     // - 单开始时间: {startTime: '...', endTime: undefined}
@@ -113,7 +114,7 @@ function isValidTimeFormat(timeStr: string): boolean {
  * @returns Task 返回 false，Calendar 返回 true
  */
 export function requiresTime(event: Event): boolean {
-  return event.isTask !== true;
+  return !hasTaskFacet(event);
 }
 
 /**

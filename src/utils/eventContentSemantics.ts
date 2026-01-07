@@ -15,6 +15,7 @@
 
 import { Event, EventLog } from '@frontend/types';
 import { formatTimeForStorage } from './timeUtils';
+import { hasTaskFacet } from './eventFacets';
 
 /**
  * 从 EventLog 中提取纯文本内容
@@ -109,7 +110,7 @@ function isEmptyTime(
  */
 function isDefaultTaskFields(event: Event): boolean {
   // 如果不是任务，认为字段为默认
-  if (!event.isTask) return true;
+  if (!hasTaskFacet(event)) return true;
   
   // 检查任务特有字段
   const hasCompleted = event.isCompleted === true;
@@ -272,7 +273,7 @@ export function contentScore(event: Event): number {
   }
   
   // 6. 任务相关（+1 ~ +2）
-  if (event.isTask) {
+  if (hasTaskFacet(event)) {
     score += 1;
     if (event.isCompleted) score += 1;
   }
@@ -294,7 +295,6 @@ export interface EventSnapshot {
   endTime?: string;
   isAllDay?: boolean;
   location?: string | any;
-  isTask?: boolean;
   isCompleted?: boolean;
   dueDateTime?: string;
   score: number;      // contentScore 评分
@@ -315,7 +315,6 @@ export function createSnapshot(event: Event): EventSnapshot {
     endTime: event.endTime,
     isAllDay: event.isAllDay,
     location: event.location,
-    isTask: event.isTask,
     isCompleted: event.isCompleted,
     dueDateTime: event.dueDateTime,
     score: contentScore(event)
@@ -366,7 +365,6 @@ export function restoreFromSnapshot(snapshot: EventSnapshot): Partial<Event> {
     endTime: snapshot.endTime,
     isAllDay: snapshot.isAllDay,
     location: snapshot.location,
-    isTask: snapshot.isTask,
     isCompleted: snapshot.isCompleted,
     dueDateTime: snapshot.dueDateTime
   };

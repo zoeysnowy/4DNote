@@ -132,6 +132,7 @@ import ddlWarnIcon from '@frontend/assets/icons/ddl_warn.svg';
 import linkColorIcon from '@frontend/assets/icons/link_color.svg';
 import backIcon from '@frontend/assets/icons/back.svg';
 import remarkableLogo from '@frontend/assets/icons/LOGO.svg';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 interface MockEvent {
   id: string;
@@ -413,7 +414,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTask: event.isTask || false,
+        isTask: hasTaskFacet(event),
         isTimer: event.isTimer || false,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
@@ -555,7 +556,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTask: event.isTask || false,
+      isTask: hasTaskFacet(event),
       isTimer: event.isTimer || false,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
@@ -1230,13 +1231,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         'formData.allDay': formData.allDay
       });
       
+      const { isTask: _formIsTask, ...formDataWithoutIsTask } = formData;
       const updatedEvent: Event = {
         ...(event || {}), // ✅ 如果event为null，使用空对象（新建事件）
-        ...formData,
+        ...formDataWithoutIsTask,
         id: eventId, // 使用验证后的 ID
         title: finalTitle, // ✅ 直接传 Slate JSON 字符串，EventService.normalizeTitle 会统一处理
         tags: finalTags, // 🏷️ 使用自动映射后的标签
-        isTask: formData.isTask,
         isTimer: formData.isTimer,
         parentEventId: formData.parentEventId,
         startTime: startTimeForStorage,
@@ -1352,23 +1353,28 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // 
         // 🔧 Timer 运行中：保持 syncStatus='local-only'
         
-        // 🆕 自动设置 isTask 规则：如果时间不完整，自动标记为 Task
-        // 根据 EventHub Architecture:
-        // - isTask = true: Task 类型，startTime/endTime 可选（同步到 Microsoft To Do）
-        // - isTask = false/undefined: Calendar 事件，startTime/endTime 必需（同步到 Outlook Calendar）
-        let finalIsTask = updatedEvent.isTask;
+        // 🆕 自动设置 Task facet：如果时间不完整，自动视为 Task（通过 checkType 表达）
+        // - Task: checkType !== 'none' （startTime/endTime 可选）
+        // - Calendar: checkType === 'none' （startTime/endTime 必需才会进入日历同步）
         const hasCompleteTime = updatedEvent.startTime && updatedEvent.endTime;
-        
-        if (!hasCompleteTime && finalIsTask !== true) {
-          // 时间缺失且未明确标记为 Task → 自动设置为 Task
-          finalIsTask = true;
-          console.log('[EventEditModalV2] 🔄 自动设置 isTask=true (时间不完整)');
+
+        const wantsTask = formData.isTask === true;
+        const effectiveWantsTask = wantsTask || !hasCompleteTime;
+        const previousCheckType = (event as any)?.checkType;
+        const finalCheckType = (() => {
+          if (!effectiveWantsTask) return 'none';
+          if (previousCheckType && previousCheckType !== 'none') return previousCheckType;
+          return 'once';
+        })();
+
+        if (!hasCompleteTime && !wantsTask) {
+          console.log('[EventEditModalV2] 🔄 自动设置 Task(checkType!=none) (时间不完整)');
         }
         
         result = await EventHub.updateFields(eventId, {
           title: updatedEvent.title,
           tags: updatedEvent.tags,
-          isTask: finalIsTask, // 🔄 使用计算后的值
+          checkType: finalCheckType,
           isTimer: updatedEvent.isTimer,
           parentEventId: updatedEvent.parentEventId,
           startTime: updatedEvent.startTime,

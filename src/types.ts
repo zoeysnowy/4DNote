@@ -380,8 +380,8 @@ export interface Event {
   description?: string;       // 纯文本描述（后台字段，仅用于Outlook同步）
   // ========== 时间字段（由 TimeHub 管理） ==========
   // ⚠️ v1.8 重要变更：时间字段允许 undefined
-  // - Task 类型（isTask=true）：时间可选，支持无时间待办事项
-  // - Calendar 事件（isTask=false/undefined）：时间必需，同步到 Outlook Calendar
+  // - Task 类型（hasTaskFacet=true）：时间可选，支持无时间待办事项
+  // - Calendar 事件（hasTaskFacet=false）：时间必需，同步到 Outlook Calendar
   startTime?: string;   // 开始时间（'YYYY-MM-DD HH:mm:ss' 格式 或 undefined）
   endTime?: string;     // 结束时间（'YYYY-MM-DD HH:mm:ss' 格式 或 undefined）
   isAllDay?: boolean;   // 是否全天事件（undefined 表示未设置）
@@ -415,8 +415,8 @@ export interface Event {
   isTimeLog?: boolean;   // 🆕 添加：标记为纯系统时间日志事件（如自动记录的活动轨迹）
   isOutsideApp?: boolean; // 🆕 添加：标记为外部应用数据（如听歌记录、录屏等）
   isDeadline?: boolean; // 🆕 添加：标记为截止日期事件
-  isTask?: boolean;      // 🆕 添加：标记为任务事件（⚠️ DetailTab 独立语义，暂保留）
-  // ❌ [DEPRECATED] isPlan/isTimeCalendar - 使用 facet 推导替代
+  // ❌ [DEPRECATED] isPlan/isTimeCalendar/isTask - 使用 facet 推导替代
+  // isTask?: boolean;      // ❌ 已废弃 v2.19.2 - 用 hasTaskFacet(event) 替代
   // isPlan?: boolean;      // ❌ 已废弃 v2.19.2 - 用 shouldShowInPlan(event) 替代
   // isTimeCalendar?: boolean; // ❌ 已废弃 v2.19.2 - 用 shouldShowInTimeCalendar(event) 替代
   isNote?: boolean;      // 🆕 v2.19: 用户标记的重要笔记（NoteTree功能）- 在侧边栏快速访问

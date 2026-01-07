@@ -1,6 +1,7 @@
 
 import type { Event } from '@frontend/types';
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from './timeUtils';
+import { hasTaskFacet } from './eventFacets';
 
 export interface CheckState {
 	isChecked: boolean;
@@ -115,7 +116,7 @@ export interface CalendarDateRange {
 export function resolveCalendarDateRange(
 	event: Pick<
 		Partial<Event>,
-		'isTask' | 'startTime' | 'endTime' | 'createdAt' | 'checked' | 'unchecked'
+		'checkType' | 'startTime' | 'endTime' | 'createdAt' | 'checked' | 'unchecked'
 	>
 ): CalendarDateRange {
 	const hasStart = !!event.startTime;
@@ -125,7 +126,7 @@ export function resolveCalendarDateRange(
 	// This includes:
 	// - no-time tasks: {startTime: undefined, endTime: undefined}
 	// - deadline tasks: {startTime: undefined, endTime: '...'}
-	if (!hasStart && event.isTask) {
+	if (!hasStart && hasTaskFacet(event as Event)) {
 		const anchor = resolveTaskAnchorTimestamp(event, {
 			preferCompletionDayWhenChecked: true,
 			fallbackToNow: true

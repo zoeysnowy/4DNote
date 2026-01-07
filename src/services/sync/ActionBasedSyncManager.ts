@@ -7,6 +7,7 @@ import { CalendarService } from '@backend/CalendarService';
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { resolveSyncTitle } from '@frontend/utils/TitleResolver';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { SignatureUtils } from '@frontend/utils/signatureUtils';
 import { SyncStatus } from '@backend/storage/types';
 import type { SyncQueueItem } from '@backend/storage/types';
@@ -3515,8 +3516,7 @@ export class ActionBasedSyncManager {
             ...action.data,
             // 确保 undefined 的字段使用 localEvent 的值
             startTime: action.data.startTime !== undefined ? action.data.startTime : localEvent?.startTime,
-            endTime: action.data.endTime !== undefined ? action.data.endTime : localEvent?.endTime,
-            isTask: action.data.isTask !== undefined ? action.data.isTask : localEvent?.isTask
+            endTime: action.data.endTime !== undefined ? action.data.endTime : localEvent?.endTime
           };
           
           // 🎯 使用 syncRouter 统一判断同步目标
@@ -5480,7 +5480,6 @@ export class ActionBasedSyncManager {
     const visibleEvents = events.filter((e: any) => {
       try {
         const { start } = resolveCalendarDateRange({
-          isTask: e.isTask,
           startTime: e.startTime,
           endTime: e.endTime,
           createdAt: e.createdAt,

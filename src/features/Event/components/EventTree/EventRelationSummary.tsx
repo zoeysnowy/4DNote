@@ -15,6 +15,7 @@ import React, { useEffect, useState } from 'react';
 import { Event } from '@frontend/types';
 import { EventService } from '@backend/EventService';
 import { EventTreeCanvas } from '@frontend/features/Event/components/EventTree/EventTreeCanvas';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 interface EventRelationSummaryProps {
   event: Event;                     // 当前事件
@@ -72,9 +73,9 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
           const siblings = (await EventService.getChildEvents(parentEvent.id))
             .filter(e => EventService.shouldShowInEventTree(e));
           
-          parentInfo.docCount = siblings.filter(e => !e.isTask).length;
-          parentInfo.taskTotal = siblings.filter(e => e.isTask).length;
-          parentInfo.taskCompleted = siblings.filter(e => e.isTask && e.isCompleted).length;
+          parentInfo.docCount = siblings.filter(e => !hasTaskFacet(e)).length;
+          parentInfo.taskTotal = siblings.filter(e => hasTaskFacet(e)).length;
+          parentInfo.taskCompleted = siblings.filter(e => hasTaskFacet(e) && e.isCompleted).length;
         }
       }
 
@@ -85,9 +86,9 @@ export const EventRelationSummary: React.FC<EventRelationSummaryProps> = ({
       
       const childInfo = {
         total: children.length,
-        docCount: children.filter(e => !e.isTask).length,
-        taskTotal: children.filter(e => e.isTask).length,
-        taskCompleted: children.filter(e => e.isTask && e.isCompleted).length,
+        docCount: children.filter(e => !hasTaskFacet(e)).length,
+        taskTotal: children.filter(e => hasTaskFacet(e)).length,
+        taskCompleted: children.filter(e => hasTaskFacet(e) && e.isCompleted).length,
       };
 
       // 3. 双向链接信息

@@ -16,6 +16,7 @@
 import React, { useState, useCallback } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
 import { Event } from '@frontend/types';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { LinkedCard } from './LinkedCard';
 import './EventTree.css';
 
@@ -84,7 +85,7 @@ export const CustomEventNode: React.FC<NodeProps<EventNodeData>> = ({ data }) =>
       >
         {/* 顶部：Checkbox + 类型标签 */}
         <div className="event-node-header">
-          {data.event.isTask && (
+          {hasTaskFacet(data.event) && (
             <input
               type="checkbox"
               className="event-node-checkbox"
@@ -139,14 +140,14 @@ export const CustomEventNode: React.FC<NodeProps<EventNodeData>> = ({ data }) =>
         )}
 
         {/* 进度条（Task 事件显示）：基于直接子任务完成度 */}
-        {data.event.isTask && data.childEvents.length > 0 && data.childEvents.some(e => e.isTask) && (
+        {hasTaskFacet(data.event) && data.childEvents.length > 0 && data.childEvents.some(e => hasTaskFacet(e)) && (
           <div className="event-node-progress">
             <div className="event-node-progress-bar">
               <div 
                 className="event-node-progress-fill"
                 style={{
                   width: `${(() => {
-                    const childTasks = data.childEvents.filter(e => e.isTask);
+                    const childTasks = data.childEvents.filter(e => hasTaskFacet(e));
                     const total = childTasks.length;
                     if (total === 0) return 0;
                     const done = childTasks.filter(e => e.isCompleted).length;

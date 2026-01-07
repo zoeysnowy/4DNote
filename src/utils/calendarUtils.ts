@@ -16,6 +16,7 @@ import { CalendarService } from '@backend/CalendarService';
 import dayjs from 'dayjs';
 import { resolveCalendarDateRange } from './TimeResolver';
 import { resolveDisplayTitle } from './TitleResolver';
+import { hasTaskFacet } from './eventFacets';
 
 const DEFAULT_TUI_CALENDAR_COLOR_HEX = '#3788d8';
 
@@ -375,7 +376,7 @@ export function convertToCalendarEvent(
 
   if (isDeadline) {
     category = 'milestone';
-  } else if (event.isTask) {
+  } else if (hasTaskFacet(event)) {
     category = 'task';
   } else if (event.isAllDay) {
     category = 'allday';
@@ -614,8 +615,7 @@ export function validateEvent(event: Partial<Event>): boolean {
   // One-sided time is almost always data corruption.
   // Exception: tasks may store a planned endTime without startTime.
   if (hasStart !== hasEnd) {
-    const isTask = (event as any).isTask === true;
-    if (isTask && hasEnd && !hasStart) return true;
+    if (hasTaskFacet(event as Event) && hasEnd && !hasStart) return true;
     console.error('❌ Event validation failed: startTime and endTime must either both exist or both be absent');
     return false;
   }

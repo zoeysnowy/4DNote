@@ -940,8 +940,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           
           // ✅ 使用 sessionActions.setFocus 原子更新
           sessionActions.setFocus(lineId, {
-            mode: isDescriptionLine ? 'description' : 'title',
-            isTask: item?.isTask || false
+            mode: isDescriptionLine ? 'description' : 'title'
           });
         }
       }
@@ -1470,7 +1469,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           priority: 'medium',
           isCompleted: false,
           type: 'todo',
-          isTask: true,
           fourDNoteSource: true,
           // Field contract: 时间/全天字段保持可选，不默认注入
           startTime: undefined,
@@ -2070,7 +2068,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // - 仅对 task-like 且存在 planned endTime 的事件
       // - 判断时间取 min(现在, rangeEnd)
       // - endTime 落在 range 内，且 endTime <= evalTime，且当前未完成
-      if (!statuses.has('deleted') && currentEvent?.isTask && currentEvent.endTime && !isCurrentlyChecked) {
+      if (!statuses.has('deleted') && hasTaskFacet(currentEvent) && currentEvent.endTime && !isCurrentlyChecked) {
         const plannedEnd = parseLocalTimeString(currentEvent.endTime);
         const now = new Date();
         const evalTime = new Date(Math.min(now.getTime(), rangeEnd.getTime()));
@@ -2310,7 +2308,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           description: descLine?.content || undefined,
           ...(Number.isFinite(position) ? { position } : {}),
           // 🆕 Plan 页面创建的 item 配置：
-          isTask: true, // ✅ 标记为待办事项
           fourDNoteSource: true, // ✅ 标识事件来源（用于同步识别）
           checkType: 'once', // 🆕 默认单次签到（显示 checkbox）
           // ✅ 默认不设置时间，用户通过 FloatingBar 或 @chrono 自行定义
@@ -2476,8 +2473,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     
     const finalStartTime = eventTime.start || '';
     const finalEndTime = eventTime.end || '';
-    // 🔄 优先使用 item.isTask（已经在 onSave 中自动设置），避免重新计算覆盖
-    const isTask = item.isTask !== undefined ? item.isTask : isTaskByTime(eventTime);
 
     // 🆕 v1.8: 根据标签映射到日历分组
     const tagIds = (item.tags || []).map(t => {
@@ -2534,7 +2529,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       syncStatus: calendarIds.length > 0 ? 'pending' : 'local-only', // 🆕 v1.8: 有日历映射时标记为待同步（但不立即同步，由 ActionBasedSyncManager 统一处理）
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
-      isTask: isTask,
       checkType: item.checkType || 'once', // 🆕 Plan事件默认有checkbox
       fourDNoteSource: true,
     };
@@ -2691,8 +2685,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             const matchedItem = editorItems.find(item => item.id === baseId);
             
             sessionActions.setFocus(lineId, {
-              mode: isDescMode ? 'description' : 'title',
-              isTask: matchedItem?.isTask || false
+              mode: isDescMode ? 'description' : 'title'
             });
             
             if (!matchedItem) {
@@ -2713,8 +2706,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   level: 0,
                   priority: 'medium',
                   isCompleted: false,
-                  type: 'todo',
-                  isTask: true,
+                  checkType: 'once',
                   fourDNoteSource: true,
                   // Field contract: 时间/全天字段保持可选，不默认注入
                   startTime: undefined,
@@ -3023,7 +3015,11 @@ const PlanManager: React.FC<PlanManagerProps> = ({
             if (item) {
               // ✅ 使用 EventHub 保存
               try {
-                await EventHub.updateFields(item.id, { isTask } as any, { source: 'PlanManager' });
+                const currentCheckType = item.checkType ?? 'none';
+                const nextCheckType = isTask
+                  ? (currentCheckType !== 'none' ? currentCheckType : 'once')
+                  : 'none';
+                await EventHub.updateFields(item.id, { checkType: nextCheckType }, { source: 'PlanManager' });
                 sessionActions.setFocus(session.focus.lineId!, { isTask }); // 更新本地状态
               } catch (error) {
                 console.error('[add_task] 保存失败:', error);

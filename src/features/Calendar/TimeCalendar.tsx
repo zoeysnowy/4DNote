@@ -26,6 +26,7 @@ import { STORAGE_KEYS } from '@frontend/constants/storage';
 import { PersistentStorage, PERSISTENT_OPTIONS } from '@frontend/utils/persistentStorage';
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { 
   convertToCalendarEvent, 
   convertFromCalendarEvent,
@@ -1881,7 +1882,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       // - 对 task：允许 endTime-only 作为“计划完成时间”（不把它当作时间段事件）
       // - 不写回 startTime（避免把 task 变成 time-range）
       // - dueDateTime 保留给外部/刚性DDL（例如报名截止、外部系统同步）
-      const isNoTimeTask = !!originalEvent.isTask && !originalEvent.startTime && !originalEvent.endTime;
+      const isNoTimeTask = hasTaskFacet(originalEvent) && !originalEvent.startTime && !originalEvent.endTime;
       if (isNoTimeTask && (changes.start || changes.end)) {
         const startDate: Date | undefined = changes.start ? new Date(changes.start) : undefined;
         const endDate: Date | undefined = changes.end ? new Date(changes.end) : undefined;

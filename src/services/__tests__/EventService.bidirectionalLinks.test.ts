@@ -172,7 +172,7 @@ describe('EventService - 双向链接功能', () => {
       const taskEvent: Event = {
         id: '1',
         title: { fullTitle: 'Task' },
-        isTask: true,
+        checkType: 'once',
       } as Event;
 
       const docEvent: Event = {

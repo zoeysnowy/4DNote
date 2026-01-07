@@ -43,7 +43,7 @@ const testEvent: Event = {
   ],
   location: '会议室 A-301',
   tags: ['重要会议', '产品开发'],
-  isTask: false,
+  checkType: 'none',
   isAllDay: false,
   
   // 同步配置测试数据

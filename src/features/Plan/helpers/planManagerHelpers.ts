@@ -85,6 +85,13 @@ export function buildEventForSave(
   const computedSyncStatus = calendarIds.length > 0 ? 'pending' : 'local-only';
   const syncStatusForPersist = existingItem?.syncStatus ?? (calendarIds.length > 0 ? computedSyncStatus : undefined);
 
+  // PlanManager 默认创建/编辑的是 task-like 事件；当旧数据缺失 checkType 时，补齐为 'once'
+  // 注意：当用户显式切换为非 task（checkType='none'）时，不应覆盖。
+  const checkTypeForPersist =
+    sanitizedUpdatedItem.checkType === undefined && existingItem?.checkType === undefined
+      ? 'once'
+      : (sanitizedUpdatedItem.checkType ?? existingItem?.checkType);
+
   const eventItem: Event = {
     ...(existingItem || {}),
     ...sanitizedUpdatedItem,
@@ -96,11 +103,7 @@ export function buildEventForSave(
     calendarIds: calendarIds.length > 0 ? calendarIds : undefined,
     priority: updatedItem.priority || existingItem?.priority || 'medium',
     isCompleted: updatedItem.isCompleted ?? existingItem?.isCompleted ?? false,
-    type: existingItem?.type || 'todo',
-    isPlan: true,
-    isTask: true,
-    isTimeCalendar: false,
-    fourDNoteSource: true,
+    checkType: checkTypeForPersist,
     createdAt: existingItem?.createdAt ?? sanitizedUpdatedItem.createdAt ?? nowLocal,
     updatedAt: nowLocal,
     source: 'local',

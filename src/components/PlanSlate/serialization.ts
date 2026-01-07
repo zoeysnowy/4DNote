@@ -6,6 +6,7 @@
 
 import { Descendant, Text, Editor, Transforms, Node as SlateNode, Path } from 'slate';
 import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { hasTaskFacet, shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 import { 
   EventLineNode, 
   ParagraphNode, 
@@ -85,7 +86,7 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       // 业务字段
       priority: item.priority,
       isCompleted: item.isCompleted,
-      isTask: item.isTask,
+      isTask: hasTaskFacet(item as any),
       type: item.type,
       checkType: item.checkType, // ✅ 不添加默认值，保持原样
       
@@ -94,8 +95,8 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       unchecked: item.unchecked || [],
       
       // Plan 相关
-      isPlan: item.isPlan,
-      isTimeCalendar: item.isTimeCalendar,
+      isPlan: shouldShowInPlan(item as any),
+      isTimeCalendar: shouldShowInTimeCalendar(item as any),
       
       // 同步字段
       calendarIds: item.calendarIds,

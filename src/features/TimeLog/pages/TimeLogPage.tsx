@@ -1967,8 +1967,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         ...(startTime ? { startTime } : {}), // 来自 TimeGap 时使用锚点时间，否则不写入字段（规范：undefined 表示无时间）
         tags: [], // 允许空标✅
         isAllDay: false,
-        // 🔧 明确标记为非Task（避免被过滤✅
-        isTask: false, // 明确标记为Task
+        // 🔧 明确标记为非 Task（避免被 task facet 过滤）
+        checkType: 'none',
         // ⚠️ 空笔记不应该✅Block-Level Timestamp（避免显示时间戳✅
         eventlog: JSON.stringify([
           {

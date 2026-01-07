@@ -99,7 +99,7 @@ describe('TimeResolver', () => {
     it('无时间 task（未完成）：使用 createdAt 的日期并 clamp 到 00:00', () => {
       const createdAt = '2025-12-01 08:00:00';
       const { start, end, kind } = resolveCalendarDateRange({
-        isTask: true,
+        checkType: 'once',
         startTime: undefined,
         endTime: undefined,
         createdAt,
@@ -124,7 +124,7 @@ describe('TimeResolver', () => {
       const lastChecked = '2025-12-30 23:59:59';
 
       const { start, end, kind } = resolveCalendarDateRange({
-        isTask: true,
+        checkType: 'once',
         startTime: undefined,
         endTime: undefined,
         createdAt,
@@ -146,7 +146,7 @@ describe('TimeResolver', () => {
       vi.setSystemTime(new Date('2025-12-31T12:34:56'));
 
       const { start, kind } = resolveCalendarDateRange({
-        isTask: true,
+        checkType: 'once',
         startTime: undefined,
         endTime: undefined,
         createdAt: undefined,
@@ -166,7 +166,7 @@ describe('TimeResolver', () => {
 
     it('仅 startTime 的 task：按 time-based 渲染（end 回填为 start）', () => {
       const { start, end, kind } = resolveCalendarDateRange({
-        isTask: true,
+        checkType: 'once',
         startTime: '2025-12-01 09:00:00',
         endTime: undefined,
         createdAt: '2025-12-01 08:00:00',
@@ -181,7 +181,6 @@ describe('TimeResolver', () => {
 
     it('有明确时间段：使用 startTime/endTime（time-based）', () => {
       const { start, end, kind } = resolveCalendarDateRange({
-        isTask: false,
         startTime: '2025-12-01 09:00:00',
         endTime: '2025-12-01 10:00:00',
         createdAt: '2025-12-01 08:00:00',

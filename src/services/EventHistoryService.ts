@@ -25,6 +25,7 @@ import { formatTimeForStorage, parseLocalTimeString } from '@frontend/utils/time
 import { StorageManager } from '@backend/storage/StorageManager';
 import { SignatureUtils } from '@frontend/utils/signatureUtils';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 const historyLogger = logger.module('EventHistory');
 
@@ -540,7 +541,7 @@ export class EventHistoryService {
     
     // missed: 过期未完成的事件（派生，不落盘）
     // 规则（与 TimeCalendar/TimeResolver 对齐）：
-    // - 仅对 task-like（isTask）且存在 planned endTime 的事件判断
+    // - 仅对 task-like（hasTaskFacet）且存在 planned endTime 的事件判断
     // - 判断时间取 min(现在, rangeEnd)
     // - endTime 落在该 range 内，且 endTime <= evalTime，且当前未完成 => missed
     const missed: EventChangeLog[] = [];
@@ -557,7 +558,7 @@ export class EventHistoryService {
 
         activeEvents.forEach((event: any) => {
           if (!event?.id) return;
-          if (!event.isTask) return;
+          if (!hasTaskFacet(event)) return;
           if (!event.endTime) return;
 
           const plannedEnd = parseLocalTimeString(event.endTime);
@@ -576,7 +577,6 @@ export class EventHistoryService {
             after: {
               id: event.id,
               title: event.title,
-              isTask: event.isTask,
               endTime: event.endTime,
             },
             changes: [

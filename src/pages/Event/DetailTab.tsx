@@ -45,7 +45,7 @@
  * ==================== 数据结构 ====================
  * 
  * MockEvent（formData）:
- * - 非时间字段: title, tags, isTask, location, organizer, attendees, eventlog, description
+ * - 非时间字段: title, tags, location, organizer, attendees, eventlog, description
  * - 时间字段: startTime, endTime, allDay
  * - 元数据: id, parentEventId, isTimer
  * 
@@ -84,7 +84,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
-import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
 import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
 import { Event, Contact, EventTitle } from '@frontend/types';
@@ -141,7 +141,6 @@ interface MockEvent {
   id: string;
   title: string;
   tags: string[];
-  isTask: boolean;
   isTimer: boolean;
   parentEventId: string | null;
   // 🔗 EventTree 关系字段
@@ -295,7 +294,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
    * 2. 创建新事件：TimeCalendar 传入的临时对象（带 local-${timestamp} ID）
    * 
    * 字段说明：
-   * - 非时间字段：title, tags, isTask, location, attendees, eventlog, description
+   * - 非时间字段：title, tags, location, attendees, eventlog, description
    * - 时间字段：startTime, endTime, allDay（存储但不在此处管理）
    * - 元数据：id, parentEventId（Timer父子关系）, organizer（Outlook同步）
    * 
@@ -388,7 +387,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTask: event.isTask || false,
         isTimer: event.isTimer || false,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
@@ -491,7 +489,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       id: generateEventId(),
       title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
       tags: [],
-      isTask: false,
       isTimer: false,
       parentEventId: null,
       linkedEventIds: [],
@@ -518,7 +515,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         id: generateEventId(),
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
-        isTask: false,
         isTimer: false,
         parentEventId: null,
         linkedEventIds: [],
@@ -571,7 +567,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTask: event.isTask || false,
       isTimer: event.isTimer || false,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
@@ -1205,7 +1200,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         id: eventId, // 使用验证后的 ID
         title: finalTitle, // ✅ 直接传 Slate JSON 字符串，EventService.normalizeTitle 会统一处理
         tags: finalTags, // 🏷️ 使用自动映射后的标签
-        isTask: formData.isTask,
         isTimer: formData.isTimer,
         parentEventId: formData.parentEventId,
         startTime: startTimeForStorage,
@@ -1359,7 +1353,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         }
 
         // Other scalar fields
-        setIfChanged('isTask', candidate.isTask);
         setIfChanged('isTimer', candidate.isTimer);
         setIfChanged('parentEventId', candidate.parentEventId);
         setIfChanged('location', candidate.location);
@@ -1432,23 +1425,11 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         // 
         // 🔧 Timer 运行中：保持 syncStatus='local-only'
         
-        // 🆕 自动设置 isTask 规则：如果时间不完整，自动标记为 Task
-        // 根据 EventHub Architecture:
-        // - isTask = true: Task 类型，startTime/endTime 可选（同步到 Microsoft To Do）
-        // - isTask = false/undefined: Calendar 事件，startTime/endTime 必需（同步到 Outlook Calendar）
-        let finalIsTask = updatedEvent.isTask;
-        const hasCompleteTime = updatedEvent.startTime && updatedEvent.endTime;
+        // 🆕 Task 类型通过 checkType 字段推导，不再需要 isTask 标记
+        // - hasTaskFacet(event): checkType !== 'none' → 同步到 Microsoft To Do
+        // - 否则 → 同步到 Outlook Calendar
         
-        if (!hasCompleteTime && finalIsTask !== true) {
-          // 时间缺失且未明确标记为 Task → 自动设置为 Task
-          finalIsTask = true;
-          console.log('[EventEditModalV2] 🔄 自动设置 isTask=true (时间不完整)');
-        }
-        
-        const contractSafeUpdates = buildContractSafeUpdates(existingEvent, {
-          ...updatedEvent,
-          isTask: finalIsTask
-        } as Event);
+        const contractSafeUpdates = buildContractSafeUpdates(existingEvent, updatedEvent);
 
         // 🔧 附加：手动子事件 / 父事件字段（按原逻辑）
         if (!isParentMode && !isSystemChild) {
@@ -2424,12 +2405,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     setShowTagPicker(true);
   };
 
-  // ==================== Checkbox 处理 ====================
-  
-  const handleTaskCheckboxChange = (checked: boolean) => {
-    setFormData({ ...formData, isTask: checked });
-  };
-
   // ==================== TimeLog 处理函数 ====================
   
   /**
@@ -2893,10 +2868,9 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
                   {/* Checkbox + 标题行 */}
                   <div className="title-checkbox-row">
-                    <div 
-                      className={`custom-checkbox ${formData.isTask ? 'checked' : ''}`}
-                      onClick={() => handleTaskCheckboxChange(!formData.isTask)}
-                    />
+                    {/* ✅ Checkbox 状态由 checkType 推导，不再需要 isTask 字段 */}
+                    {/* 所有 checkbox 逻辑已迁移到 CheckboxStateManager */}
+                    {/* 这里只显示标题，checkbox 由 TitleSlate 内置处理 */}
                     {/* 📌 TitleSlate 必须从 formData.title.colorTitle 读取（单一数据源） */}
                     {/* 🔥 CRITICAL: 使用 formData.id 作为 key 确保只在事件ID变化时才重新mount */}
                     <TitleSlate

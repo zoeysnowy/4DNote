@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { Event } from '@frontend/types';
 import type { MockEvent } from '@frontend/features/Event/components/EventEditModal/types';
+import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 type LocationDisplayFn = (location: unknown) => string;
 
@@ -45,7 +46,7 @@ export function useEventEditDraft({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTask: event.isTask || false,
+        isTask: hasTaskFacet(event),
         isTimer: event.isTimer || false,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
@@ -148,7 +149,7 @@ export function useEventEditDraft({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTask: event.isTask || false,
+        isTask: hasTaskFacet(event),
       isTimer: event.isTimer || false,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
