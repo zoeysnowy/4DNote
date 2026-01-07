@@ -8,6 +8,7 @@ import type { Event } from '@frontend/types';
 import { PlanSlate } from '@frontend/components/PlanSlate/PlanSlate';
 import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '@frontend/components/PlanSlate/helpers';
 import { StatusLineContainer, StatusLineSegment } from '@frontend/components/shared/StatusLineContainer';
+import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { ToolbarConfig } from '@frontend/components/shared/FloatingToolbar/types';
@@ -307,8 +308,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         数量: initialItemsRef.current.length,
         示例: initialItemsRef.current.slice(0, 3).map(e => ({
           id: (e.id || '').slice(-10),
-          title: (e.title?.simpleTitle || '').slice(0, 20),
-          isPlan: e.isPlan
+          title: (e.title?.simpleTitle || '').slice(0, 20)
         }))
       });
       return initialItemsRef.current;
@@ -465,8 +465,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         
         console.log('[PlanManager] 从 EventService 加载:', allEvents.length, '个事件');
         
-        // 3. 数据迁移：为旧的 isPlan 事件批量设置 checkType（仅执行一次）
-        const needsMigration = allEvents.filter(e => e.isPlan && !e.checkType);
+        // 3. 数据迁移：为旧的 Plan 事件批量设置 checkType（仅执行一次）
+        const needsMigration = allEvents.filter(e => shouldShowInPlan(e) && !e.checkType);
         if (needsMigration.length > 0) {
           console.log('🔧 [数据迁移] 检测到需要迁移的 isPlan 事件:', needsMigration.length);
           
@@ -620,11 +620,10 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       
       const now = new Date();
       
-      // 步骤 1: 并集条件
+      // 步骤 1: 并集条件（使用 facet 推导）
       const matchesInclusionCriteria = 
-        event.isPlan === true || 
-        (event.checkType && event.checkType !== 'none') ||
-        event.isTimeCalendar === true;
+        shouldShowInPlan(event) || 
+        shouldShowInTimeCalendar(event);
       
       if (!matchesInclusionCriteria) return false;
       
@@ -665,8 +664,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       
       // 步骤 3: 过期/完成事件处理
       const isExpired = isEventExpired(event, now);
-      if (event.isTimeCalendar && isExpired) {
-        const isTaskLike = event.isPlan === true || (event.checkType && event.checkType !== 'none');
+      if (shouldShowInTimeCalendar(event) && isExpired) {
+        const isTaskLike = hasTaskFacet(event);
         if (!isTaskLike) return false;
       }
       
@@ -699,9 +698,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (!shouldShowEvent(updatedEvent)) {
         setItems(prev => prev.filter(item => item.id !== eventId));
         console.log('[PlanManager] 🚫 Event filtered out:', eventId.slice(-8), {
-          isPlan: updatedEvent.isPlan,
-          checkType: updatedEvent.checkType,
-          isTimeCalendar: updatedEvent.isTimeCalendar
+          checkType: updatedEvent.checkType
         });
         return;
       }
