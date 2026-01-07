@@ -82,6 +82,7 @@ export const ContentPanelPickersDemo: React.FC<{
     });
   };
 
+
   const taskTree = useMemo((): TaskNode[] => {
     const nodeMap = new Map<string, TaskNode>();
 
@@ -183,6 +184,7 @@ export const ContentPanelPickersDemo: React.FC<{
       </div>
     );
   };
+
 
   return (
     <div>

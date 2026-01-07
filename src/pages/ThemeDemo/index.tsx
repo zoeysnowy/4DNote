@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import PageContainer from '@frontend/components/common/PageContainer';
 import { ContentPanelPickersDemo } from './ContentPanelPickersDemo';
+import { TagDropdownPickerDemo } from './TagDropdownPickerDemo';
 import './ThemeDemoPage.css';
 
 type ThemeFamily = {
@@ -718,6 +719,13 @@ const ThemeDemoPage: React.FC = () => {
 
         <div className="theme-demo-content-panel-pickers" style={{ marginTop: 12, maxWidth: 360 }}>
           <ContentPanelPickersDemo tags={demoTags} calendars={demoCalendars} defaultExpandedTagIds={['tag-work', 'tag-life']} />
+
+          <div style={{ height: 12 }} />
+
+          <div className="theme-demo-muted" style={{ marginBottom: 8 }}>
+            TagPicker dropdown（对比用，不改动上面的原始 section）
+          </div>
+          <TagDropdownPickerDemo tags={demoTags} defaultExpandedTagIds={['tag-work', 'tag-life']} />
         </div>
       </div>
     </PageContainer>
