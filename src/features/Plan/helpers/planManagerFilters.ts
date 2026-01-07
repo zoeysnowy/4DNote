@@ -2,7 +2,7 @@
  * PlanManager事件过滤逻辑（统一封装）
  *
  * 三步过滤公式（来自PRD Section 2.4）：
- * 1. 并集条件：isPlan=true OR checkType存在 OR isTimeCalendar=true
+ * 1. 并集条件：checkType存在 OR 具有日历能力
  * 2. 排除系统事件：subordinate events (TimerLog, TimeLog等)
  * 3. 过期/完成处理：根据模式决定是否显示
  */
@@ -11,6 +11,7 @@ import type { Event } from '@frontend/types';
 import { EventService } from '@backend/EventService';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
+import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 
 /**
  * 检查事件是否应该显示在PlanManager中
@@ -26,11 +27,10 @@ export function shouldShowInPlanManager(
   // 🗑️ 步骤0: 排除已删除的事件
   if (event.deletedAt) return false;
 
-  // 步骤1: 并集条件
+  // 步骤1: 并集条件（使用 facet 推导）
   const matchesInclusionCriteria =
-    event.isPlan === true ||
-    (event.checkType && event.checkType !== 'none') ||
-    event.isTimeCalendar === true;
+    shouldShowInPlan(event) ||
+    shouldShowInTimeCalendar(event);
 
   if (!matchesInclusionCriteria) return false;
 
