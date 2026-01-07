@@ -265,138 +265,133 @@ aiMetadata?: {                            // AI 元数据
 
 ### Phase 1: 清理 Legacy 分类 Flags（高优先级）
 
-#### Step 1.1: 添加 facet 推导工具函数
+#### Step 1.1: 添加 facet 推导工具函数 ✅
 **文件**: `src/utils/eventFacets.ts` (新建)
 
-```typescript
-/**
- * Event Facet 推导函数
- * 根据 Contract Section 6.1 实现
- */
-
-export function hasTaskFacet(event: Event): boolean {
-  return event.checkType !== 'none' && event.checkType !== undefined;
-}
-
-export function hasCalendarFacet(event: Event): boolean {
-  return !!(event.startTime && event.endTime);
-}
-
-export function shouldShowInPlan(event: Event): boolean {
-  return hasTaskFacet(event);
-}
-
-export function shouldShowInTimeCalendar(event: Event): boolean {
-  // Contract: 本地创建且有 calendar block，或外部同步
-  if (hasCalendarFacet(event)) {
-    return event.source?.startsWith('local:') || event.source?.startsWith('outlook:') || false;
-  }
-  // 或者 Task Bar（checkType 存在但无时间段）
-  return hasTaskFacet(event) && !hasCalendarFacet(event);
-}
-
-export function isLocalCreation(event: Event): boolean {
-  return event.source?.startsWith('local:') || event.source === 'local' || false;
-}
-
-export function isExternalSync(event: Event): boolean {
-  return event.source?.startsWith('outlook:') || 
-         event.source?.startsWith('google:') ||
-         event.source === 'outlook' ||
-         event.source === 'google' ||
-         false;
-}
-
-export function getCreationSource(event: Event): string {
-  // 向后兼容
-  if (event.source === 'local') return 'local:unknown';
-  if (event.source === 'outlook') return 'outlook:calendar';
-  return event.source || 'local:unknown';
-}
-```
+**状态**: ✅ 已完成 (commit 166b798)
 
 **提交**: `feat(utils): 添加 Event Facet 推导函数 (Contract Phase 1.1)`
 
 ---
 
-#### Step 1.2: 替换 Plan 页面的 isPlan 判断
+#### Step 1.2: 替换 planManagerFilters.ts 的筛选逻辑
 **文件**: `src/features/Plan/helpers/planManagerFilters.ts`
 
-**查找**: `event.isPlan`  
-**替换为**: `hasTaskFacet(event)`
+**影响范围**: 1个文件，3处修改
+- L31: `event.isPlan === true` → `shouldShowInPlan(event)`
+- L33: `event.isTimeCalendar === true` → `shouldShowInTimeCalendar(event)`
 
-**影响文件**:
-- `src/features/Plan/components/PlanManager.tsx`
-- `src/features/Plan/helpers/planManagerFilters.ts`
+**测试**: 手动测试 Plan 页面筛选
 
-**测试**:
-```bash
-# 测试 Plan 页面筛选逻辑
-npm run test:unit -- planManagerFilters.test.ts
-```
-
-**提交**: `refactor(plan): 用 facet 推导替换 isPlan 字段 (Contract Phase 1.2)`
+**提交**: `refactor(plan): planManagerFilters 用 facet 推导替换 flags (Phase 1.2)`
 
 ---
 
-#### Step 1.3: 替换 TimeCalendar 页面的分类判断
-**文件**: `src/features/TimeCalendar/utils/calendarUtils.ts`
+#### Step 1.3: 替换 PlanManager.tsx 的分类判断（分批处理）
 
-**查找**: `event.isTimeCalendar`, `event.isTask`  
-**替换为**: `shouldShowInTimeCalendar(event)`
+**Step 1.3a: 移除创建事件时的 isPlan/isTimeCalendar 赋值**
+**文件**: `src/features/Plan/components/PlanManager.tsx`
 
-**影响文件**:
-- `src/features/TimeCalendar/components/TimeCalendarView.tsx`
-- `src/utils/calendarUtils.ts`
+**影响范围**: 4处修改
+- L1476: 删除 `isPlan: true`
+- L1478: 删除 `isTimeCalendar: false`
+- L2318: 删除 `isPlan: true`
+- L2320: 删除 `isTimeCalendar: false`
+- L2724: 删除 `isPlan: true`
+- L2726: 删除 `isTimeCalendar: false`
 
-**测试**:
-```bash
-npm run test:unit -- calendarUtils.test.ts
-```
+**测试**: 手动测试创建事件
 
-**提交**: `refactor(timecalendar): 用 facet 推导替换分类 flags (Contract Phase 1.3)`
-
----
-
-#### Step 1.4: 替换 EventService 中的分类判断
-**文件**: `src/services/EventService.ts`
-
-**查找**: `isTask`, `isPlan`, `isTimeCalendar` 的所有使用  
-**替换为**: facet 函数
-
-**影响范围**:
-- `normalizeEvent()`: 移除 `isTask/isPlan` 写入逻辑
-- `createEvent()`: 移除自动设置 `isPlan` 逻辑
-
-**测试**:
-```bash
-npm run test:unit -- EventService.test.ts
-```
-
-**提交**: `refactor(service): EventService 移除分类 flags 依赖 (Contract Phase 1.4)`
+**提交**: `refactor(plan): 移除 PlanManager 创建事件的 flag 赋值 (Phase 1.3a)`
 
 ---
 
-#### Step 1.5: 替换 Sync 逻辑中的分类判断
-**文件**: `src/services/sync/ActionBasedSyncManager.ts`
+**Step 1.3b: 替换 PlanManager.tsx 的筛选判断**
+**文件**: `src/features/Plan/components/PlanManager.tsx`
 
-**查找**: `isTask`, `isPlan` 判断  
-**替换为**: `hasTaskFacet(event)` 或 `source` 判断
+**影响范围**: 5处修改
+- L311: `isPlan: e.isPlan` → 删除（使用 facet 推导）
+- L469: `e.isPlan && !e.checkType` → `shouldShowInPlan(e) && !e.checkType`
+- L625: `event.isPlan === true` → `shouldShowInPlan(event)`
+- L627: `event.isTimeCalendar === true` → `shouldShowInTimeCalendar(event)`
+- L668: `event.isTimeCalendar && isExpired` → `shouldShowInTimeCalendar(event) && isExpired`
+- L669: `event.isPlan === true || ...` → `shouldShowInPlan(event) || ...`
+- L702: `isPlan: updatedEvent.isPlan` → 删除
+- L704: `isTimeCalendar: updatedEvent.isTimeCalendar` → 删除
 
-**提交**: `refactor(sync): Sync 移除分类 flags 依赖 (Contract Phase 1.5)`
+**测试**: 手动测试 Plan 页面完整流程
+
+**提交**: `refactor(plan): PlanManager 筛选逻辑用 facet 推导 (Phase 1.3b)`
 
 ---
 
-#### Step 1.6: 从 types.ts 删除分类 flags
+#### Step 1.4: 替换 App.tsx 的分类判断
+**文件**: `src/App.tsx`
+
+**影响范围**: 4处修改
+- L505: 删除 `isTimeCalendar: true`（Timer创建逻辑）
+- L902: `existingEvent?.isPlan ? {...}` → 使用 facet 判断
+- L913: `isPlan: existingEvent?.isPlan` → 删除
+- L1404: `isPlan: true` → 删除
+
+**测试**: 手动测试 Timer 创建和更新
+
+**提交**: `refactor(app): App.tsx 移除分类 flags (Phase 1.4)`
+
+---
+
+#### Step 1.5: 替换其他页面的分类判断
+**文件**: 
+- `src/pages/Event/DetailTab.tsx`
+- `src/features/Event/components/EventEditModal/EventEditModalV2.tsx`
+- `src/features/TimeLog/pages/TimeLogPage.tsx`
+- `src/features/Dashboard/components/UpcomingEventsPanel.tsx`
+
+**影响范围**: 
+- DetailTab.tsx: 3处 (L1762, L1767, isTask相关逻辑保留暂不改)
+- EventEditModalV2.tsx: 2处 (L1688, L1693)
+- TimeLogPage.tsx: 2处 (L1061, L1970, L1971)
+- UpcomingEventsPanel.tsx: 1处 (L74)
+
+**策略**: 
+- `evt.isPlan` → `shouldShowInPlan(evt)`
+- `evt.isTimeCalendar` → `shouldShowInTimeCalendar(evt)`
+- 删除创建时赋值的 `isPlan/isTimeCalendar`
+
+**测试**: 各页面手动测试
+
+**提交**: `refactor(pages): 各页面移除 isPlan/isTimeCalendar flags (Phase 1.5)`
+
+---
+
+#### Step 1.6: 替换 Service 层的分类判断
+**文件**: 
+- `src/services/EventService.ts`
+- `src/services/MicrosoftCalendarService.ts`
+- `src/services/search/UnifiedSearchIndex.ts`
+
+**影响范围**: 
+- EventService.ts: 1处 (L3453)
+- MicrosoftCalendarService.ts: 2处 (L1592, L1817) - 删除 `isTimeCalendar: true`
+- UnifiedSearchIndex.ts: 1处 (L602) - 用 facet 判断
+
+**测试**: 测试同步功能
+
+**提交**: `refactor(services): Service 层移除分类 flags (Phase 1.6)`
+
+---
+
+#### Step 1.7: 从 types.ts 删除分类 flags（最后一步）
 **文件**: `src/types.ts`
 
+**删除字段**:
 ```typescript
 // ❌ 删除以下字段：
 isTimer?: boolean;
 isTimeLog?: boolean;
 isOutsideApp?: boolean;
 isDeadline?: boolean;
-isTask?: boolean;
+isTask?: boolean;          // ⚠️ isTask 暂时保留（DetailTab 大量使用）
 isPlan?: boolean;
 isTimeCalendar?: boolean;
 isNote?: boolean;
@@ -404,15 +399,15 @@ type?: 'todo' | 'task' | 'event';
 category?: string;
 ```
 
+**⚠️ 注意**: `isTask` 在 DetailTab.tsx 中有独立语义（Task vs Calendar），暂不删除，留待后续专门处理
+
 **测试**:
 ```bash
 # 全局编译检查
 npm run build
-# 全局测试
-npm run test
 ```
 
-**提交**: `refactor(types): 删除废弃的分类 flags (Contract Phase 1.6)`
+**提交**: `refactor(types): 删除废弃的分类 flags (Phase 1.7)`
 
 ---
 
@@ -1136,13 +1131,15 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 ## 📋 执行清单（Checklist）
 
-### Phase 1: Legacy Flags 清理
-- [ ] Step 1.1: 添加 facet 推导函数
-- [ ] Step 1.2: 替换 Plan 页面判断
-- [ ] Step 1.3: 替换 TimeCalendar 判断
-- [ ] Step 1.4: 替换 EventService 判断
-- [ ] Step 1.5: 替换 Sync 判断
-- [ ] Step 1.6: 删除 types.ts 中的 flags
+### Phase 1: Legacy Flags 清理（细化版）
+- [x] Step 1.1: 添加 facet 推导函数 ✅ commit 166b798
+- [ ] Step 1.2: planManagerFilters.ts 筛选逻辑
+- [ ] Step 1.3a: PlanManager 移除创建时 flag 赋值
+- [ ] Step 1.3b: PlanManager 筛选逻辑用 facet
+- [ ] Step 1.4: App.tsx 移除分类 flags
+- [ ] Step 1.5: 各页面移除 isPlan/isTimeCalendar
+- [ ] Step 1.6: Service 层移除分类 flags
+- [ ] Step 1.7: types.ts 删除 flags (⚠️ isTask 保留)
 
 ### Phase 2: source 字段扩展
 - [ ] Step 2.1: 更新 source 类型定义
@@ -1224,11 +1221,12 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 ---
 
-## 📅 预估时间
+## 📅 预估时间（更新版）
 
 | Phase | 预估工时 | 依赖 | 备注 |
 |-------|---------|------|------|
-| Phase 1 | 8h | 无 | 清理Legacy Flags |
+| Phase 1.1 | ✅ 1h | 无 | ✅ 已完成：facet 推导函数 |
+| Phase 1.2-1.7 | 12h | Phase 1.1 | **细化**：分批替换 20+ 文件，每批测试 |
 | Phase 2 | 4h | Phase 1 | source字段扩展 |
 | Phase 3 | 3h | 无 | AI对话字段 |
 | Phase 4 | 12h | Phase 2 | **重点**: 多日历同步+配置统一 |
@@ -1236,9 +1234,12 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 | Phase 6 | 2h | 无 | Timeline Anchor |
 | Phase 7 | 2h | All | 验证和文档 |
 
-**总计**: ~39 工时（约 5 个工作日）
+**总计**: ~44 工时（约 5.5 个工作日）
 
-**⚠️ Phase 4.3 需要用户决策**: 多日历同步是保留数组还是简化为单日历
+**⚠️ 风险提示**:
+- Phase 1 影响 27 个文件，分 7 个小步骤逐步替换
+- 每个小步骤完成后立即提交，确保可回滚
+- Phase 4.3/5.4 需要数据库迁移，预留测试时间
 
 ---
 
