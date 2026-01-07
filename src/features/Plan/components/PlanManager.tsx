@@ -1473,9 +1473,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           priority: 'medium',
           isCompleted: false,
           type: 'todo',
-          isPlan: true,
           isTask: true,
-          isTimeCalendar: false,
           fourDNoteSource: true,
           // Field contract: 时间/全天字段保持可选，不默认注入
           startTime: undefined,
@@ -2315,9 +2313,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           description: descLine?.content || undefined,
           ...(Number.isFinite(position) ? { position } : {}),
           // 🆕 Plan 页面创建的 item 配置：
-          isPlan: true, // ✅ 显示在 Plan 页面
           isTask: true, // ✅ 标记为待办事项
-          isTimeCalendar: false, // ✅ 不是 TimeCalendar 创建的事件
           fourDNoteSource: true, // ✅ 标识事件来源（用于同步识别）
           checkType: 'once', // 🆕 默认单次签到（显示 checkbox）
           // ✅ 默认不设置时间，用户通过 FloatingBar 或 @chrono 自行定义
@@ -2721,9 +2717,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   priority: 'medium',
                   isCompleted: false,
                   type: 'todo',
-                  isPlan: true,
                   isTask: true,
-                  isTimeCalendar: false,
                   fourDNoteSource: true,
                   // Field contract: 时间/全天字段保持可选，不默认注入
                   startTime: undefined,
