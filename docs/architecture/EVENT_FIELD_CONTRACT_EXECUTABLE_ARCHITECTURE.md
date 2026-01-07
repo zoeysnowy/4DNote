@@ -936,10 +936,10 @@ interface EventTitle {
 - 统一模式：`syncMode`
 - 用户意图：`calendarIds/todoListIds/subEventConfig/hasCustomSyncConfig`
 - 同步状态：`syncStatus/lastSyncTime`
-- 外部映射：`externalId`
-- 多日历映射（Plan/Actual）：`syncedPlanCalendars/syncedActualCalendars`
+- 外部映射（单个主日历）：`externalId`
+- 外部映射（多日历同步）：`externalMappings` ✅ **新增 v2.19.1**
 - 旧字段（deprecated）：`syncedPlanEventId/syncedActualEventId/syncedOutlookEventId`
-- 配置对象（历史/并存）：`planSyncConfig/actualSyncConfig`
+- 配置对象（历史/并存，待统一）：`planSyncConfig/actualSyncConfig`
 
 #### F. Structure（结构真相）
 - 树结构真相：`parentEventId`
@@ -1098,7 +1098,7 @@ function shouldShow_TimeLog(event: Event): boolean {
   - Outbound：`location/attendees/reminder` → Graph 对应字段（见 8.2）
   - Inbound：仅允许 Sync merge 写入上述字段；不得覆盖本地专属字段（如 `tags`）。
 
-### Field Card：`externalId`（外部映射键）
+### Field Card：`externalId`（外部映射键 - 主日历）
 - 层级：Sync
 - 语义（一句话）：本地 Event 与外部系统对象的一对一映射键（前缀区分系统）。
 - Writers：Sync（external create / merge / migration）
@@ -1107,6 +1107,54 @@ function shouldShow_TimeLog(event: Event): boolean {
   - Outlook Calendar：`externalId` 形如 `outlook-<graphEventId>`
   - Microsoft To Do：`externalId` 形如 `todo-<graphTaskId>`
 - 不变量：UI 不得直接写入；只能通过 Sync 生成/变更。
+- 多日历场景：`externalId` 记录主日历的远程事件 ID，其他日历通过 `externalMappings` 记录
+
+### Field Card：`externalMappings`（外部映射数组 - 多日历同步）✅ **新增 v2.19.1**
+- 层级：Sync
+- 语义（一句话）：本地 1 个 Event 对应远程 N 个事件（不同日历）的完整映射关系。
+- 结构：
+  ```typescript
+  externalMappings?: Array<{
+    calendarId: string;      // 目标日历 ID
+    remoteEventId: string;   // 该日历中的远程事件 ID
+    scope?: 'plan' | 'actual'; // 可选：区分计划安排/实际进展（历史兼容）
+  }>;
+  ```
+- Writers：Sync（ActionBasedSyncManager）
+  - CREATE：同步成功后添加映射 `{ calendarId, remoteEventId }`
+  - UPDATE：根据 `calendarId` 查找对应的 `remoteEventId` 进行更新
+  - DELETE：删除所有映射关系，并删除远程事件
+- Readers：Sync（判断事件是否已同步到某日历）、诊断工具
+- 默认值：`undefined`（未同步到任何日历）
+- 不变量：
+  - **唯一性约束**：同一 `calendarId` 在数组中只能出现一次
+  - **完整性约束**：如果用户从 `calendarIds` 中移除某日历，必须同时删除对应的远程事件并移除映射
+  - **迁移路径**：
+    ```typescript
+    // 从旧字段迁移
+    if (event.syncedPlanCalendars) {
+      event.externalMappings = event.syncedPlanCalendars.map(cal => ({
+        calendarId: cal.calendarId,
+        remoteEventId: cal.remoteEventId,
+        scope: 'plan'
+      }));
+    }
+    if (event.syncedActualCalendars) {
+      event.externalMappings = [
+        ...(event.externalMappings || []),
+        ...event.syncedActualCalendars.map(cal => ({
+          calendarId: cal.calendarId,
+          remoteEventId: cal.remoteEventId,
+          scope: 'actual'
+        }))
+      ];
+    }
+    ```
+- **使用场景**：
+  - 用户将同一事件同步到"工作日历"和"个人日历"
+  - 修改事件时，通过 `externalMappings` 找到所有远程事件 ID 并批量更新
+  - 删除事件时，通过 `externalMappings` 清理所有远程残留
+- **向后兼容**：Phase 4.3 执行重命名前，代码同时支持读取旧字段 `syncedPlanCalendars/syncedActualCalendars`
 
 ### Field Card：`syncStatus`（同步状态：系统态）
 - 层级：Sync

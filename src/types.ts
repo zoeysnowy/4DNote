@@ -558,6 +558,17 @@ export interface Event {
   actualSyncConfig?: ActualSyncConfig;
   
   /**
+   * 🆕 v2.19.1 多日历同步：外部映射数组（统一替代 syncedPlanCalendars/syncedActualCalendars）
+   * 本地 1 个 event → 远程 N 个 event（不同日历）的完整映射关系
+   */
+  externalMappings?: Array<{
+    calendarId: string;      // 目标日历 ID
+    remoteEventId: string;   // 该日历中的远程事件 ID
+    scope?: 'plan' | 'actual'; // 可选：区分计划安排/实际进展（历史兼容）
+  }>;
+  
+  /**
+   * @deprecated v2.19.1 使用 externalMappings 替代
    * 🆕 v2.0.5 多日历同步：Plan 日历映射
    * 本地一个 event，远程可能有多个 Plan 事件（不同日历）
    * 远程同步回来后，本地不能变成多个 event，应当合并管理
@@ -568,6 +579,7 @@ export interface Event {
   }>;
   
   /**
+   * @deprecated v2.19.1 使用 externalMappings 替代
    * 🆕 v2.0.5 多日历同步：Actual 日历映射
    * 本地一个 event，远程可能有多个 Actual 事件（不同日历）
    * 修改日历分组后，需要删除旧的远程事件，重新创建新的
@@ -580,7 +592,7 @@ export interface Event {
   /**
    * @deprecated 计划安排的远程事件 ID（单日历版本）
    * Plan 同步创建的远程事件 ID（独立于 Actual）
-   * 使用 syncedPlanCalendars 替代，支持多日历同步
+   * 使用 externalMappings 替代，支持多日历同步
    */
   syncedPlanEventId?: string | null;
   
@@ -588,7 +600,7 @@ export interface Event {
    * @deprecated 实际进展的远程事件 ID（单日历版本）
    * Actual 同步创建的远程事件 ID（独立于 Plan）
    * 对于 Timer 子事件，存储对应的远程子事件 ID
-   * 使用 syncedActualCalendars 替代，支持多日历同步
+   * 使用 externalMappings 替代，支持多日历同步
    */
   syncedActualEventId?: string | null;
   

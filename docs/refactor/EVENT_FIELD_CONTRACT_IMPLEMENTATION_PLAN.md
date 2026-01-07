@@ -35,7 +35,7 @@
 2. Contract 可以扩展，添加 `externalMappings` 不违反设计原则
 3. 避免 Breaking Change
 
-**待确认**: 请用户选择选项 A 或 B
+**✅ 已确认**: 用户选择选项 A - 保留数组，修改 Contract
 
 ---
 
@@ -55,7 +55,7 @@
 
 **建议**: 选项 A，在 Phase 5.4 执行表重建
 
-**待确认**: 请用户确认是否同意重建表
+**✅ 已确认**: 用户同意重建表删除 color 列
 
 ---
 
@@ -683,9 +683,9 @@ calendarIds: string[]  // 所有同步的日历ID
 - **数据丢失**: 其他日历的远程事件变成孤儿（无法更新/删除）
 - **Breaking Change**: 用户需要手动删除远程重复事件
 
-**🎯 建议**: 保留 `syncedPlanCalendars/syncedActualCalendars`，但重命名为 `externalMappings: Array<{calendarId, remoteEventId}>` 以符合Contract术语
+**✅ 已确认方案**: 保留 `syncedPlanCalendars/syncedActualCalendars`，重命名为 `externalMappings: Array<{calendarId, remoteEventId}>` 以符合Contract术语
 
-**📋 调用链路分析** (如果删除会影响的代码):
+**📋 调用链路分析**:
 
 **写入路径** (EventService.ts):
 ```
@@ -717,7 +717,7 @@ L4186: e.syncedPlanCalendars?.some((cal) => ...)
 2. 修改事件后，只能更新第一个日历，其他日历变成孤儿事件
 3. 删除事件后，只能删除第一个日历，其他日历残留
 
-**提交**: `refactor(sync): 重命名多日历映射字段 (Contract Phase 4.3)` ← 等待用户决策
+**提交**: `refactor(sync): 重命名多日历映射字段为 externalMappings (Contract Phase 4.3)`
 
 ---
 
@@ -925,10 +925,39 @@ const titleNodes = JSON.parse(event.title);
 const colorMark = titleNodes[0]?.children?.[0]?.color;
 ```
 
-**数据库迁移**:
-```sql
--- 删除 events 表的 color 列
-ALTER TABLE events DROP COLUMN color;
+**✅ 已确认方案**: SQLite 表重建删除 color 列
+
+**数据库迁移** (SQLite 不支持 DROP COLUMN，需重建表):
+```typescript
+// src/services/storage/SQLiteService.ts - runMigrations()
+async rebuildEventsTableWithoutColor(): Promise<void> {
+  // 1. 创建新表 (无 color 列)
+  await this.db.exec(`
+    CREATE TABLE events_new (
+      id TEXT PRIMARY KEY,
+      full_title TEXT,
+      color_title TEXT,
+      simple_title TEXT NOT NULL,
+      -- ... 其他列 (无 color)
+    );
+  `);
+  
+  // 2. 复制数据 (排除 color)
+  await this.db.exec(`
+    INSERT INTO events_new 
+    SELECT id, full_title, color_title, simple_title, ...
+    FROM events;
+  `);
+  
+  // 3. 删除旧表
+  await this.db.exec('DROP TABLE events;');
+  
+  // 4. 重命名新表
+  await this.db.exec('ALTER TABLE events_new RENAME TO events;');
+  
+  // 5. 重建索引
+  await this.createIndexes();
+}
 ```
 
 **影响文件**（4个）:
@@ -1090,14 +1119,14 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 ### Phase 4: Sync 字段清理
 - [ ] Step 4.1: 删除 lastLocalChange
 - [ ] Step 4.2: 删除 @deprecated 字段（syncedPlanEventId等）
-- [ ] Step 4.3: 多日历同步迁移（⚠️ 需用户决策）
+- [ ] Step 4.3: 多日历同步迁移（✅ 已确认：保留数组，重命名为 externalMappings）
 - [ ] Step 4.4: 同步配置统一（planSyncConfig → syncMode）
 
 ### Phase 5: Plan 字段清理
 - [ ] Step 5.1: 迁移 content → title.fullTitle
 - [ ] Step 5.2: 迁移 isCompleted → checkType推导
 - [ ] Step 5.3: 迁移 emoji → title.fullTitle
-- [ ] Step 5.4: 迁移 color → 标签系统
+- [ ] Step 5.4: 迁移 color → 标签系统（✅ 已确认：SQLite 表重建）
 - [ ] Step 5.5: 删除 notes 字段
 - [ ] Step 5.6: 删除 mode 字段
 
