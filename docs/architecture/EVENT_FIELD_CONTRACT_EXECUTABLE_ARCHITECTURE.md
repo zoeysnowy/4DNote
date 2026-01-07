@@ -1921,6 +1921,13 @@ TimeCalendar 将事件显示在 4 个视觉分区中，分区判定**完全基�
    WHERE isTimeCalendar = 1 AND source IS NULL;
    ```
 
+**Implementation Checklist（Phase 2.3：namespaced `Event.source` 收口）**
+
+- [x] Timer Start 的“未保存先落库”路径不再强制写入 legacy `source='local'`（commit: `e179b8c`）
+- [x] 测试/fixture 中手写的 `Event` 统一补齐 namespaced `source`（commit: `f99bb71`）
+- [x] PlanSlate 反序列化不再用 `source: metadata.source || 'local'`（避免回写 legacy），缺失/legacy 统一落到 namespaced（commit: `c49167b`）
+- [x] 全仓扫描：除 SyncAction 外已无 `source: ... || 'local'` 的 `Event.source` 写入点（PlanSlate 已修复，commit: `c49167b`）
+
 **同步边界（Sync Boundary：契约口径）**
 - “新建默认不强制同步”的行为由 Service/Sync 决策：
   - 若没有用户显式选择 `calendarIds/todoListIds` 且无外部映射：应保持 local-only（通过 `syncStatus`/`syncMode` 或等价策略表达）；
