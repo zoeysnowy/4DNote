@@ -82,6 +82,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
+import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 import { useEventHubCache, useEventSubscription } from '@frontend/hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
@@ -1685,12 +1686,12 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
 
     // 4. Plan 事件
-    if (evt.isPlan) {
+    if (shouldShowInPlan(evt)) {
       return { emoji: '✅', name: '4DNote计划', icon: null, color: '#10b981' };
     }
 
     // 5. TimeCalendar 事件
-    if (evt.isTimeCalendar) {
+    if (shouldShowInTimeCalendar(evt)) {
       return { emoji: null, name: 'ReMarkable', icon: remarkableLogo, color: '#3b82f6' };
     }
 

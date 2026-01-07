@@ -10,6 +10,7 @@ import {
 import { shouldShowCheckbox } from '@frontend/utils/eventHelpers';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
 import { EventService } from '@backend/EventService';
+import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 import { TagService } from '@backend/TagService';
 import { formatRelativeDate, formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
@@ -67,11 +68,10 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
     // ✅ 从订阅快照中过滤，而不是自行维护缓存
     const filtered = allEventsSnapshot.filter(event => {
       // 三步过滤公式
-      // 1. 并集条件
+      // 1. 并集条件（使用 facet 推导）
       const matchesInclusionCriteria =
-        event.isPlan === true ||
-        (event.checkType && event.checkType !== 'none') ||
-        event.isTimeCalendar === true;
+        shouldShowInPlan(event) ||
+        shouldShowInTimeCalendar(event);
       
       if (!matchesInclusionCriteria) return false;
       

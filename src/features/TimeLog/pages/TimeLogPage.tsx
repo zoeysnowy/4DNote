@@ -33,6 +33,7 @@ import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 import type { Event } from '@frontend/types';
 import './TimeLog.css';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
+import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 
 // 导入图标
 import ExportIconSvg from '@frontend/assets/icons/export.svg';
@@ -1058,8 +1059,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         (typeof event.endTime === 'string' && event.endTime !== '');
 
       // Plan/Task without explicit time should not appear on the timeline
-      if (event.isPlan === true && !hasExplicitTime) return false;
-      if (event.isTask === true && !hasExplicitTime) return false;
+      if (shouldShowInPlan(event) && !hasExplicitTime) return false;
+      if (hasTaskFacet(event) && !hasExplicitTime) return false;
 
       return true;
     };
@@ -1966,10 +1967,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         ...(startTime ? { startTime } : {}), // 来自 TimeGap 时使用锚点时间，否则不写入字段（规范：undefined 表示无时间）
         tags: [], // 允许空标✅
         isAllDay: false,
-        // 🔧 明确标记为非Plan、非TimeCalendar事件（避免被过滤✅
-        isPlan: false,
-        isTimeCalendar: false,
-        isTask: false, // 明确标记为非Task
+        // 🔧 明确标记为非Task（避免被过滤✅
+        isTask: false, // 明确标记为Task
         // ⚠️ 空笔记不应该✅Block-Level Timestamp（避免显示时间戳✅
         eventlog: JSON.stringify([
           {
