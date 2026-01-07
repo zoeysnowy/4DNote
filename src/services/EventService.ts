@@ -3449,8 +3449,6 @@ export class EventService {
       // 来源标识（优先使用从签名提取的值）
       fourDNoteSource: finalFourDNoteSource,
       source: finalSource,
-      isPlan: event.isPlan,
-      isTimeCalendar: event.isTimeCalendar,
       isTimer: event.isTimer,
       isDeadline: event.isDeadline,
       

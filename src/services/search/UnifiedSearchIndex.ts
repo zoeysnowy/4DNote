@@ -23,6 +23,7 @@ import { EventService } from '@backend/EventService';
 import { TagService, FlatTag } from '@backend/TagService';
 import { parseNaturalLanguage } from '@frontend/utils/naturalLanguageTimeDictionary';
 import { parseLocalTimeString } from '@frontend/utils/timeUtils';
+import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
 
 // SVG 图标路径（直接使用路径字符串避免 Vite 转换为 data URL）
 const ICON_PATHS = {
@@ -598,9 +599,9 @@ class UnifiedSearchIndex {
   }
 
   private _getEventIcon(event: Event): string {
-    if (event.isPlan) return ICON_PATHS.addTask;
-    if (event.isTimeCalendar) return ICON_PATHS.dateTime;
-    if (event.checkType && event.checkType !== 'none') return ICON_PATHS.recurring;
+    if (shouldShowInPlan(event)) return ICON_PATHS.addTask;
+    if (shouldShowInTimeCalendar(event)) return ICON_PATHS.dateTime;
+    if (hasTaskFacet(event)) return ICON_PATHS.recurring;
     return ICON_PATHS.doc;
   }
 

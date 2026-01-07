@@ -1589,7 +1589,6 @@ export class MicrosoftCalendarService {
           organizer: organizer,
           attendees: attendees,
           isAllDay: outlookEvent.isAllDay || false,
-          isTimeCalendar: true, // 🆕 标记为 TimeCalendar 事件，确保在 PlanManager 中显示
           reminder: 0,
           externalId: outlookEvent.id,
           calendarIds: ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
@@ -1814,7 +1813,6 @@ export class MicrosoftCalendarService {
           organizer: organizer,
           attendees: attendees,
           isAllDay: outlookEvent.isAllDay || false,
-          isTimeCalendar: true, // 🆕 标记为 TimeCalendar 事件，确保在 PlanManager 中显示
           reminder: 0,
           externalId: outlookEvent.id,
           calendarIds: [calendarId], // 🔧 使用数组格式，与类型定义保持一致
