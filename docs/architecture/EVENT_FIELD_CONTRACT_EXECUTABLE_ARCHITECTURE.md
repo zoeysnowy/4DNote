@@ -1128,7 +1128,10 @@ function shouldShow_TimeLog(event: Event): boolean {
 - 默认值：`undefined`（未同步到任何日历）
 - 不变量：
   - **唯一性约束**：同一 `calendarId` 在数组中只能出现一次
-  - **完整性约束**：如果用户从 `calendarIds` 中移除某日历，必须同时删除对应的远程事件并移除映射
+  - **完整性约束（分场景）**：
+    - **本地创建事件**（`source='local:*'`）：移除 `calendarId` 时，必须删除对应的远程事件并移除映射
+    - **外部同步事件**（`source='outlook:*'`/`'google:*'`/`'icloud:*'`）：移除 `calendarId` 时，仅移除映射，**不删除远程事件**（避免误删外部数据）
+  - **同步方向判断**：根据 `syncMode` 决定是否删除远程事件（`receive-only` 模式永远不删除远程）
   - **迁移路径**：
     ```typescript
     // 从旧字段迁移

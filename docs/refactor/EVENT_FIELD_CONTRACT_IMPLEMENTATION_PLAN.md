@@ -717,6 +717,43 @@ L4186: e.syncedPlanCalendars?.some((cal) => ...)
 2. 修改事件后，只能更新第一个日历，其他日历变成孤儿事件
 3. 删除事件后，只能删除第一个日历，其他日历残留
 
+**⚠️ 安全风险与防护措施**:
+
+**风险点**：移除日历时误删外部数据
+- **场景**: 用户订阅了老板的日历（receive-only），然后取消订阅
+- **错误行为**: 删除老板日历中的远程事件 ❌
+- **正确行为**: 只移除本地映射，不删除远程事件 ✅
+
+**防护措施**:
+```typescript
+// Phase 4.3 实现时必须包含的安全检查
+function shouldDeleteRemoteEvent(event: Event, calendarId: string): boolean {
+  // 规则 1: 外部同步事件，永远不删除远程
+  if (event.source?.startsWith('outlook:') || 
+      event.source?.startsWith('google:') ||
+      event.source?.startsWith('icloud:')) {
+    return false; // 🛡️ 保护外部数据
+  }
+  
+  // 规则 2: receive-only 模式，永远不删除远程
+  if (event.syncMode === 'receive-only') {
+    return false; // 🛡️ 保护只读订阅
+  }
+  
+  // 规则 3: 本地创建 + 有推送权限 = 可以删除
+  return event.source?.startsWith('local:') && 
+         (event.syncMode === 'send-only' ||
+          event.syncMode === 'bidirectional' ||
+          event.syncMode === 'send-only-private' ||
+          event.syncMode === 'bidirectional-private');
+}
+```
+
+**测试用例**（Phase 4.3 必须通过）:
+- ✅ 本地事件 + bidirectional → 移除日历应删除远程
+- ❌ Outlook事件 + receive-only → 移除日历不删除远程
+- ❌ 本地事件 + receive-only → 移除日历不删除远程（可能是订阅了自己发布的日历）
+
 **提交**: `refactor(sync): 重命名多日历映射字段为 externalMappings (Contract Phase 4.3)`
 
 ---
