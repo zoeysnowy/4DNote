@@ -3086,7 +3086,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                 id: event.id,
                                 createdAt: event.createdAt || formatTimeForStorage(new Date()),
                                 updatedAt: formatTimeForStorage(new Date()),
-                                source: event.source || 'local',
+                                source: event.source,
                               } as Event;
                               
                               console.log('💾 [Timer Start Button] 合并后的 newEvent:', {
