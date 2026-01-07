@@ -1470,7 +1470,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           isAllDay: undefined,
           createdAt: nowLocal,
           updatedAt: nowLocal,
-          source: 'local',
+          source: 'local:plan',
           syncStatus: 'local-only',
         } as Event;
         
@@ -2311,7 +2311,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           isAllDay: undefined,
           createdAt: nowLocal, // ✅ 使用 timeUtils 格式化，避免时区问题
           updatedAt: nowLocal,
-          source: 'local',
+          source: 'local:plan',
           syncStatus: 'local-only',
         } as any;
         
@@ -2416,7 +2416,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       tags: mappedTags,
       calendarIds: item.calendarIds || (calendarIds.length > 0 ? calendarIds : undefined), // 🔧 优先保留已有值，否则使用标签映射
       todoListIds: item.todoListIds, // 🔧 保留 To Do Lists 映射
-      source: 'local',
+      source: 'local:plan',
       syncStatus: calendarIds.length > 0 ? 'pending' : 'local-only', // 🆕 v1.8: 根据日历映射设置同步状态
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
@@ -2519,7 +2519,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       tags: tagIds,
       calendarIds: calendarIds.length > 0 ? calendarIds : item.calendarIds, // 🆕 v1.8: 优先使用标签映射，否则保留原有值
       todoListIds: item.todoListIds, // 🔧 保留 To Do Lists 映射
-      source: 'local',
+      source: 'local:plan',
       syncStatus: calendarIds.length > 0 ? 'pending' : 'local-only', // 🆕 v1.8: 有日历映射时标记为待同步（但不立即同步，由 ActionBasedSyncManager 统一处理）
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
@@ -2708,7 +2708,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   isAllDay: undefined,
                   createdAt: nowLocal,
                   updatedAt: nowLocal,
-                  source: 'local',
+                  source: 'local:plan',
                   syncStatus: 'pending', // 🔧 改为 'pending' 以启用 Outlook 同步
                 } as Event;
                 

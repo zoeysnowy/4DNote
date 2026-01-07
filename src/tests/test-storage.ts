@@ -62,7 +62,7 @@ export async function testStorageModule() {
       endTime: formatTimeForStorage(new Date(2025, 11, 1, 11, 0, 0)),
       sourceAccountId: testAccount.id,
       sourceCalendarId: testCalendar.id,
-      source: 'local',
+      source: 'local:timecalendar',
       tags: ['test', 'demo'],
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
@@ -82,7 +82,7 @@ export async function testStorageModule() {
         title: { simpleTitle: `Batch Event ${i}` },
         startTime: formatTimeForStorage(new Date(Date.now() + i * 3600000)),
         endTime: formatTimeForStorage(new Date(Date.now() + (i + 1) * 3600000)),
-        source: 'local',
+        source: 'local:timecalendar',
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date())
       });

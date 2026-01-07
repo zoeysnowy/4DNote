@@ -1930,6 +1930,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       description: '',
       tags: [],
       isAllDay: false,
+      source: 'local:timelog',
       // TimeGap 选择的是“事件发生时间”，这里将 createdAt 对齐到选择的 startTime，避免显示/排序混乱
       createdAt,
       updatedAt: createdAt,
@@ -1967,6 +1968,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         ...(startTime ? { startTime } : {}), // 来自 TimeGap 时使用锚点时间，否则不写入字段（规范：undefined 表示无时间）
         tags: [], // 允许空标✅
         isAllDay: false,
+        source: 'local:timelog',
         // 🔧 明确标记为非 Task（避免被 task facet 过滤）
         checkType: 'none',
         // ⚠️ 空笔记不应该✅Block-Level Timestamp（避免显示时间戳✅

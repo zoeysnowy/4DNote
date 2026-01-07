@@ -1592,7 +1592,7 @@ export class MicrosoftCalendarService {
           reminder: 0,
           externalId: outlookEvent.id,
           calendarIds: ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
-          source: 'outlook',
+          source: 'outlook:calendar',
           fourDNoteSource: true,
           syncStatus: 'synced'
         };
@@ -1816,7 +1816,7 @@ export class MicrosoftCalendarService {
           reminder: 0,
           externalId: outlookEvent.id,
           calendarIds: [calendarId], // 🔧 使用数组格式，与类型定义保持一致
-          source: 'outlook',
+          source: 'outlook:calendar',
           fourDNoteSource: true,
           syncStatus: 'synced'
         };

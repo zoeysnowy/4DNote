@@ -106,7 +106,7 @@ export function buildEventForSave(
     checkType: checkTypeForPersist,
     createdAt: existingItem?.createdAt ?? sanitizedUpdatedItem.createdAt ?? nowLocal,
     updatedAt: nowLocal,
-    source: 'local',
+    source: 'local:plan',
     syncStatus: syncStatusForPersist as any,
     parentEventId,
     bulletLevel: updatedItem.bulletLevel ?? existingItem?.bulletLevel,

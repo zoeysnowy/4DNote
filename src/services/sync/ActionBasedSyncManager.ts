@@ -4983,7 +4983,7 @@ export class ActionBasedSyncManager {
       updatedAt: this.safeFormatDateTime(remoteEvent.lastModifiedDateTime || endValue || new Date()),
       externalId: pureOutlookId,
       calendarIds: remoteEvent.calendarIds || ['microsoft'],
-      source: 'outlook' as const,
+      source: 'outlook:calendar' as const,
       syncStatus: 'synced' as const,
       syncMode: normalizeSyncMode(remoteEvent.syncMode),
     };

@@ -1534,6 +1534,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       createdAt: formatTimeForStorage(timerStartTime),
       updatedAt: formatTimeForStorage(now),
       syncStatus: 'local-only',
+      source: 'local:timelog',
       fourDNoteSource: true
     };
 
@@ -1826,6 +1827,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date()),
         syncStatus: 'local-only', // 🔧 v2.17.2: 默认仅本地，用户添加标签后自动变为 'pending'
+        source: 'local:timecalendar',
         fourDNoteSource: true
       };
       
@@ -2542,6 +2544,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
                   createdAt: formatTimeForStorage(new Date()),
                   updatedAt: formatTimeForStorage(new Date()),
                   syncStatus: 'pending',
+                  source: 'local:timecalendar',
                   fourDNoteSource: true // 🔧 标记为本地创建
                 };
                 

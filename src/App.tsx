@@ -501,7 +501,7 @@ function App() {
           emoji: existingEvent.emoji,
           tags: existingEvent.tags || [],
           color: existingEvent.color,
-          source: 'local',
+          source: 'local:timelog',
           isTimer: false,           // ✅ 不再是 Timer
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
@@ -591,6 +591,7 @@ function App() {
         startTime: formatTimeForStorage(startDate),
         endTime: formatTimeForStorage(startDate), // 结束时更新
         tags: parentEvent?.tags || tagIdArray,
+        source: 'local:timelog',
         // ✅ 系统性子事件：从 subEventConfig 继承（fallback 到父事件配置）
         calendarIds: parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
         syncMode: parentEvent?.subEventConfig?.syncMode || parentEvent?.syncMode,
