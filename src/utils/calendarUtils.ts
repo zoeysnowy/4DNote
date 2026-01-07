@@ -522,6 +522,7 @@ export function convertFromCalendarEvent(
     externalId: originalEvent?.externalId,
     syncStatus: originalEvent?.syncStatus,
     calendarIds: originalEvent?.calendarIds,
+    source: originalEvent?.source || 'local:timecalendar',
     fourDNoteSource: true,
     // 时间戳
     createdAt: originalEvent?.createdAt || nowStr,

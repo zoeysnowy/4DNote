@@ -881,6 +881,7 @@ function App() {
         startTime: formatTimeForStorage(startTime),
         endTime: formatTimeForStorage(new Date(startTime.getTime() + totalElapsed)),
         tags: currentParentEvent?.tags || globalTimer.tagIds || [],
+        source: 'local:timelog',
         // ✅ 系统性子事件：从 subEventConfig 继承（fallback 到父事件配置）
         calendarIds: currentParentEvent?.subEventConfig?.calendarIds || currentParentEvent?.calendarIds || ((tag as any)?.calendarId ? [(tag as any).calendarId] : []),
         syncMode: currentParentEvent?.subEventConfig?.syncMode || currentParentEvent?.syncMode,
@@ -956,6 +957,7 @@ function App() {
         tags: [],
         description: '',
         isAllDay: false,
+        source: 'local:timelog',
         fourDNoteSource: true,
         isTimer: true,
         createdAt: formatTimeForStorage(new Date()),
@@ -997,6 +999,7 @@ function App() {
       description: existingEvent?.description || '', // 🔧 保留用户输入的 description
       location: existingEvent?.location || '', // 🔧 保留 location
       isAllDay: false,
+      source: 'local:timelog',
       fourDNoteSource: true,
       isTimer: true,
       syncStatus: 'local-only', // 🔧 [BUG FIX] 运行中的 Timer 标记为 local-only
