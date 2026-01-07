@@ -1115,8 +1115,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             checkType: updatedEvent.checkType || 'once', // 🔧 FIX: 添加 checkType 字段
             checked: updatedEvent.checked, // 🔧 FIX: 同步 checked 数组
             unchecked: updatedEvent.unchecked, // 🔧 FIX: 同步 unchecked 数组
-            isPlan: updatedEvent.isPlan,
-            isTimeCalendar: updatedEvent.isTimeCalendar,
             calendarIds: updatedEvent.calendarIds,
             source: updatedEvent.source,
             syncStatus: updatedEvent.syncStatus,

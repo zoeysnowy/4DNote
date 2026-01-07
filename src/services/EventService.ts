@@ -18,6 +18,7 @@ import { logger } from '@frontend/utils/logger';
 import { validateEventTime } from '@frontend/utils/eventValidation';
 
 import { ContactService } from '@backend/ContactService';
+import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 事件历史记录
 import { jsonToSlateNodes, slateNodesToHtml } from '@frontend/components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '@frontend/utils/idGenerator'; // 🆕 UUID ID 生成
@@ -453,8 +454,8 @@ export class EventService {
           return false;
         }
         
-        // 2. 排除 Plan 页面事件（isPlan=true）无时间的情况
-        if (event.isPlan === true) {
+        // 2. 排除 Plan 页面事件（shouldShowInPlan=true）无时间的情况
+        if (shouldShowInPlan(event)) {
           const hasTime = (event.startTime && event.startTime !== '') || 
                          (event.endTime && event.endTime !== '');
           
@@ -3302,10 +3303,10 @@ export class EventService {
     // Note: legacy call sites may set only some of these fields; check a small set of hints.
     const isTaskLikeEvent =
       event.isTask === true ||
-      event.isPlan === true ||
+      (event as Event).id && shouldShowInPlan(event as Event) ||
       event.type === 'todo' ||
       event.type === 'task' ||
-      (event.checkType !== undefined && event.checkType !== 'none');
+      (event as Event).id && hasTaskFacet(event as Event);
 
     // System time logs should have explicit time; if not, treat as data bug (do not inject).
     if (isTimeLogEvent && !hasAnyTime) {
@@ -5596,7 +5597,7 @@ export class EventService {
     if (event.isTimer) return 'Timer';
     if (event.isTimeLog) return 'TimeLog';
     if (event.isOutsideApp) return 'OutsideApp';
-    if (event.isPlan) return 'UserSubTask';
+    if (shouldShowInPlan(event)) return 'UserSubTask';
     return 'Event';
   }
 
@@ -5703,7 +5704,7 @@ export class EventService {
    * 判断是否为用户子事件（用户主动创建，有完整 Plan 状态）
    */
   static isUserSubEvent(event: Event): boolean {
-    return !!(event.isPlan && event.parentEventId && !this.isSubordinateEvent(event));
+    return !!(shouldShowInPlan(event) && event.parentEventId && !this.isSubordinateEvent(event));
   }
 
   /**

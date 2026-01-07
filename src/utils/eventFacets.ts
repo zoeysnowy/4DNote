@@ -108,7 +108,7 @@ export function getCreationSource(event: Event): string {
  */
 export function isSubordinateEvent(event: Event): boolean {
   // Timer 子事件
-  if (event.source === 'local:timer' || event.timerSessionId) {
+  if (event.timerSessionId) {
     return true;
   }
   

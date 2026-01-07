@@ -186,7 +186,6 @@ export async function testCRUDIntegration() {
       description: '这是一个集成测试事件，验证StorageManager双写机制',
       location: '测试环境',
       isAllDay: false,
-      isPlan: true,
       tags: ['test', 'crud']
     };
 
@@ -258,7 +257,8 @@ export async function testCRUDIntegration() {
       startTime: formatTime(new Date(Date.now() + i * 3600000)),
       endTime: formatTime(new Date(Date.now() + (i + 1) * 3600000)),
       description: `批量创建的测试事件 ${i + 1}`,
-      isPlan: true,
+      createdAt: formatTime(new Date()),
+      updatedAt: formatTime(new Date()),
       tags: ['batch-test']
     } as Event));
 

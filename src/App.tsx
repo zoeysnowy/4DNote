@@ -1415,8 +1415,8 @@ function App() {
     };
     
     const result = existingEvent 
-      ? await EventService.updateEvent(item.id, planEvent, false, sourceOptions)
-      : await EventService.createEvent(planEvent, false, sourceOptions);
+      ? await EventService.updateEvent(item.id, item, false, sourceOptions)
+      : await EventService.createEvent(item, false, sourceOptions);
     
     if (result.success) {
       // ✅ 不需要手动刷新 - EventService 已触发 eventsUpdated 事件

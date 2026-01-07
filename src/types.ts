@@ -415,9 +415,10 @@ export interface Event {
   isTimeLog?: boolean;   // 🆕 添加：标记为纯系统时间日志事件（如自动记录的活动轨迹）
   isOutsideApp?: boolean; // 🆕 添加：标记为外部应用数据（如听歌记录、录屏等）
   isDeadline?: boolean; // 🆕 添加：标记为截止日期事件
-  isTask?: boolean;      // 🆕 添加：标记为任务事件
-  isPlan?: boolean;      // 🆕 添加：标记为计划页面事件
-  isTimeCalendar?: boolean; // 🆕 添加：标记为 TimeCalendar 页面创建的事件
+  isTask?: boolean;      // 🆕 添加：标记为任务事件（⚠️ DetailTab 独立语义，暂保留）
+  // ❌ [DEPRECATED] isPlan/isTimeCalendar - 使用 facet 推导替代
+  // isPlan?: boolean;      // ❌ 已废弃 v2.19.2 - 用 shouldShowInPlan(event) 替代
+  // isTimeCalendar?: boolean; // ❌ 已废弃 v2.19.2 - 用 shouldShowInTimeCalendar(event) 替代
   isNote?: boolean;      // 🆕 v2.19: 用户标记的重要笔记（NoteTree功能）- 在侧边栏快速访问
   // 🆕 统一时间规范（不破坏现有 startTime/endTime，作为"意图+解析"来源）
   timeSpec?: import('./types/time').TimeSpec;
