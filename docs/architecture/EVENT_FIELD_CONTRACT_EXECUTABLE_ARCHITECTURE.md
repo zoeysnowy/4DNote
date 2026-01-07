@@ -854,6 +854,13 @@ interface EventTitle {
   - **本地创建后同步**：`source='local:plan'` 等（即使后来同步到 Outlook 也不变）
   - **语义**：`source` 表示"初始来源"，而不是"当前同步状态"（同步状态由 `externalId/syncStatus/calendarIds/todoListIds` 表达）
   - **禁止**：不得在后续更新中修改 `source` 字段（包括 Sync merge/UI 编辑）
+
+  **Phase 2（namespaced `Event.source`）完成定义 / 验收项**：
+  - ✅ **允许历史数据存在**：存量 DB 可能仍有 legacy `source='local'|'outlook'` 或缺失（由 migration/normalize 在读写路径升级）。
+  - ✅ **禁止新写入污染**：所有新建事件在入库时必须为 namespaced（`local:*` / `outlook:*` / `google:*` / `icloud:*`）。
+  - ✅ **Normalize 不得降级**：若 `event.source` 已 namespaced，任何 normalize/签名提取都不得把它写回 legacy 值。
+  - ✅ **UI/序列化层不再兜底 legacy**：不得出现 `source: ... || 'local'` 这种写法（缺失应交给 normalize 推断或显式默认到某个 `local:*`）。
+  - ✅ **验证方式**：全仓 grep 确认仅 SyncAction 使用 `'local'|'outlook'`（同步队列字段），`Event.source` 不再写 legacy。
   
   **使用示例**：
   ```typescript
