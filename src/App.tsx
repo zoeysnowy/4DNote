@@ -28,6 +28,7 @@ import { TimeHub } from './services/TimeHub'; // 🔧 同步导入 TimeHub
 import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
 import SettingsModal from './components/SettingsModal';
 import { SyncNotification } from '@frontend/components/shared/SyncNotification';
+import { shouldShowInPlan } from '@frontend/utils/eventFacets';
 import './App.css';
 
 // 🚀 Calendar/Widget 做懒加载：避免 TimeCalendar + TUI dist/CSS 进入首屏 bundle
@@ -502,7 +503,6 @@ function App() {
           color: existingEvent.color,
           source: 'local',
           isTimer: false,           // ✅ 不再是 Timer
-          isTimeCalendar: true,     // 标记为 TimeCalendar 创建
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'pending' as const,
@@ -898,8 +898,8 @@ function App() {
       };
 
       // 🔧 Issue #10 修复：如果是 Plan Item，只更新 duration，不覆盖 startTime/endTime
-      // 如果存在已有事件且标记为 isPlan，则只更新特定字段
-      const updateData: Partial<Event> = existingEvent?.isPlan ? {
+      // 如果存在已有事件且为 Plan 事件，则只更新特定字段
+      const updateData: Partial<Event> = existingEvent && shouldShowInPlan(existingEvent) ? {
         // Plan Item：只更新 duration 和描述，保留原有的计划时间
         description: finalDescription,
         syncStatus: 'pending' as const,
@@ -910,7 +910,6 @@ function App() {
 
       // 🔧 使用 EventService 统一管理事件创建和同步
       AppLogger.log('💾 [Timer Stop] Using EventService to create/update event', {
-        isPlan: existingEvent?.isPlan,
         updateFields: Object.keys(updateData),
         parentEventId: globalTimer.parentEventId,
         existingIsTimer: existingEvent?.isTimer,
@@ -1393,17 +1392,11 @@ function App() {
 
   // ==================== Plan 相关事件管理 ====================
   
-  // 🔧 Plan页面直接使用Event，通过isPlan标记过滤
+  // 🔧 Plan页面直接使用Event，通过 facet 推导过滤
   // 不再需要单独的PlanItem状态
   
   // 保存 Plan Event
   const handleSavePlanItem = useCallback(async (item: Event) => {
-    // 标记为 Plan 事件
-    const planEvent: Event = {
-      ...item,
-      isPlan: true,
-      updatedAt: formatTimeForStorage(new Date()),
-    };
     
     // 🔧 [BUG FIX] 空行（刚点击graytext创建的行）不保存到EventService
     // 只保存到本地状态（items数组），等用户输入内容后再真正创建event
