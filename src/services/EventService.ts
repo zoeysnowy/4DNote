@@ -3406,7 +3406,14 @@ export class EventService {
       return trimmed;
     };
 
-    const finalSource = normalizeNamespacedSource(sourceCandidate);
+    const inferLocalSource = (): string => {
+      if (event.isTimeLog === true || event.isTimer === true) return 'local:timelog';
+      if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
+      if (event.startTime && event.endTime) return 'local:timecalendar';
+      return 'local:event_edit';
+    };
+
+    const finalSource = normalizeNamespacedSource(sourceCandidate) ?? inferLocalSource();
     
     // 🆕 [v2.19] Note 事件时间标准化：仅对「非任务」且无时间的事件派生虚拟时间
     // 重要：Task(hasTaskFacet=true) 允许无时间；不能被默认注入 startTime/endTime。

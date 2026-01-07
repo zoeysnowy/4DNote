@@ -1222,6 +1222,7 @@ function App() {
           createdAt: existingEvent?.createdAt || formatTimeForStorage(startTime),
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'local-only', // ✅ 运行中保持 local-only，不触发同步
+          source: 'local:timelog',
           fourDNoteSource: true,
           isTimer: true
         };
@@ -1344,6 +1345,7 @@ function App() {
             createdAt: formatTimeForStorage(startTime),
             updatedAt: formatTimeForStorage(new Date()),
             syncStatus: 'local-only', // 🔧 [BUG FIX] 页面刷新时仍保持local-only，不同步运行中的Timer
+            source: 'local:timelog',
             fourDNoteSource: true
           };
 
