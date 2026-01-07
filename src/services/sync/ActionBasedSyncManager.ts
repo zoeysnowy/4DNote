@@ -3059,11 +3059,10 @@ export class ActionBasedSyncManager {
           const newEventId = await this.microsoftService.syncEventToCalendar(eventData, syncTargetCalendarId);
           
           if (newEventId) {
-            // 🔧 确保 externalId 有正确的前缀格式
-            const formattedExternalId = newEventId.startsWith('outlook-') 
-              ? newEventId 
-              : `outlook-${newEventId}`;
-            await this.updateLocalEventExternalId(action.entityId, formattedExternalId, createDescription);
+            // ✅ SSOT: externalId 存储为裸 Outlook ID（不带 outlook- 前缀）
+            // 兼容：上游若返回带前缀的值，入库前统一剥离
+            const normalizedExternalId = newEventId.replace(/^outlook-/, '');
+            await this.updateLocalEventExternalId(action.entityId, normalizedExternalId, createDescription);
             return true;
           }
           break;
@@ -3419,9 +3418,9 @@ export class ActionBasedSyncManager {
                 const newEventId = await this.microsoftService.syncEventToCalendar(migrateEventData, syncTargetCalendarId);
                 
                 if (newEventId) {
-                  // 🔧 确保external ID有正确的前缀格式
-                  const formattedExternalId = `outlook-${newEventId}`;
-                  await this.updateLocalEventExternalId(action.entityId, formattedExternalId, migrateDescription);
+                  // ✅ SSOT: externalId 存储为裸 Outlook ID（不带 outlook- 前缀）
+                  const normalizedExternalId = newEventId.replace(/^outlook-/, '');
+                  await this.updateLocalEventExternalId(action.entityId, normalizedExternalId, migrateDescription);
                   await this.updateLocalEventCalendarId(action.entityId, syncTargetCalendarId);
                   this.clearEditLock(action.entityId);
                   // 📝 状态栏反馈
@@ -3529,8 +3528,9 @@ export class ActionBasedSyncManager {
           }
           
           const currentExternalId = action.data.externalId || localEvent?.externalId;
-          const wasInCalendar = currentExternalId && currentExternalId.startsWith('outlook-');
-          const wasInTodo = currentExternalId && currentExternalId.startsWith('todo-');
+          const wasInTodo = !!currentExternalId && currentExternalId.startsWith('todo-');
+          // ✅ 兼容：历史数据可能是 outlook-xxx；新数据是裸 Outlook ID
+          const wasInCalendar = !!currentExternalId && !wasInTodo;
           
           // 需要迁移：从 Calendar 到 To Do
           if (updateSyncRoute.target === 'todo' && wasInCalendar) {

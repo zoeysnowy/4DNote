@@ -20,8 +20,8 @@ import { resolveCheckState } from './TimeResolver';
  * @returns 是否显示 checkbox
  */
 export function shouldShowCheckbox(event: { checkType?: CheckType }): boolean {
-  // 🔧 统一逻辑：默认 fallback 为 'once'（显示 checkbox）
-  const checkType = event.checkType || 'once';
+  // ✅ 统一逻辑：undefined 等价于 'none'（不显示 checkbox）
+  const checkType = event.checkType ?? 'none';
   return checkType === 'once' || checkType === 'recurring';
 }
 

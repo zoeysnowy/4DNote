@@ -1881,7 +1881,7 @@ export class EventService {
         isChecked: false, 
         checkInCount: checked.length, 
         uncheckCount: unchecked.length,
-        checkType: event.checkType || 'once', // 🔧 默认显示 checkbox（与 planItemsToSlateNodes 保持一致）
+        checkType: event.checkType ?? 'none',
         recurringConfig: event.recurringConfig
       };
     }
@@ -1895,7 +1895,7 @@ export class EventService {
       lastUncheck,
       checkInCount: checked.length,
       uncheckCount: unchecked.length,
-      checkType: event.checkType || 'once', // 🔧 默认显示 checkbox（与 planItemsToSlateNodes 保持一致）
+      checkType: event.checkType ?? 'none',
       recurringConfig: event.recurringConfig
     };
   }
@@ -3093,6 +3093,53 @@ export class EventService {
     }
   ): Event {
     const now = formatTimeForStorage(new Date());
+
+    const normalizeStringArray = (value: unknown): string[] => {
+      if (Array.isArray(value)) {
+        return value
+          .filter((item): item is string => typeof item === 'string')
+          .map((item) => item.trim())
+          .filter((item) => item.length > 0);
+      }
+
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? [trimmed] : [];
+      }
+
+      return [];
+    };
+
+    const normalizeCheckType = (value: unknown): 'none' | 'once' | 'recurring' => {
+      return value === 'none' || value === 'once' || value === 'recurring' ? value : 'none';
+    };
+
+    const normalizedSyncMode = typeof event.syncMode === 'string' ? (event.syncMode.trim() || undefined) : event.syncMode;
+
+    const normalizedSubEventConfig = event.subEventConfig
+      ? {
+          ...event.subEventConfig,
+          ...(event.subEventConfig.calendarIds !== undefined
+            ? { calendarIds: normalizeStringArray((event.subEventConfig as any).calendarIds) }
+            : {}),
+          ...(typeof event.subEventConfig.syncMode === 'string'
+            ? { syncMode: event.subEventConfig.syncMode.trim() || undefined }
+            : {}),
+        }
+      : event.subEventConfig;
+
+    // ✅ SSOT 归一化：externalId
+    // - 去空格
+    // - 兼容历史前缀 outlook-（统一存储为裸 ID）
+    // - 空字符串视为缺失
+    let normalizedExternalId: string | undefined =
+      typeof event.externalId === 'string' ? event.externalId.trim() : undefined;
+    if (normalizedExternalId?.startsWith('outlook-')) {
+      normalizedExternalId = normalizedExternalId.replace(/^outlook-/, '');
+    }
+    if (normalizedExternalId !== undefined && normalizedExternalId.trim().length === 0) {
+      normalizedExternalId = undefined;
+    }
     
     // 🔥 Title 规范化（支持字符串或对象输入 + tags 同步）
     const normalizedTitle = this.normalizeTitle(event.title, event.tags);
@@ -3438,7 +3485,7 @@ export class EventService {
       // 分类字段
       // 🔥 [CRITICAL FIX] 只有 tags 字段存在时才设置，避免强制覆盖为空数组
       // 否则 Outlook 同步会导致 tags: undefined → tags: [] → EventHistory 误判为变更
-      ...(event.tags !== undefined ? { tags: event.tags || [] } : {}),
+      ...(event.tags !== undefined ? { tags: normalizeStringArray((event as any).tags) } : {}),
       
       // 协作字段
       organizer: event.organizer,
@@ -3454,23 +3501,27 @@ export class EventService {
       
       // 任务模式
       isCompleted: event.isCompleted,
+
+      // ✅ SSOT 归一化：缺失 checkType 视为 'none'（避免 undefined 被误判为任务）
+      checkType: normalizeCheckType((event as any).checkType),
       
       // Timer 关联
       parentEventId: event.parentEventId,
       
       // 日历同步配置
       // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
-      ...(event.calendarIds !== undefined ? { calendarIds: event.calendarIds || [] } : {}),
-      syncMode: event.syncMode,
-      subEventConfig: event.subEventConfig,
+      ...(event.calendarIds !== undefined ? { calendarIds: normalizeStringArray((event as any).calendarIds) } : {}),
+      ...(event.todoListIds !== undefined ? { todoListIds: normalizeStringArray((event as any).todoListIds) } : {}),
+      syncMode: normalizedSyncMode,
+      subEventConfig: normalizedSubEventConfig,
       
       // 签到字段
       // 🔥 [CRITICAL FIX] 只有字段存在时才设置，避免强制覆盖为空数组
-      ...(event.checked !== undefined ? { checked: event.checked || [] } : {}),
-      ...(event.unchecked !== undefined ? { unchecked: event.unchecked || [] } : {}),
+      ...(event.checked !== undefined ? { checked: normalizeStringArray((event as any).checked) } : {}),
+      ...(event.unchecked !== undefined ? { unchecked: normalizeStringArray((event as any).unchecked) } : {}),
       
       // 外部同步
-      externalId: event.externalId,
+      externalId: normalizedExternalId,
       
       // 时间戳 - ✅ [v2.18.0] 使用从签名中提取的真实时间
       createdAt: finalCreatedAt,  // 优先使用签名中的创建时间

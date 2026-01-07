@@ -1018,6 +1018,28 @@ interface EventTitle {
   - 禁止引入/依赖 `kind` 来表达互斥类型；禁止将 facet 结果写回 Event（避免循环依赖与 merge 冲突）。
   - `category/type/isDeadline` 等"结果缓存"字段必须完全移除；新逻辑必须从 facet 推导。
 
+#### 附件：入库字段 Normalize 全量表格（`EventService.normalizeEvent()`）
+
+> 目的：把“同步/旧数据/UI 输入 → 入库前归一化”的规则**集中且可审计**地写进 SSOT。
+> 
+> 说明：此表只列出**存在归一化规则的字段**；未列出的字段默认策略是 **pass-through（透传）**（但仍必须遵守 Hard Rules：例如不得注入默认值造成 diff 噪音）。
+
+| 字段（Event.*） | 触发时机 | 入库 normalize 规则（canonical form） | 典型风险（为何需要） |
+|---|---|---|---|
+| `title` | 总是 | 统一为三层 `EventTitle`（支持字符串/部分对象输入；补齐缺失层级；必要时与 `tags` 同步） | 同步/旧数据可能是 string 或缺层级；UI/Sync 不应散落兜底逻辑 |
+| `eventlog` | 总是 | 统一为 `EventLog`（支持 `EventLog`/Slate JSON/HTML/纯文本/undefined；必要时识别并保留签名策略） | 输入形态多；若不集中会导致解析不一致/签名漂移 |
+| `location` | 当存在 | `string`/`LocationObject` → 规范化为 `LocationObject` 或 `undefined` | Outlook inbound 常给 string；内部期望对象 |
+| `checkType` | 总是 | 仅允许 `'none' | 'once' | 'recurring'`；缺失/非法值 → `'none'` | `undefined` 若被当作 task，会导致 Plan 混入同步事件 |
+| `externalId` | 当存在 | `trim()`；兼容历史 `outlook-xxx` → `xxx`（统一存储为裸 Outlook ID）；空串 → `undefined` | 前缀/空格不一致导致匹配失败与迁移误判 |
+| `syncMode` | 当存在 | `trim()`；空串 → `undefined` | UI/同步可能产生空串；不应写入无意义值 |
+| `tags` | 仅当字段存在（不为 `undefined`） | 过滤非 string；`trim()`；去空；（若传入 string，转为单元素数组） | 避免 `undefined → []` 注入导致 EventHistory 噪音；避免脏数据 |
+| `calendarIds` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 同上；并避免空值导致错误路由 |
+| `todoListIds` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 同上；并避免空值导致错误路由 |
+| `checked` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 避免混入空时间戳/空字符串 |
+| `unchecked` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 避免混入空时间戳/空字符串 |
+| `subEventConfig.calendarIds` | 当 `subEventConfig` 存在且该字段存在 | 同 `tags` 的 String[] 归一化规则 | 子事件默认配置可能来自 UI/旧数据；需清洗 |
+| `subEventConfig.syncMode` | 当 `subEventConfig` 存在且该字段存在 | `trim()`；空串 → `undefined` | 同上 |
+
 ### Executable Spec：`view_membership`（索引如何维护）
 
 > 目标：把 “view_membership 架构真相” 直接写进 SSOT，避免再维护第二份架构文档。
@@ -1104,8 +1126,9 @@ function shouldShow_TimeLog(event: Event): boolean {
 - Writers：Sync（external create / merge / migration）
 - Readers：Sync（update/delete 路由）、TimeCalendar（筛选 not-synced）、诊断工具
 - 约定：
-  - Outlook Calendar：`externalId` 形如 `outlook-<graphEventId>`
-  - Microsoft To Do：`externalId` 形如 `todo-<graphTaskId>`
+  - Outlook Calendar：`externalId` **canonical 存储为裸** `<graphEventId>`（不带 `outlook-` 前缀）
+    - 兼容历史：若读到 `outlook-<graphEventId>`，入库 normalize 会剥离为裸 ID
+  - Microsoft To Do：`externalId` 形如 `todo-<graphTaskId>`（保留 `todo-` 前缀用于区分系统）
 - 不变量：UI 不得直接写入；只能通过 Sync 生成/变更。
 - 多日历场景：`externalId` 记录主日历的远程事件 ID，其他日历通过 `externalMappings` 记录
 
