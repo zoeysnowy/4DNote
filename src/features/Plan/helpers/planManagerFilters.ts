@@ -11,7 +11,7 @@ import type { Event } from '@frontend/types';
 import { EventService } from '@backend/EventService';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
-import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan } from '@frontend/utils/eventFacets';
 
 /**
  * 检查事件是否应该显示在PlanManager中
@@ -27,10 +27,8 @@ export function shouldShowInPlanManager(
   // 🗑️ 步骤0: 排除已删除的事件
   if (event.deletedAt) return false;
 
-  // 步骤1: 并集条件（使用 facet 推导）
-  const matchesInclusionCriteria =
-    shouldShowInPlan(event) ||
-    shouldShowInTimeCalendar(event);
+  // 步骤1: 纳入条件（Plan 页面只纳入 task-like 事件）
+  const matchesInclusionCriteria = shouldShowInPlan(event);
 
   if (!matchesInclusionCriteria) return false;
 

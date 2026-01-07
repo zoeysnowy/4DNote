@@ -8,7 +8,7 @@ import type { Event } from '@frontend/types';
 import { PlanSlate } from '@frontend/components/PlanSlate/PlanSlate';
 import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '@frontend/components/PlanSlate/helpers';
 import { StatusLineContainer, StatusLineSegment } from '@frontend/components/shared/StatusLineContainer';
-import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { ToolbarConfig } from '@frontend/components/shared/FloatingToolbar/types';
@@ -620,10 +620,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       
       const now = new Date();
       
-      // 步骤 1: 并集条件（使用 facet 推导）
-      const matchesInclusionCriteria = 
-        shouldShowInPlan(event) || 
-        shouldShowInTimeCalendar(event);
+      // 步骤 1: 纳入条件（Plan 页面只纳入 task-like 事件）
+      const matchesInclusionCriteria = shouldShowInPlan(event);
       
       if (!matchesInclusionCriteria) return false;
       
@@ -663,11 +661,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (!hasTitle && !hasEventlog) return false;
       
       // 步骤 3: 过期/完成事件处理
-      const isExpired = isEventExpired(event, now);
-      if (shouldShowInTimeCalendar(event) && isExpired) {
-        const isTaskLike = hasTaskFacet(event);
-        if (!isTaskLike) return false;
-      }
+      // Plan 页面只显示 task-like；过期规则由任务完成/日期逻辑处理即可
       
       // 3.2 已完成任务：过0点后自动隐藏
       if (event.checkType && event.checkType !== 'none') {
