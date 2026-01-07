@@ -3377,7 +3377,36 @@ export class EventService {
     const finalFourDNoteSource = extractedCreator.fourDNoteSource !== undefined 
       ? extractedCreator.fourDNoteSource 
       : event.fourDNoteSource;
-    const finalSource = extractedCreator.source || event.source;
+
+    // Field contract: `Event.source` is namespaced (e.g. 'local:plan', 'outlook:calendar').
+    // Signature extraction may return legacy 'local'/'outlook'.
+    // If the event already carries a namespaced source, never downgrade it.
+    const hasNamespacedSource = typeof event.source === 'string' && event.source.includes(':');
+    const sourceCandidate = hasNamespacedSource ? event.source : (extractedCreator.source || event.source);
+
+    const isOutlookSource = (source?: string): boolean => {
+      return typeof source === 'string' && (source === 'outlook' || source.startsWith('outlook:'));
+    };
+
+    const normalizeNamespacedSource = (source: unknown): string | undefined => {
+      if (typeof source !== 'string') return undefined;
+      const trimmed = source.trim();
+      if (!trimmed) return undefined;
+      if (trimmed.includes(':')) return trimmed;
+      if (trimmed === 'outlook') return 'outlook:calendar';
+      if (trimmed === 'local') {
+        // Infer local subtype based on event semantics.
+        if (event.isTimeLog === true || event.isTimer === true) return 'local:timelog';
+        // Task-like/Plan items
+        if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
+        // Calendar blocks
+        if (event.startTime && event.endTime) return 'local:timecalendar';
+        return 'local:event_edit';
+      }
+      return trimmed;
+    };
+
+    const finalSource = normalizeNamespacedSource(sourceCandidate);
     
     // 🆕 [v2.19] Note 事件时间标准化：仅对「非任务」且无时间的事件派生虚拟时间
     // 重要：Task(hasTaskFacet=true) 允许无时间；不能被默认注入 startTime/endTime。
@@ -3463,12 +3492,13 @@ export class EventService {
       };
       // ✅ [v2.18.9] 智能识别修改来源：优先使用签名中提取的，回退到事件来源
       const lastModifiedSource = extractedCreator.lastModifiedSource 
-        || (finalSource === 'outlook' ? 'outlook' : '4dnote');
+        || (isOutlookSource(finalSource) ? 'outlook' : '4dnote');
       normalizedDescription = SignatureUtils.addSignature(coreContent, {
         createdAt: finalCreatedAt,
         updatedAt: finalUpdatedAt,
         fourDNoteSource: (event as any).fourDNoteSource,
-        source: finalSource === 'outlook' ? 'outlook' : 'local',
+        // Keep signature `source` backward-compatible ('local'|'outlook') even if Event.source is namespaced.
+        source: isOutlookSource(finalSource) ? 'outlook' : 'local',
         lastModifiedSource,
         isVirtualTime  // 🆕 传递虚拟时间标记
       });
