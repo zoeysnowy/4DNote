@@ -401,10 +401,10 @@ type SignalType =
    │  - 状态：status (active/confirmed/rejected/expired)          │
    └──────┬───────────────────────────────────────────────────────┘
           ↓
-   ┌──────────────┐
+  ┌──────────────┐
   │ Embedding    │  → 异步任务：调用 OpenAI/本地模型生成向量
-  │ (向量化)      │  → 写入 signal_embeddings（Derived Store）
-   └──────┬───────┘  → 写入向量数据库（可选，如 Pinecone/Weaviate）
+  │ (向量化)      │  → 由 SignalEmbeddingService / RAGIndexService 写入 signal_embeddings（Derived Store）
+  └──────┬───────┘  → 写入向量数据库（可选，如 Pinecone/Weaviate）
           ↓
    ┌──────────────┐
    │ IndexedDB    │  ✅ Signal 创建完成
@@ -2483,13 +2483,19 @@ EventLog.slateJson（自动添加对应格式）
   ```
 
 - [ ] 创建 `signal_embeddings` 表 schema（Derived Store，可重建）
+  - **Owner / 单一写入者**：`SignalEmbeddingService`（Phase 4：归属 `RAGIndexService`）
+  - **版本策略**：使用抽象 `modelVersion`（如 `v1`/`v2`），不要把供应商/模型名写入契约
   ```sql
   CREATE TABLE signal_embeddings (
-    signal_id TEXT PRIMARY KEY,
-    embedding_model TEXT NOT NULL,
+    signal_id TEXT NOT NULL,
+    model_version TEXT NOT NULL,
     embedding_vector BLOB NOT NULL,
-    updated_at TEXT NOT NULL,
-    INDEX idx_signal_embeddings_model (embedding_model)
+    dimension INTEGER NOT NULL,
+    generated_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    PRIMARY KEY (signal_id, model_version),
+    INDEX idx_signal_embeddings_status (status),
+    INDEX idx_signal_embeddings_generated_at (generated_at)
   );
   ```
 - [ ] 实现 `SignalService` 基础 CRUD

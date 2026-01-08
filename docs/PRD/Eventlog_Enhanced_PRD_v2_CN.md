@@ -581,26 +581,8 @@ type SignalType =
   | 'ai_question_detected';   // AI 检测的疑问
 
 /**
- * Signal 状态枚举
- */
-type SignalStatus = 
-  | 'active'        // 活跃（默认）
-  | 'confirmed'     // 已确认（用户确认 AI 推断）
-  | 'rejected'      // 已拒绝（用户拒绝 AI 推断）
-  | 'expired';      // 已过期（时效性失效）
-
-/**
- * 状态转换规则
- * 
- * | 触发条件 | 旧状态 | 新状态 | Owner | 说明 |
- * |---------|--------|--------|-------|------|
- * | Signal 创建 | - | active | SignalService | 默认初始状态 |
- * | 用户确认 AI 推断 | active | confirmed | SignalService | 用户认可 AI 建议 |
- * | 用户拒绝 AI 推断 | active | rejected | SignalService | 用户否决 AI 建议 |
- * | 文本修改 >50% | active/confirmed | expired | SlateChangeListener | 标记的文本大幅变化 |
- * | 节点删除 | * | 物理删除 | SlateChangeListener | Slate 节点被删除 |
- * | 90 天后清理 | expired | 物理删除 | CronJob | 定期清理过期 Signal |
- * | AI 推断未确认 | active (AI 创建) | expired | CronJob | 90 天内未确认 |
+ * SignalStatus / 状态转换规则以 SSOT 为准：
+ * - docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md（§0.4.1）
  */
 ```
 ```
@@ -2065,23 +2047,10 @@ CREATE TABLE event_log (
 ```
 
 #### Signals Schema
-```sql
-CREATE TABLE signals (
-  signal_id TEXT PRIMARY KEY,
-  user_id TEXT NOT NULL,
-  note_id TEXT NOT NULL,
-  paragraph_id TEXT,
-  signal_type TEXT NOT NULL,   -- 'HIGHLIGHT', 'QUESTION', 'ACTION_ITEM'
-  created_at INTEGER NOT NULL,
-  audio_offset_ms INTEGER,
-  image_id TEXT,
-  metadata JSON,
-  
-  FOREIGN KEY (note_id) REFERENCES notes(id),
-  INDEX idx_note_signals (note_id),
-  INDEX idx_signal_type (signal_type)
-);
-```
+
+Signals 的字段契约与存储细节以 SSOT 为准：
+- docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md（§0.4：`signals` / `signal_embeddings`）
+- docs/architecture/SIGNAL_ARCHITECTURE_PROPOSAL.md（Signal / AttentionSession 领域语义与示例）
 
 #### TakeawayCandidate Schema
 ```sql
