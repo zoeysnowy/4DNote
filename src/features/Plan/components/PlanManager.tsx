@@ -468,7 +468,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         // 3. 数据迁移：为旧的 Plan 事件批量设置 checkType（仅执行一次）
         const needsMigration = allEvents.filter(e => shouldShowInPlan(e) && !e.checkType);
         if (needsMigration.length > 0) {
-          console.log('🔧 [数据迁移] 检测到需要迁移的 isPlan 事件:', needsMigration.length);
+          console.log('🔧 [数据迁移] 检测到需要补齐 checkType 的 Plan 事件:', needsMigration.length);
           
           needsMigration.forEach(event => {
             event.checkType = 'once';

@@ -133,13 +133,11 @@ import ddlWarnIcon from '@frontend/assets/icons/ddl_warn.svg';
 import linkColorIcon from '@frontend/assets/icons/link_color.svg';
 import backIcon from '@frontend/assets/icons/back.svg';
 import remarkableLogo from '@frontend/assets/icons/LOGO.svg';
-import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 interface MockEvent {
   id: string;
   title: string;
   tags: string[];
-  isTask: boolean;
   isTimer: boolean;
   parentEventId: string | null;
   // 🔗 EventTree 关系字段
@@ -153,6 +151,8 @@ interface MockEvent {
   attendees?: Contact[];
   eventlog?: any; // Slate JSON (Descendant[] array or string)
   description?: string; // HTML export for Outlook sync
+  // SSOT: Task facet lives in checkType (no legacy isTask flag)
+  checkType?: 'none' | 'once' | 'recurring';
   // 🔧 日历同步配置 (单一数据结构)
   calendarIds?: string[];
   syncMode?: string;
@@ -407,6 +407,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
 
       const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
 
+      const hasCompleteTime = !!(event.startTime && event.endTime);
+      const derivedDefaultCheckType: 'none' | 'once' = hasCompleteTime ? 'none' : 'once';
+
       console.log('🔍🔍🔍 [formData 初始化] EventTree 数据来源分析:', {
         eventId: event.id,
         'linkedEventIds': (event as any).linkedEventIds,
@@ -417,7 +420,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTask: hasTaskFacet(event),
+        checkType: (event.checkType ?? derivedDefaultCheckType) as any,
         isTimer: isDerivedTimer,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
@@ -471,7 +474,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       id: generateEventId(),
       title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
       tags: [],
-      isTask: false,
+      checkType: 'none',
       isTimer: false,
       parentEventId: null,
       linkedEventIds: [],
@@ -503,7 +506,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         id: generateEventId(), // 生成新ID
         title: JSON.stringify([{ type: 'paragraph', children: [{ text: '' }] }]),
         tags: [],
-        isTask: false,
+        checkType: 'none',
         isTimer: false,
         parentEventId: null,
         linkedEventIds: [],
@@ -556,12 +559,15 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     const backlinks = (event as any).backlinks || [];
 
     const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+
+    const hasCompleteTime = !!(event.startTime && event.endTime);
+    const derivedDefaultCheckType: 'none' | 'once' = hasCompleteTime ? 'none' : 'once';
     
     setFormData({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTask: hasTaskFacet(event),
+      checkType: (event.checkType ?? derivedDefaultCheckType) as any,
       isTimer: isDerivedTimer,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
@@ -1293,7 +1299,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         'formData.allDay': formData.allDay
       });
       
-      const { isTask: _formIsTask, isTimer: _formIsTimer, ...formDataWithoutIsTask } = formData;
+      const { isTimer: _formIsTimer, ...formDataWithoutIsTask } = formData;
       const updatedEvent: Event = {
         ...(event || {}), // ✅ 如果event为null，使用空对象（新建事件）
         ...formDataWithoutIsTask,
@@ -1429,11 +1435,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // - Calendar: checkType === 'none' （startTime/endTime 必需才会进入日历同步）
         const hasCompleteTime = updatedEvent.startTime && updatedEvent.endTime;
 
-        const wantsTask = formData.isTask === true;
+        const wantsTask = !!(formData.checkType && formData.checkType !== 'none');
         const effectiveWantsTask = wantsTask || !hasCompleteTime;
         const previousCheckType = (event as any)?.checkType;
+        const selectedCheckType = formData.checkType;
         const finalCheckType = (() => {
           if (!effectiveWantsTask) return 'none';
+          if (selectedCheckType && selectedCheckType !== 'none') return selectedCheckType;
           if (previousCheckType && previousCheckType !== 'none') return previousCheckType;
           return 'once';
         })();
@@ -2415,7 +2423,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   // ==================== Checkbox 处理 ====================
   
   const handleTaskCheckboxChange = (checked: boolean) => {
-    setFormData({ ...formData, isTask: checked });
+    setFormData(prev => {
+      const currentCheckType = prev.checkType ?? 'none';
+      const nextCheckType = checked
+        ? (currentCheckType !== 'none' ? currentCheckType : 'once')
+        : 'none';
+      return { ...prev, checkType: nextCheckType };
+    });
   };
 
   // ==================== TimeLog 处理函数 ====================
@@ -2705,8 +2719,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                   {/* Checkbox + 标题行 */}
                   <div className="title-checkbox-row">
                     <div 
-                      className={`custom-checkbox ${formData.isTask ? 'checked' : ''}`}
-                      onClick={() => handleTaskCheckboxChange(!formData.isTask)}
+                      className={`custom-checkbox ${formData.checkType && formData.checkType !== 'none' ? 'checked' : ''}`}
+                      onClick={() => handleTaskCheckboxChange(!(formData.checkType && formData.checkType !== 'none'))}
                     />
                     {/* 📌 TitleSlate 必须从 formData.title.colorTitle 读取（单一数据源） */}
                     {/* 🔥 CRITICAL: 使用 formData.id 作为 key 确保只在事件ID变化时才重新mount */}
