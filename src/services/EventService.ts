@@ -5110,11 +5110,20 @@ export class EventService {
       
       for (const oldCalendar of calendarsToDelete) {
         try {
-          await microsoftService.deleteEvent(oldCalendar.remoteEventId);
-          eventLogger.log(`🗑️ [syncToMultipleCalendars] 删除旧远程事件`, {
-            calendarId: oldCalendar.calendarId,
-            remoteEventId: oldCalendar.remoteEventId
+          const deleted = await microsoftService.safeDeleteEvent(oldCalendar.remoteEventId, {
+            reason: `syncToMultipleCalendars: calendar group changed (calendarId=${oldCalendar.calendarId})`
           });
+          if (deleted) {
+            eventLogger.log(`🗑️ [syncToMultipleCalendars] 删除旧远程事件`, {
+              calendarId: oldCalendar.calendarId,
+              remoteEventId: oldCalendar.remoteEventId
+            });
+          } else {
+            eventLogger.warn(`🛑 [syncToMultipleCalendars] 跳过远程删除（安全保护）`, {
+              calendarId: oldCalendar.calendarId,
+              remoteEventId: oldCalendar.remoteEventId
+            });
+          }
         } catch (deleteError) {
           eventLogger.error(`❌ [syncToMultipleCalendars] 删除失败，继续处理`, deleteError);
         }
@@ -5145,18 +5154,44 @@ export class EventService {
                 remoteEventId
               });
             } catch (updateError) {
-              // 更新失败，删除后重建
-              eventLogger.warn(`⚠️ [syncToMultipleCalendars] 更新失败，删除重建`, updateError);
+              // 更新失败：先创建新事件，再尝试安全删除旧事件（避免永久数据丢失）
+              eventLogger.warn(`⚠️ [syncToMultipleCalendars] 更新失败，尝试创建新事件（不先删除）`, updateError);
               try {
-                await microsoftService.deleteEvent(existingSync.remoteEventId);
-              } catch (delErr) {
-                // 删除失败也继续，尝试创建新的
+                const recreatedId = await microsoftService.syncEventToCalendar(remoteEventData, calendarId);
+                if (recreatedId) {
+                  remoteEventId = recreatedId;
+                  eventLogger.log(`🆕 [syncToMultipleCalendars] 创建替代远程事件`, {
+                    calendarId,
+                    remoteEventId
+                  });
+
+                  // Best-effort: delete old only if verified 4DNote-managed
+                  try {
+                    const deleted = await microsoftService.safeDeleteEvent(existingSync.remoteEventId, {
+                      reason: `syncToMultipleCalendars: recreate after update failure (calendarId=${calendarId})`
+                    });
+                    if (!deleted) {
+                      eventLogger.warn(`🛑 [syncToMultipleCalendars] 跳过删除旧远程事件（安全保护）`, {
+                        calendarId,
+                        oldRemoteEventId: existingSync.remoteEventId
+                      });
+                    }
+                  } catch {
+                    // ignore delete failures
+                  }
+                } else {
+                  // Fallback: keep old id (no destructive action taken)
+                  remoteEventId = existingSync.remoteEventId;
+                  eventLogger.warn(`⚠️ [syncToMultipleCalendars] 替代事件创建失败，保留旧远程事件`, {
+                    calendarId,
+                    remoteEventId
+                  });
+                }
+              } catch (recreateError) {
+                // Fallback: keep old id (no destructive action taken)
+                remoteEventId = existingSync.remoteEventId;
+                eventLogger.error(`❌ [syncToMultipleCalendars] 替代事件创建失败，保留旧远程事件`, recreateError);
               }
-              remoteEventId = await microsoftService.syncEventToCalendar(remoteEventData, calendarId);
-              eventLogger.log(`🆕 [syncToMultipleCalendars] 重建远程事件`, {
-                calendarId,
-                remoteEventId
-              });
             }
           } else {
             // 创建新的远程事件

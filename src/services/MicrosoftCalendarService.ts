@@ -1979,6 +1979,74 @@ export class MicrosoftCalendarService {
     }
   }
 
+  /**
+   * ✅ Safe remote delete: only delete events that appear to be created/managed by 4DNote.
+   *
+   * Rationale: Graph delete is destructive and can cause permanent data loss.
+   * This method is intentionally conservative; if it cannot verify ownership, it will NOT delete.
+   */
+  async safeDeleteEvent(eventId: string, context?: { reason?: string }): Promise<boolean> {
+    // Global kill-switch already handled by deleteEvent(), but we short-circuit early for clarity.
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('4dnote_disable_outlook_deletes_v1') === '1') {
+        MSCalendarLogger.warn('🛑 [safeDeleteEvent] Remote delete blocked by safety flag:', { eventId, reason: context?.reason });
+        return false;
+      }
+    } catch {
+      // ignore localStorage access errors
+    }
+
+    try {
+      // Fetch minimal fields to validate ownership.
+      const remote = await this.callGraphAPI(
+        `/me/events/${eventId}?$select=id,subject,body,bodyPreview`,
+        'GET'
+      );
+
+      const bodyContent = (remote?.body?.content ?? remote?.bodyPreview ?? '') as string;
+      const subject = (remote?.subject ?? '') as string;
+
+      const looksManaged = this.looksLike4DNoteManagedEventText(`${subject}\n${bodyContent}`);
+
+      if (!looksManaged) {
+        MSCalendarLogger.warn('🛑 [safeDeleteEvent] Refusing to delete non-4DNote event:', {
+          eventId,
+          reason: context?.reason,
+          subject: subject?.slice(0, 80),
+          bodyPreview: bodyContent?.slice(0, 120)
+        });
+        return false;
+      }
+
+      await this.deleteEvent(eventId);
+      return true;
+    } catch (error) {
+      // 404 -> treat as already deleted
+      if (error instanceof Error && error.message.includes('404')) {
+        MSCalendarLogger.log('⚠️ [safeDeleteEvent] Event already deleted or not found, treating as success:', { eventId, reason: context?.reason });
+        return true;
+      }
+
+      // If we cannot verify ownership, do not delete.
+      MSCalendarLogger.error('❌ [safeDeleteEvent] Verification failed, skipping delete:', {
+        eventId,
+        reason: context?.reason,
+        errorMessage: error instanceof Error ? error.message : String(error)
+      });
+      return false;
+    }
+  }
+
+  private looksLike4DNoteManagedEventText(text: string): boolean {
+    if (!text) return false;
+    // Conservative markers written by ActionBasedSyncManager.processEventDescription()
+    // Examples:
+    // - "由 🔮 4DNote 创建于 2026-..."
+    // - "由 🔮 4DNote 最后编辑于 2026-..."
+    // Also accept no-emoji variant.
+    return /由\s*(?:🔮\s*)?4DNote\s*(?:创建|创建于|最后编辑于|最新修改于)/.test(text);
+  }
+
   // 🔧 统一的 createEvent 方法
   async createEvent(eventData: any): Promise<any> {
     if (this.simulationMode) {

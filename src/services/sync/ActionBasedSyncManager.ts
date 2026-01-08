@@ -3154,16 +3154,12 @@ export class ActionBasedSyncManager {
             
             // 🔍 [NEW] 检查是否有旧的 externalId 需要清理（可能在其他日历中存在）
             // 这种情况可能发生在标签映射更改导致事件需要迁移到新日历时
+            let oldExternalIdToDelete: string | null = null;
             if (action.originalData?.externalId) {
-              let oldExternalId = action.originalData.externalId;
-              if (oldExternalId.startsWith('outlook-')) {
-                oldExternalId = oldExternalId.replace('outlook-', '');
-              }
-              try {
-                await this.microsoftService.deleteEvent(oldExternalId);
-              } catch (error) {
-                console.warn('⚠️ [SYNC UPDATE → CREATE] Failed to delete old event (may not exist):', error);
-                // 继续执行，不影响新事件的创建
+              const rawOldExternalId = String(action.originalData.externalId);
+              // todo- is handled by a different API; never attempt calendar delete here.
+              if (!rawOldExternalId.startsWith('todo-')) {
+                oldExternalIdToDelete = rawOldExternalId.replace(/^outlook-/, '');
               }
             }
             
@@ -3310,6 +3306,18 @@ export class ActionBasedSyncManager {
               if (syncTargetCalendarId) {
                 await this.updateLocalEventCalendarId(action.entityId, syncTargetCalendarId);
               }
+
+              // Best-effort: delete old remote event only after successful create, and only if 4DNote-managed.
+              if (oldExternalIdToDelete) {
+                try {
+                  await this.microsoftService.safeDeleteEvent(oldExternalIdToDelete, {
+                    reason: 'ActionBasedSyncManager UPDATE→CREATE cleanup'
+                  });
+                } catch {
+                  // ignore cleanup failures
+                }
+              }
+
               this.clearEditLock(action.entityId);
               // 📝 状态栏反馈
               window.dispatchEvent(new CustomEvent('sync-status-update', {
@@ -3353,15 +3361,6 @@ export class ActionBasedSyncManager {
             if (mappedCalendarId && mappedCalendarId !== originalMappedCalendarId) {
               needsCalendarMigration = true;
               syncTargetCalendarId = mappedCalendarId;
-              
-              try {
-                // 删除原日历中的事件
-                await this.microsoftService.deleteEvent(cleanExternalId);
-              } catch (deleteError) {
-                console.error('❌ [PRIORITY 2] Calendar migration failed:', deleteError);
-                // 迁移失败，继续执行普通更新
-                needsCalendarMigration = false;
-              }
               
               try {
                 // 在新日历中创建事件（相当于迁移）
@@ -3422,6 +3421,16 @@ export class ActionBasedSyncManager {
                   const normalizedExternalId = newEventId.replace(/^outlook-/, '');
                   await this.updateLocalEventExternalId(action.entityId, normalizedExternalId, migrateDescription);
                   await this.updateLocalEventCalendarId(action.entityId, syncTargetCalendarId);
+
+                  // Best-effort: delete old remote event only after successful create, and only if 4DNote-managed.
+                  try {
+                    await this.microsoftService.safeDeleteEvent(cleanExternalId, {
+                      reason: 'ActionBasedSyncManager calendar migration cleanup'
+                    });
+                  } catch {
+                    // ignore cleanup failures
+                  }
+
                   this.clearEditLock(action.entityId);
                   // 📝 状态栏反馈
                   window.dispatchEvent(new CustomEvent('sync-status-update', {
@@ -3535,17 +3544,10 @@ export class ActionBasedSyncManager {
           // 需要迁移：从 Calendar 到 To Do
           if (updateSyncRoute.target === 'todo' && wasInCalendar) {
             console.log(`🔄 [Migration] Moving from Calendar to To Do`);
-            
-            try {
-              // 1. 从 Calendar 删除
-              const cleanExternalId = currentExternalId.replace(/^outlook-/, '');
-              await this.microsoftService.deleteEvent(cleanExternalId);
-              console.log(`✅ [Migration] Deleted from Calendar:`, cleanExternalId);
-            } catch (error) {
-              console.warn(`⚠️ [Migration] Failed to delete from Calendar:`, error);
-            }
-            
-            // 2. 创建到 To Do
+
+            const cleanExternalId = currentExternalId.replace(/^outlook-/, '');
+
+            // 1. 先创建到 To Do（避免先删后建导致数据丢失）
             try {
               const todoListId = (action.data.calendarIds && action.data.calendarIds.length > 0)
                 ? action.data.calendarIds[0]
@@ -3564,6 +3566,20 @@ export class ActionBasedSyncManager {
                   externalId: `todo-${createdTask.id}`,
                   syncStatus: 'synced'
                 }, true);
+
+                // 2. Best-effort: delete old calendar event only after successful To Do create.
+                try {
+                  const deleted = await this.microsoftService.safeDeleteEvent(cleanExternalId, {
+                    reason: 'ActionBasedSyncManager migration Calendar→ToDo cleanup'
+                  });
+                  if (deleted) {
+                    console.log(`✅ [Migration] Deleted from Calendar:`, cleanExternalId);
+                  } else {
+                    console.warn(`🛑 [Migration] Skipped Calendar delete (safety protection):`, cleanExternalId);
+                  }
+                } catch (error) {
+                  console.warn(`⚠️ [Migration] Failed to delete from Calendar:`, error);
+                }
               }
               
               return true;
@@ -3954,7 +3970,17 @@ export class ActionBasedSyncManager {
               cleanExternalId = cleanExternalId.replace('outlook-', '');
             }
             try {
-              await this.microsoftService.deleteEvent(cleanExternalId);
+              const deleted = await this.microsoftService.safeDeleteEvent(cleanExternalId, {
+                reason: 'ActionBasedSyncManager delete action'
+              });
+              if (!deleted) {
+                // Do not treat as failure: local delete should still succeed.
+                window.dispatchEvent(new CustomEvent('sync-status-update', {
+                  detail: { message: `🛑 已阻止远端删除（安全保护）: ${deleteTargetEvent?.title?.simpleTitle || 'Unknown'}` }
+                }));
+                this.saveDeletedEventIds();
+                return true;
+              }
               // 🆕 添加到已删除事件ID跟踪
               this.deletedEventIds.add(cleanExternalId);
               this.deletedEventIds.add(externalIdToDelete); // 也添加原始格式
