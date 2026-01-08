@@ -238,15 +238,20 @@ interface Signal {
   eventId: string;         // 关联事件
   type: SignalType;        // 信号类型
   content: string;         // 标记的文本内容
-  timestamp: string;       // 标记时间（用于"重点窗口"）
+  
+  // 时间字段（存储格式："YYYY-MM-DD HH:mm:ss"，使用 formatTimeForStorage()）
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
   
   // 定位信息（用于回溯到 slateJson 具体位置）
   slateNodePath?: number[];  // Slate 节点路径（如 [0, 2, 1]）
   textRange?: { start: number; end: number };  // 文本范围
   
   // 元数据
-  createdAt: string;
-  createdBy: '4dnote' | 'ai' | 'user';  // 来源：用户手动/AI 自动提取
+  createdBy: 'user' | 'ai' | 'system';  // 来源：用户手动/AI 自动提取/系统
+  reviewedAt?: string;                  // AI 推断类信号：用户确认/拒绝时间
+  reviewedBy?: 'user' | 'ai' | 'system';
   
   // AI 提取时的置信度（可选）
   confidence?: number;
@@ -301,10 +306,7 @@ interface Signal {
   
   // 状态
   status: 'active' | 'confirmed' | 'rejected' | 'expired';  // AI 推断需要确认
-  
-  // Embedding（用于 RAG 检索）
-  embedding?: number[];     // 向量表示（通过 OpenAI/本地模型生成）
-  embeddingModel?: string;  // 使用的模型（如 'text-embedding-3-small'）
+  // 注意：Embedding/RAG 属于派生索引能力，不是 Signal 权威字段
 }
 
 type SignalType = 
@@ -354,7 +356,7 @@ type SignalType =
 **AI 使用方式**：
 - 直接查询：`SELECT * FROM signals WHERE eventId = ? AND type = 'question'`
 - 聚合统计：`SELECT type, COUNT(*) FROM signals GROUP BY type`
-- 时间窗口：`SELECT * FROM signals WHERE timestamp BETWEEN ? AND ?`（用于 Granola 式"重点窗口"）
+- 时间窗口：`SELECT * FROM signals WHERE created_at BETWEEN ? AND ?`（用于 Granola 式"重点窗口"）
 
 ---
 
@@ -393,15 +395,15 @@ type SignalType =
           ↓
    ┌──────────────────────────────────────────────────────────────┐
    │ signals 表写入                                                │
-   │  - 核心数据：id, eventId, type, content, timestamp           │
+  │  - 核心数据：id, eventId, type, content, createdAt/updatedAt │
    │  - 定位信息：slateNodePath, textRange                        │
    │  - 元数据：createdBy, confidence, behaviorMeta               │
    │  - 状态：status (active/confirmed/rejected/expired)          │
    └──────┬───────────────────────────────────────────────────────┘
           ↓
    ┌──────────────┐
-   │ Embedding    │  → 异步任务：调用 OpenAI/本地模型生成向量
-   │ (向量化)      │  → 更新 signals.embedding 字段
+  │ Embedding    │  → 异步任务：调用 OpenAI/本地模型生成向量
+  │ (向量化)      │  → 写入 signal_embeddings（Derived Store）
    └──────┬───────┘  → 写入向量数据库（可选，如 Pinecone/Weaviate）
           ↓
    ┌──────────────┐
@@ -418,14 +420,14 @@ type SignalType =
           ↓
    ┌──────────────────────────────────────────────────────────────┐
    │ SignalService.querySignals(filters)                          │
-   │  - 时间范围：WHERE timestamp BETWEEN ? AND ?                 │
+  │  - 时间范围：WHERE created_at BETWEEN ? AND ?                │
    │  - 类型过滤：WHERE type IN ('highlight', 'brilliant')        │
    │  - 聚合统计：GROUP BY type / COUNT(*)                        │
-   │  - 向量检索：相似度搜索（如果有 embedding）                    │
+  │  - 向量检索：相似度搜索（通过 signal_embeddings）              │
    └──────┬───────────────────────────────────────────────────────┘
           ↓
    ┌──────────────┐
-   │ 结果排序      │  → 按时间戳/置信度/行为频次排序
+  │ 结果排序      │  → 按 createdAt/置信度/行为频次排序
    └──────┬───────┘  → 去重（同一文本的多个 Signal 合并）
           ↓
    ┌──────────────┐
@@ -458,7 +460,7 @@ type SignalType =
           ↓
    ┌──────────────┐
    │ Embedding    │  → 文本变化 → 重新生成 embedding
-   │ 重新生成      │  → 更新 signals.embedding
+  │ 重新生成      │  → 更新 signal_embeddings
    └──────┬───────┘
           ↓
    ┌──────────────┐
@@ -502,6 +504,7 @@ async function extractSignalsFromFormat(
   const signals: Signal[] = [];
   
   traverseNodes(nodes, (node, path) => {
+    const now = formatTimeForStorage(new Date());
     // 规则 1：黄色高亮 → highlight 推荐
     if (node.backgroundColor === '#FFFF00') {
       signals.push({
@@ -510,7 +513,8 @@ async function extractSignalsFromFormat(
         type: 'ai_highlight_suggested',  // AI 推断，需确认
         content: node.text,
         slateNodePath: path,
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'ai',
         confidence: 0.8,
         status: 'active',  // 待用户确认
@@ -525,7 +529,8 @@ async function extractSignalsFromFormat(
         type: 'ai_question_detected',
         content: node.text,
         slateNodePath: path,
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'ai',
         confidence: 0.6,
         status: 'active',
@@ -540,7 +545,8 @@ async function extractSignalsFromFormat(
         type: 'ai_action_detected',
         content: node.text,
         slateNodePath: path,
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'ai',
         confidence: 0.7,
         status: 'active',
@@ -553,56 +559,71 @@ async function extractSignalsFromFormat(
 
 // 用户确认/拒绝 AI 推荐
 async function confirmSignal(signalId: string): Promise<void> {
+  const now = formatTimeForStorage(new Date());
   await db.signals.update(signalId, {
     status: 'confirmed',
-    createdBy: 'user',  // 用户确认后转为用户创建
+    reviewedAt: now,
+    reviewedBy: 'user',
+    updatedAt: now,
   });
 }
 
 async function rejectSignal(signalId: string): Promise<void> {
-  await db.signals.update(signalId, { status: 'rejected' });
+  const now = formatTimeForStorage(new Date());
+  await db.signals.update(signalId, {
+    status: 'rejected',
+    reviewedAt: now,
+    reviewedBy: 'user',
+    updatedAt: now,
+  });
 }
 ```
 
-#### 3.2.2 Signal → Format（可选同步）
+#### 3.2.2 Format → Signal（单向派生，SSOT 允许）
 
 ```typescript
-// 用户添加 Signal 时，自动应用对应格式
-async function applySignalFormat(signal: Signal): Promise<void> {
-  const formatMap: Record<SignalType, Partial<SlateTextNode>> = {
-    highlight: { backgroundColor: '#FFFF00' },  // 黄色高亮
-    brilliant: { backgroundColor: '#FFD700', bold: true },  // 金色高亮+粗体
-    question: { color: '#FF6B6B', italic: true },  // 红色斜体
-    action_item: { backgroundColor: '#87CEEB', bold: true },  // 蓝色高亮+粗体
-    advantage: { color: '#4CAF50', bold: true },  // 绿色粗体
-    disadvantage: { color: '#FF5722' },  // 橙红色
-    confirm: { color: '#9C27B0', bold: true },  // 紫色粗体
-  };
-  
-  const format = formatMap[signal.type];
-  if (!format) return;
-  
-  // 更新 slateJson（通过 Slate API）
-  await updateSlateNode(signal.eventId, signal.slateNodePath, format);
+/**
+ * SSOT 约束：SignalService 不得写入/反向驱动 slateJson。
+ * 允许路径：用户在编辑器应用格式（写入 EventLog.slateJson）后，UI/解析器可“派生创建/推荐” Signal。
+ */
+
+// 用户在编辑器应用格式（唯一写入 slateJson 的路径：EventService / 编辑器）
+async function onUserAppliedFormat(eventId: string, selection: any) {
+  const now = formatTimeForStorage(new Date());
+
+  // 1) UI 写入格式（Slate）并持久化到 EventLog（EventService 负责）
+  const updatedSlateJson = applyFormatInEditor(selection);
+  await EventService.updateEventLog(eventId, { slateJson: updatedSlateJson });
+
+  // 2) （可选）基于当前 selection/format 创建或推荐 Signal（Signal 独立存储）
+  const { slateNodePath, content } = getSelectionInfo(selection);
+  await SignalService.createSignal({
+    eventId,
+    type: 'highlight',
+    content,
+    slateNodePath,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: 'user',
+    status: 'active',
+  });
 }
 
-// 用户在 UI 删除格式时，询问是否同时删除 Signal
-function onFormatRemoved(eventId: string, slateNodePath: number[]): void {
+// 用户移除格式时：只影响 slateJson；Signal 是否删除由 UI 显式确认触发
+async function onUserRemovedFormat(eventId: string, slateNodePath: number[]) {
   const relatedSignals = await SignalService.getSignalsByPath(eventId, slateNodePath);
-  
-  if (relatedSignals.length > 0) {
-    // 显示确认对话框
-    showDialog({
-      title: '是否同时删除语义标记？',
-      message: `此处有 ${relatedSignals.length} 个标记：${relatedSignals.map(s => s.type).join(', ')}`,
-      actions: [
-        { label: '仅删除格式', action: () => {} },
-        { label: '同时删除标记', action: () => {
-          relatedSignals.forEach(s => SignalService.deleteSignal(s.id));
-        }},
-      ],
-    });
-  }
+  if (relatedSignals.length === 0) return;
+
+  showDialog({
+    title: '是否同时删除语义标记？',
+    message: `此处有 ${relatedSignals.length} 个标记：${relatedSignals.map(s => s.type).join(', ')}`,
+    actions: [
+      { label: '保留标记', action: () => {} },
+      { label: '删除标记', action: async () => {
+        await Promise.all(relatedSignals.map(s => SignalService.deleteSignal(s.id)));
+      }},
+    ],
+  });
 }
 ```
 
@@ -632,24 +653,28 @@ document.addEventListener('copy', async (e) => {
   
   if (existingSignal) {
     // 更新复制次数
+        const now = formatTimeForStorage(new Date());
     await SignalService.updateSignal(existingSignal.id, {
+          updatedAt: now,
       behaviorMeta: {
         actionCount: (existingSignal.behaviorMeta?.actionCount || 0) + 1,
-        lastActionTime: new Date().toISOString(),
+            lastActionTime: now,
       },
     });
   } else {
     // 创建新 Signal
+    const now = formatTimeForStorage(new Date());
     await SignalService.createSignal({
       eventId,
       type: 'user_copy',
       content: copiedText,
       slateNodePath,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         actionCount: 1,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: now,
       },
     });
   }
@@ -663,13 +688,15 @@ function onUserQuestionFromSelection(
   conversationId: string
 ): void {
   const { slateNodePath } = findSlateNodeByText(eventId, selectedText);
+  const now = formatTimeForStorage(new Date());
   
   SignalService.createSignal({
     eventId,
     type: 'user_question',
     content: selectedText,
     slateNodePath,
-    timestamp: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: 'user',
     behaviorMeta: {
       questionText,
@@ -685,12 +712,14 @@ function onAIContentInserted(
   sourceConversationId: string,
   insertionPath: number[]
 ): void {
+  const now = formatTimeForStorage(new Date());
   SignalService.createSignal({
     eventId: targetEventId,
     type: 'ai_insert',
     content: insertedContent,
     slateNodePath: insertionPath,
-    timestamp: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: 'ai',
     behaviorMeta: {
       relatedConversationId: sourceConversationId,
@@ -715,17 +744,19 @@ function onSlateNodeEdited(
   
   // 3 次以上编辑 → 创建 USER_EDIT Signal
   if (existing.count >= 3) {
+    const now = formatTimeForStorage(new Date());
     SignalService.createSignal({
       eventId,
       type: 'user_edit',
       content: getSlateNodeText(eventId, slateNodePath),
       slateNodePath,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         actionCount: existing.count,
         editCharCount: existing.charCount,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: now,
       },
     });
     
@@ -800,8 +831,8 @@ class DwellTimeTracker {
       const newSessions = [
         ...(existing.behaviorMeta?.dwellSessions || []),
         {
-          startTime: new Date(startTime).toISOString(),
-          endTime: new Date(endTime).toISOString(),
+          startTime: formatTimeForStorage(new Date(startTime)),
+          endTime: formatTimeForStorage(new Date(endTime)),
           duration,
         },
       ];
@@ -815,30 +846,33 @@ class DwellTimeTracker {
       );
       
       await SignalService.updateSignal(existing.id, {
+        updatedAt: formatTimeForStorage(new Date()),
         behaviorMeta: {
           totalDwellTime,
           dwellSessions: newSessions,
           averageDwellTime,
           maxDwellTime,
           actionCount: sessionCount,
-          lastActionTime: new Date().toISOString(),
+          lastActionTime: formatTimeForStorage(new Date()),
         },
         // 停留时间越长 → 置信度越高
         confidence: Math.min(0.3 + (totalDwellTime / 120000), 1.0),  // 2分钟 = 1.0
       });
     } else {
       // 创建新 Signal
+      const now = formatTimeForStorage(new Date());
       await SignalService.createSignal({
         eventId,
         type: 'dwell_time_event',
         content: '',  // Event 级别不需要具体文本
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'user',
         behaviorMeta: {
           totalDwellTime: duration,
           dwellSessions: [{
-            startTime: new Date(startTime).toISOString(),
-            endTime: new Date(endTime).toISOString(),
+            startTime: formatTimeForStorage(new Date(startTime)),
+            endTime: formatTimeForStorage(new Date(endTime)),
             duration,
           }],
           averageDwellTime: duration,
@@ -904,18 +938,21 @@ class FocusTimeTracker {
       
       if (existing) {
         await SignalService.updateSignal(existing.id, {
+          updatedAt: formatTimeForStorage(new Date()),
           behaviorMeta: {
             focusDuration: (existing.behaviorMeta?.focusDuration || 0) + duration,
             focusSessions: (existing.behaviorMeta?.focusSessions || 0) + 1,
-            lastActionTime: new Date().toISOString(),
+            lastActionTime: formatTimeForStorage(new Date()),
           },
         });
       } else {
+        const now = formatTimeForStorage(new Date());
         await SignalService.createSignal({
           eventId: this.eventId,
           type: 'focus_time',
           content: '',
-          timestamp: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
           createdBy: 'user',
           behaviorMeta: {
             focusDuration: duration,
@@ -995,13 +1032,14 @@ class KeyboardBehaviorTracker {
     const slowSegments = this.typingIntervals.filter(i => i > 1000).length;
     const avgInterval = this.typingIntervals.reduce((a, b) => a + b, 0) / this.typingIntervals.length;
     const typingSpeed = 60000 / avgInterval;  // 字符/分钟
-    
+    const now = formatTimeForStorage(new Date());
     await SignalService.createSignal({
       eventId: this.eventId!,
       type: 'typing_rhythm',
       content: '',
       slateNodePath: this.slateNodePath!,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         typingSpeed,
@@ -1027,22 +1065,25 @@ class KeyboardBehaviorTracker {
     
     if (existing) {
       await SignalService.updateSignal(existing.id, {
+        updatedAt: formatTimeForStorage(new Date()),
         behaviorMeta: {
           deleteCount: (existing.behaviorMeta?.deleteCount || 0) + 1,
           deletedChars: (existing.behaviorMeta?.deletedChars || 0) + deletedChars,
           rewriteCount: (existing.behaviorMeta?.rewriteCount || 0) + 1,
-          lastActionTime: new Date().toISOString(),
+          lastActionTime: formatTimeForStorage(new Date()),
         },
         // 重写次数越多 → 该内容越重要/难以表达
         confidence: Math.min(0.5 + (existing.behaviorMeta?.rewriteCount || 0) * 0.15, 1.0),
       });
     } else {
+      const now = formatTimeForStorage(new Date());
       await SignalService.createSignal({
         eventId: this.eventId!,
         type: 'delete_rewrite',
         content: getSlateNodeText(this.eventId!, this.slateNodePath!),
         slateNodePath: this.slateNodePath!,
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'user',
         behaviorMeta: {
           deleteCount: 1,
@@ -1108,21 +1149,24 @@ class MouseHoverTracker {
       
       if (existing) {
         await SignalService.updateSignal(existing.id, {
+          updatedAt: formatTimeForStorage(new Date()),
           behaviorMeta: {
             hoverDuration: (existing.behaviorMeta?.hoverDuration || 0) + duration,
             hoverCount: (existing.behaviorMeta?.hoverCount || 0) + 1,
-            lastActionTime: new Date().toISOString(),
+            lastActionTime: formatTimeForStorage(new Date()),
           },
           // 悬停越久 → 权重越高
           confidence: Math.min(0.3 + (duration / 10000), 1.0),  // 10秒 = 1.0
         });
       } else {
+        const now = formatTimeForStorage(new Date());
         await SignalService.createSignal({
           eventId,
           type: 'mouse_hover',
           content: hoveredText,
           slateNodePath,
-          timestamp: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
           createdBy: 'user',
           behaviorMeta: {
             hoverDuration: duration,
@@ -1203,21 +1247,24 @@ class ScrollBehaviorTracker {
     
     if (existing) {
       await SignalService.updateSignal(existing.id, {
+        updatedAt: formatTimeForStorage(new Date()),
         behaviorMeta: {
           scrollSpeed: (existing.behaviorMeta?.scrollSpeed || 0 + scrollSpeed) / 2,  // 平均速度
           scrollBackCount: (existing.behaviorMeta?.scrollBackCount || 0) + this.scrollBackCount,
           scrollPauseCount: (existing.behaviorMeta?.scrollPauseCount || 0) + this.scrollPauseCount,
-          lastActionTime: new Date().toISOString(),
+          lastActionTime: formatTimeForStorage(new Date()),
         },
         // 回滚次数越多 → 该内容越重要（重复查看）
         confidence: Math.min(0.2 + (this.scrollBackCount * 0.2), 1.0),
       });
     } else {
+      const now = formatTimeForStorage(new Date());
       await SignalService.createSignal({
         eventId,
         type: 'scroll_behavior',
         content: '',
-        timestamp: new Date().toISOString(),
+        createdAt: now,
+        updatedAt: now,
         createdBy: 'user',
         behaviorMeta: {
           scrollSpeed,
@@ -1292,7 +1339,8 @@ class DeepWorkSessionDetector {
         eventId,
         type: 'deep_work_session',
         content: '',
-        timestamp: new Date().toISOString(),
+        createdAt: formatTimeForStorage(new Date()),
+        updatedAt: formatTimeForStorage(new Date()),
         createdBy: 'user',
         behaviorMeta: {
           focusDuration,
@@ -1311,7 +1359,7 @@ class RevisitPatternDetector {
   
   recordVisit(eventId: string) {
     const visits = this.visitHistory.get(eventId) || [];
-    visits.push(new Date().toISOString());
+    visits.push(formatTimeForStorage(new Date()));
     this.visitHistory.set(eventId, visits);
     
     // 3 次以上访问 → 创建 REVISIT_PATTERN Signal
@@ -1325,7 +1373,8 @@ class RevisitPatternDetector {
       eventId,
       type: 'revisit_pattern',
       content: '',
-      timestamp: new Date().toISOString(),
+      createdAt: formatTimeForStorage(new Date()),
+      updatedAt: formatTimeForStorage(new Date()),
       createdBy: 'user',
       behaviorMeta: {
         revisitCount: visits.length,
@@ -1373,23 +1422,26 @@ document.addEventListener('copy', async (e) => {
   if (existingSignal) {
     // 更新复制次数
     await SignalService.updateSignal(existingSignal.id, {
+      updatedAt: formatTimeForStorage(new Date()),
       behaviorMeta: {
         actionCount: (existingSignal.behaviorMeta?.actionCount || 0) + 1,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: formatTimeForStorage(new Date()),
       },
     });
   } else {
     // 创建新 Signal
+    const now = formatTimeForStorage(new Date());
     await SignalService.createSignal({
       eventId,
       type: 'user_copy',
       content: copiedText,
       slateNodePath,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         actionCount: 1,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: now,
       },
     });
   }
@@ -1403,13 +1455,15 @@ function onUserQuestionFromSelection(
   conversationId: string
 ): void {
   const { slateNodePath } = findSlateNodeByText(eventId, selectedText);
+  const now = formatTimeForStorage(new Date());
   
   SignalService.createSignal({
     eventId,
     type: 'user_question',
     content: selectedText,
     slateNodePath,
-    timestamp: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: 'user',
     behaviorMeta: {
       questionText,
@@ -1425,12 +1479,14 @@ function onAIContentInserted(
   sourceConversationId: string,
   insertionPath: number[]
 ): void {
+  const now = formatTimeForStorage(new Date());
   SignalService.createSignal({
     eventId: targetEventId,
     type: 'ai_insert',
     content: insertedContent,
     slateNodePath: insertionPath,
-    timestamp: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: 'ai',
     behaviorMeta: {
       relatedConversationId: sourceConversationId,
@@ -1455,17 +1511,19 @@ function onSlateNodeEdited(
   
   // 3 次以上编辑 → 创建 USER_EDIT Signal
   if (existing.count >= 3) {
+    const now = formatTimeForStorage(new Date());
     SignalService.createSignal({
       eventId,
       type: 'user_edit',
       content: getSlateNodeText(eventId, slateNodePath),
       slateNodePath,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         actionCount: existing.count,
         editCharCount: existing.charCount,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: now,
       },
     });
     
@@ -1560,15 +1618,16 @@ function mergeDuplicateSignals(
   newSignal: Partial<Signal>
 ): Signal {
   const latest = existing.sort((a, b) => 
-    new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
   )[0];
   
   return {
     ...latest,
     content: newSignal.content || latest.content,
+    updatedAt: formatTimeForStorage(new Date()),
     behaviorMeta: {
       actionCount: (latest.behaviorMeta?.actionCount || 0) + 1,
-      lastActionTime: new Date().toISOString(),
+      lastActionTime: formatTimeForStorage(new Date()),
     },
     confidence: Math.min((latest.confidence || 0.5) + 0.1, 1.0),
   };
@@ -1647,22 +1706,20 @@ class EmbeddingService {
       type: 'highlight',  // 类型不影响 embedding
     } as Signal);
     
-    // 2. 查询所有有 embedding 的 Signal
-    const allSignals = await db.signals
-      .where('embedding')
-      .notEqual(null)
-      .toArray();
-    
-    // 3. 计算余弦相似度
-    const similarities = allSignals.map(signal => ({
-      signal,
-      similarity: cosineSimilarity(queryEmbedding, signal.embedding!),
-    }));
-    
-    // 4. 排序并返回 Top-K
-    return similarities
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, limit);
+    // 2. 通过 signal_embeddings（Derived Store）做向量检索
+    const matches = await SignalEmbeddingService.searchByEmbedding(queryEmbedding, {
+      topK: limit,
+      threshold: 0,
+    });
+
+    // 3. 回表拿到 Signal 实体（用于构建 Prompt/展示）
+    const signals = await Promise.all(matches.map(m => SignalService.getSignal(m.signalId)));
+    return matches
+      .map((m, idx) => ({
+        signal: signals[idx],
+        similarity: m.similarity,
+      }))
+      .filter(x => Boolean(x.signal));
   }
 }
 
@@ -1685,8 +1742,8 @@ async function generateMonthlyReport(year: number, month: number): Promise<strin
   
   // 1️⃣ 查询时间范围内的所有 Signal
   const signals = await SignalService.querySignals({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startTime: formatTimeForStorage(startDate),
+    endTime: formatTimeForStorage(endDate),
     status: 'confirmed',  // 只查询确认的 Signal
   });
   
@@ -1992,7 +2049,7 @@ class SignalService {
     
     if (dateRange) {
       signals = signals.filter(s => 
-        s.timestamp >= dateRange.start && s.timestamp <= dateRange.end
+        s.createdAt >= dateRange.start && s.createdAt <= dateRange.end
       );
     }
     
@@ -2103,8 +2160,8 @@ async function generateMonthlyReport(year: number, month: number): Promise<strin
   
   // 1️⃣ 查询时间范围内的所有 Signal
   const signals = await SignalService.querySignals({
-    startDate: startDate.toISOString(),
-    endDate: endDate.toISOString(),
+    startTime: formatTimeForStorage(startDate),
+    endTime: formatTimeForStorage(endDate),
     status: 'confirmed',  // 只查询确认的 Signal
   });
   
@@ -2122,7 +2179,7 @@ async function generateMonthlyReport(year: number, month: number): Promise<strin
     
     promptParts.push('【重点内容】（极度重要）');
     highlights.forEach(s => {
-      promptParts.push(`- ${s.content} (来自 ${formatDate(s.timestamp)})`);
+      promptParts.push(`- ${s.content} (来自 ${formatDate(s.createdAt)})`);
     });
   }
   
@@ -2194,7 +2251,7 @@ class SignalService {
     
     if (dateRange) {
       signals = signals.filter(s => 
-        s.timestamp >= dateRange.start && s.timestamp <= dateRange.end
+        s.createdAt >= dateRange.start && s.createdAt <= dateRange.end
       );
     }
     
@@ -2268,15 +2325,21 @@ signals 表（独立存储）
        event_id TEXT NOT NULL,
        type TEXT NOT NULL,
        content TEXT NOT NULL,
-       timestamp TEXT NOT NULL,
        slate_node_path TEXT,  -- JSON 数组
        text_range TEXT,       -- JSON 对象
        created_at TEXT NOT NULL,
+       updated_at TEXT NOT NULL,
+       deleted_at TEXT,
        created_by TEXT NOT NULL,
+       reviewed_at TEXT,
+       reviewed_by TEXT,
        confidence REAL,
+       status TEXT NOT NULL DEFAULT 'active',
+       behavior_meta TEXT,    -- JSON 对象
        INDEX idx_event_signals (event_id),
        INDEX idx_signal_type (type),
-       INDEX idx_signal_time (timestamp)
+       INDEX idx_signal_created_at (created_at),
+       INDEX idx_signal_status (status)
      );
      ```
 
@@ -2385,7 +2448,7 @@ EventLog.slateJson（自动添加对应格式）
 **实施路径**：
 
 ### Phase 1：Signal 基础设施（P0，预计 1-2 周）
-- [ ] 定义完整 `Signal` 类型（包含行为信号、embedding 字段）`src/types.ts`
+- [ ] 定义完整 `Signal` 类型（包含行为信号；不包含 embedding）`src/types.ts`
 - [ ] 创建 `signals` 表 schema（IndexedDB/SQLite）
   ```sql
   CREATE TABLE signals (
@@ -2393,7 +2456,6 @@ EventLog.slateJson（自动添加对应格式）
     event_id TEXT NOT NULL,
     type TEXT NOT NULL,
     content TEXT NOT NULL,
-    timestamp TEXT NOT NULL,
     
     -- 定位信息
     slate_node_path TEXT,  -- JSON array
@@ -2401,22 +2463,33 @@ EventLog.slateJson（自动添加对应格式）
     
     -- 元数据
     created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    deleted_at TEXT,
     created_by TEXT NOT NULL,
+    reviewed_at TEXT,
+    reviewed_by TEXT,
     confidence REAL,
     status TEXT DEFAULT 'active',
     
     -- 行为元数据
     behavior_meta TEXT,  -- JSON object
     
-    -- Embedding
-    embedding BLOB,  -- 向量数据（或存储在独立向量表）
-    embedding_model TEXT,
-    
     -- 索引
     INDEX idx_event_signals (event_id),
     INDEX idx_signal_type (type),
-    INDEX idx_signal_time (timestamp),
+    INDEX idx_signal_created_at (created_at),
     INDEX idx_signal_status (status)
+  );
+  ```
+
+- [ ] 创建 `signal_embeddings` 表 schema（Derived Store，可重建）
+  ```sql
+  CREATE TABLE signal_embeddings (
+    signal_id TEXT PRIMARY KEY,
+    embedding_model TEXT NOT NULL,
+    embedding_vector BLOB NOT NULL,
+    updated_at TEXT NOT NULL,
+    INDEX idx_signal_embeddings_model (embedding_model)
   );
   ```
 - [ ] 实现 `SignalService` 基础 CRUD
@@ -2560,8 +2633,8 @@ EventLog.slateJson（自动添加对应格式）
   - 批量生成优化（100 个/batch）
   
 - [ ] Embedding 存储策略：
-  - 方案 A：存储在 `signals.embedding` BLOB 字段（简单）
-  - 方案 B：独立向量表 + Pinecone/Weaviate（生产级）
+  - 统一：独立向量表 `signal_embeddings`（Derived Store，可重建）
+  - 可选：在 `signal_embeddings` 上构建本地 ANN 索引（如 hnswlib）
   
 - [ ] 准备 embedding 输入文本：
   - Signal 内容 + 上下文（前后 50 字）+ 类型标签
@@ -2695,12 +2768,12 @@ const signalRepo: SignalRepository =
 
 | 方案 | 优势 | 劣势 | 成本 |
 |------|------|------|------|
-| **方案 A：存储在 signals.embedding BLOB** | • 实现简单<br>• 无依赖<br>• 数据统一管理 | • 查询慢（需全表扫描）<br>• 不支持 ANN 搜索<br>• 内存占用高 | 免费 |
+| **方案 A：独立向量表 + 暴力搜索** | • signals 与 embeddings 解耦<br>• 可重建 | • 查询慢（需扫描 embeddings） | 免费 |
 | **方案 B：独立向量表 + ANN 索引** | • 查询快（ANN 索引）<br>• 支持大规模向量（百万级） | • 实现复杂<br>• 需要额外维护 | 免费 |
 | **方案 C：云端向量数据库（Pinecone/Weaviate）** | • 性能极强<br>• 无需维护<br>• 支持分布式 | • 需要网络<br>• 隐私风险<br>• 按量付费 | $$$ |
 
 **4DNote 推荐**：
-- **Phase 5（初期）**：方案 A（BLOB 存储）+ 暴力搜索（Signal 数量 < 10,000）
+- **Phase 5（初期）**：方案 A（独立向量表）+ 暴力搜索（Signal 数量 < 10,000）
 - **Phase 5（后期）**：方案 B（本地 ANN 索引，如 hnswlib）
 - **未来（企业版）**：方案 C（Pinecone/Weaviate）
 
@@ -3083,27 +3156,29 @@ const updatedSlateJson = JSON.stringify(editor.children);
 await EventService.updateEventLog(eventId, { slateJson: updatedSlateJson });
 
 // 2️⃣ 用户右键选择"设为重点"
+const now = formatTimeForStorage(new Date());
 const signal = await SignalService.createSignal({
   eventId,
   type: 'highlight',
   content: selectedText,
   slateNodePath: [0, 2, 1],  // Slate 节点路径
   textRange: { start: 15, end: 33 },
-  timestamp: new Date().toISOString(),
+  createdAt: now,
+  updatedAt: now,
   createdBy: 'user',
   confidence: 1.0,
   status: 'confirmed',
 });
 
-// 3️⃣ 异步生成 embedding
+// 3️⃣ 异步生成 embedding（写入 signal_embeddings Derived Store）
 setTimeout(async () => {
-  const embedding = await embeddingService.generateEmbedding(signal);
-  await SignalService.updateSignal(signal.id, { embedding });
+  await SignalEmbeddingService.ensureEmbedding(signal.id);
 }, 1000);
 
 // 4️⃣ 用户继续选中相同文本并提问
 function onUserOpenAIChat(selectedText: string, question: string) {
   const conversationId = uuid();
+  const now = formatTimeForStorage(new Date());
   
   // 创建 USER_QUESTION Signal
   SignalService.createSignal({
@@ -3111,7 +3186,8 @@ function onUserOpenAIChat(selectedText: string, question: string) {
     type: 'user_question',
     content: selectedText,
     slateNodePath: [0, 2, 1],
-    timestamp: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
     createdBy: 'user',
     behaviorMeta: {
       questionText: question,  // "原型设计包括哪些内容？"
@@ -3122,8 +3198,8 @@ function onUserOpenAIChat(selectedText: string, question: string) {
 
 // 5️⃣ 一周后，AI 生成周报
 const weeklySignals = await SignalService.querySignals({
-  startDate: '2026-01-01',
-  endDate: '2026-01-07',
+  startTime: '2026-01-01 00:00:00',
+  endTime: '2026-01-07 23:59:59',
   status: 'confirmed',
 });
 
@@ -3167,24 +3243,27 @@ document.addEventListener('copy', async (e) => {
   if (existing) {
     // 更新复制次数
     await SignalService.updateSignal(existing.id, {
+      updatedAt: formatTimeForStorage(new Date()),
       behaviorMeta: {
         actionCount: (existing.behaviorMeta?.actionCount || 0) + 1,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: formatTimeForStorage(new Date()),
       },
       confidence: Math.min((existing.confidence || 0.5) + 0.1, 1.0),  // 提高置信度
     });
   } else {
     // 创建新 Signal
+    const now = formatTimeForStorage(new Date());
     await SignalService.createSignal({
       eventId,
       type: 'user_copy',
       content: copiedText,
       slateNodePath,
-      timestamp: new Date().toISOString(),
+      createdAt: now,
+      updatedAt: now,
       createdBy: 'user',
       behaviorMeta: {
         actionCount: 1,
-        lastActionTime: new Date().toISOString(),
+        lastActionTime: now,
       },
       confidence: 0.6,  // 初始置信度
     });
@@ -3194,7 +3273,8 @@ document.addEventListener('copy', async (e) => {
 // 月报生成时优先展示高频复制内容
 const topCopied = await SignalService.querySignals({
   type: 'user_copy',
-  dateRange: { start: '2026-01-01', end: '2026-01-31' },
+  startTime: '2026-01-01 00:00:00',
+  endTime: '2026-01-31 23:59:59',
 })
   .then(signals => signals
     .sort((a, b) => 
