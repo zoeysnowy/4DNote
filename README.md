@@ -39,6 +39,31 @@
 
 约定：跨目录引用优先使用 alias；同目录/同模块内部可使用 `./`。
 
+---
+
+## 🧱 Eventlog / Signal / Media（SSOT 必读）
+
+为了避免 PRD / 实现 / 文档之间出现“字段语义漂移”，本项目对 **Canonical（真相源）** 与 **Derived（派生存储）** 做了强约束：
+
+- **SSOT（Schema Authority）**：`docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md`
+  - 任何 Event/Signal/Media 的“字段定义、边界、约束”以此为准；其它文档应引用它，而不是复制一份 schema。
+- **Enhanced PRD（产品/行为定义）**：`docs/PRD/Eventlog_Enhanced_PRD_v2_CN.md`
+  - 允许描述用户价值、流程、MVP，但不应成为字段的权威来源。
+- **Signal 设计提案（需服从 SSOT）**：`docs/architecture/SIGNAL_ARCHITECTURE_PROPOSAL.md`
+- **Media 体系（术语与产物边界）**：`docs/architecture/Media_Architecture.md`
+
+关键不变量（写代码/写文档都以此为准）：
+
+- **Signal 是独立实体**：不要把 Signal 当作 Event 的内联字段集合；Event 不应新增“信号状态/计数/高亮”等冗余字段。
+- **证据文本归属**：`Signal.content` 是“可读证据”的 canonical 字段。
+- **behaviorMeta 边界**：只允许聚合/统计与（可选）有界摘要；禁止把高频原始流（鼠标/滚轮/键盘数组等）持久化进 signals。
+  - 如确有需要，细粒度明细应进入独立的 `session_details` 类存储，并具备 retention/裁剪策略。
+- **Embeddings 永远是派生存储**：不得把 embedding 向量写回 canonical 实体字段。
+  - 统一 writer/owner：`RAGIndexService`；建议表命名为 `*_embeddings`（按实体划分），并以 `EmbeddingModelVersion (v1/v2/...)` 抽象底层模型。
+- **MediaArtifact vs PRD Artifact**：
+  - `MediaArtifact`：媒体理解产物（转写、切片摘要、标签等），由 Media 域服务产出与维护。
+  - PRD 的 `Artifact/SessionBrief/DailyNarrative`：叙事/复盘产物，由 Review/Brief 域服务维护；可以消费 MediaArtifact，但不要混用术语或复用同一套 API/字段名。
+
 ## 🌟 核心特性
 
 ### 📊 四维时间管理架构
