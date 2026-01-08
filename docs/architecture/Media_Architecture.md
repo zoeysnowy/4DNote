@@ -846,7 +846,7 @@ graph TB
 | **C2** | 级联删除 | 删除 Event → 删除所有关联 Media | ✅ `DELETE FROM events WHERE id='evt_123'` |
 | **C3** | 引用完整性 | EventLog.slateJson 引用的 mediaId 必须存在 | ❌ `mediaId: 'media_xyz'` 但不存在 |
 | **C4** | 类型约束 | AttentionSession.recordingMediaId 必须指向 audio 类型 | ❌ `recordingMediaId` 指向 image |
-| **C5** | 唯一性约束 | 一个 Media 只能有一个 MediaArtifact | ❌ 同一个 `mediaId` 有多个 Artifact |
+| **C5** | 唯一性约束 | 一个 Media 只能有一个 MediaArtifact | ❌ 同一个 `mediaId` 有多个 MediaArtifact |
 | **C6** | 派生数据 | Media 不存储 OCR/转写结果（存在 MediaArtifact） | ❌ `media.ocrText = "..."` |
 | **C7** | 时间一致性 | `contentCreatedAt <= uploadedAt` | ❌ 上传时间早于创建时间 |
 | **C8** | 软删除 | 删除 Media 时设置 `deletedAt`，保留 30 天 | ✅ `UPDATE media SET deletedAt=NOW()` |
@@ -1143,7 +1143,7 @@ class MediaArtifactService {
   /**
    * 分析视频
    * @param media Media 对象
-   * @returns Artifact 部分数据
+    * @returns MediaArtifact 部分数据
    * @description
    * 1. 提取关键帧
    * 2. OCR 提取屏幕文字
@@ -1154,7 +1154,7 @@ class MediaArtifactService {
   /**
    * 分析文档
    * @param media Media 对象
-   * @returns Artifact 部分数据
+    * @returns MediaArtifact 部分数据
    * @description
    * 1. 提取文本（PDF/Word/Excel）
    * 2. 生成文档大纲
@@ -1209,7 +1209,7 @@ class AttentionSessionService {
    * 1. 停止 RECNote 录音
    * 2. 回填 Media 文件路径和时长
    * 3. 更新 AttentionSession.endTime
-  * 4. 触发 MediaArtifactService 生成 Artifact
+  * 4. 触发 MediaArtifactService 生成 MediaArtifact
    */
   async stopRecordingSession(sessionId: string): Promise<void>;
   
@@ -1705,8 +1705,8 @@ await MediaService.deleteMedia(mediaId);
 
 // ===== MediaArtifactService 使用示例 =====
 
-// 1. 生成 Media Artifact（手动触发）
-const artifact = await MediaArtifactService.generateMediaArtifact(mediaId);
+// 1. 生成 MediaArtifact（手动触发）
+const mediaArtifact = await MediaArtifactService.generateMediaArtifact(mediaId);
 
 // 2. 批量重新生成（模型升级后）
 const mediaIds = await db.media.where('type').equals('image').keys();
@@ -1735,8 +1735,8 @@ await MediaService.deleteMedia(mediaId);
 
 // ===== MediaArtifactService 使用示例 =====
 
-// 1. 手动触发 Artifact 生成
-const artifact = await MediaArtifactService.generateMediaArtifact(mediaId);
+// 1. 手动触发 MediaArtifact 生成
+const mediaArtifact = await MediaArtifactService.generateMediaArtifact(mediaId);
 
 // 2. 批量重新生成（模型升级后）
 await MediaArtifactService.regenerateArtifacts([
@@ -1932,11 +1932,11 @@ gantt
   - [ ] 结果列表（高亮显示）
   - [ ] 过滤器（类型、时间范围）
 
-- [ ] **任务 4.4**: 实现 Artifact 生成进度显示
+- [ ] **任务 4.4**: 实现 MediaArtifact 生成进度显示
   ```tsx
   <MediaCard>
     <img src={blobUrl} />
-    {artifact?.status === 'processing' && (
+    {mediaArtifact?.status === 'processing' && (
       <ProgressBar text="AI 分析中..." progress={60} />
     )}
   </MediaCard>
@@ -1978,28 +1978,28 @@ describe('MediaService', () => {
 });
 
 describe('MediaArtifactService', () => {
-  it('should generate artifact for image', async () => {
+  it('should generate mediaArtifact for image', async () => {
     const media = await createTestMedia('image');
-    const artifact = await MediaArtifactService.generateMediaArtifact(media.id);
+    const mediaArtifact = await MediaArtifactService.generateMediaArtifact(media.id);
     
-    expect(artifact.succinctContext).toBeDefined();
+    expect(mediaArtifact.succinctContext).toBeDefined();
     // embedding 不进入 MediaArtifact 核心表；由派生表/索引服务负责
-    expect(artifact.status).toBe('completed');
+    expect(mediaArtifact.status).toBe('completed');
   });
   
   it('should extract OCR text from image', async () => {
     const media = await createTestMedia('image', { hasText: true });
-    const artifact = await MediaArtifactService.generateMediaArtifact(media.id);
+    const mediaArtifact = await MediaArtifactService.generateMediaArtifact(media.id);
     
-    expect(artifact.fullText).toContain('Expected Text');
+    expect(mediaArtifact.fullText).toContain('Expected Text');
   });
   
   it('should handle Whisper transcription', async () => {
     const media = await createTestMedia('audio');
-    const artifact = await MediaArtifactService.generateMediaArtifact(media.id);
+    const mediaArtifact = await MediaArtifactService.generateMediaArtifact(media.id);
     
-    expect(artifact.fullText).toBeDefined();
-    expect(artifact.structuredData?.audioAnalysis?.speakers).toBeDefined();
+    expect(mediaArtifact.fullText).toBeDefined();
+    expect(mediaArtifact.structuredData?.audioAnalysis?.speakers).toBeDefined();
   });
 });
 
@@ -2038,13 +2038,13 @@ describe('Media System Integration', () => {
       source: 'drag_drop',
     });
     
-    // 2. 等待 Artifact 生成
+    // 2. 等待 MediaArtifact 生成
     await waitFor(() => {
-      const artifact = await db.media_artifacts
+      const mediaArtifact = await db.media_artifacts
         .where('mediaId')
         .equals(media.id)
         .first();
-      return artifact?.status === 'completed';
+      return mediaArtifact?.status === 'completed';
     }, { timeout: 30000 });
     
     // 3. 搜索
@@ -2073,12 +2073,12 @@ describe('Media System Integration', () => {
     const media = await db.media.get(mediaId);
     expect(media.audioMeta?.duration).toBeGreaterThan(3000);
     
-    // 6. 验证 Artifact 生成
-    const artifact = await db.media_artifacts
+    // 6. 验证 MediaArtifact 生成
+    const mediaArtifact = await db.media_artifacts
       .where('mediaId')
       .equals(mediaId)
       .first();
-    expect(artifact?.fullText).toBeDefined();
+    expect(mediaArtifact?.fullText).toBeDefined();
   });
 });
 ```
@@ -2169,10 +2169,10 @@ logger.info('media.upload', {
   duration: 1234, // 毫秒
 });
 
-// Artifact 生成日志
-logger.info('artifact.generated', {
+// MediaArtifact 生成日志
+logger.info('mediaArtifact.generated', {
   mediaId: 'media_abc123',
-  artifactId: 'mediaArtifact_xyz789',
+  mediaArtifactId: 'mediaArtifact_xyz789',
   method: 'vision_model',
   duration: 5678,
   succinctContextLength: 156,
@@ -2187,7 +2187,7 @@ logger.info('search.query', {
 });
 
 // 错误日志
-logger.error('artifact.generation.failed', {
+logger.error('mediaArtifact.generation.failed', {
   mediaId: 'media_abc123',
   error: 'API rate limit exceeded',
   retryCount: 2,
@@ -2601,7 +2601,7 @@ interface EventMediaIndex {
 
 **关键约束**：
 ```typescript
-// ✅ 正确：Media 触发 Signal 生成 Artifact
+// ✅ 正确：Media 触发 MediaArtifactService 生成 MediaArtifact
 await MediaService.uploadFile(eventId, file);
 // → MediaService 触发 MediaArtifactService.generateMediaArtifact(mediaId)
 // → MediaArtifactService 创建 MediaArtifact（独立表）
@@ -2668,7 +2668,7 @@ interface Media {
 | 关系 | 正向约束 | 反向约束 | 验证 |
 |------|---------|---------|------|
 | **Event → Media** | Event 删除 → 级联删除 Media | ❌ Media 删除不影响 Event | ✅ 单向依赖 |
-| **Media → MediaArtifact** | Media 删除 → 级联删除 Artifact | Artifact 必须有 Media | ✅ 1:1 关系 |
+| **Media → MediaArtifact** | Media 删除 → 级联删除 MediaArtifact | MediaArtifact 必须有 Media | ✅ 1:1 关系 |
 | **AttentionSession → Media** | Session 删除 → Media 保留（只清除引用） | Media 删除 → Session 保留（清除 recordingMediaId） | ✅ 松耦合 |
 | **EventLog → Media** | EventLog 引用 mediaId（软引用） | Media 删除 → EventLog 保留（显示占位符） | ✅ 松耦合 |
 

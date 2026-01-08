@@ -268,7 +268,7 @@ interface Signal {
     
     // 时间相关
     totalDwellTime?: number;        // 累计停留时长（毫秒）
-    dwellSessions?: Array<{         // 停留会话列表
+    dwellSessions?: Array<{         // ⚠️ 明细列表：仅 session_details（非 signals 持久化字段）
       startTime: string;
       endTime: string;
       duration: number;
@@ -287,7 +287,7 @@ interface Signal {
     deleteCount?: number;           // 删除次数
     deletedChars?: number;          // 累计删除字符数
     rewriteCount?: number;          // 重写次数
-    deletedContent?: string[];      // 被删除的文本片段（可选）
+    deletedContent?: string[];      // ⚠️ 明细列表：仅 session_details（非 signals 持久化字段）
     
     // 鼠标行为
     hoverDuration?: number;         // 悬停时长（毫秒）
@@ -304,7 +304,7 @@ interface Signal {
     
     // 综合指标
     revisitCount?: number;          // 重复访问次数
-    revisitTimes?: string[];        // 访问时间列表
+    revisitTimes?: string[];        // ⚠️ 明细列表：仅 session_details（非 signals 持久化字段）
     deepWorkScore?: number;         // 深度工作评分（0-100）
   };
   
