@@ -20,10 +20,8 @@
 - 外部同步映射（Outlook Calendar、Microsoft To Do）的字段表与方向规则（outbound/inbound）。
 
 ### 0.2 Out of Scope
-- Signal 模型的完整落地（作为独立实体另案）；本文只约束 Event 不用 `isXxx` 模拟 Signal。
-  - 现状：代码库当前没有业务意义的 `Signal`/`signals` 实体、Store 或 `SignalService`（仅在 PRD/设计稿中存在概念定义）。
-  - 因而：Signal **目前没有“管辖范围/Owner”**；任何“重点标注/疑问/行动项”等信号需求，不得通过给 `Event` 加 `isXxx` 或回写派生字段来偷跑。
-  - 未来：当 Signal 落地时，应作为独立实体/独立存储，由专门的 Owner（例如 `SignalService`）负责写入与一致性，`Event` 只允许通过引用或 derived index 使用。
+- Signal 的 UI/交互细节与实现落地细节（另案）；本文只定义 Signal 的**最小字段契约**与**跨模块边界**（见 §0.3/§0.4）。
+  - Signal 作为独立实体/独立存储，由专门的 Owner（`SignalService`）负责写入与一致性；`Event` 只允许通过引用或 derived index 使用。
 - 大规模 UI 改造；本文只定义“写入边界/读口径/映射表”。
 
 ---
@@ -55,8 +53,16 @@ interface Signal {
   eventId: string;               // 关联的 Event（外键，强制）
   type: SignalType;              // 信号类型
   content: string;               // 标记的文本内容
-  timestamp: string;             // 创建时间（本地格式 YYYY-MM-DD HH:mm:ss）
-  createdBy: 'user' | 'ai' | 'system';
+  createdAt: string;             // 创建时间（本地格式 YYYY-MM-DD HH:mm:ss）
+  updatedAt: string;             // 更新时间（本地格式 YYYY-MM-DD HH:mm:ss）
+  deletedAt?: string;            // 软删除（可选）
+
+  createdBy: 'user' | 'ai' | 'system'; // 信号来源（sender/issuer）
+  status: 'active' | 'confirmed' | 'rejected' | 'expired';
+
+  // AI 推断审核（仅当 createdBy='ai' 时可能出现）
+  reviewedAt?: string;
+  reviewedBy?: 'user' | 'system';
   
   // 定位信息（富文本中的位置）
   slateNodePath?: number[];      // Slate 节点路径 [0, 1, 2]
@@ -71,8 +77,6 @@ interface Signal {
     // ... 完整字段见 SIGNAL_ARCHITECTURE_PROPOSAL
   };
   
-  status: 'active' | 'confirmed' | 'rejected' | 'expired';
-  embedding?: number[];          // RAG检索向量（可选）
 }
 
 type SignalType = 
@@ -121,18 +125,24 @@ interface Event {
 
 ✅ **允许（可选 derived index）**：
 ```typescript
-// 允许只读的 derived 摘要字段（由 SignalService 维护）
-interface Event {
-  signalSummary?: {              // ✅ Derived/Index（可重建）
-    highlightCount: number;
-    questionCount: number;
-    lastSignalTime?: string;
-  };
+// ✅ 推荐：独立 derived store（避免 SignalService 越权写入 events）
+interface EventSignalIndex {
+  eventId: string;               // PK
+  highlightCount: number;
+  questionCount: number;
+  actionItemCount: number;
+  lastSignalTime?: string;
+
+  hasHighlight?: boolean;
+  hasQuestion?: boolean;
+  hasActionItem?: boolean;
+
+  updatedAt: string;             // 该索引的更新时间（本地格式）
 }
 ```
 - 由 `SignalService` 更新（触发器/批量任务）
 - **只读、可重建、不参与同步**
-- 用于快速过滤（如"显示有重点标记的事件"）
+- 用于快速过滤（如"显示有重点标记的事件"），无需 JOIN `signals`
 
 #### 2. Signal 通过 eventId 关联 Event
 
@@ -229,15 +239,599 @@ await SignalService.createSignal({
 - Signal 包含行为数据（复制次数、停留时长）、AI 推断等敏感信息
 - 格式（Format）足以满足外部系统的显示需求
 
-### 未来实施路径
+### 实施约束（与 Eventlog Enhanced PRD 对齐）
 
-| Phase | 任务 | 交付物 |
-|-------|------|--------|
-| Phase 1 | 实现 `SignalService` + `signals` 表 | IndexedDB schema + CRUD API |
-| Phase 2 | UI 层集成（显式标记） | 右键菜单"标记为重点"、Signal 展示 UI |
-| Phase 3 | 行为捕获 | 复制/提问/编辑/停留时长自动记录 |
-| Phase 4 | AI 自动推断 | 从 Format/行为 → 建议 Signal |
-| Phase 5 | RAG 检索集成 | Embedding 生成 + 向量查询 |
+**Phase 优先级**（严格按序实施）：
+1. **Phase 1（MVP-1/2）**: `signals` 表 + SignalService CRUD + 手动标记 UI
+2. **Phase 2（MVP-3）**: `event_signal_index` derived store（用于过滤）
+3. **Phase 3（MVP-4/5）**: 行为数据聚合（behaviorMeta）
+4. **Phase 4（Phase 2）**: AI 推断与 RAG embedding
+
+**数据量约束**：
+- behaviorMeta **只存聚合结果**（总时长/次数），**不存原始事件流**
+- 但**必须存储**：选中的文字内容、node summary as chunk、article summary（用于 AI 生成 Daily Review）
+
+**Summary 生成策略**（参考 roots/sprout 关系）：
+- **系统主动生成**：daily/weekly/monthly/quarterly/yearly summary（定时触发）
+- **用户手动触发**：AI chat summary（按需生成，不自动）
+
+---
+
+## 0.4 Signal 字段契约（完整 Schema）
+
+> **定位**：Signal 是独立的语义层实体，与 Event 通过 `eventId` 松耦合。本节是 Signal 的唯一 SSOT。
+
+### 0.4.1 Schema 定义（强制契约）
+
+```typescript
+/**
+ * Signal 实体（独立存储，本地专属）
+ * Owner: SignalService（唯一写入者）
+ * 存储: signals 表（IndexedDB/SQLite）
+ * 同步: ❌ 不同步到外部系统（Outlook/To Do）
+ */
+interface Signal {
+  // ===== 核心字段（必填） =====
+  id: string;                    // signal_${nanoid(21)}
+  eventId: string;               // 外键 → events.id（强制，级联删除）
+  type: SignalType;              // 信号类型（见下文）
+  content: string;               // 标记的文本内容（≤500 字符）
+  timestamp: string;             // 创建时间（本地格式 YYYY-MM-DD HH:mm:ss）
+  createdBy: 'user' | 'ai' | 'system';
+  status: SignalStatus;          // 状态（见下文）
+  
+  // ===== 定位信息（可选） =====
+  slateNodePath?: number[];      // Slate 节点路径 [0, 1, 2]
+  textRange?: {                  // 文本范围
+    start: number;
+    end: number;
+  };
+  
+  // ===== 行为元数据（聚合数据，不存原始流） =====
+  behaviorMeta?: {
+    // 统计聚合（只存总量，不存明细）
+    actionCount?: number;        // 操作次数（复制/编辑）
+    totalDwellTime?: number;     // 累计停留时长（毫秒）
+    
+    // AI 生成所需的文本内容（必须存储）
+    selectedText?: string;       // 选中的文字内容
+    nodeSummary?: string;        // Node summary as chunk
+    articleSummary?: string;     // Article summary
+    
+    // 上下文关联
+    relatedConversationId?: string; // 关联 AI 对话 ID
+    relatedSessionId?: string;      // 关联会话 ID（Focus Window）
+    
+    // AI 推断（可选）
+    extractedFrom?: 'format' | 'behavior' | 'ai_suggestion';
+  };
+  
+  // ===== AI 推断专用字段（createdBy='ai' 时有效） =====
+  confidence?: number;           // 置信度 (0-1)
+}
+
+/**
+ * Signal 类型枚举
+ */
+type SignalType = 
+  // ===== 语义标记（用户显式标注） =====
+  | 'highlight'      // ⭐ 重点
+  | 'question'       // ❓ 疑问/Open Loop
+  | 'action_item'    // ✅ 行动项
+  | 'objection'      // 🧊 反对/风险
+  | 'advantage'      // 👍 优势
+  | 'disadvantage'   // 👎 劣势
+  | 'brilliant'      // 💡 精彩洞察
+  | 'confirm'        // ✓ 确认/同意
+  
+  // ===== 用户操作行为（自动捕获） =====
+  | 'user_question'  // 用户提问 AI
+  | 'user_copy'      // 用户复制内容
+  | 'ai_insert'      // AI 插入内容
+  | 'user_edit'      // 用户编辑内容
+  | 'user_star'      // 用户星标段落
+  
+  // ===== 时间停留行为 =====
+  | 'dwell_time_event'     // Event 级别停留
+  | 'dwell_time_paragraph' // Paragraph 级别停留
+  | 'focus_time'           // Focus Window 内的重点时段
+  
+  // ===== 键盘/鼠标行为 =====
+  | 'typing_rhythm'   // 连续输入节奏
+  | 'delete_rewrite'  // 删除重写行为
+  | 'mouse_hover'     // 鼠标悬停
+  | 'scroll_behavior' // 滚动行为
+  
+  // ===== AI 推断（待用户确认） =====
+  | 'ai_highlight_suggested' // AI 建议的重点
+  | 'ai_question_detected';  // AI 检测的疑问
+
+/**
+ * Signal 状态
+ */
+type SignalStatus = 
+  | 'active'        // 活跃（默认）
+  | 'confirmed'     // 已确认（用户确认 AI 推断）
+  | 'rejected'      // 已拒绝（用户拒绝 AI 推断）
+  | 'expired';      // 已过期（时效性失效）
+```
+
+**状态转换规则**：
+
+| 触发条件 | 旧状态 | 新状态 | Owner | 说明 |
+|---------|--------|--------|-------|------|
+| Signal 创建 | - | `active` | SignalService | 默认初始状态 |
+| 用户确认 AI 推断 | `active` | `confirmed` | SignalService | 用户认可 AI 建议的 Signal |
+| 用户拒绝 AI 推断 | `active` | `rejected` | SignalService | 用户否决 AI 建议 |
+| **文本修改 >50%** | `active`/`confirmed` | **`expired`** | SlateChangeListener | 标记的文本内容大幅变化，Signal 失效 |
+| **节点删除** | `*` | **物理删除** | SlateChangeListener | Slate 节点被删除，级联删除 Signal |
+| **90 天后清理** | `expired` | **物理删除** | CronJob | 定期清理过期 Signal |
+| **AI 推断未确认** | `active` (AI 创建) | `expired` | CronJob | 90 天内未确认的 AI 推断 Signal |
+
+**文本变更检测策略**：
+- **轻微修改**（<10% 字符差异）：更新 `Signal.content`，保持 `status=active`
+- **中度修改**（10%-50%）：保持 `status=active`，记录 `updatedAt`
+- **大幅修改**（>50%）：标记 `status=expired`（保留历史记录）
+- **节点删除**：物理删除所有关联 Signal（级联删除）
+
+**Expire 后的处理**：
+- `expired` Signal 不参与 AI 查询/聚合
+- UI 可选择是否显示（默认隐藏）
+- 90 天后由定期任务物理删除（节省存储）
+
+### 0.4.2 存储架构
+
+| 项目 | 规范 |
+|------|------|
+| **表名** | `signals`（IndexedDB/SQLite） |
+| **Owner** | `SignalService`（CRUD + 去重 + 一致性） |
+| **索引** | `[eventId + type]`, `[timestamp]`, `[status]`, `[createdBy]` |
+| **外键** | `eventId` → `events.id`（逻辑外键，需级联删除） |
+| **同步** | ❌ 本地专属，不同步到 Outlook/To Do |
+| **备份** | ✅ 随 Event 数据一起导出（GDPR 合规） |
+| **体积** | ~1KB/条（不含 embedding） |
+
+### 0.4.2.1 SignalEmbedding（RAG 向量索引，Phase 4）
+
+> **设计原则**：embedding 属于典型 Derived/Cache（可重建、可丢弃），独立存储避免污染核心 signals 表。
+
+```typescript
+/**
+ * Signal RAG 向量索引（独立表）
+ * Owner: RAGIndexService（Phase 4 实施）
+ * 存储: signal_embeddings 表（IndexedDB/SQLite）
+ * 关系: 1 Signal → 0..N SignalEmbedding（支持多模型并存）
+ */
+interface SignalEmbedding {
+  // ===== 核心字段 =====
+  signalId: string;              // 主键，外键 → signals.id
+  modelVersion: EmbeddingModelVersion; // 模型版本（抽象标识，见下文）
+  
+  // ===== 向量数据 =====
+  embedding: Float32Array;       // 向量数据（1536/3072 维）
+  dimension: number;             // 向量维度（用于验证）
+  
+  // ===== 元数据 =====
+  generatedAt: string;           // 生成时间（YYYY-MM-DD HH:mm:ss）
+  status: 'valid' | 'stale' | 'pending';
+  computeTimeMs?: number;        // 计算耗时（性能监控）
+}
+
+/**
+ * Embedding 模型版本（抽象枚举，隐藏供应商细节）
+ */
+type EmbeddingModelVersion = 
+  | 'v1'        // 默认模型（内部映射到具体实现）
+  | 'v2'        // 升级模型
+  | 'v3'        // 未来扩展
+  | 'legacy';   // 兼容旧数据
+
+// 实际模型映射（实现层，不进入 SSOT 契约）
+// const MODEL_IMPL = {
+//   'v1': { provider: 'openai', model: 'text-embedding-3-small', dim: 1536 },
+//   'v2': { provider: 'openai', model: 'text-embedding-3-large', dim: 3072 },
+// };
+```
+
+**存储架构**：
+
+| 项目 | 规范 |
+|------|------|
+| **表名** | `signal_embeddings` |
+| **Owner** | `RAGIndexService`（Phase 4 实施） |
+| **索引** | `[signalId + modelVersion]` (PRIMARY), `[status]`, `[generatedAt]` |
+| **外键** | `signalId` → `signals.id`（级联删除） |
+| **同步** | ❌ 本地专属，完全可重建 |
+| **备份** | ⚠️ 可选备份（体积大，可丢弃重建） |
+| **体积** | ~6KB/条 (1536 维) 或 ~12KB/条 (3072 维) |
+
+**查询示例**：
+```typescript
+// 获取 Signal 的最新 embedding
+const embedding = await db.signal_embeddings
+  .where('[signalId+modelVersion]')
+  .equals([signalId, 'v1'])
+  .filter(e => e.status === 'valid')
+  .first();
+
+// 向量相似度搜索（需要遍历，Phase 4 可优化为 ANN 索引）
+const similar = await RAGIndexService.searchSimilar(queryEmbedding, {
+  modelVersion: 'v1',
+  topK: 10,
+  minSimilarity: 0.7
+});
+```
+
+**状态转换规则**：
+
+| 触发条件 | 旧状态 | 新状态 | Owner |
+|---------|--------|--------|-------|
+| embedding 生成任务创建 | - | `pending` | RAGIndexService |
+| embedding 计算完成 | `pending` | `valid` | RAGIndexService |
+| Signal.content 更新 | `valid` | `stale` | SlateChangeListener |
+| 模型版本升级 | `valid` (旧版本) | `stale` | Migration |
+| Signal 删除 | `*` | 物理删除 | SignalService (级联) |
+
+**与 Signal 的协作**：
+- Signal 创建后，异步触发 embedding 生成（不阻塞 UI）
+- Signal 文本更新时，标记对应 embedding 为 `stale`，异步重新生成
+- Signal 删除时，级联删除所有关联 embedding
+- RAG 查询时，仅使用 `status='valid'` 的 embedding
+
+**模型升级策略**：
+```typescript
+// 新旧模型并存（A/B 测试）
+await RAGIndexService.generateEmbeddings({
+  signalIds: ['signal_1', 'signal_2'],
+  modelVersion: 'v2',  // 生成新版本 embedding
+  keepOldVersion: true // 保留 v1 embedding
+});
+
+// 全量迁移
+await RAGIndexService.migrateAllEmbeddings({
+  fromVersion: 'v1',
+  toVersion: 'v2',
+  deleteOld: true // 完成后删除旧版本
+});
+```
+
+### 0.4.3 与 Event 的协作规则（强制约束）
+
+#### 规则 1：Event 不存储 Signal 细节
+
+❌ **禁止**：
+```typescript
+// 禁止在 Event 中添加 Signal 相关字段
+interface Event {
+  isHighlight?: boolean;        // ❌ 禁止
+  hasQuestions?: boolean;       // ❌ 禁止
+  signalCount?: number;         // ❌ 禁止
+  importanceLevel?: number;     // ❌ 禁止
+  
+  // 以下字段也禁止（避免用布尔字段模拟 Signal）
+  isImportant?: boolean;        // ❌ 用 Signal { type: 'highlight' }
+  hasDoubt?: boolean;           // ❌ 用 Signal { type: 'question' }
+  needsAction?: boolean;        // ❌ 用 Signal { type: 'action_item' }
+}
+```
+
+✅ **允许（Derived Index，可选实施）**：
+```typescript
+// ✅ 推荐：独立 Derived/Index store（event_signal_index）
+interface EventSignalIndex {
+  eventId: string;               // PK
+  highlightCount: number;
+  questionCount: number;
+  actionItemCount: number;
+  lastSignalTime?: string;       // 最后一个 Signal 的时间戳
+
+  // 可选：用于快速过滤
+  hasHighlight?: boolean;
+  hasQuestion?: boolean;
+  hasActionItem?: boolean;
+
+  updatedAt: string;             // 该索引的更新时间（本地格式）
+}
+```
+
+**维护策略**：
+- 由 `SignalService` 更新（触发器/批量任务）
+- **只读、可重建、不参与同步**
+- 用途：快速过滤"显示有重点标记的事件"（无需 JOIN signals 表）
+- 实施优先级：**Phase 2（MVP-3）**
+
+#### 规则 2：Signal 通过 eventId 关联 Event
+
+**查询 API**（SignalService 提供）：
+```typescript
+// 获取某个 Event 的所有 Signal
+const signals = await SignalService.getSignalsByEvent(eventId);
+
+// 按类型查询
+const highlights = await SignalService.getSignalsByEvent(eventId, { 
+  type: 'highlight' 
+});
+
+// 时间范围查询（Focus Window / Daily Review）
+const focusSignals = await SignalService.getSignalsInTimeRange(
+  startTime,   // "2025-01-23 14:00:00"
+  endTime,     // "2025-01-23 15:00:00"
+  { 
+    types: ['highlight', 'question', 'action_item'],
+    status: 'active'
+  }
+);
+
+// RAG 检索（Phase 4）
+const similarSignals = await SignalService.searchByEmbedding(
+  queryEmbedding,
+  { topK: 10, threshold: 0.75 }
+);
+```
+
+**级联删除**（强制）：
+```typescript
+// EventService.deleteEvent() 必须实现
+async deleteEvent(id: string): Promise<void> {
+  // 1. 软删除 Event
+  await this.updateEvent(id, { 
+    deletedAt: formatTimeForStorage(new Date()) 
+  });
+  
+  // 2. 级联删除关联 Signal（唯一耦合点）
+  await SignalService.deleteSignalsByEvent(id);
+  
+  // 3. 记录同步动作（如需要）
+  await this.recordSyncAction(id, 'delete');
+}
+```
+
+#### 规则 3：Format（格式）与 Signal（语义）分离
+
+**两套独立存储**：
+
+1. **Format 标记**（表现层，走 EventService）：
+   - 存储：`EventLog.slateJson`（Slate JSON）
+   - 同步：✅ 同步到 Outlook（通过 `EventLog.html`）
+   - 示例：`{"text": "重点", "bold": true, "backgroundColor": "#FFFF00"}`
+
+2. **Signal 标记**（语义层，走 SignalService）：
+   - 存储：`signals` 表（独立实体）
+   - 同步：❌ 本地专属
+   - 示例：`{ type: 'highlight', content: "重点", eventId: 'xxx' }`
+
+**创建时机**：
+
+```typescript
+// 方式 A：用户显式标记（主动创建）
+async function handleMarkAsHighlight(selectedText: string, slateNodePath: number[]) {
+  // 1. 可选：添加黄色背景（Format 层）
+  await EventService.updateEventLog(eventId, {
+    // ... 更新 slateJson
+  });
+  
+  // 2. 创建 Signal（语义层）
+  await SignalService.createSignal({
+    eventId,
+    type: 'highlight',
+    content: selectedText,
+    slateNodePath,
+    createdBy: 'user',
+    status: 'active',
+    behaviorMeta: {
+      selectedText,
+      extractedFrom: 'user'
+    }
+  });
+}
+
+// 方式 B：AI 批量识别（后台任务，Phase 4）
+async function scanAndSuggestSignals(eventId: string) {
+  const eventlog = await EventService.getEventLog(eventId);
+  
+  // 分析 slateJson 中的格式模式
+  const candidates = await AIService.analyzeFormats(eventlog.slateJson);
+  
+  // 创建为 ai_highlight_suggested 状态（待确认）
+  for (const candidate of candidates) {
+    await SignalService.createSignal({
+      ...candidate,
+      createdBy: 'ai',
+      status: 'active',  // 或 'ai_highlight_suggested'（等待确认）
+      confidence: candidate.confidence
+    });
+  }
+}
+```
+
+#### 规则 4：SignalService 是唯一写入者
+
+**允许的写入路径**：
+```typescript
+// ✅ 正确：所有 Signal 写入必须通过 SignalService
+await SignalService.createSignal({ ... });
+await SignalService.updateSignal(signalId, { status: 'confirmed' });
+await SignalService.deleteSignal(signalId);
+
+// ❌ 错误：其他服务不得直接写入 signals 表
+await storageManager.db.signals.add({ ... });  // 禁止
+```
+
+**读取路径**：
+- 任何模块都可以读取（通过 SignalService API）
+- EventService **只读** EventLog.slateJson（提取格式信息）
+- SignalService **不修改** EventLog.slateJson
+
+### 0.4.4 behaviorMeta 存储策略（决策确认）
+
+**存储内容**：
+
+✅ **必须存储**（用于 AI 生成 Daily Review）：
+```typescript
+behaviorMeta: {
+  // 文本内容（RAG 检索 + AI 总结）
+  selectedText: string;       // 用户选中的文字
+  nodeSummary: string;        // Node summary as chunk
+  articleSummary: string;     // Article summary
+  
+  // 聚合统计（不存原始事件流）
+  actionCount: number;        // 总操作次数
+  totalDwellTime: number;     // 总停留时长（毫秒）
+  
+  // 关联 ID
+  relatedConversationId?: string;
+  relatedSessionId?: string;
+}
+```
+
+❌ **禁止存储**（避免数据膨胀）：
+```typescript
+// 不存储原始事件流
+mouseMovements: MouseEvent[];  // ❌ 禁止
+scrollEvents: ScrollEvent[];   // ❌ 禁止
+keystrokes: KeyEvent[];        // ❌ 禁止
+```
+
+**例外**（Focus Window 时段，可选）：
+- 在 Focus Window 内（Signal ± 时间增量）
+- 可以选择性存储详细事件流到 `session_details` 表（独立于 signals）
+- 用于会议回顾的逐字记录
+
+### 0.4.5 Summary 生成策略（roots/sprout 关系）
+
+**系统主动生成**（定时触发）：
+```typescript
+// 分层 Summary（复利式回顾）
+type SummaryScope = 
+  | 'daily'      // 每日叙事（晚 9 点或手动）
+  | 'weekly'     // 每周综合（周日晚）
+  | 'monthly'    // 每月回顾（月末）
+  | 'quarterly'  // 季度总结（季末）
+  | 'yearly';    // 年度回顾（年末）
+
+// 自动触发规则
+const summarySchedule = {
+  daily: { cron: '0 21 * * *', autoGenerate: true },
+  weekly: { cron: '0 21 * * 0', autoGenerate: true },
+  monthly: { cron: '0 21 28-31 * *', autoGenerate: true },
+  quarterly: { cron: '0 21 28-31 3,6,9,12 *', autoGenerate: true },
+  yearly: { cron: '0 21 31 12 *', autoGenerate: true }
+};
+```
+
+**用户手动触发**（按需生成）：
+```typescript
+// AI chat summary（不自动生成）
+interface AIChatSummaryRequest {
+  eventId: string;
+  conversationId: string;
+  scope: 'conversation' | 'session';  // 单次对话 or 整个会话
+  includeContext: boolean;            // 是否包含上下文
+}
+
+// 用户点击 "生成 AI 对话总结" 按钮触发
+await SummaryService.generateAIChatSummary({
+  eventId: currentEvent.id,
+  conversationId: currentConversation.id,
+  scope: 'conversation',
+  includeContext: true
+});
+```
+
+**roots/sprout 关系示意**：
+```
+roots (自动生成的定期 Summary)
+  ├─ daily_2025-01-23
+  ├─ daily_2025-01-24
+  └─ weekly_2025-W04 (聚合上述 daily)
+      └─ monthly_2025-01 (聚合 weekly)
+          └─ quarterly_2025-Q1 (聚合 monthly)
+              └─ yearly_2025 (聚合 quarterly)
+
+sprout (用户手动触发的 AI chat summary)
+  ├─ ai_chat_conv_abc123
+  ├─ ai_chat_conv_def456
+  └─ (不参与自动聚合，独立存在)
+```
+
+### 0.4.6 SignalService 最小接口契约
+
+```typescript
+/**
+ * SignalService（唯一写入者）
+ * 职责：Signal CRUD + 去重 + 级联删除
+ * 约束：不得写入/维护 Event 派生字段；跨域派生必须落在独立 Derived Store（可重建）
+ */
+class SignalService {
+  // ===== CRUD =====
+  
+  static async createSignal(input: {
+    eventId: string;
+    type: SignalType;
+    content: string;
+    createdBy: 'user' | 'ai' | 'system';
+    slateNodePath?: number[];
+    textRange?: { start: number; end: number };
+    behaviorMeta?: Partial<Signal['behaviorMeta']>;
+    confidence?: number;
+    status?: SignalStatus;
+  }): Promise<Signal>;
+  
+  static async updateSignal(
+    signalId: string, 
+    updates: Partial<Signal>
+  ): Promise<void>;
+  
+  static async deleteSignal(signalId: string): Promise<void>;
+  
+  // ===== 查询 =====
+  
+  static async getSignalsByEvent(
+    eventId: string,
+    filters?: { 
+      type?: SignalType; 
+      status?: SignalStatus;
+      createdBy?: Signal['createdBy'];
+    }
+  ): Promise<Signal[]>;
+  
+  static async getSignalsInTimeRange(
+    startTime: string,  // "YYYY-MM-DD HH:mm:ss"
+    endTime: string,
+    filters?: { 
+      types?: SignalType[]; 
+      status?: SignalStatus;
+    }
+  ): Promise<Signal[]>;
+  
+  // ===== 级联删除（EventService 调用） =====
+  
+  static async deleteSignalsByEvent(eventId: string): Promise<void>;
+}
+
+/**
+ * EventSignalIndexService（Derived Store 唯一写入者）
+ * 职责：维护 event_signal_index（只读聚合视图/摘要，用于 UI 快速展示与排序）
+ * 注意：可重建；不得反向写回 Event/Signal
+ */
+class EventSignalIndexService {
+  static async rebuildForEvent(eventId: string): Promise<void>;
+  static async getIndexByEvent(eventId: string): Promise<EventSignalIndex | null>;
+}
+
+/**
+ * SignalEmbeddingService（Derived Store 唯一写入者）
+ * 职责：维护 signal_embeddings + 提供向量检索
+ * 注意：Embedding/RAG 属于派生索引能力，不属于 Signal 的权威字段
+ */
+class SignalEmbeddingService {
+  static async ensureEmbedding(signalId: string): Promise<void>;
+  static async searchByEmbedding(
+    queryEmbedding: number[],
+    options: { topK: number; threshold: number }
+  ): Promise<Array<{ signalId: string; similarity: number }>>;
+}
+```
 
 ---
 

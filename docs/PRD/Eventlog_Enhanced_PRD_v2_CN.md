@@ -1,9 +1,11 @@
-# Eventlog Enhanced — 产品需求文档 v2.0
+# Eventlog Enhanced — 产品需求文档 v3.0
 
 **产品名称：** 4DNote — 智能记忆与叙事系统  
-**版本：** v2.0（整合版）  
+**版本：** v3.0（AI-Native 增强版）  
 **状态：** 已批准开发  
-**最后更新：** 2025-01-23
+**最后更新：** 2026-01-08
+
+**架构对齐**：严格遵循 [EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md](../architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md) § 0.4 Signal 字段契约
 
 ---
 
@@ -24,6 +26,256 @@
 - **复利式回顾**：每日 → 每周 → 每月叙事通过证据积累相互构建
 - **本地优先的隐私保护**：音频和截图默认存储在设备上；云同步可选
 - **零焦虑归档**：所有交互自动捕获为潜在证据，可随时过滤/检索
+
+---
+
+## 0.A 核心架构决策（SSOT 对齐）
+
+> **本节目的**：明确 Eventlog Enhanced 的核心架构约束，确保所有功能实施遵循 SSOT。
+
+### 0.A.1 Format vs Signal 架构边界
+
+| 维度 | Format（格式） | Signal（信号） |
+|------|---------------|---------------|
+| **定位** | Presentation Layer（表现层） | Semantic/Domain Layer（语义层） |
+| **存储** | `EventLog.slateJson`（Slate JSON） | `signals` 表（独立存储） |
+| **示例** | `{ text: "重点", bold: true, backgroundColor: "#FFFF00" }` | `{ type: 'highlight', content: "重点", eventId: 'xxx' }` |
+| **查询** | 需解析完整 JSON | 直接 SQL/索引查询 |
+| **同步** | ✅ 同步到 Outlook（`EventLog.html` 包含样式） | ❌ 本地专属，不同步 |
+| **Owner** | UI 层 + EventService（序列化） | SignalService（CRUD + 一致性） |
+| **AI 可用性** | ❌ 需要解析 JSON，效率低 | ✅ 直接查询聚合，支持 RAG |
+
+**关键约束**：
+1. ❌ **Event 不得存储 Signal 细节**（`isHighlight`/`signalCount` 等禁止）
+2. ✅ **允许 Derived Store/Index**（可重建、独立表；不得写回 Event 字段）
+3. ❌ **SignalService 不得修改** `EventLog.slateJson`
+4. ✅ **EventService 可只读** `slateJson` 提取格式信息（用于 AI 辅助识别）
+
+### 0.A.2 Session 分层架构（Attention/Dwell vs User Event）
+
+**问题**：Eventlog Enhanced 里的“timer”主要指 **页面停留/专注窗口（dwell/attention）计时**，它是后台统计字段，用于重要性评分与日报/日记生成；不应被建模为可同步的 Behavior(Timeblock)，也不应创建额外 Event 以免污染树结构。
+
+**解决方案**：
+- **dwell/attention 计时只产生本地派生数据**（例如 `Signal.behaviorMeta.totalDwellTime`、`focus_time` 信号、或独立的 `event_attention_stats` Derived Store），不创建新的 Event。
+- Plan/Library 等视图只消费 `events`，可通过 **facets + view configuration** 做显示策略（但与 dwell/attention timer 无强绑定）。
+
+```typescript
+// Facets 是 Derived Index（可重建），不是 Event 字段
+type EventFacet = 'inbox' | 'archived' | 'system' | 'hidden';
+
+interface EventFacetsIndex {
+  getFacets(eventId: string): Set<EventFacet>;
+}
+
+interface EventViewConfig {
+  excludeFacets?: EventFacet[];
+}
+
+const planView: EventViewConfig = {
+  excludeFacets: ['system', 'hidden'],
+};
+
+EventTreeAPI.buildTree(events, {
+  view: planView,
+  facetsIndex,
+});
+```
+
+> 说明：这里的 **Attention** 指“用户注意力/停留（dwell）”的产品语义，不是 Transformer 模型里的 attention 机制。
+
+**dwell/attention Timer → AttentionSession 流程（本地、后台）**：
+```typescript
+// 1. Start tracking → 打开一次注意力会话（仅本地）
+const attentionSessionId = await AttentionTracker.start({
+  eventId: userEventId,
+  startTime: formatTimeForStorage(new Date()),
+});
+
+// 2. 写笔记 → 仍写入该 Event 的 EventLog
+const timestampNode = {
+  type: 'timestamp',
+  time: formatTimeForStorage(new Date()),
+  children: [/* paragraphs */]
+};
+
+// 3. Stop tracking → 关闭会话并触发 Session Brief（target = attentionSessionId）
+await AttentionTracker.stop(attentionSessionId, {
+  endTime: formatTimeForStorage(new Date()),
+});
+await SessionBriefService.generateForAttentionSession(attentionSessionId);
+```
+
+### 0.A.3 Artifact 架构（整理产物）
+
+**问题**：Session Brief / Daily Review 等 AI 生成内容存哪里？
+
+**解决方案**：引入独立的 `Artifact` 实体
+
+```typescript
+
+```typescript
+interface Artifact {
+  id: string;                     // artifact_${nanoid(21)}
+  scope: 'session' | 'event' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  
+  /**
+   * 目标对象 ID
+   * 格式: 取决于 scope
+   * 用途: 标识 Artifact 生成的目标对象
+   * 示例:
+   *   - scope='session' → targetId = attentionSessionId (如 "attentionSession_abc123")
+   *   - scope='daily' → targetId = 日期字符串 (如 "2026-01-08")
+   *   - scope='weekly' → targetId = 周标识 (如 "2026-W02")
+   *   - scope='monthly' → targetId = 月标识 (如 "2026-01")
+   *   - scope='event' → targetId = eventId (如 "event_xyz789")
+   */
+  targetId: string;
+  
+  type: 'brief' | 'rolling_summary' | 'action_items' | 'qa' | 'outline';
+  contentJson: {                  // 结构化内容（固定 schema）
+    tldr?: string[];
+    key_points?: Array<{ id: string; text: string; confidence: number }>;
+    decisions?: Array<{ id: string; text: string; confidence: number }>;
+    action_items?: Array<{ id: string; text: string; owner?: string; due?: string }>;
+    open_questions?: Array<{ id: string; text: string }>;
+  };
+  createdAt: string;              // YYYY-MM-DD HH:mm:ss
+  updatedAt: string;
+  modelInfo?: {                   // AI 模型信息
+    model: string;
+    version: string;
+    promptHash: string;
+  };
+  status: 'draft' | 'accepted' | 'edited';
+}
+```
+
+**Owner**：`ArtifactService`（待实施）
+
+**存储**：`artifacts` 表（IndexedDB）
+
+**与 EventNode 的关系**：
+- `Artifact.contentJson` 中的引用用 `claimId`（内部稳定 ID）
+- `EvidenceLink` 表关联到 `EventNode.nodeId` 或 `timestampId`
+
+### 0.A.4 EvidenceLink 架构（证据链）
+
+**用途**：每条 AI 生成的结论必须带证据，可点击回跳
+
+```typescript
+interface EvidenceLink {
+  id: string;
+  targetArtifactId: string;       // 关联的 Artifact
+  claimId: string;                // Artifact 内某条结论的 ID
+  sourceType: 'eventlog_timestamp' | 'transcript_chunk' | 'signal';
+  sourceRef: {
+    // timestamp: { eventId, timestampId }
+    // transcript: { attentionSessionId, chunkId, tStart, tEnd }
+    // signal: { signalId }
+    [key: string]: any;
+  };
+  quote?: string;                 // 引用的原文片段
+  confidence: number;             // 置信度 (0-1)
+}
+```
+
+**硬规则**：
+- ❌ **无证据不输出**（或降级为 "Needs review"）
+- ✅ 每条 claim 至少 1 条 EvidenceLink（推荐 1-3 条）
+
+### 0.A.5 Summary 生成策略（roots vs sprout）
+
+**系统主动生成**（roots）：
+```typescript
+type RootsSummary = 
+  | 'daily'      // 每日叙事（晚 9 点或手动）
+  | 'weekly'     // 每周综合（周日晚）
+  | 'monthly'    // 每月回顾（月末）
+  | 'quarterly'  // 季度总结（季末）
+  | 'yearly';    // 年度回顾（年末）
+
+// 自动触发 + 复利式聚合
+daily → weekly → monthly → quarterly → yearly
+```
+
+**用户手动触发**（sprout）：
+```typescript
+type SproutSummary = 
+  | 'ai_chat';    // AI 对话总结（按需生成，不参与自动聚合）
+
+// 独立存在，不参与 roots 的复利式聚合
+```
+
+### 0.A.6 SignalEmbedding 架构（RAG 向量索引）
+
+**问题**：embedding 作为 signals 表字段过重，且模型名写死
+
+**解决方案**：embedding 拆到独立表 + 模型版本抽象化
+
+```typescript
+interface SignalEmbedding {
+  signalId: string;              // 主键，外键 → signals.id
+  modelVersion: EmbeddingModelVersion; // 抽象版本（隐藏供应商细节）
+  embedding: Float32Array;       // 向量数据 (1536/3072 维)
+  dimension: number;
+  generatedAt: string;
+  status: 'valid' | 'stale' | 'pending';
+  computeTimeMs?: number;
+}
+
+type EmbeddingModelVersion = 
+  | 'v1'        // 内部代号（隐藏 OpenAI/Cohere/本地模型）
+  | 'v2' | 'v3' | 'legacy';
+
+// 实际映射（实现层，不写入 PRD）
+const MODEL_IMPL = {
+  'v1': { provider: 'openai', model: 'text-embedding-3-small', dim: 1536 },
+  'v2': { provider: 'openai', model: 'text-embedding-3-large', dim: 3072 },
+};
+```
+
+**Owner**：`RAGIndexService`（Phase 4 实施）
+
+**存储**：`signal_embeddings` 表（IndexedDB）
+
+**优势**：
+- ✅ 核心 signals 表轻量（~1KB/条 vs ~7KB/条）
+- ✅ 整表可删除重建，不影响 Signal 本身
+- ✅ 模型升级时可并存多版本（A/B 测试）
+- ✅ 供应商无关（可随时替换 OpenAI → 本地模型）
+
+**状态转换**：
+- Signal 创建 → 异步生成 embedding (`status=pending`)
+- Signal.content 更新 → 标记 `status=stale`，异步重建
+- Signal 删除 → 级联删除 embedding
+
+### 0.A.7 行为数据存储策略
+
+**behaviorMeta 存储内容**（SSOT 确认）：
+
+✅ **必须存储**（用于 AI 生成 Daily Review）：
+```typescript
+behaviorMeta: {
+  // 文本内容（RAG 检索 + AI 总结）
+  selectedText: string;       // 用户选中的文字
+  nodeSummary: string;        // Node summary as chunk
+  articleSummary: string;     // Article summary
+  
+  // 聚合统计（只存总量）
+  actionCount: number;
+  totalDwellTime: number;     // 毫秒
+}
+```
+
+❌ **禁止存储**（避免数据膨胀）：
+```typescript
+// 不存储原始事件流
+mouseMovements: MouseEvent[];  // ❌
+scrollEvents: ScrollEvent[];   // ❌
+```
+
+**例外**（Focus Window，可选）：
+- 会议重点时段可存储详细流到 `session_details` 表（独立于 signals）
 
 ---
 
@@ -106,25 +358,375 @@
 - `SESSION_STARTED`（会话开始）、`SESSION_ENDED`（会话结束）
 
 **Signal** (重点信号)  
-用户主动标记的重要性指示：
-- `HIGHLIGHT`（⭐ 重点）
-- `QUESTION`（❓ 疑问/Open Loop）
-- `ACTION_ITEM`（✅ 待办）
-- `OBJECTION`（🧊 反对/风险）
-- 其他：`CONFIRM`（确认）、`BOOKMARK`（书签）、`TOPIC_SHIFT`（话题切换）
+**独立的语义层实体**，与 Event 通过 `eventId` 松耦合。用户主动标记或系统捕获的重要性指示。
 
-**Session** (会话)  
-连续的记录时段（会议、学习会话、语音备忘），包含：
-- 音频流（可选，本地优先）
-- 实时转写
-- 用户手动笔记
-- 带时间戳的 Signal
+**架构定位**：
+- **存储**：独立 `signals` 表（IndexedDB/SQLite），**不存储在 Event 中**
+- **Owner**：`SignalService`（唯一写入者，CRUD + 去重 + 一致性）
+- **同步**：❌ 本地专属，不同步到 Outlook/To Do
+- **RAG**：✅ 支持 embedding 向量检索（Phase 4，独立表 `signal_embeddings`）
+- **备份**：✅ 随 Event 数据一起导出（GDPR 合规）
+
+详见：[EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md § 0.4](../architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md#04-signal-字段契约完整-schema)
+
+---
+
+### 2.2.1 Signal Schema 字段契约
+
+```typescript
+/**
+ * Signal 实体（独立存储，本地专属）
+ * Owner: SignalService（唯一写入者）
+ * 存储: signals 表（IndexedDB/SQLite）
+ * 同步: ❌ 不同步到外部系统（Outlook/To Do）
+ */
+interface Signal {
+  // ===== 核心字段（必填） =====
+  
+  /**
+   * Signal 唯一标识符
+   * 格式: signal_${nanoid(21)}
+   * 用途: 主键，关联 EvidenceLink、SignalEmbedding 等派生数据
+   */
+  id: string;
+  
+  /**
+   * 关联的 Event ID
+   * 格式: event_${nanoid(21)}
+   * 约束: 外键 → events.id（强制，级联删除）
+   * 用途: Signal 必须附着在某个 Event 上，Event 删除时级联删除所有关联 Signal
+   */
+  eventId: string;
+  
+  /**
+   * Signal 类型
+   * 枚举: SignalType（见下文）
+   * 用途: 区分语义标记、用户行为、时间停留、AI 推断等不同信号类型
+   */
+  type: SignalType;
+  
+  /**
+   * 标记的文本内容
+   * 约束: ≤500 字符
+   * 用途: 存储用户标记的文本片段或 Signal 的核心内容
+   * 示例: 
+   *   - type='highlight': "这是重点内容"
+   *   - type='user_copy': 用户复制的文本
+   *   - type='ai_highlight_suggested': AI 建议高亮的文本
+   */
+  content: string;
+  
+  /**
+   * 创建时间
+   * 格式: YYYY-MM-DD HH:mm:ss（本地时间）
+   * 用途: Signal 创建时间戳，用于时间排序、Focus Window 聚类
+   */
+  timestamp: string;
+  
+  /**
+   * 创建者类型
+   * 枚举: 'user' | 'ai' | 'system'
+   * 用途: 
+   *   - 'user': 用户手动标记（高亮、问题、待办）
+   *   - 'ai': AI 自动推断（需用户确认）
+   *   - 'system': 系统自动捕获（复制、编辑、停留时长）
+   */
+  createdBy: 'user' | 'ai' | 'system';
+  
+  /**
+   * Signal 状态
+   * 枚举: SignalStatus（见下文）
+   * 用途: 追踪 Signal 生命周期（活跃/确认/拒绝/过期）
+   * 转换: 见 SSOT § 0.4.1 状态转换规则
+   */
+  status: SignalStatus;
+  
+  // ===== 定位信息（可选） =====
+  
+  /**
+   * Slate 节点路径
+   * 格式: number[] - 如 [0, 1, 2] 表示第 1 个段落的第 2 个子节点的第 3 个子节点
+   * 用途: 定位 Signal 在 EventLog.slateJson 中的精确位置，支持跳转和高亮
+   */
+  slateNodePath?: number[];
+  
+  /**
+   * 文本范围
+   * 格式: { start: number; end: number }
+   * 用途: 标记 Signal 在段落文本中的起止位置（字符索引），用于精确高亮
+   */
+  textRange?: {
+    start: number;
+    end: number;
+  };
+  
+  // ===== 行为元数据（聚合数据，不存原始流） =====
+  
+  /**
+   * 行为统计与上下文元数据
+   * 约束: 只存聚合统计 + AI 所需文本，不存原始事件流
+   */
+  behaviorMeta?: {
+    // ----- 统计聚合（只存总量，不存明细） -----
+    
+    /**
+     * 操作次数
+     * 用途: 统计该 Signal 关联内容被操作的次数（复制、编辑、引用等）
+     * 示例: 某段文字被复制 3 次 → actionCount = 3
+     */
+    actionCount?: number;
+    
+    /**
+     * 累计停留时长
+     * 单位: 毫秒
+     * 用途: 记录用户在该 Signal 关联内容上的总停留时间
+     * 示例: 用户在某段落停留 5 分钟 → totalDwellTime = 300000
+     */
+    totalDwellTime?: number;
+    
+    // ----- AI 生成所需的文本内容（必须存储） -----
+    
+    /**
+     * 选中的文字内容
+     * 用途: 用户选中的文本片段，用于 Daily Review AI 生成时提供上下文
+     * 示例: 用户选中"重要发现"并标记为高亮 → selectedText = "重要发现"
+     */
+    selectedText?: string;
+    
+    /**
+     * Node summary as chunk
+     * 用途: 节点级别的摘要文本，作为 RAG 检索的 chunk
+     * 示例: 某个段落的 AI 摘要
+     */
+    nodeSummary?: string;
+    
+    /**
+     * Article summary
+     * 用途: 文章级别的摘要文本
+     * 示例: 整篇笔记的 AI 摘要
+     */
+    articleSummary?: string;
+    
+    // ----- 上下文关联 -----
+    
+    /**
+     * 关联的 AI 对话 ID
+     * 用途: 将 Signal 与某次 AI 对话关联（如用户在对话中提到的重点）
+     */
+    relatedConversationId?: string;
+    
+    /**
+     * 关联的注意力会话 ID
+     * 格式: attentionSession_${nanoid(21)}
+     * 用途: 将 Signal 与某次专注会话关联（Focus Window）
+     */
+    relatedAttentionSessionId?: string;
+    
+    /**
+     * Signal 来源
+     * 枚举: 'format' | 'behavior' | 'ai_suggestion'
+     * 用途: 
+     *   - 'format': 从 EventLog.slateJson 格式提取（如黄色高亮）
+     *   - 'behavior': 从用户行为统计提取（如高频复制）
+     *   - 'ai_suggestion': AI 推断建议
+     */
+    extractedFrom?: 'format' | 'behavior' | 'ai_suggestion';
+  };
+  
+  // ===== AI 推断专用字段（createdBy='ai' 时有效） =====
+  
+  /**
+   * 置信度
+   * 范围: 0-1
+   * 用途: AI 推断 Signal 时的置信度分数，用于过滤低质量推断
+   * 示例: confidence=0.85 表示 AI 85% 确信这是一个重点
+   */
+  confidence?: number;
+}
+
+/**
+ * Signal 类型枚举
+ */
+type SignalType = 
+  // ===== 语义标记（用户显式标注） =====
+  | 'highlight'      // ⭐ 重点
+  | 'question'       // ❓ 疑问/Open Loop
+  | 'action_item'    // ✅ 行动项
+  | 'objection'      // 🧊 反对/风险
+  | 'advantage'      // 👍 优势
+  | 'disadvantage'   // 👎 劣势
+  | 'brilliant'      // 💡 精彩洞察
+  | 'confirm'        // ✔️ 确认
+  
+  // ===== 用户操作行为（自动捕获） =====
+  | 'user_question'  // 用户提问 AI
+  | 'user_copy'      // 用户复制内容
+  | 'ai_insert'      // AI 插入内容
+  | 'user_edit'      // 用户编辑内容
+  | 'user_star'      // 用户星标段落
+  
+  // ===== 时间停留行为 =====
+  | 'dwell_time_event'      // Event 级别停留
+  | 'dwell_time_paragraph'  // Paragraph 级别停留
+  | 'focus_time'            // Focus Window 内的重点时段
+  
+  // ===== 键盘/鼠标行为（可选扩展） =====
+  | 'typing_rhythm'    // 打字节奏异常（长停顿 = 思考）
+  | 'delete_rewrite'   // 删除重写（修改次数多 = 重要）
+  | 'mouse_hover'      // 鼠标悬停
+  | 'scroll_behavior'  // 滚动行为
+  
+  // ===== AI 推断（待确认） =====
+  | 'ai_highlight_suggested'  // AI 建议的重点
+  | 'ai_question_detected';   // AI 检测的疑问
+
+/**
+ * Signal 状态枚举
+ */
+type SignalStatus = 
+  | 'active'        // 活跃（默认）
+  | 'confirmed'     // 已确认（用户确认 AI 推断）
+  | 'rejected'      // 已拒绝（用户拒绝 AI 推断）
+  | 'expired';      // 已过期（时效性失效）
+
+/**
+ * 状态转换规则
+ * 
+ * | 触发条件 | 旧状态 | 新状态 | Owner | 说明 |
+ * |---------|--------|--------|-------|------|
+ * | Signal 创建 | - | active | SignalService | 默认初始状态 |
+ * | 用户确认 AI 推断 | active | confirmed | SignalService | 用户认可 AI 建议 |
+ * | 用户拒绝 AI 推断 | active | rejected | SignalService | 用户否决 AI 建议 |
+ * | 文本修改 >50% | active/confirmed | expired | SlateChangeListener | 标记的文本大幅变化 |
+ * | 节点删除 | * | 物理删除 | SlateChangeListener | Slate 节点被删除 |
+ * | 90 天后清理 | expired | 物理删除 | CronJob | 定期清理过期 Signal |
+ * | AI 推断未确认 | active (AI 创建) | expired | CronJob | 90 天内未确认 |
+ */
+```
+```
+
+**AttentionSession** (注意力会话)
+**原始计时记录**，追踪用户在某个 Event 上的工作时段：
+
+**定位**：
+- **不是总结**：只记录开始/结束时间、来源类型
+- **不是 Event**：独立实体，不污染 Event 树结构
+- **不是 Behavior/Timeblock**：不是用户可见的计划/时间块，是后台统计数据
+
+**用途**：
+- 📊 统计用户在某个 Event 上的专注时长（dwell time）
+- 🎯 识别 Focus Window（高密度交互时段）
+- 🔗 作为时间窗口，聚合该时段内的 Signal（高亮/复制/编辑）
+- 📝 触发 AI 生成 Session Brief（Artifact）
+- 🎙️ 可选关联音频/转写/快照（本地存储）
+
+**数据流**：
+```
+AttentionSession (原始计时)
+    ↓ 时间窗 [14:00-15:00]
+    ↓ 聚合这段时间内的...
+Signal (用户标记) + EventLog (笔记内容) + 音频转写
+    ↓ 喂给 AI
+Session Brief (Artifact) ← AI 生成的总结文字
+```
+
+**AttentionSession 架构约束**：
+```typescript
+/**
+ * AttentionSession（注意力会话）
+ * Owner: AttentionTracker（本地后台服务）
+ * 存储: attention_sessions 表（IndexedDB，本地专属）
+ * 同步: ❌ 不同步到外部系统
+ * 
+ * 用途: 追踪用户在某个 Event 上的工作时段（类似 Toggl/RescueTime）
+ */
+interface AttentionSession {
+  // ===== 核心字段 =====
+  id: string;                     // attentionSession_${nanoid(21)}
+  eventId: string;                // 必须挂在一个 event 下
+  source: 'focus_window'          // Focus Window（高密度交互）
+        | 'background_dwell'      // 后台停留（标签页打开但未活跃）
+        | 'manual';               // 用户手动启动（如录音）
+  
+  // ===== 时间记录（原始数据） =====
+  startTime: string;              // YYYY-MM-DD HH:mm:ss（本地存储格式）
+  endTime?: string;               // YYYY-MM-DD HH:mm:ss（结束后填入）
+  
+  // ===== 会话增强（可选，用于会议场景） =====
+  meta?: {
+    // 参会人员（手动输入或 AI 识别）
+    attendees?: Array<{
+      id?: string;
+      name: string;
+      aliases?: string[];
+      role?: string;
+    }>;
+    
+    // 说话人映射（音频转写时使用）
+    speakerMap?: Record<string, {
+      attendeeName?: string;
+      confidence: number;
+    }>;
+  };
+}
+```
 
 **TakeawayCandidate** (候选收获)  
 从交互中提取的微观结论：
 - 从 AI 回答、摘要、会话关键时刻自动生成
 - 用户手动标记的高亮
-- 通过复利式回顾聚合：每日 → 每周 → 每月
+- 通过复利式回顾聚合：每日 → 每周 → 每月 → 季度 → 年度
+
+**Artifact** (整理产物)  
+AI 生成的结构化摘要/报告，支持**多粒度复利式聚合**：
+
+**核心概念**：
+- **通用容器**：所有 AI 生成的文字内容（Session Brief / Daily Narrative / Weekly Summary 等）
+- **多粒度**：从 30 分钟会话 → 日 → 周 → 月 → 年，层层聚合
+- **可追溯**：每条结论通过 EvidenceLink 回溯到原始 Signal/EventLog
+
+**scope 与 AI 输入映射**：
+
+| scope | targetId 示例 | AI 消费的输入 | 输出示例 |
+|-------|-------------|-------------|----------|
+| `session` | `attentionSession_abc` | 该 session 时间窗内的 Signal + EventLog + 音频转写 | "30分钟会议：确定了 GraphQL 方案" |
+| `daily` | `2026-01-09` | **当天所有 AttentionSession** + Signal + Event | "今天专注于 Q1 规划（3h），2次会议" |
+| `weekly` | `2026-W02` | **本周所有 daily Artifact**（复利式） | "本周主线：Q1 规划，3条重要决策" |
+| `monthly` | `2026-01` | **本月所有 weekly Artifact** | "1月主题：架构决策，完成 GraphQL 迁移" |
+| `yearly` | `2026` | **本年所有 monthly Artifact** | "2026年度回顾：产品重构，团队成长" |
+
+```typescript
+interface Artifact {
+  id: string;
+  scope: 'session' | 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+  targetId: string;              // 见上表（attentionSessionId / 日期字符串）
+  type: 'brief' | 'rolling_summary' | 'action_items';
+  contentJson: {
+    tldr?: string[];
+    key_points?: Array<{ id: string; text: string; confidence: number }>;
+    decisions?: Array<{ id: string; text: string }>;
+    action_items?: Array<{ id: string; text: string; owner?: string }>;
+    open_questions?: Array<{ id: string; text: string }>;
+  };
+  createdAt: string;
+  updatedAt: string;
+  status: 'draft' | 'accepted' | 'edited';
+}
+```
+
+**EvidenceLink** (证据链)  
+关联 Artifact 的结论到源数据：
+```typescript
+interface EvidenceLink {
+  id: string;
+  targetArtifactId: string;
+  claimId: string;               // Artifact 内结论的 ID
+  sourceType: 'eventlog_timestamp' | 'transcript_chunk' | 'signal';
+  sourceRef: any;                // 具体引用
+  quote?: string;
+  confidence: number;
+}
+```
 
 ### 2.3 回顾与合成输出
 
@@ -560,6 +1162,661 @@ function drawFocusWindows(
 ─────────────────────────────────
 - 简短介绍和团队更新（00:00-00:03）
 - 行政后勤讨论（00:25-00:30）
+```
+
+---
+
+## 3.A AI 生成管道（核心算法）
+
+> **本节目的**：定义重要性评分、Signal 聚合、叙事生成的核心算法，支撑 Daily Review / Session Brief 等功能。
+
+### 3.A.1 重要性评分算法（多维度模型）
+
+**设计目标**：从海量交互中识别真正重要的事件和内容，避免"噪声淹没信号"。
+
+**评分维度**：
+
+```mermaid
+graph LR
+    A[Event/Signal 重要性评分] --> B[显式交互<br/>Explicit]
+    A --> C[隐式注意力<br/>Implicit]
+    A --> D[AI 推断<br/>AI-Inferred]
+    A --> E[时间衰减<br/>Temporal]
+    A --> F[上下文权重<br/>Contextual]
+    
+    B --> B1[手动标记: +10~15]
+    B --> B2[AI 对话: +5~8]
+    B --> B3[编辑次数: +1~5]
+    
+    C --> C1[活跃停留: +3~10]
+    C --> C2[返回次数: +2~6]
+    C --> C3[滚动深度: +1~3]
+    
+    D --> D1[AI 建议 Signal: +4~8]
+    D --> D2[多卡摘要: +6]
+    D --> D3[Focus Window: +8]
+    
+    E --> E1[2 小时内: +3]
+    E --> E2[指数衰减<br/>halfLife=7天]
+    
+    F --> F1[相关事件簇: +2~5]
+    F --> F2[临近 Deadline: +5]
+    F --> F3[跨笔记引用: +2/次]
+```
+
+**完整评分算法实现**：
+
+```typescript
+/**
+ * 计算 Event 或 Signal 的重要性评分
+ */
+interface ImportanceInput {
+  eventId: string;
+  signals: Signal[];              // 关联的 Signal
+  behaviorData?: {
+    totalViewTime: number;        // 总停留时长（ms）
+    activeViewTime: number;       // 活跃停留时长
+    revisitCount: number;         // 返回次数
+    scrollDepth: number;          // 滚动深度 (0-1)
+    editCount: number;            // 编辑次数
+    aiChatRounds: number;         // AI 对话轮次
+  };
+  contextData?: {
+    relatedEventIds: string[];    // 相关事件簇
+    referenceCount: number;       // 被引用次数
+    isDeepWorkHour: boolean;      // 是否在深度工作时段
+    daysUntilDeadline?: number;   // 距离截止日期天数
+  };
+  timestamp: string;              // 事件/Signal 创建时间
+}
+
+interface WeightConfig {
+  // 显式交互权重
+  manualHighlight: number;        // 10
+  manualQuestion: number;         // 12
+  manualAction: number;           // 15
+  aiChatRound: number;            // 5
+  editCount: number;              // 每次 1，最多 5
+  
+  // 隐式注意力权重
+  activeMinute: number;           // 每分钟 3，最多 10
+  revisit: number;                // 每次 2，最多 6
+  scrollDepthFull: number;        // 滚动到底 3
+  
+  // AI 推断权重
+  aiSuggested: number;            // 4-8（按 confidence）
+  multiCardSummary: number;       // 6
+  focusWindowMoment: number;      // 8
+  
+  // 时间相关权重
+  recencyBoost: number;           // 2 小时内 +3
+  temporalDecayHalfLife: number;  // 7 天
+  
+  // 上下文权重
+  relatedCluster: number;         // 每个相关事件 +1
+  reference: number;              // 每次引用 +2
+  nearDeadline: number;           // <3 天 +5
+}
+
+const DEFAULT_WEIGHTS: WeightConfig = {
+  manualHighlight: 10,
+  manualQuestion: 12,
+  manualAction: 15,
+  aiChatRound: 5,
+  editCount: 1,
+  activeMinute: 3,
+  revisit: 2,
+  scrollDepthFull: 3,
+  aiSuggested: 6,
+  multiCardSummary: 6,
+  focusWindowMoment: 8,
+  recencyBoost: 3,
+  temporalDecayHalfLife: 7,
+  relatedCluster: 1,
+  reference: 2,
+  nearDeadline: 5
+};
+
+function calculateImportance(
+  input: ImportanceInput,
+  config: WeightConfig = DEFAULT_WEIGHTS
+): number {
+  let score = 0;
+  
+  // 1. 显式交互评分（Signal 驱动）
+  for (const signal of input.signals) {
+    switch (signal.type) {
+      case 'highlight':
+        score += config.manualHighlight;
+        break;
+      case 'question':
+        score += config.manualQuestion;
+        break;
+      case 'action_item':
+        score += config.manualAction;
+        break;
+      case 'user_question':
+        score += config.aiChatRound;
+        break;
+      // ... 其他 Signal 类型
+    }
+    
+    // AI 推断 Signal 的置信度加权
+    if (signal.createdBy === 'ai' && signal.confidence) {
+      score += config.aiSuggested * signal.confidence;
+    }
+  }
+  
+  // 2. 隐式注意力评分（行为数据驱动）
+  if (input.behaviorData) {
+    const { activeViewTime, revisitCount, scrollDepth, editCount, aiChatRounds } = input.behaviorData;
+    
+    // 活跃停留时长
+    const activeMinutes = Math.floor(activeViewTime / 60000);
+    score += Math.min(activeMinutes * config.activeMinute, 10);
+    
+    // 返回次数
+    score += Math.min(revisitCount * config.revisit, 6);
+    
+    // 滚动深度
+    if (scrollDepth > 0.8) {
+      score += config.scrollDepthFull;
+    }
+    
+    // 编辑次数
+    score += Math.min(editCount * config.editCount, 5);
+    
+    // AI 对话轮次
+    score += Math.min(aiChatRounds * config.aiChatRound, 20);
+  }
+  
+  // 3. 上下文权重
+  if (input.contextData) {
+    const { relatedEventIds, referenceCount, isDeepWorkHour, daysUntilDeadline } = input.contextData;
+    
+    // 相关事件簇
+    score += relatedEventIds.length * config.relatedCluster;
+    
+    // 引用次数
+    score += referenceCount * config.reference;
+    
+    // 深度工作时段额外加权
+    if (isDeepWorkHour) {
+      score *= 1.2;
+    }
+    
+    // 临近 Deadline
+    if (daysUntilDeadline !== undefined && daysUntilDeadline <= 3) {
+      score += config.nearDeadline;
+    }
+  }
+  
+  // 4. 时间衰减
+  const ageMs = Date.now() - new Date(input.timestamp).getTime();
+  const ageDays = ageMs / (1000 * 60 * 60 * 24);
+  
+  // 时效性提升（2 小时内）
+  if (ageMs < 2 * 60 * 60 * 1000) {
+    score += config.recencyBoost;
+  }
+  
+  // 指数衰减
+  score = temporalDecay(score, ageDays, config.temporalDecayHalfLife);
+  
+  return score;
+}
+
+/**
+ * 时间衰减函数（指数衰减）
+ */
+function temporalDecay(
+  score: number,
+  daysSinceInteraction: number,
+  halfLife: number = 7
+): number {
+  return score * Math.pow(0.5, daysSinceInteraction / halfLife);
+}
+```
+
+**分层过滤策略**：
+
+```typescript
+/**
+ * 多阶段过滤，平衡"全面"与"无噪声"
+ */
+function filterImportantEvents(
+  allEvents: Event[],
+  signals: Map<string, Signal[]>,
+  behaviorData: Map<string, any>,
+  options: {
+    minScore: number;          // 最低分数阈值（默认 5）
+    maxResults: number;        // 最多返回数量（默认 20）
+    maxPerCategory: number;    // 每类最多数量（默认 5）
+    diversityBoost: boolean;   // 是否启用多样性约束
+  }
+): Event[] {
+  // 第 1 层：基础过滤（去除明显的噪声）
+  const candidates = allEvents.filter(event => {
+    const eventSignals = signals.get(event.id) || [];
+    const behavior = behaviorData.get(event.id);
+    
+    const score = calculateImportance({
+      eventId: event.id,
+      signals: eventSignals,
+      behaviorData: behavior,
+      timestamp: event.createdAt
+    });
+    
+    return score >= options.minScore;
+  });
+  
+  // 第 2 层：评分排序
+  const scored = candidates.map(event => ({
+    event,
+    score: calculateImportance({
+      eventId: event.id,
+      signals: signals.get(event.id) || [],
+      behaviorData: behaviorData.get(event.id),
+      timestamp: event.createdAt
+    })
+  })).sort((a, b) => b.score - a.score);
+  
+  // 第 3 层：多样性约束（避免同一类型事件占满）
+  if (options.diversityBoost) {
+    const diversified = ensureDiversity(scored, {
+      maxPerCategory: options.maxPerCategory,
+      maxPerProject: options.maxPerCategory
+    });
+    return diversified.slice(0, options.maxResults).map(item => item.event);
+  }
+  
+  // 第 4 层：Top N 选择
+  return scored.slice(0, options.maxResults).map(item => item.event);
+}
+
+/**
+ * 确保多样性（避免同一类型事件过多）
+ */
+function ensureDiversity(
+  scoredEvents: Array<{ event: Event; score: number }>,
+  options: { maxPerCategory: number; maxPerProject: number }
+): Array<{ event: Event; score: number }> {
+  const result: Array<{ event: Event; score: number }> = [];
+  const categoryCount = new Map<string, number>();
+  const projectCount = new Map<string, number>();
+  
+  for (const item of scoredEvents) {
+    const category = item.event.tags?.[0] || 'uncategorized';
+    const project = item.event.parentId || 'standalone';
+    
+    const catCount = categoryCount.get(category) || 0;
+    const projCount = projectCount.get(project) || 0;
+    
+    if (catCount < options.maxPerCategory && projCount < options.maxPerProject) {
+      result.push(item);
+      categoryCount.set(category, catCount + 1);
+      projectCount.set(project, projCount + 1);
+    }
+    
+    if (result.length >= scoredEvents.length) break;
+  }
+  
+  return result;
+}
+```
+
+### 3.A.2 Session Brief 生成管道（Granola 风格）
+
+**设计目标**：每次 Session 结束自动生成结构化、可追溯、可执行的笔记与行动项。
+
+**核心原则**：
+1. **固定 schema**（UI 与输出对齐）
+2. **先抽取再综合**（extract → synthesize，提高可靠性）
+3. **证据链**（每条结论必须带 1-3 条 EvidenceLink）
+4. **上下文卫生**（只喂"本 session"）
+5. **可执行闭环**（行动项一键落地）
+
+**Pipeline 流程**：
+
+```typescript
+/**
+ * Phase 0: 构建 AttentionSession 上下文块（严格限定输入范围）
+ */
+interface ContextBlock {
+  kind: 'note' | 'transcript' | 'signal';
+  id: string;
+  ts: number;
+  tsEnd?: number;
+  text: string;
+  ref: {
+    eventId?: string;
+    timestampId?: string;
+    attentionSessionId?: string;
+    chunkId?: string;
+    signalId?: string;
+  };
+};
+
+async function buildSessionContextBlocks(attentionSessionId: string): Promise<ContextBlock[]> {
+  const blocks: ContextBlock[] = [];
+  
+  // 0. 读取会话元数据
+  const session = await AttentionSessionService.get(attentionSessionId);
+  const parentEvent = await EventService.getEvent(session.eventId);
+  const eventlog = parentEvent.eventlog;
+  
+  if (eventlog) {
+    const slateJson = JSON.parse(eventlog.slateJson);
+    for (const node of slateJson) {
+      // 1. Notes：筛选时间窗内的 timestamp nodes
+      if (node.type === 'timestamp') {
+        const t = parseTimeFromStorage(node.time);
+        const start = parseTimeFromStorage(session.startTime);
+        const end = parseTimeFromStorage(session.endTime || formatTimeForStorage(new Date()));
+        if (t < start || t > end) continue;
+        for (const para of node.children) {
+          blocks.push({
+            kind: 'note',
+            id: `note_${node.timestampId}_${para.id}`,
+            ts: t,
+            text: extractPlainText(para),
+            ref: {
+              eventId: parentEvent.id,
+              timestampId: node.timestampId
+            }
+          });
+        }
+      }
+    }
+  }
+  
+  // 2. Transcript：筛选 transcript.attentionSessionId === attentionSessionId（或时间窗内）
+  const transcripts = await TranscriptService.getByAttentionSession(attentionSessionId);
+  for (const chunk of transcripts) {
+    blocks.push({
+      kind: 'transcript',
+      id: `transcript_${chunk.id}`,
+      ts: chunk.tsStart,
+      tsEnd: chunk.tsEnd,
+      text: chunk.text,
+      ref: {
+        attentionSessionId,
+        chunkId: chunk.id
+      }
+    });
+  }
+  
+  // 3. Signals：时间窗内聚合
+  const signals = await SignalService.getSignalsInTimeRange(
+    session.startTime,
+    session.endTime || formatTimeForStorage(new Date()),
+    { types: ['highlight', 'question', 'action_item'] }
+  );
+  for (const signal of signals) {
+    blocks.push({
+      kind: 'signal',
+      id: signal.id,
+      ts: parseTimeFromStorage(signal.createdAt),
+      text: signal.content,
+      ref: {
+        signalId: signal.id
+      }
+    });
+  }
+  
+  return blocks.sort((a, b) => a.ts - b.ts);
+}
+
+/**
+ * Phase 1: Extract（高召回抽取候选）
+ */
+interface ExtractedClaim {
+  type: 'action' | 'decision' | 'question' | 'key_point';
+  text: string;
+  sourceRefs: string[];  // ContextBlock.id 列表
+  confidence: number;
+}
+
+async function extractClaims(
+  contextBlocks: ContextBlock[]
+): Promise<ExtractedClaim[]> {
+  // 调用 AI 模型（prompt 示例见下文）
+  const prompt = `
+你是会议纪要助手。请从以下上下文中抽取所有可能的行动项、决定、疑问和关键点。
+要求：
+1. 高召回率（宁可多抽取，后续去重）
+2. 每条必须带 sourceRefs（引用原文 ID）
+3. 给出置信度 (0-1)
+
+上下文：
+${contextBlocks.map(b => `[${b.id}] ${b.text}`).join('\n')}
+
+输出 JSON 格式：
+[
+  {
+    "type": "action",
+    "text": "张三负责周五前完成 API 文档",
+    "sourceRefs": ["note_xxx_yyy", "transcript_zzz"],
+    "confidence": 0.85
+  },
+  ...
+]
+  `.trim();
+  
+  const response = await AIService.call(prompt);
+  return JSON.parse(response);
+}
+
+/**
+ * Phase 2: Synthesize（高精度去重归并）
+ */
+interface SynthesizedClaim {
+  id: string;              // 稳定 ID（kp_xxx / dc_xxx / ai_xxx / q_xxx）
+  type: 'key_point' | 'decision' | 'action_item' | 'open_question';
+  text: string;
+  owner?: string;          // action_item 专用
+  due?: string;
+  priority?: 'high' | 'medium' | 'low';
+  confidence: number;
+  evidenceRefs: string[];  // 最终选择的 1-3 个 sourceRefs
+}
+
+async function synthesizeClaims(
+  extracted: ExtractedClaim[]
+): Promise<SynthesizedClaim[]> {
+  const prompt = `
+你是会议纪要助手（综合阶段）。请对以下候选进行去重、归并、补齐字段。
+
+要求：
+1. 去重：合并语义相似的条目
+2. 补齐：尽量填写 owner/due/priority（从上下文推断）
+3. 证据：每条选择 1-3 个最强的 sourceRefs
+4. 生成稳定 ID（kp_001, dc_001, ai_001, q_001）
+
+候选：
+${JSON.stringify(extracted, null, 2)}
+
+输出 JSON 格式：
+[
+  {
+    "id": "ai_001",
+    "type": "action_item",
+    "text": "张三负责周五前完成 API 文档",
+    "owner": "张三",
+    "due": "2026-01-10",
+    "priority": "high",
+    "confidence": 0.9,
+    "evidenceRefs": ["note_xxx", "transcript_yyy"]
+  },
+  ...
+]
+  `.trim();
+  
+  const response = await AIService.call(prompt);
+  return JSON.parse(response);
+}
+
+/**
+ * Phase 3: 生成最终 Session Brief
+ */
+async function generateSessionBrief(attentionSessionId: string): Promise<Artifact> {
+  // 1. 构建上下文
+  const contextBlocks = await buildSessionContextBlocks(attentionSessionId);
+  
+  // 2. Extract
+  const extracted = await extractClaims(contextBlocks);
+  
+  // 3. Synthesize
+  const synthesized = await synthesizeClaims(extracted);
+  
+  // 4. 按类型分组
+  const keyPoints = synthesized.filter(c => c.type === 'key_point');
+  const decisions = synthesized.filter(c => c.type === 'decision');
+  const actionItems = synthesized.filter(c => c.type === 'action_item');
+  const openQuestions = synthesized.filter(c => c.type === 'open_question');
+  
+  // 5. 生成 TL;DR（可选，单独调用 AI）
+  const tldr = await generateTLDR(contextBlocks);
+  
+  // 6. 创建 Artifact
+  const artifact = await ArtifactService.create({
+    scope: 'session',
+    targetId: attentionSessionId,
+    type: 'brief',
+    contentJson: {
+      tldr,
+      key_points: keyPoints,
+      decisions,
+      action_items: actionItems,
+      open_questions: openQuestions
+    },
+    status: 'draft'
+  });
+  
+  // 7. 创建 EvidenceLink
+  for (const claim of synthesized) {
+    for (const ref of claim.evidenceRefs) {
+      const block = contextBlocks.find(b => b.id === ref);
+      if (block) {
+        await EvidenceLinkService.create({
+          targetArtifactId: artifact.id,
+          claimId: claim.id,
+          sourceType: block.kind === 'note' ? 'eventlog_timestamp' : 
+                     block.kind === 'transcript' ? 'transcript_chunk' : 'signal',
+          sourceRef: block.ref,
+          quote: block.text.substring(0, 200),
+          confidence: claim.confidence
+        });
+      }
+    }
+  }
+  
+  return artifact;
+}
+```
+
+### 3.A.3 Daily Narrative 生成管道
+
+**设计目标**：生成"像用户自己写的日记"，而非冰冷的数据报告。
+
+**核心原则**：
+1. **第一人称叙事**（"我"而非"你"）
+2. **情感表达**（适当加入主观感受）
+3. **知识沉淀**（不只记录行为，还记录收获）
+4. **自然流畅**（避免机械列举数据）
+5. **可编辑性**（用户可修改 AI 生成内容）
+
+**生成流程**：
+
+```typescript
+async function generateDailyNarrative(date: string): Promise<Artifact> {
+  // 1. 收集当天所有证据
+  const evidence = await collectDailyEvidence(date);
+  
+  // 2. 筛选重要事件（基于评分算法）
+  const importantEvents = filterImportantEvents(
+    evidence.events,
+    evidence.signals,
+    evidence.behaviorData,
+    {
+      minScore: 5,
+      maxResults: 20,
+      maxPerCategory: 5,
+      diversityBoost: true
+    }
+  );
+  
+  // 3. 提取用户高亮内容
+  const highlights = await extractUserHighlights(importantEvents);
+  
+  // 4. 生成叙事摘要（调用 AI）
+  const narrative = await generateNarrativeText({
+    date,
+    events: importantEvents,
+    highlights,
+    sessions: evidence.sessions,
+    takeaways: evidence.takeaways
+  });
+  
+  // 5. 创建 Artifact
+  return ArtifactService.create({
+    scope: 'daily',
+    targetId: date,
+    type: 'rolling_summary',
+    contentJson: {
+      tldr: narrative.summary,
+      key_points: narrative.learnings,
+      open_questions: narrative.openLoops,
+      action_items: narrative.actionItems
+    },
+    status: 'draft'
+  });
+}
+
+/**
+ * Prompt 模板（第一人称 + 情感表达）
+ */
+function generateNarrativePrompt(data: any): string {
+  return `
+你是用户的个人日记助手。请根据以下结构化数据，生成一篇**第一人称、自然流畅**的日记。
+
+## 要求：
+1. **使用第一人称**（"我"而非"你"）
+2. **自然的语言**（不要像数据报告，要像人在写日记）
+3. **融入学习收获**（用户高亮的内容、从 AI 对话中学到的知识）
+4. **适当的情感表达**（"感觉有点复杂"、"进展顺利"等）
+5. **有反思**（"看来需要调整计划"、"可以借鉴这个思路"）
+
+## 数据：
+### 主线任务：
+- 项目：${data.mainProject?.title}
+- 投入时间：${formatTime(data.mainProject?.activeTime)}
+- 主要行动：${data.mainProject?.actions.join('、')}
+
+### 学习收获（用户高亮的内容）：
+${data.learnings.map(l => `- ${l.text}`).join('\n')}
+
+### 会议记录：
+${data.meetings.map(m => `
+- ${m.title}（${formatTime(m.timestamp)}）
+- 摘要：${m.summary}
+- 关键收获：${m.keyTakeaways.join('；')}
+`).join('\n')}
+
+---
+
+请生成一篇 200-300 字的日记，包含：
+1. 开头段落：今天主要做了什么 + 学到了什么
+2. 后续段落：会议/协作事项（如果有）
+3. 结尾部分：待办事项 + 明天重点
+
+注意：
+- 不要说"今天你..."，要说"今天我..."
+- 不要机械列举数据（如"与 AI 进行了 12 轮对话"），而是说"深入研究了..."
+- 适当加入主观感受（如"感觉流程比想象中复杂"）
+- 如果用户高亮了某些内容，要自然地融入正文（而非单独列举）
+  `.trim();
+}
 ```
 
 ---
@@ -1163,57 +2420,143 @@ class SnapshotManager {
 
 ## 7. 实施路线图
 
-### MVP-1：证据基础（第 1-3 周）
+> **架构对齐**：所有 Phase 必须遵循 [EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md § 0.4](../architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md#04-signal-字段契约完整-schema) 的 Signal 契约。
 
-**目标**：建立可靠的证据捕获，无回顾生成
+### 前置依赖（必须先完成）
 
-**交付物**
-- [ ] EventLog 表 + 核心事件的日志基础设施（`ASK_AI`、`CARD_EXPANDED`、`HIGHLIGHT_ADDED`）
-- [ ] Signals 表 + 手动标记 UI（⭐/❓/✅ 按钮）
-- [ ] 右侧 Holographic Map：带 Signal 装饰的树形大纲自动生成
-- [ ] 左侧 Canvas Minimap：基础版（段落块渲染 + 当前视窗 + 点击跳转）
-- [ ] 基本过滤（按 Signal 类型，仅 Holographic Map）
+**PD-1：SSOT 更新**
+- [ ] 明确 dwell/attention timer 为本地派生数据（不纳入 Behavior(Timeblock)；不新增 Event 的“分类/可见性”类字段）
+- [ ] 定义 facets + view configuration（作为 Derived Index，不写回 Event）
+- [ ] 明确 Signal 字段契约（已完成 § 0.4）
+- [ ] 定义 Artifact / EvidenceLink 实体规范
 
-**成功标准**
-- 所有用户交互以 <50ms 延迟记录
-- 全息目录在笔记编辑后 500ms 内更新
-- Canvas Minimap 滚动更新维持 60fps
-- 手动 Signal 正确持久化并同时显示在大纲和 Minimap 中
+**PD-2：数据库 Schema**
+- [ ] 创建 `signals` 表（IndexedDB schema + 索引）
+- [ ] 创建 `artifacts` 表
+- [ ] 创建 `evidence_links` 表
+- [ ] 创建 `session_details` 表（可选，Focus Window 专用）
 
-### MVP-2：收获结算（第 4-6 周）
+**PD-3：服务层实施**
+- [ ] 实现 `SignalService`（CRUD + 去重 + 级联删除）
+- [ ] 实现 `ArtifactService`（版本管理 + 增量更新）
+- [ ] 实现 `EvidenceLinkService`（证据链管理）
 
-**目标**：从交互中自动生成 TakeawayCandidate
+### MVP-1：Signal 基础设施（Phase 1，第 1-3 周）
 
-**交付物**
-- [ ] TakeawayCandidate schema + 存储
-- [ ] 自动生成逻辑：
-  - AI Answer → 1 个 takeaway
-  - 多卡摘要 → 3-5 个 takeaway
-- [ ] 手动标记 UI（段落上的星标图标）
-- [ ] 权重计算（仅手动 + 系统信号）
+**目标**：建立 Signal 独立存储 + 手动标记 UI
 
-**成功标准**
-- 所有符合条件的事件自动创建 Takeaway
-- 手动标记添加最高权重候选
-- 可查询给定日期的前 N 个 takeaway
-
-### MVP-3：每日叙事（第 7-10 周）
-
-**目标**：首个端到端回顾生成
+**前置条件**：PD-1, PD-2, PD-3 完成
 
 **交付物**
-- [ ] 每日叙事生成服务
-- [ ] 查看/重新生成叙事的 UI 面板
-- [ ] 证据链接（可点击 `[📎 见：...]` 引用）
-- [ ] 章节：叙事摘要、核心收获、开放循环、行动项
+- [ ] `signals` 表实施（IndexedDB + 索引：`[eventId+type]`, `[createdAt]`, `[status]`）
+- [ ] `SignalService` 实现：
+  - [ ] `createSignal()` - 去重 + 生成 signalId
+  - [ ] `getSignalsByEvent()` - 按 eventId 查询
+  - [ ] `deleteSignalsByEvent()` - 级联删除
+  - [ ] （可选）`EventSignalIndexService.rebuild()` - 写入 `event_signal_index`（Derived Store，可重建）
+- [ ] EventService 集成：
+  - [ ] `deleteEvent()` 调用 `SignalService.deleteSignalsByEvent()`
+- [ ] UI 层实现：
+  - [ ] 右键菜单"标记为重点/疑问/行动项"
+  - [ ] Signal 图标显示（⭐/❓/✅）
+- [ ] Holographic Map 集成：
+  - [ ] 树形大纲显示 Signal 装饰
+  - [ ] 按 Signal 类型过滤
+- [ ] Canvas Minimap 集成：
+  - [ ] Signal 位置可视化（圆点 + 颜色）
+  - [ ] 点击跳转
 
 **成功标准**
-- 从一天的证据生成连贯的 1 页摘要
-- 所有 takeaway 可点击到源卡片
-- 用户可在编辑笔记后重新生成
-- 典型一天（50-100 事件）生成时间 <30 秒
+- 所有 Signal 写入必须通过 `SignalService`（禁止直接写 signals 表）
+- 手动标记的 Signal 正确持久化并在 UI 显示
+- Event 删除时自动级联删除关联 Signal
+- Holographic Map 和 Minimap 实时更新（防抖 500ms）
 
-### MVP-4：音频同步（第 11-13 周）
+### MVP-2：行为数据捕获（Phase 2，第 4-6 周）
+
+**目标**：自动捕获用户行为 + 生成行为 Signal
+
+**交付物**
+- [ ] `BehaviorTracker` 实现：
+  - [ ] 停留时长追踪（活跃时间计算，排除挂机）
+  - [ ] 复制/编辑/提问行为捕获
+  - [ ] 批量聚合到 `Signal.behaviorMeta`
+- [ ] 自动 Signal 生成：
+  - [ ] `user_copy` - 复制内容时创建
+  - [ ] `user_edit` - 编辑超过 N 次时创建
+  - [ ] `user_question` - 提问 AI 时创建
+- [ ] `behaviorMeta` 存储：
+  - [ ] `selectedText` - 选中的文字
+  - [ ] `nodeSummary` - Node summary as chunk
+  - [ ] `articleSummary` - Article summary
+  - [ ] `actionCount` / `totalDwellTime` - 聚合统计
+
+**成功标准**
+- 用户复制/编辑/提问时自动创建对应 Signal
+- `behaviorMeta` 只存聚合数据 + 必需文本（不存原始事件流）
+- 活跃时间计算准确（5 分钟无交互停止计时）
+
+### MVP-3：Session Brief 生成（Phase 1 核心功能，第 7-10 周）
+
+**目标**：Session 结束时自动生成 Granola 风格 Brief
+
+**前置条件**：MVP-1 完成，AttentionSession（本地）可用
+
+**交付物**
+ - [ ] dwell/attention → AttentionSession 流程：
+  - [ ] Start tracking 创建 attentionSession（本地，绑定 eventId）
+  - [ ] Stop tracking 触发 Session Brief 生成
+  - [ ] SessionBrief 通过时间窗聚合 EventLog/Signals/Transcript（不依赖 Behavior/Timeblock 关联字段）
+- [ ] `SessionBriefService` 实现：
+  - [ ] `buildSessionContextBlocks()` - 构建上下文
+  - [ ] `extractClaims()` - AI 抽取候选
+  - [ ] `synthesizeClaims()` - 去重归并
+  - [ ] `generateSessionBrief()` - 生成最终 Artifact
+- [ ] Artifact 存储：
+  - [ ] 固定 schema：`tldr / key_points / decisions / action_items / open_questions`
+  - [ ] `status='draft'` 初始状态
+- [ ] EvidenceLink 创建：
+  - [ ] 每条 claim 关联 1-3 个 sourceRef
+  - [ ] 支持回跳到 timestampNode / transcript chunk / signal
+- [ ] UI 实现：
+  - [ ] Session Brief 展示面板
+  - [ ] 证据链接可点击回跳
+  - [ ] 编辑 Brief（status 变为 'edited'）
+
+**成功标准**
+- Session 结束后自动生成 Brief（<30 秒）
+- Brief 包含结构化内容（固定 schema）
+- 每条结论至少 1 条 EvidenceLink
+- 用户可点击证据回跳到原文
+
+### MVP-4：Daily Narrative 生成（Phase 1 核心功能，第 11-14 周）
+
+**目标**：每日自动生成第一人称叙事日记
+
+**前置条件**：MVP-2, MVP-3 完成
+
+**交付物**
+- [ ] 重要性评分算法实施（见 § 3.A.1）：
+  - [ ] `calculateImportance()` - 多维度评分
+  - [ ] `filterImportantEvents()` - 分层过滤
+  - [ ] `ensureDiversity()` - 多样性约束
+- [ ] `DailyNarrativeService` 实现：
+  - [ ] `collectDailyEvidence()` - 收集当天证据
+  - [ ] `generateNarrativeText()` - 调用 AI 生成叙事
+  - [ ] `createDailyArtifact()` - 创建 Artifact（scope='daily'）
+- [ ] Prompt 模板实施（第一人称 + 情感表达）
+- [ ] UI 实现：
+  - [ ] Daily Narrative 面板（见 § 3.2.2）
+  - [ ] 可编辑 + 重新生成
+  - [ ] 归档并标记完成
+
+**成功标准**
+- 每日 9 点自动生成或手动触发
+- 生成内容符合"第一人称 + 自然流畅"要求
+- 用户可编辑并保存修改（status='edited'）
+- 典型一天生成时间 <30 秒
+
+### MVP-5：音频同步（第 15-17 周）
 
 **目标**：集成 RECNote 进行音频-笔记锚定
 
@@ -1229,9 +2572,9 @@ class SnapshotManager {
 - 流畅的回放定位
 - 转写在空闲 CPU 上以 2 倍实时速度完成
 
-### MVP-5：会议快照（第 14-17 周）
+### MVP-6：会议快照 + Focus Window（第 18-21 周）
 
-**目标**：会议证据的智能帧捕获
+**目标**：会议证据的智能帧捕获 + Focus Window 高亮
 
 **交付物**
 - [ ] 屏幕捕获会话管理
