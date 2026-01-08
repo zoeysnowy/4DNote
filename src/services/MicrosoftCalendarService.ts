@@ -1949,6 +1949,18 @@ export class MicrosoftCalendarService {
       return;
     }
 
+    // 🚨 Safety guard: prevent destructive remote deletes during diagnosis.
+    // Enable by setting localStorage key `4dnote_disable_outlook_deletes_v1` to '1'.
+    // This is intentionally a kill-switch to avoid permanent data loss.
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem('4dnote_disable_outlook_deletes_v1') === '1') {
+        MSCalendarLogger.warn('🛑 [deleteEvent] Remote delete blocked by safety flag:', { eventId });
+        return;
+      }
+    } catch {
+      // ignore localStorage access errors
+    }
+
     try {
       if (!this.accessToken) {
         throw new Error('No access token available');
