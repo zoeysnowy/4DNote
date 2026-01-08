@@ -36,7 +36,6 @@ import { EventMentionElement } from '@frontend/components/SlateCore/elements/Eve
 // ✅ 从 SlateCore 导入共享服务
 import { EventLogTimestampService } from '@frontend/components/SlateCore/services/timestampService';
 import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 v2.20.0: 检查事件历史
-import { hasTaskFacet } from '@frontend/utils/eventFacets';
 
 // ✅ 从 SlateCore 导入共享操作工具（备用，后续可能使用）
 import {
@@ -1111,7 +1110,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             emoji: updatedEvent.emoji,
             color: updatedEvent.color,
             isCompleted: updatedEvent.isCompleted,
-            isTask: hasTaskFacet(updatedEvent),
             type: updatedEvent.type,
             checkType: updatedEvent.checkType || 'once', // 🔧 FIX: 添加 checkType 字段
             checked: updatedEvent.checked, // 🔧 FIX: 同步 checked 数组

@@ -6,7 +6,6 @@
 
 import { Descendant, Text, Editor, Transforms, Node as SlateNode, Path } from 'slate';
 import { formatTimeForStorage } from '@frontend/utils/timeUtils';
-import { hasTaskFacet, shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 import { 
   EventLineNode, 
   ParagraphNode, 
@@ -86,17 +85,12 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       // 业务字段
       priority: item.priority,
       isCompleted: item.isCompleted,
-      isTask: hasTaskFacet(item as any),
       type: item.type,
       checkType: item.checkType, // ✅ 不添加默认值，保持原样
       
       // ✅ v2.14: Checkbox 状态数组（用于 EventLinePrefix 计算 isCompleted）
       checked: item.checked || [],
       unchecked: item.unchecked || [],
-      
-      // Plan 相关
-      isPlan: shouldShowInPlan(item as any),
-      isTimeCalendar: shouldShowInTimeCalendar(item as any),
       
       // 同步字段
       calendarIds: item.calendarIds,
@@ -522,12 +516,8 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         
         priority: metadata.priority || 'medium',
         isCompleted: metadata.isCompleted || false,
-        isTask: metadata.isTask ?? true,
         type: metadata.type || 'todo',
         checkType: metadata.checkType, // ✅ 不添加默认值，保持原样
-        
-        isPlan: metadata.isPlan, // ✅ 不添加默认值
-        isTimeCalendar: metadata.isTimeCalendar,
         
         // 🔥 EventTree 字段 - 从 metadata 读取（Tab 键更新的）
         parentEventId: metadata.parentEventId,

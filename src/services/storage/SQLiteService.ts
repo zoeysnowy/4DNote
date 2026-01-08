@@ -748,7 +748,7 @@ export class SQLiteService {
       event.emoji || null,
       event.color || null,
       event.isCompleted ? 1 : 0,
-      (event as any).isPlan ? 1 : 0,
+      0,
       event.tags ? JSON.stringify(event.tags) : null,
       event.eventlog ? JSON.stringify(event.eventlog) : null,
       event.sourceAccountId || null,
@@ -782,7 +782,6 @@ export class SQLiteService {
       endTime: 'end_time',
       isAllDay: 'is_all_day',
       isCompleted: 'is_completed',
-      isPlan: 'is_plan',
       sourceAccountId: 'source_account_id',
       sourceCalendarId: 'source_calendar_id',
       syncStatus: 'sync_status'
@@ -800,6 +799,10 @@ export class SQLiteService {
       }
       if (key === 'priority') {
         console.log('[SQLiteService] ⏭️ Skipping legacy priority');
+        return;
+      }
+      if (key === 'isPlan' || key === 'isTask' || key === 'isTimeCalendar') {
+        console.log('[SQLiteService] ⏭️ Skipping deprecated legacy facet flags:', key);
         return;
       }
       if (key === 'isTimer' || key === 'isTimeLog' || key === 'isOutsideApp') {
@@ -1137,7 +1140,7 @@ export class SQLiteService {
             event.emoji || null,
             event.color || null,
             event.isCompleted ? 1 : 0,
-            (event as any).isPlan ? 1 : 0,
+            0,
             event.sourceAccountId || null,
             event.sourceCalendarId || null,
             event.syncStatus || 'local-only',
