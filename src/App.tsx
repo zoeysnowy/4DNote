@@ -29,6 +29,7 @@ import { EventEditModalV2 } from '@frontend/features/Event'; // v2 - 新版本
 import SettingsModal from './components/SettingsModal';
 import { SyncNotification } from '@frontend/components/shared/SyncNotification';
 import { shouldShowInPlan } from '@frontend/utils/eventFacets';
+import { resolveEventlogOwnerId, shouldUseParentEventlog, isTimerEventId } from '@frontend/utils/EventlogResolver';
 import './App.css';
 
 // 🚀 Calendar/Widget 做懒加载：避免 TimeCalendar + TUI dist/CSS 进入首屏 bundle
@@ -457,7 +458,7 @@ function App() {
    * 3. STOP: 计算最终时长，更新事件状态为 'pending' 以触发同步
    * 
    * 🆕 独立 Timer 二次计时自动升级机制：
-  * - 检测独立 Timer 事件（isTimer=true + 无 parentEventId + 已存在子事件/历史计时段）
+  * - 检测独立 Timer 事件（id 以 'timer-' 开头 + 无 parentEventId + 已存在子事件/历史计时段）
    * - 自动创建父事件，继承所有元数据
    * - 将原 Timer 转为子事件
    * - 为父事件启动新 Timer
@@ -477,15 +478,13 @@ function App() {
       // 从 EventService 读取单个事件（自动规范化 title）
       const existingEvent = await EventService.getEventById(eventIdOrParentId);
       
-      // 检测条件：isTimer=true + 无 parentEventId + 已存在子事件（说明已完成至少一次计时）
+      // 检测条件：id 以 'timer-' 开头 + 无 parentEventId + 已存在子事件（说明已完成至少一次计时）
       // ADR-001: 结构真相来自 parentEventId；子节点通过查询派生
-      const existingTimerChildren = (existingEvent && existingEvent.isTimer === true && !existingEvent.parentEventId)
-        ? await EventService.getChildEvents(existingEvent.id)
-        : [];
+      const isIndependentTimer = !!(existingEvent && existingEvent.id?.startsWith('timer-') && !existingEvent.parentEventId);
+      const existingTimerChildren = isIndependentTimer ? await EventService.getChildEvents(existingEvent!.id) : [];
 
       if (existingEvent &&
-          existingEvent.isTimer === true &&
-          !existingEvent.parentEventId &&
+          isIndependentTimer &&
           existingTimerChildren.length > 0) {
         
         AppLogger.log('🔄 [Timer] 检测到独立 Timer 二次计时，自动升级为父子结构', {
@@ -502,7 +501,6 @@ function App() {
           tags: existingEvent.tags || [],
           color: existingEvent.color,
           source: 'local:timelog',
-          isTimer: false,           // ✅ 不再是 Timer
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'pending' as const,
@@ -597,7 +595,8 @@ function App() {
         syncMode: parentEvent?.subEventConfig?.syncMode || parentEvent?.syncMode,
         location: parentEvent?.location || '',
         description: parentEvent?.description || '计时中的事件',
-        eventlog: parentEvent?.eventlog,
+        // ✅ Parent-only：timer 子事件不保存自己的 eventlog（编辑/同步走 parentEventId）
+        ...(parentEventId ? {} : { eventlog: parentEvent?.eventlog }),
         organizer: parentEvent?.organizer,
         attendees: parentEvent?.attendees,
         isAllDay: false,
@@ -605,7 +604,6 @@ function App() {
         updatedAt: formatTimeForStorage(startDate),
         syncStatus: 'local-only', // ✅ 运行中不同步
         fourDNoteSource: true,
-        isTimer: true,
         parentEventId
       };
       
@@ -887,13 +885,13 @@ function App() {
         syncMode: currentParentEvent?.subEventConfig?.syncMode || currentParentEvent?.syncMode,
         location: currentParentEvent?.location || existingEvent?.location || '',
         description: finalDescription,
-        eventlog: currentParentEvent?.eventlog || existingEvent?.eventlog,
+        // ✅ Parent-only：timer 子事件不保存自己的 eventlog（编辑/同步走 parentEventId）
+        ...(globalTimer.parentEventId ? {} : { eventlog: currentParentEvent?.eventlog || existingEvent?.eventlog }),
         organizer: currentParentEvent?.organizer,
         attendees: currentParentEvent?.attendees,
         isAllDay: false,
         fourDNoteSource: true,
         syncStatus: 'pending' as const, // ✅ Timer 停止后改为 pending，触发同步
-        isTimer: true,
         parentEventId: globalTimer.parentEventId,
         createdAt: existingEvent?.createdAt || formatTimeForStorage(startTime),
         updatedAt: formatTimeForStorage(new Date())
@@ -905,7 +903,6 @@ function App() {
         // Plan Item：只更新 duration 和描述，保留原有的计划时间
         description: finalDescription,
         syncStatus: 'pending' as const,
-        isTimer: true, // ✅ 保留 isTimer 标记（子事件）
         parentEventId: globalTimer.parentEventId, // ✅ 保留父事件关联
         updatedAt: formatTimeForStorage(new Date())
       } : finalEvent; // Timer 事件：更新完整数据
@@ -914,8 +911,6 @@ function App() {
       AppLogger.log('💾 [Timer Stop] Using EventService to create/update event', {
         updateFields: Object.keys(updateData),
         parentEventId: globalTimer.parentEventId,
-        existingIsTimer: existingEvent?.isTimer,
-        updateDataIsTimer: (updateData as any).isTimer
       });
       const result = await EventService.updateEvent(timerEventId, updateData as Event);
       
@@ -959,7 +954,6 @@ function App() {
         isAllDay: false,
         source: 'local:timelog',
         fourDNoteSource: true,
-        isTimer: true,
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date())
       };
@@ -1001,7 +995,6 @@ function App() {
       isAllDay: false,
       source: 'local:timelog',
       fourDNoteSource: true,
-      isTimer: true,
       syncStatus: 'local-only', // 🔧 [BUG FIX] 运行中的 Timer 标记为 local-only
       createdAt: existingEvent?.createdAt || formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
@@ -1078,8 +1071,8 @@ function App() {
         createdAt: formatTimeForStorage(finalStartTime),
         updatedAt: formatTimeForStorage(confirmTime),
         syncStatus: 'local-only', // 运行中不同步
+        source: 'local:timelog',
         fourDNoteSource: true,
-        isTimer: true
       };
 
       // 使用 EventService 创建事件（skipSync=true，运行中不同步）
@@ -1144,16 +1137,28 @@ function App() {
     // 🔧 [BUG FIX] 立即保存用户编辑的字段 (使用 EventService 以支持 eventlog 自动转换)
     if (globalTimer.eventId) {
       try {
-        // ✅ 使用 EventService.updateEvent 以触发 eventlog → EventLog 对象转换
-        await EventService.updateEvent(globalTimer.eventId, {
+        const timerEventId = globalTimer.eventId;
+        const isTimerChild = isTimerEventId(timerEventId) && !!globalTimer.parentEventId;
+        const eventlogOwnerId = resolveEventlogOwnerId({ id: timerEventId, parentEventId: globalTimer.parentEventId });
+
+        // ✅ Parent-only：timer 子事件的 eventlog 更新写到父事件
+        if (isTimerChild && eventlogOwnerId) {
+          await EventService.updateEvent(eventlogOwnerId, {
+            eventlog: updatedEvent.eventlog,
+            // description 由 EventService 从 eventlog 派生；这里不强行写
+          } as any, true);
+        }
+
+        // Timer 事件本体仍可更新 title/location/description（不包含 eventlog）
+        await EventService.updateEvent(timerEventId, {
           description: updatedEvent.description,
-          eventlog: updatedEvent.eventlog,  // EventService 会自动转换 Slate JSON → EventLog 对象
           location: updatedEvent.location,
           title: updatedEvent.title,
-        }, true); // skipSync = true
+        } as any, true); // skipSync = true
         
         AppLogger.log('💾 [Timer Edit] Saved user edits via EventService:', {
-          eventId: globalTimer.eventId,
+          eventId: timerEventId,
+          eventlogOwnerId,
           hasEventlog: !!updatedEvent.eventlog,
           eventlogType: typeof updatedEvent.eventlog,
           eventlogPreview: typeof updatedEvent.eventlog === 'string' 
@@ -1215,7 +1220,8 @@ function App() {
           endTime: formatTimeForStorage(endTime),
           location: existingEvent?.location || '',
           description: existingEvent?.description || '计时中的事件',
-          eventlog: existingEvent?.eventlog,  // ✅ 保留用户编辑的 eventlog
+          // ✅ Parent-only：timer 子事件不保存自己的 eventlog
+          ...(globalTimer.parentEventId ? {} : { eventlog: existingEvent?.eventlog }),
           tags: globalTimer.tagIds,
           calendarIds: tag && (tag as any).calendarId ? [(tag as any).calendarId] : [],
           isAllDay: false,
@@ -1224,7 +1230,6 @@ function App() {
           syncStatus: 'local-only', // ✅ 运行中保持 local-only，不触发同步
           source: 'local:timelog',
           fourDNoteSource: true,
-          isTimer: true
         };
 
         // ✅ 使用 EventService 更新事件（已迁移到 StorageManager，existingEvent 已在上面加载）

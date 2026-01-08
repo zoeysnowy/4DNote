@@ -1,7 +1,7 @@
 # View Membership 最终架构方案（历史文档，已并入 SSOT）
 
 > 注意：从 2026-01 起，**view_membership 的架构真相只维护在 SSOT**：
-> - docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md
+> - docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md
 >
 > 本文保留为历史讨论/草稿留档，不再作为唯一口径更新。
 
@@ -141,7 +141,7 @@ export function shouldShow_Plan(event: Event, context: ShouldShowContext): boole
 
 /**
  * 判断是否为从属事件（subordinate event）
- * 来源：EVENT_FIELD_CONTRACT_EXECUTABLE.md §9.5
+ * 来源：docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md §9.5
  */
 function isSubordinateEvent(event: Event): boolean {
   return event.isTimer === true 
@@ -162,7 +162,7 @@ export function shouldShow_Library(event: Event, context: ShouldShowContext): bo
 /**
  * TimeLog 页面的 membership 判断（最终修订版 - 基于 SSOT）
  * 
- * 核心原则（来自 EVENT_FIELD_CONTRACT_EXECUTABLE.md §9.5）：
+ * 核心原则（来自 docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md §9.5）：
  * - TimeLog = 按时间轴聚合的视图，不是"有时间的事件"过滤器
  * - 所有事件（包括 Note/Plan/Task）都可纳入，只要不是系统轨迹/从属事件
  * - 排序使用派生函数：resolveTimelineAnchor(event, 'timelog')
@@ -306,7 +306,7 @@ export async function buildShouldShowContext(): Promise<ShouldShowContext> {
 /**
  * 解析事件的时间轴锚点（TimeLog/Timeline 排序用）
  * 
- * 来源：EVENT_FIELD_CONTRACT_EXECUTABLE.md §5.2 Time Anchor
+ * 来源：docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md §5.2 Time Anchor
  * 
  * 优先级（scope='timelog'）：
  * 1. 有 calendar block：用 startTime（发生区间的开始）
@@ -1474,7 +1474,7 @@ EventService.updateEvent('evt-001', {
 
 **与 SSOT 的关系**：
 
-TimeLog 的设计完全符合 EVENT_FIELD_CONTRACT_EXECUTABLE.md：
+TimeLog 的设计完全符合 SSOT（docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md）：
 - ✅ 使用 Core 时间字段（`startTime/endTime`）判断 membership
 - ✅ 不污染字段：不会为了显示而注入虚拟时间
 - ✅ 派生展示：如果需要特殊排序锚点，使用 `resolveTimelineAnchor()` 派生函数

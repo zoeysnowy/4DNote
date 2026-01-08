@@ -1,6 +1,6 @@
 # Event Field Contract 实施计划
 
-> 基于 `docs/architecture/EVENT_FIELD_CONTRACT_EXECUTABLE_ARCHITECTURE.md` (SSOT Contract)  
+> 基于 `docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md` (SSOT Contract)  
 > 当前实际架构：`src/types.ts` Event interface  
 > 目标：小步迭代，每步可测试可提交
 
@@ -248,15 +248,18 @@ type EventSource =
 #### 2. 缺失的 AI 对话字段
 Contract Section 8.4 要求的 AI 卡片字段：
 
+**硬契约（必须遵守）**：
+- `source` 决定“渲染/入口/呈现形态”（例如 `local:ai_chat_card` vs `local:ai_inline`）。
+- `conversationType` 决定“对话生命周期/升级逻辑”（例如 `sprout → root`）。
+- 两者**互不替代**：禁止用 `source` 推断 `conversationType`，也禁止用 `conversationType` 覆盖/推断 `source`。
+
 ```typescript
 // ❌ 缺失，需要添加
-conversationType?: 'sprout' | 'root';    // AI 对话类型
+// conversationType = 对话阶段维度（sprout/root）
+// 呈现形态（chat card / inline）使用 source 区分：local:ai_chat_card / local:ai_inline
+conversationType?: 'sprout' | 'root' | 'unknown';
 hostEventId?: string;                     // AI 卡片必须挂载的宿主事件
-aiMetadata?: {                            // AI 元数据
-  model?: string;
-  prompt?: string;
-  generatedAt?: string;
-};
+aiMetadata?: Record<string, unknown>;     // AI 元数据（实现侧可逐步收敛 schema）
 ```
 
 ---
@@ -397,6 +400,29 @@ isTimeCalendar?: boolean;
 **待评估（仍存在于类型/代码中）**:
 - `isTimer/isTimeLog/isOutsideApp/isDeadline/isNote`：如果这些字段继续作为“系统轨迹/子事件”判定标记，需要在 Contract/Plan 中明确其 Owner、适用范围与是否允许长期保留；否则应纳入后续清理。
 - `type/category`：目前仍有向后兼容/历史代码依赖，若要严格落地 Contract，需要配套迁移与逐步收敛策略。
+
+**✅ 已明确（写入 SSOT）**：系统轨迹/附属事件（subordinate）的判定口径
+- **唯一判定入口**：`EventService.isSubordinateEvent(event)`（或 `isSystemProgressSubEvent`）
+- **规则顺序（必须一致）**：
+  1) `timerSessionId` 存在 → subordinate（Timer 系统写入审计字段，最强信号）
+  2) `source === 'local:timelog'` → subordinate（TimeLog/Timer/OutsideApp 统一归入 timelog 入口）
+- **禁止**：用 `parentEventId` 推断 subordinate（结构关系≠创建者）
+- **Legacy flags（仅兼容输入）**：`isTimer/isTimeLog/isOutsideApp` 必须清理掉（停止依赖 → 迁移/回填 → 从 types/storage/mapping 删除）
+
+**✅ 2026-01-08 实施记录（已完成）**
+- **UI**：停止读取/写入 `event.isTimer`，改为只读派生：`event.id.startsWith('timer-') || isSystemProgressSubEvent(event)`
+  - 影响文件：`src/features/Event/components/EventEditModal/hooks/useEventEditDraft.ts`、`src/features/Event/components/EventEditModal/EventEditModalV2.tsx`、`src/pages/Event/DetailTab.tsx`
+- **Service**：停止依赖 `isTimer/isTimeLog/isOutsideApp` 做语义判断
+  - `getTimelineEvents` 等过滤逻辑改用 SSOT（timer id 前缀 / `isSystemProgressSubEvent`）
+  - `normalizeEvent`：不再写回 `isTimer`；本地 source 推断以 SSOT 为主，并允许 legacy flags 仅作为“输入兼容 hint”（read-only）
+  - 同步保护字段：从 `localOnlyFields` 中移除 `isTimer/isTimeLog/isOutsideApp`
+- **Types**：从 `src/types.ts` 的 `Event` 接口移除 `isTimer/isTimeLog/isOutsideApp`（仅保留注释说明 SSOT 替代口径）
+- **Storage(SQLite)**：停止持久化 `is_timer`
+  - 写入：`SQLiteService.createEvent/batchCreateEvents/updateEvent` 不再写 `is_timer`
+  - 读取：`rowToEvent` 做 **读时升级**：`is_timer=1` → `source='local:timelog'`（不再返回 `isTimer` 字段）
+- **Sync mapping**：`src/utils/outlookFieldMapping.ts` 的 `INTERNAL_ONLY_FIELDS` 移除 `isTimer`
+
+**验证**：`npm run build` + `vitest --run`（13 files / 100 tests passed）
 
 **测试**:
 ```bash
@@ -574,18 +600,11 @@ export interface Event {
   // ... 现有字段
 
   // 🆕 AI 对话卡片字段 (Contract Section 8.4)
-  conversationType?: 'sprout' | 'root';    // AI 对话类型
+  // conversationType = 对话阶段维度（sprout/root）
+  // 呈现形态（chat card / inline）使用 source 区分：local:ai_chat_card / local:ai_inline
+  conversationType?: 'sprout' | 'root' | 'unknown';
   hostEventId?: string;                     // AI 卡片必须挂载的宿主事件
-  aiMetadata?: {
-    model?: string;                         // AI 模型
-    prompt?: string;                        // 用户 prompt
-    generatedAt?: string;                   // 生成时间（本地格式）
-    tokenUsage?: {
-      prompt: number;
-      completion: number;
-      total: number;
-    };
-  };
+  aiMetadata?: Record<string, unknown>;     // AI 元数据（实现侧可逐步收敛 schema）
 }
 ```
 
@@ -671,17 +690,19 @@ if (event.syncedOutlookEventId && !event.externalId) {
 
 ---
 
-#### Step 4.3: 多日历同步迁移（syncedPlanCalendars → externalId）
+#### Step 4.3: 多日历同步迁移（syncedPlanCalendars/syncedActualCalendars → externalMappings）
 **当前架构**:
 ```typescript
 syncedPlanCalendars: Array<{ calendarId: string, remoteEventId: string }>
 syncedActualCalendars: Array<{ calendarId: string, remoteEventId: string }>
 ```
 
-**目标架构**（Contract Section 7.2）:
+**目标架构**（Contract Section 7.2 + 决策点 1 已确认）:
 ```typescript
-externalId: string  // 主日历的远程事件ID
-calendarIds: string[]  // 所有同步的日历ID
+externalMappings: Array<{ calendarId: string; remoteEventId: string; scope?: 'plan' | 'actual' }>
+calendarIds: string[]  // 该事件「期望」同步到的日历ID（意图层）
+syncMode: string       // 该事件的同步模式（意图层）
+externalId?: string    // ⚠️ legacy/兼容字段：可作为 primary mapping 的冗余缓存，但不作为多日历 SSOT
 ```
 
 **⚠️ 重大决策点 - 需要用户确认**:
@@ -690,7 +711,7 @@ calendarIds: string[]  // 所有同步的日历ID
 - **理由**: 本地1个event → 远程N个event的映射关系必须保存
 - **场景**: 用户将同一事件同步到"工作日历"和"个人日历"
 - **数据**: `syncedPlanCalendars: [{calendarId: 'work', remoteEventId: 'event-1'}, {calendarId: 'personal', remoteEventId: 'event-2'}]`
-- **问题**: Contract只定义了单个externalId，无法存储多个remoteEventId
+- **问题（历史原因）**: 旧实现常依赖单个 `externalId`，无法表达多日历 remoteEventId；因此需要引入 `externalMappings`
 - **影响**: 如果删除，多日历同步功能将失效
 
 **方案B: 简化为单日历同步**  
@@ -700,6 +721,56 @@ calendarIds: string[]  // 所有同步的日历ID
 - **Breaking Change**: 用户需要手动删除远程重复事件
 
 **✅ 已确认方案**: 保留 `syncedPlanCalendars/syncedActualCalendars`，重命名为 `externalMappings: Array<{calendarId, remoteEventId}>` 以符合Contract术语
+
+---
+
+### ✅ SSOT：未来同步字段归属（字段所有权）
+
+这段是“未来状态”的硬契约：后续重构与新功能只能依赖这里定义的数据来源。
+
+#### 1) 意图层（User Intent / Configuration）—— SSOT
+- `syncMode`: 用户希望该事件如何同步（receive-only/send-only/...）。
+- `calendarIds`: 用户希望该事件同步到哪些日历（可为空数组）。
+- `todoListIds`: 用户希望该事件同步到哪些 Microsoft To Do 列表（可为空数组）。
+  - 这是“任务同步目标”的选择结果（面向 To Do）。
+  - 与 `calendarIds` 互补：Task-like 事件通常走 To Do 路径；Calendar-like 事件走 Calendar 路径。
+- `subEventConfig`: **仅父事件**的“系统性子事件（Timer/轨迹/实际进展链路）的默认同步配置模板”。
+  - 只约束“系统性子事件”（例如 Timer 子事件）；不约束用户结构性创建的普通子事件。
+  - 普通子事件的默认继承来源是父事件自身的 `syncMode/calendarIds`（也就是“计划安排”），而不是 `subEventConfig`。
+  - 普通子事件允许用户自由配置：子事件的同步设置**不回写父事件**；父事件的更新也不应覆盖已手动配置（`hasCustomSyncConfig=true`）的后代。
+
+#### 2) 状态层（Sync State / Remote Identity）—— SSOT
+- `externalMappings`: 远程对象身份的唯一来源。
+  - 用途：决定 `UPDATE` vs `CREATE`、以及“移除日历时要清理哪个 remoteEventId”。
+  - 允许短暂与 `calendarIds` 不一致（同步进行中），但最终应收敛。
+
+#### 3) 兼容层（Legacy）—— 非 SSOT
+- `externalId`: 仅做兼容/过渡。
+  - 建议：把它视为 `externalMappings` 的 primary mapping 冗余（可选），避免旧代码断裂。
+- `syncedPlanCalendars/syncedActualCalendars`、`synced*EventId`、`planSyncConfig/actualSyncConfig`: 只允许读兼容与一次性迁移，最终删除。
+
+---
+
+### ✅ SSOT：未来同步数据流（Data Flow）
+
+**写入（用户修改同步设置）**
+1. UI 只写 `syncMode/calendarIds`（父事件额外写 `subEventConfig` 作为模板）。
+2. `EventService` 负责 normalize 并持久化这些“意图层字段”。
+3. `externalMappings` 不由 UI 直接写入，只能由 Sync 成功回写。
+
+**调和（SyncManager 对账）**
+1. 计算目标集合：`calendarIds`。
+2. 读取已实现集合：`externalMappings`。
+3. 差分：
+   - 目标有、mapping 无 → `CREATE`（成功后写回 mapping）。
+   - mapping 有、内容变更 → `UPDATE`。
+   - mapping 有、目标无 → 清理分支：
+     - 仅当满足“owned-by-4DNote + 非 receive-only”才允许 `DELETE`；否则只移除 mapping。
+
+**回写（远程结果写回本地）**
+- CREATE：写入/更新 `externalMappings[{calendarId, remoteEventId}]`。
+- UPDATE：不改 mapping（remote id 不应变化）。
+- DELETE：移除对应 mapping。
 
 **📋 调用链路分析**:
 
@@ -1284,7 +1355,7 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 ## 📚 参考文档
 
-- SSOT Contract: `docs/architecture/EVENT_FIELD_CONTRACT_EXECUTABLE_ARCHITECTURE.md`
+- SSOT Contract: `docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md`
 - 当前 Types: `src/types.ts`
 - EventService: `src/services/EventService.ts`
 - Sync Manager: `src/services/sync/ActionBasedSyncManager.ts`

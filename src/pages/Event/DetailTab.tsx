@@ -84,7 +84,8 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
-import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { resolveEventlogOwnerId, shouldUseParentEventlog } from '@frontend/utils/EventlogResolver';
 import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
 import { Event, Contact, EventTitle } from '@frontend/types';
@@ -228,12 +229,14 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   
   // 🔧 模式检测：判断是父事件模式还是子事件模式
   const isParentMode = !event?.parentEventId;
+
+  const isDerivedTimer = event ? (event.id.startsWith('timer-') || isSystemProgressSubEvent(event)) : false;
   
   console.log('🔍 [EventEditModalV2] 模式检测:', {
     isParentMode,
     eventId: event?.id,
     parentEventId: event?.parentEventId,
-    isTimer: event?.isTimer
+    isTimer: isDerivedTimer
   });
   
   // 🎬 调试：打印传入的 event 对象的关键字段
@@ -387,7 +390,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTimer: event.isTimer || false,
+        isTimer: event.id.startsWith('timer-') || isSystemProgressSubEvent(event),
         parentEventId: event.parentEventId || null,
         linkedEventIds,
         backlinks,
@@ -567,7 +570,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTimer: event.isTimer || false,
+      isTimer: event.id.startsWith('timer-') || isSystemProgressSubEvent(event),
       parentEventId: event.parentEventId || null,
       linkedEventIds,
       backlinks,
@@ -632,6 +635,41 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       },
     });
   }, [event?.id]); // 只在 event ID 变化时重新初始化（Modal 打开时加载一次）
+
+  // ✅ Timer view：eventlog 的 canonical owner 是 parentEventId
+  // - 读取：用父事件 eventlog 作为显示/编辑源
+  // - 写入：在 handleTimelogChange 中写回父事件（见下方）
+  React.useEffect(() => {
+    if (!event) return;
+
+    if (!shouldUseParentEventlog({ id: event.id, parentEventId: event.parentEventId })) return;
+
+    let cancelled = false;
+    EventService.getEventById(event.parentEventId!).then(parentEvent => {
+      if (cancelled || !parentEvent) return;
+
+      try {
+        const normalized = (EventService as any).normalizeEventLog(parentEvent.eventlog);
+        const parsed = typeof normalized.slateJson === 'string'
+          ? JSON.parse(normalized.slateJson)
+          : normalized.slateJson;
+
+        setFormData(prev => {
+          if (prev.id !== event.id) return prev;
+          return {
+            ...prev,
+            eventlog: parsed as any,
+          };
+        });
+      } catch (error) {
+        console.error('❌ [LogTab] 父事件 eventlog 规范化失败:', error);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.parentEventId]);
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -766,12 +804,12 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     if (!isParentMode) {
       // 🔧 子模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.calendarIds
-      // - 手动子事件: 使用自己的 calendarIds（如果为空，则从 parent.subEventConfig 继承）
-      if (event?.isTimer || event?.isTimeLog || event?.isOutsideApp) {
-        return parentEvent?.subEventConfig?.calendarIds || [];
+      // - 手动子事件: 使用自己的 calendarIds（如果为空，则从 parent.calendarIds 继承）
+      if (event && EventService.isSubordinateEvent(event)) {
+        return parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || [];
       } else {
         // 手动子事件：优先使用自己的配置，如果为空则继承父配置
-        return event?.calendarIds || parentEvent?.subEventConfig?.calendarIds || [];
+        return event?.calendarIds || parentEvent?.calendarIds || [];
       }
     } else {
       // 父模式：从 subEventConfig 读取模板配置
@@ -781,6 +819,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
   // 🆕 v2.0.5 同步 formData.subEventConfig.calendarIds 到 syncCalendarIds（使用新架构）
   React.useEffect(() => {
+    if (!isParentMode) return;
     if (formData.subEventConfig?.calendarIds) {
       setSyncCalendarIds(prev => {
         const newIds = formData.subEventConfig.calendarIds;
@@ -791,7 +830,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         return prev;
       });
     }
-  }, [formData.subEventConfig?.calendarIds]);
+  }, [formData.subEventConfig?.calendarIds, isParentMode]);
 
   // 🆕 刷新计数器：用于强制刷新 parentEvent 和 childEvents
   const [refreshCounter, setRefreshCounter] = React.useState(0);
@@ -957,14 +996,14 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     if (!isParentMode) {
       // 🔧 子事件模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.syncMode
-      // - 手动子事件: 使用自己的 syncMode（如果为空，则从 parent.subEventConfig 继承）
-      if (event?.isTimer || event?.isTimeLog || event?.isOutsideApp) {
-        mode = parentEvent?.subEventConfig?.syncMode || 'bidirectional-private';
+      // - 手动子事件: 使用自己的 syncMode（如果为空，则从 parent.syncMode 继承）
+      if (event && EventService.isSubordinateEvent(event)) {
+        mode = parentEvent?.subEventConfig?.syncMode || parentEvent?.syncMode || 'bidirectional-private';
         console.log('🎬 [syncSyncMode 初始化] 系统子事件模式，使用 parentEvent.subEventConfig.syncMode =', mode);
       } else {
         // 手动子事件：优先使用自己的配置，如果为空则继承父配置
-        mode = formData.syncMode || parentEvent?.subEventConfig?.syncMode || 'bidirectional-private';
-        console.log('🎬 [syncSyncMode 初始化] 手动子事件模式，使用 formData.syncMode || parentEvent.subEventConfig.syncMode =', mode);
+        mode = formData.syncMode || parentEvent?.syncMode || 'bidirectional-private';
+        console.log('🎬 [syncSyncMode 初始化] 手动子事件模式，使用 formData.syncMode || parentEvent.syncMode =', mode);
       }
     } else {
       // ✅ 父模式：使用 formData.subEventConfig.syncMode（默认 bidirectional-private）
@@ -1128,12 +1167,13 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       
       // 🔧 Step 3: 检查是否是运行中的 Timer
       // Timer 运行中，应该使用 globalTimer.eventId，而不是 formData.id
-      const isRunningTimer = formData.isTimer && 
-                            globalTimer?.isRunning && 
-                            globalTimer?.eventId;
+      const isRunningTimer = !!(
+        globalTimer?.isRunning &&
+        globalTimer?.eventId &&
+        (formData.id === globalTimer.eventId || event?.id === globalTimer.eventId)
+      );
       
       console.log('🔍 [EventEditModalV2] Timer check:', {
-        isTimer: formData.isTimer,
         globalTimerIsRunning: globalTimer?.isRunning,
         globalTimerEventId: globalTimer?.eventId,
         formDataId: formData.id,
@@ -1194,13 +1234,13 @@ const LogTabComponent: React.FC<LogTabProps> = ({
 
       // 🔧 Step 7: 构建完整的 Event 对象
       // ✨ 直接使用 fullTitle (Slate JSON)，保留富文本格式
+      const { isTimer: _formIsTimer, ...formDataWithoutIsTimer } = formData as any;
       const updatedEvent: Event = {
         ...event, // 保留原有字段（如 createdAt, syncStatus 等）
-        ...formData,
+        ...formDataWithoutIsTimer,
         id: eventId, // 使用验证后的 ID
         title: finalTitle, // ✅ 直接传 Slate JSON 字符串，EventService.normalizeTitle 会统一处理
         tags: finalTags, // 🏷️ 使用自动映射后的标签
-        isTimer: formData.isTimer,
         parentEventId: formData.parentEventId,
         startTime: startTimeForStorage,
         endTime: endTimeForStorage,
@@ -1353,7 +1393,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         }
 
         // Other scalar fields
-        setIfChanged('isTimer', candidate.isTimer);
         setIfChanged('parentEventId', candidate.parentEventId);
         setIfChanged('location', candidate.location);
         setIfChanged('organizer', candidate.organizer);
@@ -1379,7 +1418,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       };
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
-      const isSystemChild = !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp);
+      const isSystemChild = !isParentMode && EventService.isSubordinateEvent(updatedEvent);
       
       let result;
       
@@ -1566,7 +1605,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         // 🔧 关键架构修正：只有手动子事件才同步到父事件
         // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 不同步到父事件主配置
         // - 手动子事件: 同步计划字段到父事件
-        const isSystemChild = updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp;
+        const isSystemChild = EventService.isSubordinateEvent(updatedEvent);
         
         if (isSystemChild) {
           console.log('ℹ️ [EventEditModalV2] 系统子事件，跳过同步到父事件:', eventId);
@@ -1589,8 +1628,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
               isAllDay: updatedEvent.isAllDay,
               location: updatedEvent.location,
               attendees: updatedEvent.attendees,
-              calendarIds: updatedEvent.calendarIds,
-              syncMode: updatedEvent.syncMode,
             }, {
               source: 'EventEditModalV2-ChildToParent'
             });
@@ -1712,7 +1749,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     }
 
     // 1. Timer 子事件 - 递归获取父事件的来源
-    if (evt.isTimer && evt.parentEventId) {
+    if (EventService.isSubordinateEvent(evt) && evt.parentEventId) {
       const parentEvent = await EventService.getEventById(evt.parentEventId);
       if (parentEvent) {
         return getEventSourceInfo(parentEvent);
@@ -1720,12 +1757,14 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     }
 
     // 2. 外部日历事件
-    if (evt.source === 'outlook' || evt.source === 'google' || evt.source === 'icloud') {
+    const provider = evt.source?.split(':')[0];
+    if (provider === 'outlook' || provider === 'google' || provider === 'icloud' ||
+        evt.source === 'outlook' || evt.source === 'google' || evt.source === 'icloud') {
       const calendarId = evt.calendarIds?.[0];
       const calendar = calendarId ? availableCalendars.find(c => c.id === calendarId) : null;
       const calendarName = calendar ? calendar.name.replace(/^[\uD83C-\uDBFF\uDC00-\uDFFF]+\s*/, '') : '默认';
       
-      switch (evt.source) {
+      switch (provider || evt.source) {
         case 'outlook':
           return { emoji: null, name: `Outlook: ${calendarName}`, icon: '📧', color: '#0078d4' };
         case 'google':
@@ -1736,7 +1775,8 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     }
 
     // 3. 独立 Timer 事件（没有父事件的 Timer）
-    if (evt.isTimer && !evt.parentEventId) {
+    // Legacy: 过去依赖 isTimer；现在用 Timer 生成的 id 前缀作为判定口径。
+    if (evt.id.startsWith('timer-') && !evt.parentEventId) {
       return { emoji: '⏱️', name: '4DNote计时', icon: null, color: '#f59e0b' };
     }
 
@@ -2433,16 +2473,21 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       }));
       
       // Step 2: 立即保存到 EventHub（blur-to-save）
+      // ✅ Timer 子事件（timer-* 且有 parentEventId）：eventlog owner 是 parentEventId（Parent-only）
+      const eventlogOwnerId = resolveEventlogOwnerId({ id: formData.id, parentEventId: formData.parentEventId });
+
       // ✅ 只在有效 eventId 时保存（避免保存临时/新建事件）
-      if (formData.id && formData.id !== 'new-event' && !formData.id.startsWith('local-')) {
-        await EventHub.updateFields(formData.id, {
+      if (eventlogOwnerId && eventlogOwnerId !== 'new-event' && !eventlogOwnerId.startsWith('local-')) {
+        await EventHub.updateFields(eventlogOwnerId, {
           eventlog: slateJson  // EventService 会自动处理格式转换
         }, {
-          source: 'LogTab-eventlogChange'
+          source: shouldUseParentEventlog({ id: formData.id, parentEventId: formData.parentEventId })
+            ? 'LogTab-eventlogChange(timer->parent)'
+            : 'LogTab-eventlogChange'
         });
         console.log('✅ [LogTab] EventLog 已自动保存到 EventHub');
       } else {
-        console.log('ℹ️ [LogTab] 跳过保存（临时事件）:', formData.id);
+        console.log('ℹ️ [LogTab] 跳过保存（临时事件）:', eventlogOwnerId);
       }
     } catch (error) {
       console.error('❌ [LogTab] EventLog 保存失败:', error);
@@ -2452,7 +2497,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         eventlog: slateJson as any,
       }));
     }
-  }, [formData.id]); // 依赖 formData.id，确保使用最新的事件ID
+  }, [formData.id, formData.parentEventId]); // 依赖事件 owner 信息，确保写入路由正确
 
   /**
    * Slate 编辑器就绪回调
@@ -3710,7 +3755,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                     
                                     const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
-                                      if (childEvent.isTimer) {
+                                      if (EventService.isSubordinateEvent(childEvent)) {
                                         await EventHub.updateFields(childEvent.id, {
                                           calendarIds: calendarIds,
                                         }, {
@@ -3829,7 +3874,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                       
                                       const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
-                                        if (childEvent.isTimer) {
+                                        if (EventService.isSubordinateEvent(childEvent)) {
                                           await EventHub.updateFields(childEvent.id, {
                                             calendarIds: allCalendarIds,
                                             syncMode: modeId,

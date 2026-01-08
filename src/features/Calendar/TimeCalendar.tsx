@@ -1429,7 +1429,10 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       if (eventsList.length > 0) {
         // 查找带有"[专注中]"前缀的timer事件
         const prefixedTimerEvents = eventsList.filter((e: any) => 
-          e.isTimer && e.title?.simpleTitle && e.title.simpleTitle.startsWith('[专注中]')
+          typeof e.id === 'string' &&
+          e.id.startsWith('timer-') &&
+          e.title?.simpleTitle &&
+          e.title.simpleTitle.startsWith('[专注中]')
         );
         
         if (prefixedTimerEvents.length > 0) {

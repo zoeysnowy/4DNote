@@ -100,18 +100,25 @@ export function getCreationSource(event: Event): string {
 }
 
 /**
- * 判断事件是否为系统轨迹（subordinate）
+ * 判断事件是否为“系统性子事件 / 实际进展链路事件”
  * @param event - 事件对象
- * @returns 是否为系统自动生成的轨迹事件
+ * @returns 是否为系统链路控制的子事件（例如 Timer / TimeLog / OutsideApp）
  * 
- * 注：长期应迁移到 Signal/Telemetry 系统，这里提供短期判断
+ * 说明：
+ * - 这是一条“硬口径”，用于统一替代散落的 isTimer/isTimeLog/isOutsideApp 判定分支。
+ * - Timer 子事件：优先用 timerSessionId（审计字段，Timer 系统写入）。
+ * - 兼容：旧数据通过 source 迁移/读时升级，最终不再依赖 isTimer/isTimeLog/isOutsideApp。
+ */
+export function isSystemProgressSubEvent(event: Event): boolean {
+  if (event.timerSessionId) return true;
+  if (getCreationSource(event) === 'local:timelog') return true;
+
+  return false;
+}
+
+/**
+ * @deprecated 请使用 isSystemProgressSubEvent
  */
 export function isSubordinateEvent(event: Event): boolean {
-  // Timer 子事件
-  if (event.timerSessionId) {
-    return true;
-  }
-  
-  // 其他系统轨迹类型可在此扩展
-  return false;
+  return isSystemProgressSubEvent(event);
 }

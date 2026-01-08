@@ -192,21 +192,19 @@ describe('EventService - 双向链接功能', () => {
         id: '1',
         title: { fullTitle: 'Timer' },
         source: 'local:timelog',
-        isTimer: true,
       } as Event;
 
       const outsideAppEvent: Event = {
         id: '2',
         title: { fullTitle: 'OutsideApp' },
-        source: 'outlook:calendar',
-        isOutsideApp: true,
+        // OutsideApp 统一归入 timelog 入口（source='local:timelog'）
+        source: 'local:timelog',
       } as Event;
 
       const timeLogEvent: Event = {
         id: '3',
         title: { fullTitle: 'TimeLog' },
         source: 'local:timelog',
-        isTimeLog: true,
       } as Event;
 
       expect(EventService.shouldShowInEventTree(timerEvent)).toBe(false);

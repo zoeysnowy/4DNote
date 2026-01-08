@@ -2426,7 +2426,7 @@ EventLog.slateJson（自动添加对应格式）
   - `updateSignal()`：更新 Signal（支持合并行为次数）
   - `deleteSignal()`：删除 Signal
   - `expireSignal()`：标记为 expired
-- [ ] 添加 Signal 到 SSOT（`docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md`）
+- [ ] 添加 Signal 到 SSOT（`docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md`）
 
 ### Phase 2：用户行为捕获（P1，预计 2-3 周）⭐ 核心
 
@@ -2822,7 +2822,7 @@ async function asyncCleanupSignal(signalId: string): Promise<void> {
 - [ ] `src/components/Slate/plugins/`：添加 Signal 标记插件
 
 ### 文档层面
-- [ ] `docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md`：添加 Signal 到 Out of Scope（当前）+ 未来 Owner 约束
+- [ ] `docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md`：添加 Signal 到 Out of Scope（当前）+ 未来 Owner 约束
 - [ ] `docs/architecture/SIGNAL_ARCHITECTURE.md`：Signal 设计文档（本文档）
 - [ ] `docs/PRD/SIGNAL_FEATURE_PRD.md`：Signal 功能 PRD
 
@@ -3038,7 +3038,7 @@ const groupSignals = await SignalService.getGroupSignals(group.id);
 
 ### 设计文档
 - PRD 定义：`docs/features/Eventlog Enhanced PRD（补充：Granola 风格重点标注与分层整理输出）.md`
-- 架构口径：`docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md`（Event 字段契约，Signal 需遵守相同 SSOT 原则）
+- 架构口径：`docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md`（Event 字段契约，Signal 需遵守相同 SSOT 原则）
 - 本文档：`docs/architecture/SIGNAL_ARCHITECTURE_PROPOSAL.md`
 
 ### 外部参考
@@ -3358,7 +3358,7 @@ Signal 架构已全面覆盖用户在笔记中的关键行为数据：
 ### 立即行动（本周）
 
 1. ✅ **完善架构文档**（本文档）→ 包含数据流、预处理、embedding、检索、UI 修改处理
-2. ⏭️ **更新 SSOT 约束**：在 `EVENT_FIELD_CONTRACT_EXECUTABLE.md` 中添加 Signal 相关约束
+2. ⏭️ **更新 SSOT 约束**：在 `docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md` 中添加 Signal 相关约束
 3. ⏭️ **定义 Signal 类型**：在 `src/types.ts` 中添加完整接口
 4. ⏭️ **创建 signals 表 schema**：在 `src/services/storage/schema.ts` 中添加表定义
 5. ⏭️ **实现 SignalService 骨架**：CRUD API（暂无业务逻辑，先跑通流程）

@@ -5,6 +5,7 @@ import {
   resolveCalendarDateRange,
   resolveCheckState,
   resolveTaskAnchorTimestamp,
+  resolveTimelineAnchor,
 } from './TimeResolver';
 
 describe('TimeResolver', () => {
@@ -191,6 +192,36 @@ describe('TimeResolver', () => {
       expect(kind).toBe('time-based');
       expect(start.getHours()).toBe(9);
       expect(end.getHours()).toBe(10);
+    });
+  });
+
+  describe('resolveTimelineAnchor', () => {
+    it('time-based：锚点为 startTime 对应的时间', () => {
+      const { date, kind } = resolveTimelineAnchor({
+        startTime: '2025-12-01 09:00:00',
+        endTime: '2025-12-01 10:00:00',
+        createdAt: '2025-12-01 08:00:00',
+        checked: [],
+        unchecked: [],
+      });
+
+      expect(kind).toBe('time-based');
+      expect(date.getHours()).toBe(9);
+    });
+
+    it('task-date-only：无 startTime 且为 task 时，锚点 clamp 到当天 00:00', () => {
+      const { date, kind } = resolveTimelineAnchor({
+        checkType: 'once',
+        startTime: undefined,
+        endTime: undefined,
+        createdAt: '2025-12-01 08:00:00',
+        checked: [],
+        unchecked: [],
+      });
+
+      expect(kind).toBe('task-date-only');
+      expect(date.getHours()).toBe(0);
+      expect(date.getMinutes()).toBe(0);
     });
   });
 });

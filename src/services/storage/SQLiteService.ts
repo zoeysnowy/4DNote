@@ -728,11 +728,11 @@ export class SQLiteService {
         id, full_title, color_title, simple_title,
         start_time, end_time, is_all_day,
         description, location, emoji, color,
-        is_completed, is_timer, is_plan,
+        is_completed, is_plan,
         tags, eventlog,
         source_account_id, source_calendar_id, sync_status,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     await stmt.run(
@@ -748,7 +748,7 @@ export class SQLiteService {
       event.emoji || null,
       event.color || null,
       event.isCompleted ? 1 : 0,
-      event.isTimer ? 1 : 0,
+      (event as any).isPlan ? 1 : 0,
       event.tags ? JSON.stringify(event.tags) : null,
       event.eventlog ? JSON.stringify(event.eventlog) : null,
       event.sourceAccountId || null,
@@ -782,7 +782,6 @@ export class SQLiteService {
       endTime: 'end_time',
       isAllDay: 'is_all_day',
       isCompleted: 'is_completed',
-      isTimer: 'is_timer',
       isPlan: 'is_plan',
       sourceAccountId: 'source_account_id',
       sourceCalendarId: 'source_calendar_id',
@@ -801,6 +800,10 @@ export class SQLiteService {
       }
       if (key === 'priority') {
         console.log('[SQLiteService] ⏭️ Skipping legacy priority');
+        return;
+      }
+      if (key === 'isTimer' || key === 'isTimeLog' || key === 'isOutsideApp') {
+        console.log('[SQLiteService] ⏭️ Skipping deprecated legacy timer flags:', key);
         return;
       }
       if (key === 'updatedAt' || key === 'updated_at') {
@@ -1103,10 +1106,10 @@ export class SQLiteService {
         id, full_title, color_title, simple_title,
         start_time, end_time, is_all_day,
         description, location, emoji, color,
-        is_completed, is_timer, is_plan,
+        is_completed, is_plan,
         source_account_id, source_calendar_id, sync_status,
         created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     // 注意：IPC 模式不支?transaction API，使用循?+ BEGIN/COMMIT
@@ -1134,7 +1137,7 @@ export class SQLiteService {
             event.emoji || null,
             event.color || null,
             event.isCompleted ? 1 : 0,
-            event.isTimer ? 1 : 0,
+            (event as any).isPlan ? 1 : 0,
             event.sourceAccountId || null,
             event.sourceCalendarId || null,
             event.syncStatus || 'local-only',
@@ -1249,6 +1252,8 @@ export class SQLiteService {
    * 将数据库行转换为 StorageEvent 对象
    */
   private rowToEvent(row: any): StorageEvent {
+    const legacyIsTimer = Boolean(row.is_timer);
+
     return {
       id: row.id,
       title: {
@@ -1264,7 +1269,8 @@ export class SQLiteService {
       emoji: row.emoji,
       color: row.color,
       isCompleted: Boolean(row.is_completed),
-      isTimer: Boolean(row.is_timer),
+      // Read-time upgrade: legacy is_timer -> new SSOT signal via source.
+      ...(legacyIsTimer ? { source: 'local:timelog' } : {}),
       tags: row.tags ? JSON.parse(row.tags) : undefined,
       eventlog: row.eventlog ? JSON.parse(row.eventlog) : undefined,
       sourceAccountId: row.source_account_id,

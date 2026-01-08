@@ -31,11 +31,6 @@
   overflow: visible;
 }
 
-/* Allow dropdown menus inside demo pickers (production keeps overflow hidden) */
-.theme-demo .theme-demo-content-panel-pickers .collapsible-section {
-  overflow: visible;
-}
-
 /* 5.2 + 5.3: sidebar section title is 16px, no bg/border */
 .theme-demo .theme-demo-content-panel-pickers .section-title {
   font-size: 16px;
@@ -56,7 +51,7 @@
 .theme-demo .theme-demo-content-panel-pickers .task-tree,
 .theme-demo .theme-demo-content-panel-pickers .calendar-tree {
   background: var(--ui-surface-soft);
-  border: 1px solid var(--ui-border);
+  border: 0;
   border-radius: 12px;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
@@ -98,7 +93,7 @@
   justify-content: space-between;
   gap: 10px;
   background: var(--ui-surface-soft);
-  border: 1px solid var(--ui-border);
+  border: 0;
   color: var(--ui-text);
   cursor: pointer;
 }
@@ -115,15 +110,15 @@
   left: auto;
   right: auto;
   z-index: auto;
-  margin-top: 8px;
+  margin-top: 4px;
   background: var(--ui-surface-soft);
-  border: 1px solid var(--ui-border);
+  border: 0;
   border-radius: 12px;
 }
 
 .theme-demo .theme-demo-content-panel-pickers .tag-dropdown-scroll {
   overflow: auto;
-  padding: 8px;
+  padding: 4px 6px 4px 12px;
 }
 
 .theme-demo .theme-demo-content-panel-pickers .tag-dropdown-row {
@@ -135,59 +130,7 @@
 
 .theme-demo .theme-demo-content-panel-pickers .tag-dropdown-checkbox {
   margin: 0 8px 0 6px;
-}
-
-/* Tag dropdown checkbox menu (ThemeDemo only) */
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown {
-  position: relative;
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-trigger {
-  width: 100%;
-  height: 36px;
-  padding: 0 10px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  background: var(--ui-surface-soft);
-  border: 1px solid var(--ui-border);
-  color: var(--ui-text);
-  cursor: pointer;
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-triggerText {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--ui-text);
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  right: 0;
-  z-index: 30;
-  background: var(--ui-surface-soft);
-  border: 1px solid var(--ui-border);
-  border-radius: 12px;
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-scroll {
-  overflow: auto;
-  padding: 8px;
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-row {
-  display: flex;
-  align-items: center;
-  min-height: 32px;
-  cursor: pointer;
-}
-
-.theme-demo .theme-demo-content-panel-pickers .tag-dropdown-checkbox {
-  margin: 0 8px 0 6px;
+  accent-color: var(--ui-accent);
 }
 
 /* AppLayout main area is overflow:hidden; enable scrolling inside this page */

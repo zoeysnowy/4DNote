@@ -1,7 +1,7 @@
 # Event Field Contract（字段契约）
 
-> ⚠️ 已迁移：新的 Single Source of Truth（可执行规范）请见：
-> - docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md
+> ⚠️ 已迁移：新的 SSOT（Single Source of Truth）请见：
+> - docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md
 >
 > 本文保留为历史事实与过程记录。
 
@@ -136,10 +136,17 @@
 1) **模块来源类（module-origin flags）**：表示“这个事件从哪个模块/入口产生”，用于 UI 分流、默认展示与快捷入口。
    - 例：`isPlan/isTimeCalendar/isTimer`。
 2) **系统轨迹/记录类（system-trajectory / record）**：表示“这是系统自动产生的轨迹/记录/附属事件”，通常应从大多数用户任务视图中默认隐藏。
-   - 现状：用 `isTimer/isTimeLog/isOutsideApp` 作为 *subordinate* 判定（见 `EventService.isSubordinateEvent`）。
-   - 目标：后续应引入 **Signal 模型**（见下文 4.5.3）承载“信号/证据/轨迹”，避免用布尔字段混载不同语义。
+  - 现状（已实现）：subordinate 判定来自 **SSOT 派生信号**（例如 `source==='local:timelog'`、`timerSessionId`、以及 timer 事件的 `id.startsWith('timer-')` 等），由 `EventService.isSubordinateEvent` 统一收敛。
+  - 说明：历史上的 `isTimer/isTimeLog/isOutsideApp` 已从 `Event` 类型与落库路径移除；若仍从旧数据/迁移数据读到，仅允许作为 compat hint（读取时升级为 SSOT 信号），不得作为写入字段回写。
+  - 目标：后续应引入 **Signal 模型**（见下文 4.5.3）承载“信号/证据/轨迹”，避免用布尔字段混载不同语义。
 
-> 说明：`isTimer` 在当前实现中是一个“交叉字段”——它既体现“Time 模块产生的 timer 事件”，又被 `isSubordinateEvent` 视为默认应隐藏的附属记录。
+> 说明：timer 类事件在当前实现中是一个“交叉概念”——它既体现“Time 模块产生的 timelog 轨迹”，又被 `isSubordinateEvent` 视为默认应隐藏的附属记录。该概念通过 SSOT 派生信号表达，而不是布尔字段。
+
+#### 4.5.1.1 Timer eventlog 归属（产品口径）
+
+- Timer 事件（`id` 形如 `timer-...`，并通过 `parentEventId` 关联父事件）可以拥有自己的 view（例如顶部展示计时段/期间信息）。
+- 但 **eventlog 的 canonical owner 是父事件**：在 timer view 中对 eventlog 的编辑应写入 `parentEventId` 对应的父事件 eventlog（“编辑计入父事件 eventlog”）。
+- Timer 事件记录本身可能在创建/停止计时阶段携带一份 eventlog 的快照/继承值用于初始化展示，但这不是权威写入目标。
 
 > 强约束：**任何“默认时间/虚拟时间”逻辑都必须先判定 task-like（`isPlan/isTask/type/checkType`）并排除。**
 
@@ -164,7 +171,7 @@
 | `externalId` | Canonical | Sync | 外部映射 | - | TimeCalendar 支持 `not-synced`（无 `externalId` 或无 `calendarIds`）筛选 | - | - | - | - | Sync 合并/映射写入 | **可能记录**（同步写入；非忽略字段） |
 | `source/fourDNoteSource` | Canonical+Legacy | Diagnose | 来源/本地创建 | - | TimeCalendar 支持 `local-created`（`source=local` 或 `fourDNoteSource=true`）筛选 | 仅展示/诊断 | - | - | - | Sync 合并/映射写入 | `source` **记录**；`fourDNoteSource` **忽略** |
 | `syncStatus` | Canonical | Sync | 同步状态 | 展示/诊断 | 展示/诊断 | 展示/诊断 | - | - | - | Sync 合并/映射写入 | **可能记录**（同步状态变化；非忽略字段） |
-| `isTimer/isTimeLog/isOutsideApp` | Canonical | Filter | 系统轨迹/记录（subordinate） | **排除**（`EventService.isSubordinateEvent`） | Timer 可能参与 TimeCalendar 视图（视产品口径） | **排除**（subordinate 不上时间轴） | **排除**（面板明确排除） | **排除**（EventTree 明确排除） | 通常不作为主结果 | 通常不推送（除非专门映射） | **记录**（若发生变更） |
+| subordinate（系统轨迹/记录） | Derived（SSOT signal） | Filter | subordinate | **排除**（`EventService.isSubordinateEvent`） | 视产品口径（可在特定视图展示） | **排除**（subordinate 不上时间轴） | **排除**（面板明确排除） | **排除**（EventTree 明确排除） | 通常不作为主结果 | 通常不推送（除非专门映射） | N/A（不再有对应布尔字段） |
 | `isNote` | Canonical | Filter | 快速访问/标记 | 视产品口径（一般不作为 Plan 条件） | 视产品口径 | **用于标记/批量子树操作**（TimeLog 可切换） | 视产品口径 | 视产品口径 | 可能影响 icon/召回 | 不决定 target | **记录** |
 | `parentEventId/position` | Canonical | Structure | 结构与排序 | Plan 结构/缩进/排序（间接影响展示） | 非核心 | 非核心（但可用于子树相关操作） | 非核心 | **核心**（树结构与同级排序） | 非核心 | 不决定 target | `parentEventId` **记录**；`position` **忽略** |
 
@@ -173,7 +180,7 @@
 > - **功能类型**默认 `Filter`（本节表格的主目标是“可见性/分类/过滤口径”；若某字段主要用于同步/路由/结构，则在本列显式标注）。
 
 > 备注（TimeLog Timeline 口径）：TimeLogPage 的时间轴列表与 `EventService.getTimelineEvents` 对齐：
-> - 排除 subordinate：`isTimer/isTimeLog/isOutsideApp`；
+> - 排除 subordinate：`EventService.isSubordinateEvent(event)`（基于 SSOT 派生信号）；
 > - 排除“无显式时间”的 `isPlan/isTask`；
 > - 排序/分组使用 `resolveCalendarDateRange(event).start` 作为派生 anchor（兼容 no-time / end-only）。
 
@@ -185,7 +192,7 @@
 > - `isPlan===true`：明确由 Plan 域创建/维护的任务；
 > - `checkType && checkType!=='none'`：历史/部分入口只设置了 checkType（签到/任务语义），但未可靠设置 `isPlan/isTask`；
 > - `isTimeCalendar===true`：TimeCalendar 创建的事件也要在 PlanManager 的某些视图中可见。
-> - 然后统一排除 subordinate：`EventService.isSubordinateEvent`（`isTimer/isTimeLog/isOutsideApp`）。
+> - 然后统一排除 subordinate：`EventService.isSubordinateEvent`（基于 SSOT 派生信号）。
 
 > `isTask` 的判定口径（代码现状）：它是 **显式布尔字段**，但为避免 flags 丢失，部分“task-like”逻辑会用 `isPlan/type/checkType` 做兜底（例如 `normalizeEvent` 的 task-like 判定）。字段契约推荐：**创建入口应直接写 `isTask=true`（Plan/Task），不要依赖兜底推断。**
 
@@ -349,7 +356,7 @@
   - 存储真相（canonical）：`startTime/endTime/isAllDay/timeSpec`（若存在）是时间真相；TimeLog 不允许为“无时间笔记”注入默认时间来改变语义。
   - 排序/按天分组：必须使用 `resolveCalendarDateRange(event).start` 作为 anchor（派生、只读）。
   - Timeline 收录过滤（必须与代码保持一致，禁止各处自写一套）：
-    - 排除 subordinate：`isTimer || isTimeLog || isOutsideApp`（或等价的 `EventService.isSubordinateEvent`）。
+    - 排除 subordinate：`EventService.isSubordinateEvent(event)`（基于 SSOT 派生信号）。
     - Plan/Task 若没有明确时间，不应被当作 timeline 事件收录（避免“计划/待办默认落位”污染时间流）。
     - 必须排除 `deletedAt`。
   - 禁止回写：任何派生 anchor/过滤结果不得写回 canonical 时间字段。
@@ -495,7 +502,7 @@
 
 **过滤口径（Filter）**
 - 并集条件（面板内实现）：`isPlan===true` OR (`checkType && checkType!=='none'`) OR `isTimeCalendar===true`
-- 排除 subordinate（面板内显式排除）：`isTimer===true || isOutsideApp===true || isTimeLog===true`
+- 排除 subordinate（面板内显式排除）：`EventService.isSubordinateEvent(event)`（基于 SSOT 派生信号）
 - 时间范围：按 `getTimeRange(activeFilter, now)`，并对 `timeSpec.resolved.start` 做区间筛选
 - `deletedAt`：契约口径应排除（通常由上游事件快照/`getAllEvents` 已过滤）；如未来切换为 includeDeleted 快照，面板必须显式排除 `deletedAt`
 

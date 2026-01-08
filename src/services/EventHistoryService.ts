@@ -1093,12 +1093,15 @@ export class EventHistoryService {
     // 忽略的字段（同步元数据和自动更新的时间戳）
     const ignoredFields = new Set([
       'localVersion', 
-      'lastLocalChange', 
       'lastSyncTime',
       'position',          // ✅ position 只是排序字段，不应触发历史记录
       'updatedAt',         // 🆕 忽略 updatedAt（每次更新都会变，非实质性变更）
       'fourDNoteSource',   // 🆕 忽略 fourDNoteSource（同步标记，非实质性变更）
-      '_isVirtualTime'     // 🆕 忽略 _isVirtualTime（内部标记，非持久化字段）
+      '_isVirtualTime',    // 🆕 忽略 _isVirtualTime（内部标记，非持久化字段）
+
+      // 🆕 v3.1: 空白清理/快照字段（系统维护的元数据，不应触发历史爆炸）
+      'lastNonBlankAt',
+      'bestSnapshot'
     ]);
 
     allKeys.forEach(key => {

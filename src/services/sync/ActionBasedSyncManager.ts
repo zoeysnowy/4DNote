@@ -4239,8 +4239,9 @@ export class ActionBasedSyncManager {
             // 🔍 先尝试匹配 Timer 事件
             existingEvent = events.find((e: any) => 
               !e.deletedAt &&                 // 🛡️ 跳过已软删除的事件
-              e.isTimer &&                    // ✅ 必须是 Timer 事件
-              !e.externalId &&                 // ✅ 还没有同步过(没有 externalId)
+              typeof e.id === 'string' &&
+              e.id.startsWith('timer-') &&    // ✅ Timer 事件（由 Timer 生成的 id 前缀）
+              !e.externalId &&                // ✅ 还没有同步过(没有 externalId)
               e.fourDNoteSource === true &&   // ✅ 4DNote 创建的
               (() => {
                 const createdAt = parseLocalTimeStringOrNull(e.createdAt);
@@ -4256,7 +4257,7 @@ export class ActionBasedSyncManager {
             if (!existingEvent) {
               existingEvent = events.find((e: any) => 
                 !e.deletedAt &&                 // 🛡️ 跳过已软删除的事件
-                !e.isTimer &&                   // ✅ 非 Timer 事件
+                !(typeof e.id === 'string' && e.id.startsWith('timer-')) && // ✅ 非 Timer 事件
                 !e.externalId &&                // ✅ 还没有同步过(没有 externalId)
                 (e.fourDNoteSource === true || e.id.startsWith('local-')) && // ✅ 4DNote 创建的或本地创建的
                 e.title?.simpleTitle === newEvent.title?.simpleTitle &&   // ✅ 标题匹配

@@ -1,4 +1,4 @@
-﻿# Event Field Contract（Executable Spec）
+﻿# Event Field Contract（SSOT）
 
 > 目的：把字段契约写成“可执行规范（Executable Spec）”。任何工程师仅依赖本文即可回答：
 > - 字段是什么意思（语义/适用范围/默认值）
@@ -211,8 +211,10 @@ await SignalService.createSignal({
 ```
 
 **特别说明**：
-- `isTimeLog/isOutsideApp/isTimer` 用于 **subordinate 判定**，不是 Signal
-- 这些字段属于 System Trajectory（系统轨迹），语义不同
+- **Behavior（timeblock）不是 Signal**：Behavior 属于用户可见的数据实体（独立表），用于承载“实际进展/计时”等 timeblocks。
+- subordinate/trajectory/系统轨迹 是 **历史术语（待清理删除）**：过去用“子事件(Event)”承载 timeblock；SSOT 不承诺任何运行期兼容路径。
+  - 若存量 DB 仍存在这类 Event 形态记录：只能由 migration/cleanup 工具一次性迁移为 `behaviors`（或直接清理删除），产品主路径不得依赖 `EventService.isSubordinateEvent` 做业务分支。
+- `isTimeLog/isOutsideApp/isTimer` 仅作为 **历史脏输入**（migration/read-upgrade 阶段可读并应当写回为 canonical），最终必须移除。
 
 #### 5. Sync 边界
 
@@ -613,6 +615,8 @@ async function deleteEvent(eventId: string): Promise<void> {
 
 > 这是你提供的“原版分治表”的正式落地版本：它比上面的概览更强，因为包含 **Identity/Structure/System Trajectory/Derived** 这些最容易发生越权写与语义混载的域。
 
+> 注：这里的 “System Trajectory/系统轨迹” 属于历史设计残留（待清理删除），不再作为长期域存在；本表后续会以 Behavior（timeblock）为主口径收敛。
+
 | Domain | 内容 | Owner（唯一写入方） | 其他模块权限 |
 |---|---|---|---|
 | A Identity & Classification | `id`, `deletedAt`, `source`（外部系统来源） | `EventService`（create/update 入口） | 只读；禁止用字段表达“视图纳入/多重角色”（见下：facet + view_membership） |
@@ -622,7 +626,7 @@ async function deleteEvent(eventId: string): Promise<void> {
 | I Context（Tags/People/Place） | `tags/location/organizer/attendees/reminder` | `EventService.normalizeEvent` + external merge 例外 | 只读；Tag/Contact 的字典维护不等于 Event 字段写入 |
 | E Sync | `syncMode/syncStatus/externalId/calendarIds/todoListIds/synced*` | `ActionBasedSyncManager` +（部分用户意图字段由 UI 写） | UI 仅可写“用户意图”（如选择 `calendarIds/todoListIds`）；状态/外部映射仅 Sync 写 |
 | F Structure | `parentEventId`（真相）/ `position`（展示） | `Plan/EventTree` | 结构真相仅来自 `parentEventId + position`；`childEventIds` 已从代码侧移除（历史数据若存在也会被忽略） |
-| G System Trajectory（subordinate） | subordinate 判定（短期以 `EventService.isSubordinateEvent` 为准，长期迁移到 Signal/Telemetry 另案） | 建议迁移到 Telemetry/Signal（另案）；短期按 `EventService.isSubordinateEvent` 口径 | subordinate 属于“系统轨迹”，默认不进入主视图；其实现细节不在本 SSOT 作为架构真相 |
+| G Behavior（timeblock / 行为时间段） & Deprecated Trajectory（待清理删除） | **Behavior 记录用户可见的“实际进展/计时/签到”等时间段（timeblocks）**；历史上用 subordinate/trajectory（系统轨迹）描述的“子事件”必须通过迁移/清理收敛为 Behavior（或删除），SSOT 不提供长期运行期兼容语义 | `BehaviorService`（拟）写 behaviors 表；宿主 Event 的 `title/eventlog` 仍由 `EventService` 写 | UI 可读写 Behavior 的 timeblock 与同步意图；不得把 Behavior 语义回写进 Event（禁止新增 isXxx flags） |
 | H Derived/Index（不可回写） | `_isDeleted/_deletedAt/_isVirtualTime/bulletLevel?` 等 | Derived/Repair 工具路径 | **禁止**主路径回写 |
 
 > 说明（本次口径定稿）：**不引入 `kind/recordClass/origin` 到 Event 模型**。
@@ -630,10 +634,15 @@ async function deleteEvent(eventId: string): Promise<void> {
 > - “角色/纳入/可见性”统一用 **facet（派生谓词）** 表达，并把结果物化到 **view_membership / 各引用表（lib_store/workspace_store/sky_store）**。
 > - `shouldShow(viewId)` 只负责计算/更新索引（derived），**不得回写 Event**。
 
+> 术语澄清（本次口径定稿）：
+> - **Behavior（timeblock）**：用户可见、可编辑/可删除的“实际进展时间段”（例如 3 次计时 = 3 个 timeblock）。
+> - **Trajectory / subordinate / 系统轨迹**：历史术语（待清理删除）（曾用“子事件”承载 timeblock）。今后以 Behavior 为主表达；若仍存在 Event 形态的轨迹子事件，只允许 migration/cleanup 工具处理并迁移/删除，产品主路径不得依赖。
+
 ### 4.4 Storage Stores（IndexedDB/SQLite：最小存储契约）
 
 > 原则（只写“会影响契约”的 schema）：
-> - `Event` 永远是唯一 Canonical 真相；其余表都是 Derived/Index/Cache（可重建）。
+> - `Event` 是内容真相；**Behavior（timeblock）是另一类持久化真相**（独立表）。
+> - 其余表都是 Derived/Index/Cache（可重建）。
 > - Storage schema 只有在影响 **跨模块语义 / 写入边界 / 查询能力** 时才进入 SSOT。
 
 #### 4.4.1 Stores 总览（先看表，后看细节）
@@ -641,6 +650,7 @@ async function deleteEvent(eventId: string): Promise<void> {
 | Store | 定位 | Truth Level | Owner（唯一写入方） | 关键列（只列影响契约的） | 关键索引（只列必须理解的） | 重建/迁移 |
 |---|---|---|---|---|---|---|
 | `events` | 主表：Event 真相 | Canonical | `EventService`→`StorageManager` | `Event` 全量字段 | `id`（PK），（按实现可能有 `startTime` 等索引） | N/A |
+| `behaviors`（新增） | 行为时间段表：timeblock 真相 | Canonical | `BehaviorService`（拟）→`StorageManager` | `id`、`hostEventId`、`type`、`startTime/endTime`、`syncMode/calendarIds`、`externalMappings`、`createdAt/updatedAt/deletedAt` | `hostEventId`、`startTime`（范围查询/排序） | N/A（可迁移，但不可“从 events 重建”） |
 | `event_tree` | 轻量索引/统计（性能优化） | Derived/Index | `EventService`（写入/更新） + Repair/Migration | `id`、`parentEventId`、`rootEventId`、`tags[]`、`calendarIds[]`、`startTime/endTime`、`updatedAt` | `parentEventId`、`rootEventId`（已存在）；（范围查询常需要 `startTime`） | `StorageManager.migrateToEventTreeIndex`（可重建） |
 | `view_membership` | 视图纳入索引（可重建） | Derived/Index | `ViewMembershipService`（或等价服务） | `viewId`、`eventId`（必要时附带 `anchor`/`orderKey`） | `[viewId+eventId]` | 可全量重建（不影响 events 真相） |
 | `sync_queue` | 同步动作队列 | Derived/System | `ActionBasedSyncManager` | `id`、`status`、`updatedAt` 等队列字段 | `status`/时间索引（按实现） | 可清理/可重放 |
@@ -667,7 +677,7 @@ async function deleteEvent(eventId: string): Promise<void> {
 | `eventlog` | 总是 | 统一为 `EventLog`（支持 `EventLog`/Slate JSON/HTML/纯文本/undefined；必要时识别并保留签名策略） | 输入形态多；若不集中会导致解析不一致/签名漂移 |
 | `location` | 当存在 | `string`/`LocationObject` → 规范化为 `LocationObject` 或 `undefined` | Outlook inbound 常给 string；内部期望对象 |
 | `checkType` | 总是 | 仅允许 `'none' | 'once' | 'recurring'`；缺失/非法值 → `'none'` | `undefined` 若被当作 task，会导致 Plan 混入同步事件 |
-| `externalId` | 当存在 | `trim()`；兼容历史 `outlook-xxx` → `xxx`（统一存储为裸 Outlook ID）；空串 → `undefined` | 前缀/空格不一致导致匹配失败与迁移误判 |
+| `externalId` | 当存在 | `trim()`；空串 → `undefined`；**只允许 canonical 命名空间格式**：`<provider>:<resource>:<remoteId>`（如 `outlook:calendar:<id>` / `outlook:todo:<id>` / `google:calendar:<id>`）；若读到历史 `outlook-.../todo-.../裸 id` 只能在 migration/normalize 中一次性升级并写回 canonical | 前缀/空格/格式不一致导致匹配失败与迁移误判 |
 | `syncMode` | 当存在 | `trim()`；空串 → `undefined` | UI/同步可能产生空串；不应写入无意义值 |
 | `tags` | 仅当字段存在（不为 `undefined`） | 过滤非 string；`trim()`；去空；（若传入 string，转为单元素数组） | 避免 `undefined → []` 注入导致 EventHistory 噪音；避免脏数据 |
 | `calendarIds` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 同上；并避免空值导致错误路由 |
@@ -676,6 +686,56 @@ async function deleteEvent(eventId: string): Promise<void> {
 | `unchecked` | 仅当字段存在（不为 `undefined`） | 同 `tags` 的 String[] 归一化规则 | 避免混入空时间戳/空字符串 |
 | `subEventConfig.calendarIds` | 当 `subEventConfig` 存在且该字段存在 | 同 `tags` 的 String[] 归一化规则 | 子事件默认配置可能来自 UI/旧数据；需清洗 |
 | `subEventConfig.syncMode` | 当 `subEventConfig` 存在且该字段存在 | `trim()`；空串 → `undefined` | 同上 |
+
+#### 4.4.2b Store Spec：`behaviors`（新增：Behavior timeblock 真相）
+
+- **定位**：存储“用户可见的实际进展/计时等行为时间段（timeblock）”。每条 Behavior 对应用户在日历上看到的一个独立 timeblock（可同步为一个独立远端日历事件）。
+- **与宿主 Event 的关系**：
+  - 宿主 Event（`events`）提供 **内容真相**：`title/eventlog/description/tags/...`
+  - Behavior（`behaviors`）提供 **timeblock 真相**：`startTime/endTime/type` 及其同步映射
+- **不变量**：
+  - Behavior **不是 Event**：不拥有 `eventlog/title` 真相；EditModal 可复用宿主 UI，但写入必须分流到 behaviors 表。
+  - Behavior 的删除/合并不应级联删除宿主 Event。
+  - Behavior 时间与同步映射必须使用 namespaced externalId 口径（见 `externalMappings` 规范）。
+
+**建议字段（契约级，最小集）**
+```ts
+type BehaviorType = 'timer' | 'checkin' | 'manual' | 'outside_app';
+
+interface Behavior {
+  id: string;              // UUID
+  hostEventId: string;     // 绑定宿主 Event（必填）
+  type: BehaviorType;
+
+  // timeblock（本地时间格式 YYYY-MM-DD HH:mm:ss）
+  startTime: string;
+  endTime?: string;        // 允许进行中
+
+  // 同步意图（与 Event 同形，便于复用 UI；写入边界仍归 Behavior）
+  syncMode?: string;
+  calendarIds?: string[];
+
+  // 外部映射：一条 Behavior timeblock 可能同步到多个日历 → 多条 mapping
+  externalMappings?: Array<{
+    provider: 'outlook' | 'google' | 'icloud';
+    resource: 'calendar';
+    calendarId: string;
+    externalId: string;    // <provider>:<resource>:<remoteId>
+  }>;
+
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string;
+}
+```
+
+**写入链路**
+- UI（Behavior timeblock 编辑/删除/同步选择）→ `BehaviorService` → `StorageManager`
+- 宿主内容编辑（title/eventlog）仍走 `EventService`（不写入 behaviors）。
+
+**同步边界（与宿主内容的关系）**
+- Behavior 的远端 payload 内容来自宿主 Event（title/eventlog/description）。
+- 当用户编辑宿主内容：只更新“未来/未结束”的已同步 Behavior 远端事件正文；已结束的历史不改（见 9.6）。
 
 #### 4.4.3 Store Spec：`event_tree`
 
@@ -813,7 +873,7 @@ interface EventTitle {
 | `syncMode` | Sync | `undefined` | Sync | receive-only 等策略 | 路由阻断（receive-only 不推送） |
 | `calendarIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Outlook Calendar（数组） | 表单显示规则：`(startTime && endTime) \|\| source==='local:library'` |
 | `todoListIds` | Sync(intent) | 默认 `undefined` | UI(intent) | 用户选择同步到哪些 Microsoft To Do List（数组） | 表单显示规则：`source !== 'local:timelog'`；用户选择后自动补 `checkType='once'` |
-| `externalId` | Sync | `undefined` | Sync | 外部映射（outlook-/todo-） | 双向映射 key |
+| `externalId` | Sync | `undefined` | Sync | 外部映射（`<provider>:<resource>:<remoteId>`） | 双向映射 key |
 | `syncStatus` | Sync | `undefined` | Sync | pending/synced/error 等 | Sync 状态 |
 | `createdAt` | Meta | create 时写入 | Meta | 创建时间（本地格式） | inbound 可来自远端 |
 | `updatedAt` | Meta | 实质变更才更新 | Meta | 仲裁依据 | inbound 可来自远端；Storage 禁止覆盖 |
@@ -833,7 +893,7 @@ interface EventTitle {
     // 本地创建（细分页面）
     | 'local:plan'           // Plan 页面创建（都是 Task）
     | 'local:timecalendar'   // TimeCalendar 页面创建（通常有 calendar block）
-    | 'local:timelog'        // TimeLog 页面创建（系统轨迹记录，通常是 subordinate）
+    | 'local:timelog'        // TimeLog 页面创建（Behavior/时间段记录的统一入口；历史上可能产生 legacy trajectory/subordinate Event）
     | 'local:library'        // Library 页面创建（文档/笔记型，通常无时间）
     | 'local:workspace'      // Workspace 侧边栏创建（文档型，自动归入 lib_store + workspace_store）
     | 'local:sky'            // Sky Pin 入口创建（任意类型，自动归入 sky_store）
@@ -918,7 +978,17 @@ interface EventTitle {
 > 5. **TimeLog 时间轴视图**：所有事件都可纳入（不过滤类型）
 >    - TimeLog 是时间轴聚合视图，不是类型过滤器
 >    - 排序锚点：使用 `resolveTimelineAnchor(event, 'timelog')`（派生，不落库）
->    - 说明：`source='local:timelog'` 创建的事件通常是 subordinate，但 TimeLog 视图本身不过滤任何类型
+>    - 说明：`source='local:timelog'` 常用于 Behavior/时间段记录；历史数据中也可能对应 legacy subordinate Event，但 TimeLog 视图本身不过滤任何类型
+> 
+> 6. **Behavior（timeblock）& Deprecated Trajectory（subordinate / 系统轨迹，待清理删除）**
+>    - **Behavior（主口径）**：timeblock 存在于 `behaviors` 表，属于用户可见实体（不是 Event 字段，也不是 Signal）。
+>    - **Deprecated Trajectory（待清理删除）**：若历史数据仍以 Event 形态承载 timeblock，只允许 migration/cleanup 工具识别并迁移/删除，产品主路径不得依赖。
+>      - 清理判定信号（清理工具口径必须一致）：`event.timerSessionId` 存在 或 `getCreationSource(event)==='local:timelog'`
+>      - 重要说明：任何“subordinate/trajectory 判定结果”不得回写进 Event。
+>    - 同步体验口径（重要，避免误解）：
+>      - **轨迹/行为 timeblock 在用户心智中是“独立的日历事件”**（例如一件事产生 3/4/5 个计时段，对用户来说就是日历里 3/4/5 个独立事件）。
+>      - 宿主 Event 提供**统一内容真相**（title/eventlog），但“是否回写远端历史正文”属于同步策略（见 9.6）。
+>      - 删除某个行为 timeblock 只影响该 timeblock 对应的远端事件；**不得级联删除宿主 Event**。
 > 
 > **禁止**新增 `isTask/isPlan/isNote` 或任何"task-like"枚举/布尔字段
 > 
@@ -976,9 +1046,23 @@ interface EventTitle {
 - 双向链接：`linkedEventIds/backlinks`
 - Historical residual：`childEventIds`（已移除；若历史数据仍存在，读写路径会忽略）
 
-#### G. System Trajectory（系统轨迹 / subordinate）
-- subordinate 判定（短期以 `EventService.isSubordinateEvent` 为准，长期迁移到 Signal/Telemetry 另案）
-- 计时相关：`timerSessionId`
+#### G. Behavior（timeblock） & Deprecated Trajectory（subordinate / 系统轨迹，待清理删除）
+
+- **主口径：Behavior（timeblock）**
+  - timeblock 真相存在于 `behaviors` 表（见 4.4.2b），用于承载计时/实际进展等用户可见记录。
+  - 与 Event 的边界：宿主 Event 负责 `title/eventlog`；Behavior 负责 `startTime/endTime/type` 及其同步映射。
+
+- **Deprecated Trajectory（Event 形态的 timeblock，待清理删除）**
+  - 这类记录一旦在存量 DB 中被发现，只允许 migration/cleanup 工具识别并迁移/删除；产品主路径不得据此做业务分支。
+  - subordinate 识别（仅清理工具可用）：
+    - `EventService.isSubordinateEvent(event)`（短期可用，但必须最终移除该依赖）
+    - **SSOT 判定口径（清理工具必须一致）**：
+      1) `event.timerSessionId` 存在
+      2) `getCreationSource(event) === 'local:timelog'`
+  - **禁止**：用 `parentEventId` 推断 subordinate（结构关系≠创建者/系统链路）
+  - **历史脏输入（仅 migration/read-upgrade 可读）**：`isTimer/isTimeLog/isOutsideApp`（最终必须移除）
+
+- 计时相关（legacy Event 字段）：`timerSessionId`
 
 #### H. Derived / Internal / Repair-only（不可回写的内部/派生）
 - 临时 ID 追踪：`_isTempId/_originalTempId`
@@ -1129,13 +1213,26 @@ function shouldShow_TimeLog(event: Event): boolean {
 
 ### Field Card：`externalId`（外部映射键 - 主日历）
 - 层级：Sync
-- 语义（一句话）：本地 Event 与外部系统对象的一对一映射键（前缀区分系统）。
+- 语义（一句话）：本地 Event 与外部系统对象的一对一映射键；**不得脱离 provider/type 单独解释**。
 - Writers：Sync（external create / merge / migration）
 - Readers：Sync（update/delete 路由）、TimeCalendar（筛选 not-synced）、诊断工具
 - 约定：
-  - Outlook Calendar：`externalId` **canonical 存储为裸** `<graphEventId>`（不带 `outlook-` 前缀）
-    - 兼容历史：若读到 `outlook-<graphEventId>`，入库 normalize 会剥离为裸 ID
-  - Microsoft To Do：`externalId` 形如 `todo-<graphTaskId>`（保留 `todo-` 前缀用于区分系统）
+  - **Canonical（SSOT 统一口径）**：`externalId` 必须使用命名空间格式：`<provider>:<resource>:<remoteId>`
+    - Outlook Calendar：`outlook:calendar:<graphEventId>`
+    - Microsoft To Do：`outlook:todo:<graphTaskId>`
+    - Google Calendar（预留）：`google:calendar:<googleEventId>`
+  - **禁止兼容存储**：SSOT 不允许“兼容字段/兼容格式”长期存在于库中。
+    - 允许的仅是**输入层的一次性升级**（migration/normalize）：
+      - 读到 `outlook-<graphEventId>` → 立即升级并以 `outlook:calendar:<graphEventId>` 形态写回
+      - 读到 `todo-<graphTaskId>` → 立即升级并以 `outlook:todo:<graphTaskId>` 形态写回
+      - 读到裸 `<remoteId>`：只有在能明确判定 provider/resource 时才允许升级（例如 `source==='outlook:calendar'` 或同步目标明确是 Outlook Calendar），否则判为不合法输入（避免与 `google:*` 产生歧义）
+    - **禁止**：任何新写入路径/Sync merge 将 `outlook-...`/`todo-...`/裸 id 直接落库。
+- 重要说明（防歧义）：
+  - `externalId` **不是全局唯一**，必须与 provider 一起构成唯一键。
+  - provider 的来源：
+    - 外部 Inbound 创建：由 `source`（例如 `outlook:calendar` / `outlook:todo` / `google:calendar`）决定。
+    - 本地创建后同步：由 Sync 目标容器决定（例如 `calendarIds/todoListIds`、以及多日历的 `externalMappings.calendarId`）。
+  - 因而：未来引入 Google Calendar 时，必须使用命名空间（或通过 `externalMappings` 携带 `calendarId` → provider），避免“同字段混存不同系统裸 ID”导致不可判定。
 - 不变量：UI 不得直接写入；只能通过 Sync 生成/变更。
 - 多日历场景：`externalId` 记录主日历的远程事件 ID，其他日历通过 `externalMappings` 记录
 
@@ -1208,7 +1305,7 @@ function shouldShow_TimeLog(event: Event): boolean {
   - **`calendarIds` 显示条件**：`(startTime && endTime) || source === 'local:library'`
     - 理由：Calendar 同步需要时间锚点（或 Note 可虚拟时间）
   - **`todoListIds` 显示条件**：`!isSubordinateEvent(event)`
-    - 理由：所有用户创建的事件都可同步到 To Do（仅排除系统轨迹）
+    - 理由：所有用户创建的事件都可同步到 To Do（仅排除待清理删除的历史脏记录：Deprecated Trajectory/subordinate）
     - TimeLog 页面创建的普通事件也应显示（用户可能记录想法/任务）
 - **用户意图驱动 checkType**：
   - 当用户选择 `todoListIds` 且 `checkType === 'none'` 时，UI 自动补充 `checkType = 'once'`
@@ -2334,7 +2431,8 @@ applyLocalActionToRemote(action) {
 - 运行中状态：UI 使用全局 timer 会话态（不落库），事件对象作为持久化容器。
 
 **写（Write）**
-- Start：创建或更新一个 `isTimer===true` 的事件（时间字段使用 `formatTimeForStorage`），并写入 `tags`（若用户选择了标签）。
+- Start（主口径）：创建一个 Timer **Behavior timeblock**：写入 `behaviors.startTime/endTime?/type='timer'`，并允许写入该 timeblock 的同步意图（`calendarIds/syncMode`）。
+- Start（禁止）：不得再以 Event 形态落库任何“轨迹/子事件/系统轨迹”记录；存量若存在，必须通过 migration/cleanup 清理为 Behavior 或删除。
 - Running：允许周期性保存进展（例如更新 `endTime/updatedAt`），但不得触发同步推送。
 - Stop：写入最终 `endTime` 并触发进入 pending 流程（由 Sync/Service 决策状态字段）。
 - 二次计时升级：当对已完成的独立 Timer 再次启动时，可通过 `parentEventId` 将其升级到父子结构；结构真相仍遵循 ADR-001。
@@ -2344,20 +2442,48 @@ applyLocalActionToRemote(action) {
 - TimeCalendar/Plan 是否显示 Timer 取决于 UI 策略（另案）
 - **AI 卡片**：与 Timer 无关（Timer 模块不处理 AI 卡片）
 
+**Behavior timeblock（取代“系统轨迹/trajectory”的主口径）**
+- 适用场景：timer 计时 / task 打钩等行为，在“实际进展”里产生一个用户可见 timeblock。
+- SSOT 约束：
+  - **Behavior 记录 timeblock，宿主 Event 记录内容**：Behavior 不拥有独立 `eventlog/title` 真相。
+  - EditModal 可复用宿主 UI（用户看到“所有设置都在”），但持久化必须分流：内容写宿主 Event；timeblock 与其同步映射写 behaviors 表。
+  - **不得**默认在 EventTree 中展示/参与结构编辑（避免把行为时间段污染到用户树组织）。
+  - Behavior 的同步对象是 Behavior 自己（每个 timeblock 对应独立远端日历事件）；宿主 Event 的同步仍按其自己的 calendar block/意图决定。
+
+**Deprecated Trajectory（待清理删除）**
+- 若历史数据仍以 Event 子事件承载 timeblock：
+  - 只允许 migration/cleanup 工具读取并迁移到 `behaviors` 表（或删除）；产品主路径不应继续“容忍存在”。
+  - 若历史 UI/逻辑仍需要展示：必须先迁移成 Behavior，再展示。
+
+**“虚拟事件/虚拟字段”的边界**
+- 允许：为 Sync outbound 或 UI 展示临时生成“虚拟 calendar block / 虚拟 TimeLog note”（仅 payload/UI view-model），例如 Note 为通过 Graph 校验临时补齐时间。
+- 禁止：把上述“虚拟对象/虚拟字段”持久化为新的 Event，或写回 `events/event_tree`（见 Hard Rules：禁止为了展示/排序而落库注入虚拟时间）。
+
 **时间锚点（Time Anchor）**
 - Calendar block：`startTime/endTime`（Timer 的发生区间）；写入必须使用本地时间格式。
 
 **同步边界（Sync Boundary）**
 - 运行中禁止同步；停止后再进入同步（具体状态字段由 Sync/Service 写入）。
 
+**同步语义（Behavior timeblock 视角：你需要拍板的体验细节）**
+- 约束前提：用户在日历里看到的每个 Behavior timeblock 都是“独立事件”；EditModal 虽然加载的是宿主的内容与设置，但用户并不会理解“Behavior 依附宿主”这种内部结构。
+- 宿主内容变更（编辑宿主 Event 的 `title/eventlog`）→ 远端已同步 timeblock 的正文更新策略：
+  - **采用选项 B：只更新未来/未结束（ongoing or future）的 timeblock 远端事件**。
+  - 已结束的历史 timeblock：保持远端正文不变，作为历史记录（避免“改动历史”引发困惑/审计争议）。
+- 行为 timeblock 变更（删除/合并时间段）→ 远端对应事件处理：
+  - **删除 timeblock = 删除该 timeblock 对应的远端事件**（对用户来说就是从 Calendar 上消失）。
+  - 合并 timeblocks：以“删除旧的远端事件 + 创建/更新新的合并后远端事件”为准（实现可选，但用户可见效果必须等价）。
+- 宿主 timeblock 与 Behavior timeblocks 的生命周期独立：
+  - 用户清空/删除宿主自己的 calendar block（计划安排）不应影响已有 Behavior timeblocks（它们仍应保留并可继续同步/显示）。
+
 **禁止项（Forbidden）**
 - 禁止运行中写入/触发 outbound 同步。
 - 禁止 Timer 模块写系统态字段（`externalId/syncStatus/lastSyncTime`）。
 
 **动作（Actions）**
-- 本地发起 Create：Start（新建 Timer Event）→ `EventService.createEvent`；必须写 `isTimer=true` 与 `startTime`，其余最小化（避免注入空数组/空串）。
-- 本地发起 Save：Running 周期保存 → 仅允许 `endTime/updatedAt` 等最小字段；Stop 结束保存 → 写最终 `endTime`。
-- 本地发起 Delete：若支持删除 Timer 记录，必须走 `EventService.deleteEvent` 写 `deletedAt`。
+- 本地发起 Create：Start → 创建一个 Timer Behavior timeblock（写 `behaviors.startTime/type='timer'`）；必要时确保宿主 Event 存在，但不得创建 Event 形态的“轨迹/子事件”。
+- 本地发起 Save：Running 周期保存 → 仅允许更新该 Behavior timeblock（例如 `endTime/updatedAt`）；Stop 结束保存 → 写最终 `endTime`。
+- 本地发起 Delete：删除一个 Timer timeblock → 删除对应 Behavior（软删除或硬删除按 behaviors 表契约），并按同步语义删除对应远端事件。
 - 远端发起（inbound）Create/Save/Delete：默认不应创建 Timer（本地专属轨迹）；若未来支持另案。
 - 远端执行（outbound）：仅 Stop 后可入队；运行中禁止。
 
@@ -2569,7 +2695,7 @@ const HISTORY_IGNORED_FIELDS = new Set<keyof Event>([
 
 **过滤（Filter/Scope）**
 - 默认排除：`deletedAt != null`、subordinate、**AI 卡片**（`conversationType === 'sprout' || 'root'`）
-- 默认不纳入：纯 Timer/TimeLog 系统轨迹事件（除非显式升级为 doc）。
+- 默认不纳入：待清理删除的历史脏记录（Deprecated Trajectory/subordinate；例如历史 Timer/TimeLog 的 Event 形态轨迹）。
 
 **时间锚点（Time Anchor）**
 - Library 的排序/最近修改：以 `updatedAt` 为主（Meta）。

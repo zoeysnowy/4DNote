@@ -16,9 +16,7 @@ export interface TimerSession {
 export enum SyncStatus {
   /** 本地创建，仅存储在本地，不同步到云端（如运行中的Timer） */
   LOCAL_ONLY = 'local-only',
-  /** 等待同步到云端 */
-  PENDING = 'pending',
-  /** 已成功同步到 Outlook */
+  // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代
   SYNCED = 'synced',
   /** 同步冲突（本地和云端都有修改） */
   CONFLICT = 'conflict',
@@ -100,9 +98,8 @@ export interface Event {
   category?: string;
   fourDNoteSource?: boolean;
   localVersion?: number;
-  lastLocalChange?: string; // 🔧 修改：使用字符串存储本地时间
   // 🎯 事件类型标记（用于控制显示样式）
-  isTimer?: boolean;     // 🆕 添加：标记为计时器事件
+  // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代
   isDeadline?: boolean; // 🆕 添加：标记为截止日期事件
   isTask?: boolean;      // 🆕 添加：标记为任务事件
   isPlan?: boolean;      // 🆕 添加：标记为计划页面事件

@@ -527,7 +527,6 @@ export function convertFromCalendarEvent(
     // 时间戳
     createdAt: originalEvent?.createdAt || nowStr,
     updatedAt: nowStr,
-    lastLocalChange: nowStr,
     localVersion: (originalEvent?.localVersion || 0) + 1
   };
 }
@@ -648,7 +647,6 @@ export function mergeEventUpdates(original: Event, updates: Partial<Event>): Eve
     id: original.id, // ID 不能被修改
     createdAt: original.createdAt, // 创建时间不能被修改
     updatedAt: formatTimeForStorage(new Date()),
-    lastLocalChange: formatTimeForStorage(new Date()),
     localVersion: (original.localVersion || 0) + 1
   };
 }

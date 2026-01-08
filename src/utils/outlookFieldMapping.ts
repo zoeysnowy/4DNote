@@ -79,7 +79,6 @@ export const INTERNAL_ONLY_FIELDS = new Set([
   // 内部标识
   'fourDNoteSource',
   'remarkableSource',
-  'isTimer',
   'isPlan',
   'isTimeCalendar',
   'isTask',
@@ -122,7 +121,6 @@ export const INTERNAL_ONLY_FIELDS = new Set([
   
   // 内部元数据
   'localVersion',
-  'lastLocalChange',
   'timeSpec',             // 时间意图对象（转换后的 startTime/endTime 会同步）
   'displayHint',
   'source',               // 内部来源标记

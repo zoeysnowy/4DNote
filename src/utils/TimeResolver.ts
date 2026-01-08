@@ -106,6 +106,11 @@ export interface CalendarDateRange {
 	kind: 'task-date-only' | 'time-based';
 }
 
+export interface TimelineAnchor {
+	date: Date;
+	kind: CalendarDateRange['kind'];
+}
+
 /**
  * Resolve the Date range for TimeCalendar rendering.
  * - For no-time tasks: use an anchor date (createdAt or completion day) and clamp to 00:00.
@@ -146,5 +151,19 @@ export function resolveCalendarDateRange(
 	const start = parseLocalTimeString(startSource);
 	const end = parseLocalTimeString(endSource);
 	return { start, end, kind: 'time-based' };
+}
+
+/**
+ * Resolve the anchor Date used to place an event on the TimeLog timeline.
+ * This is display-only derived logic.
+ */
+export function resolveTimelineAnchor(
+	event: Pick<
+		Partial<Event>,
+		'checkType' | 'startTime' | 'endTime' | 'createdAt' | 'checked' | 'unchecked'
+	>
+): TimelineAnchor {
+	const range = resolveCalendarDateRange(event);
+	return { date: range.start, kind: range.kind };
 }
 

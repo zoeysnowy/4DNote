@@ -18,7 +18,7 @@ import { logger } from '@frontend/utils/logger';
 import { validateEventTime } from '@frontend/utils/eventValidation';
 
 import { ContactService } from '@backend/ContactService';
-import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
 import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 事件历史记录
 import { jsonToSlateNodes, slateNodesToHtml } from '@frontend/components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '@frontend/utils/idGenerator'; // 🆕 UUID ID 生成
@@ -483,15 +483,15 @@ export class EventService {
       const filterStart = performance.now();
       const timelineEvents = events.filter(event => {
         // 1. 排除附属事件（系统生成的事件）
-        if (event.isTimer === true || 
-            event.isTimeLog === true || 
-            event.isOutsideApp === true) {
+        // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
+        // Behavioral filtering must use SSOT-derived signals.
+        if (event.id?.startsWith('timer-') || isSystemProgressSubEvent(event)) {
           // eventLogger.log('🔽 [EventService] 过滤附属事件:', {
           //   id: event.id,
           //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
-          //   isTimer: event.isTimer,
-          //   isTimeLog: event.isTimeLog,
-          //   isOutsideApp: event.isOutsideApp
+          //   source: event.source,
+          //   timerSessionId: event.timerSessionId,
+          //   isTimerIdPrefix: event.id?.startsWith('timer-')
           // });
           return false;
         }
@@ -1140,10 +1140,7 @@ export class EventService {
         'parentEventId',
         'linkedEventIds',
         'backlinks',
-        'fourDNoteSource',
-        'isTimer',
-        'isTimeLog',
-        'isOutsideApp'
+        'fourDNoteSource'
       ]);
       
       // 🆕 [v2.18.9] 定义自动生成字段（不参与比对，从 eventlog 派生）
@@ -1242,7 +1239,13 @@ export class EventService {
       
       // 如果事件当前非空，更新 lastNonBlankAt
       if (!isCurrentlyBlank) {
-        normalizedEvent.lastNonBlankAt = formatTimeForStorage(new Date());
+        // 关键：lastNonBlankAt 主要用于“是否曾经非空”的判断。
+        // 不要在每次保存时都刷新，否则会导致 EventHistory 产生大量噪音。
+        if (!originalEvent.lastNonBlankAt) {
+          normalizedEvent.lastNonBlankAt = formatTimeForStorage(new Date());
+        } else {
+          normalizedEvent.lastNonBlankAt = originalEvent.lastNonBlankAt;
+        }
         
         // 计算当前快照的评分
         const currentSnapshot = createSnapshot(normalizedEvent);
@@ -3388,6 +3391,13 @@ export class EventService {
       return typeof source === 'string' && (source === 'outlook' || source.startsWith('outlook:'));
     };
 
+    const legacySystemProgressHint =
+      (event as any).isTimeLog === true ||
+      (event as any).isTimer === true ||
+      (event as any).isOutsideApp === true ||
+      (typeof event.id === 'string' && event.id.startsWith('timer-')) ||
+      !!event.timerSessionId;
+
     const normalizeNamespacedSource = (source: unknown): string | undefined => {
       if (typeof source !== 'string') return undefined;
       const trimmed = source.trim();
@@ -3396,7 +3406,7 @@ export class EventService {
       if (trimmed === 'outlook') return 'outlook:calendar';
       if (trimmed === 'local') {
         // Infer local subtype based on event semantics.
-        if (event.isTimeLog === true || event.isTimer === true) return 'local:timelog';
+        if (legacySystemProgressHint) return 'local:timelog';
         // Task-like/Plan items
         if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
         // Calendar blocks
@@ -3407,7 +3417,7 @@ export class EventService {
     };
 
     const inferLocalSource = (): string => {
-      if (event.isTimeLog === true || event.isTimer === true) return 'local:timelog';
+      if (legacySystemProgressHint) return 'local:timelog';
       if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
       if (event.startTime && event.endTime) return 'local:timecalendar';
       return 'local:event_edit';
@@ -3421,7 +3431,7 @@ export class EventService {
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
 
-    const isTimeLogEvent = event.isTimeLog === true;
+    const isTimeLogEvent = isSystemProgressSubEvent({ ...(event as any), source: finalSource } as Event);
     const hasAnyTime = !!event.startTime || !!event.endTime;
 
     // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
@@ -3575,7 +3585,6 @@ export class EventService {
       // 来源标识（优先使用从签名提取的值）
       fourDNoteSource: finalFourDNoteSource,
       source: finalSource,
-      isTimer: event.isTimer,
       isDeadline: event.isDeadline,
       
       // 任务模式
@@ -3605,7 +3614,6 @@ export class EventService {
       // 时间戳 - ✅ [v2.18.0] 使用从签名中提取的真实时间
       createdAt: finalCreatedAt,  // 优先使用签名中的创建时间
       updatedAt: finalUpdatedAt,  // 优先使用签名中的修改时间
-      lastLocalChange: now,
       localVersion: (event.localVersion || 0) + 1,
       syncStatus: event.syncStatus || 'pending',
     } as Event;
@@ -5757,9 +5765,10 @@ export class EventService {
    * 获取事件类型描述（用于日志和调试）
    */
   static getEventType(event: Event): string {
-    if (event.isTimer) return 'Timer';
-    if (event.isTimeLog) return 'TimeLog';
-    if (event.isOutsideApp) return 'OutsideApp';
+    // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
+    // Canonical rule: system progress/subordinate is derived from timerSessionId or source='local:timelog'.
+    if (event.id?.startsWith('timer-')) return 'Timer';
+    if (isSystemProgressSubEvent(event)) return 'SystemProgress';
     if (shouldShowInPlan(event)) return 'UserSubTask';
     return 'Event';
   }
@@ -5860,7 +5869,7 @@ export class EventService {
    * 判断是否为附属事件（系统自动生成，无独立 Plan 状态）
    */
   static isSubordinateEvent(event: Event): boolean {
-    return !!(event.isTimer || event.isTimeLog || event.isOutsideApp);
+    return isSystemProgressSubEvent(event);
   }
 
   /**
@@ -6385,10 +6394,8 @@ export class EventService {
    * @returns 是否应该显示
    */
   static shouldShowInEventTree(event: Event): boolean {
-    // 排除系统事件
-    if (event.isTimer) return false;         // Timer 子事件
-    if (event.isOutsideApp) return false;    // 外部应用数据（听歌、录屏等）
-    if (event.isTimeLog) return false;       // 纯系统时间日志
+    // 排除系统性子事件/轨迹事件
+    if (isSystemProgressSubEvent(event)) return false;
     
     // 显示所有用户创建的事件
     return true; // Task、文档、Plan 事件、TimeCalendar 事件等

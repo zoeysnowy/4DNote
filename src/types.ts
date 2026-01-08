@@ -421,6 +421,13 @@ export interface Event {
   hasCustomSyncConfig?: boolean; // 🆕 标记用户是否手动修改过同步配置（用于手动子事件继承逻辑）
   todoListIds?: string[]; // 🆕 To Do List 分组支持（用于任务同步到 To Do）
   source?: EventSource; // 🆕 事件来源（命名空间格式 + 向后兼容）
+
+  // 🆕 AI 相关字段（Field Contract Phase 3）
+  // conversationType = 对话阶段维度（sprout/root），而“呈现形态”由 source 区分（local:ai_chat_card/local:ai_inline）
+  conversationType?: 'sprout' | 'root' | 'unknown';
+  hostEventId?: string;
+  aiMetadata?: Record<string, unknown>;
+
   syncStatus?: SyncStatusType; // 🔧 unified: 'pending' 表示所有待同步状态（新建或更新）
   lastSyncTime?: string; // 🔧 修改：使用字符串存储本地时间
   createdAt: string;     // 🔧 修改：使用字符串存储本地时间
@@ -431,11 +438,8 @@ export interface Event {
   category?: string;
   fourDNoteSource?: boolean;
   localVersion?: number;
-  lastLocalChange?: string; // 🔧 修改：使用字符串存储本地时间
   // 🎯 事件类型标记（用于控制显示样式）
-  isTimer?: boolean;     // 🆕 添加：标记为计时器事件
-  isTimeLog?: boolean;   // 🆕 添加：标记为纯系统时间日志事件（如自动记录的活动轨迹）
-  isOutsideApp?: boolean; // 🆕 添加：标记为外部应用数据（如听歌记录、录屏等）
+  // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代
   isDeadline?: boolean; // 🆕 添加：标记为截止日期事件
   // ❌ [DEPRECATED] isPlan/isTimeCalendar/isTask - 使用 facet 推导替代
   // isTask?: boolean;      // ❌ 已废弃 v2.19.2 - 用 hasTaskFacet(event) 替代

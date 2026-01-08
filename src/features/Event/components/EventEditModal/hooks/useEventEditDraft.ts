@@ -1,7 +1,7 @@
 import * as React from 'react';
 import type { Event } from '@frontend/types';
 import type { MockEvent } from '@frontend/features/Event/components/EventEditModal/types';
-import { hasTaskFacet } from '@frontend/utils/eventFacets';
+import { hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
 
 type LocationDisplayFn = (location: unknown) => string;
 
@@ -42,12 +42,14 @@ export function useEventEditDraft({
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
 
+      const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+
       return {
         id: event.id,
         title: titleText,
         tags: event.tags || [],
         isTask: hasTaskFacet(event),
-        isTimer: event.isTimer || false,
+        isTimer: isDerivedTimer,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
         backlinks,
@@ -145,12 +147,14 @@ export function useEventEditDraft({
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
 
+    const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+
     setFormData({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-        isTask: hasTaskFacet(event),
-      isTimer: event.isTimer || false,
+      isTask: hasTaskFacet(event),
+      isTimer: isDerivedTimer,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
       backlinks,

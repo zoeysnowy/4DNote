@@ -1,7 +1,7 @@
 # View Membership Architecture（视图归属架构，历史文档）
 
 > 注意：从 2026-01 起，**view_membership 的架构真相只维护在 SSOT**：
-> - docs/refactor/EVENT_FIELD_CONTRACT_EXECUTABLE.md
+> - docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md
 >
 > 本文保留为早期草案留档，不再作为唯一口径更新。
 
@@ -495,7 +495,7 @@ async function loadPlanEventsWithFallback() {
 
 ### 7.1 Store Spec 补充
 
-在 `EVENT_FIELD_CONTRACT_EXECUTABLE.md` § 4.3.1 表格中新增一行：
+在 SSOT（docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md）中新增一行：
 
 ```markdown
 | `view_membership`（**核心新增**） | **视图归属索引（可重建）** | **Derived/Index** | `ViewMembershipService` | `eventId`、`viewId`、`metadata`、`updatedAt` | `(eventId, viewId)` PK、`eventId`、`viewId` | **全量可通过 `shouldShow` 重建** |
@@ -540,7 +540,7 @@ async function loadPlanEventsWithFallback() {
 
 ### 8.3 下一步
 
-1. ✅ 本文档合并到 `EVENT_FIELD_CONTRACT_EXECUTABLE.md`
+1. ✅ 本文档合并到 SSOT（docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md）
 2. 🔧 实现 `ViewMembershipService`（约 500 行代码）
 3. 🔧 迁移 PlanManager 查询路径（约 100 行代码）
 4. ✅ 全量 rebuild 工具 + 启动时自动检测

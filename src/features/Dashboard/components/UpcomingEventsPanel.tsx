@@ -76,7 +76,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
       if (!matchesInclusionCriteria) return false;
       
       // 2. 排除系统事件
-      if (event.isTimer === true || event.isOutsideApp === true || event.isTimeLog === true) {
+      if (EventService.isSubordinateEvent(event)) {
         return false;
       }
       

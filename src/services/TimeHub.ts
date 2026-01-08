@@ -349,7 +349,6 @@ class TimeHubImpl {
       startTime: timeSpec.start ?? existing.startTime,
       endTime: timeSpec.end ?? existing.endTime,
       isAllDay: timeSpec.allDay ?? existing.isAllDay,
-      isTimer: true,
       updatedAt: formatTimeForStorage(new Date()),
     } as any;
     (updated as any).timeSpec = timeSpec;

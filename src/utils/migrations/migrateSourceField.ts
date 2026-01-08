@@ -22,7 +22,7 @@ function normalizeLegacyProviderSource(source: string): EventSource {
 function inferLocalSource(event: Event): EventSource {
   // Prefer the most specific, SSOT-friendly signals we have.
   // Note: Some of these fields may be removed in later phases, but are safe hints for migration.
-  if ((event as any).isTimeLog === true || (event as any).timerSessionId) return 'local:timelog';
+  if ((event as any).isTimeLog === true || (event as any).isOutsideApp === true || (event as any).timerSessionId) return 'local:timelog';
   if (event.checkType && event.checkType !== 'none') return 'local:plan';
   if (event.startTime && event.endTime) return 'local:timecalendar';
   return 'local:event_edit';

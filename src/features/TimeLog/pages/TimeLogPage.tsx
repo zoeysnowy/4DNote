@@ -32,7 +32,7 @@ import { useEventsUpdatedSubscription } from '@frontend/hooks/useEventsUpdatedSu
 import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 import type { Event } from '@frontend/types';
 import './TimeLog.css';
-import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
+import { resolveTimelineAnchor } from '@frontend/utils/TimeResolver';
 import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 
 // 导入图标
@@ -1050,7 +1050,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
     const isTimelineEvent = (event: Event): boolean => {
       // Keep consistent with EventService.getTimelineEvents
-      if (event.isTimer === true || event.isTimeLog === true || event.isOutsideApp === true) {
+      if (EventService.isSubordinateEvent(event)) {
         return false;
       }
 
@@ -1149,8 +1149,8 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
     const safeSortTs = (event: Event): number => {
       try {
-        const range = resolveCalendarDateRange(event);
-        const ts = range.start.getTime();
+        const anchor = resolveTimelineAnchor(event);
+        const ts = anchor.date.getTime();
         return Number.isFinite(ts) ? ts : 0;
       } catch {
         return 0;
@@ -1187,7 +1187,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
     events.forEach(event => {
       let eventTime: Date;
       try {
-        eventTime = resolveCalendarDateRange(event).start;
+        eventTime = resolveTimelineAnchor(event).date;
       } catch {
         eventTime = new Date(0);
       }

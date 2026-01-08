@@ -1,3 +1,4 @@
+import { shouldUseParentEventlog, resolveEventlogOwnerId, isTimerEventId } from '@frontend/utils/EventlogResolver';
 /**
  * EventEditModal v2 - 双视图事件编辑模态框
  * 
@@ -82,7 +83,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
-import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, shouldShowInTimeCalendar, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
 import { useEventHubCache, useEventSubscription } from '@frontend/hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
@@ -404,6 +405,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
 
+      const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+
       console.log('🔍🔍🔍 [formData 初始化] EventTree 数据来源分析:', {
         eventId: event.id,
         'linkedEventIds': (event as any).linkedEventIds,
@@ -415,7 +418,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         title: titleText,
         tags: event.tags || [],
         isTask: hasTaskFacet(event),
-        isTimer: event.isTimer || false,
+        isTimer: isDerivedTimer,
         parentEventId: event.parentEventId || null,
         linkedEventIds,
         backlinks,
@@ -551,13 +554,15 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
+
+    const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
     
     setFormData({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
       isTask: hasTaskFacet(event),
-      isTimer: event.isTimer || false,
+      isTimer: isDerivedTimer,
       parentEventId: event.parentEventId || null,
       linkedEventIds,
       backlinks,
@@ -596,6 +601,32 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       ? event.eventlog 
       : event?.eventlog?.slateJson
   ]); // 监听 event ID 和 eventlog 变化（eventlog 加载完成后会触发）
+
+  // ✅ Timer view：eventlog 的 canonical owner 是 parentEventId
+  // - 读取：优先显示父事件的 eventlog（避免 timer 事件上保存的快照漂移）
+  React.useEffect(() => {
+    if (!event) return;
+
+    if (!shouldUseParentEventlog({ id: event.id, parentEventId: event.parentEventId })) return;
+
+    let cancelled = false;
+    EventService.getEventById(event.parentEventId!).then(parentEvent => {
+      if (cancelled || !parentEvent) return;
+
+      const parentEventlogJson = typeof parentEvent.eventlog === 'string'
+        ? parentEvent.eventlog
+        : (parentEvent.eventlog?.slateJson || '[]');
+
+      setFormData(prev => ({
+        ...prev,
+        eventlog: parentEventlogJson,
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [event?.id, event?.parentEventId]);
 
   // UI 状态
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -754,14 +785,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
   const [syncCalendarIds, setSyncCalendarIds] = useState<string[]>(() => {
     if (!isParentMode) {
       // 🔧 子模式：区分系统子事件和手动子事件
-      // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.calendarIds
-      // - 手动子事件: 使用自己的 calendarIds（如果为空，则从 parent.subEventConfig 继承）
-      if (event?.isTimer || event?.isTimeLog || event?.isOutsideApp) {
-        return parentEvent?.subEventConfig?.calendarIds || [];
-      } else {
-        // 手动子事件：优先使用自己的配置，如果为空则继承父配置
-        return event?.calendarIds || parentEvent?.subEventConfig?.calendarIds || [];
+      // - 系统子事件：优先使用父事件 subEventConfig（实际进展模板），fallback 到父事件计划配置
+      // - 手动子事件：优先使用自己的配置；若为空则继承父事件计划配置（不使用 subEventConfig）
+      const isSystemChild = !!event && EventService.isSubordinateEvent(event);
+      if (isSystemChild) {
+        return parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || [];
       }
+
+      const ownCalendarIds = event?.calendarIds;
+      if (Array.isArray(ownCalendarIds) && ownCalendarIds.length > 0) return ownCalendarIds;
+      return parentEvent?.calendarIds || [];
     } else {
       // 父模式：从 subEventConfig 读取模板配置
       return event?.subEventConfig?.calendarIds || [];
@@ -770,6 +803,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
 
   // 🆕 v2.0.5 同步 formData.subEventConfig.calendarIds 到 syncCalendarIds（使用新架构）
   React.useEffect(() => {
+    if (!isParentMode) return;
     if (formData.subEventConfig?.calendarIds) {
       setSyncCalendarIds(prev => {
         const newIds = formData.subEventConfig.calendarIds;
@@ -780,7 +814,31 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         return prev;
       });
     }
-  }, [formData.subEventConfig?.calendarIds]);
+  }, [isParentMode, formData.subEventConfig?.calendarIds]);
+
+  // 🔧 子模式：当 parentEvent 异步加载完成且当前未设置时，补齐继承的默认值
+  React.useEffect(() => {
+    if (isParentMode) return;
+    if (!event) return;
+    if (!parentEvent) return;
+
+    const current = syncCalendarIds;
+    if (Array.isArray(current) && current.length > 0) return;
+
+    const isSystemChild = EventService.isSubordinateEvent(event);
+    const ownCalendarIds = event.calendarIds;
+
+    // 仅在「自身无配置」时才从父继承，避免覆盖用户已修改的子事件
+    const selfHasConfig = Array.isArray(ownCalendarIds) && ownCalendarIds.length > 0;
+    if (selfHasConfig) return;
+
+    const inherited = isSystemChild
+      ? (parentEvent.subEventConfig?.calendarIds || parentEvent.calendarIds || [])
+      : (parentEvent.calendarIds || []);
+
+    if (inherited.length === 0) return;
+    setSyncCalendarIds(inherited);
+  }, [isParentMode, event?.id, parentEvent?.id, parentEvent?.calendarIds, parentEvent?.subEventConfig?.calendarIds, syncCalendarIds]);
 
   // 🆕 刷新计数器：用于强制刷新 parentEvent 和 childEvents
   const [refreshCounter, setRefreshCounter] = React.useState(0);
@@ -948,7 +1006,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // 🔧 子事件模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.syncMode
       // - 手动子事件: 使用自己的 syncMode（如果为空，则从 parent.subEventConfig 继承）
-      if (event?.isTimer || event?.isTimeLog || event?.isOutsideApp) {
+      if (event && EventService.isSubordinateEvent(event)) {
         mode = parentEvent?.subEventConfig?.syncMode || 'bidirectional-private';
         console.log('🎬 [syncSyncMode 初始化] 系统子事件模式，使用 parentEvent.subEventConfig.syncMode =', mode);
       } else {
@@ -1131,12 +1189,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       
       // 🔧 Step 3: 检查是否是运行中的 Timer
       // Timer 运行中，应该使用 globalTimer.eventId，而不是 formData.id
-      const isRunningTimer = formData.isTimer && 
-                            globalTimer?.isRunning && 
-                            globalTimer?.eventId;
+      const isRunningTimer = !!(
+        globalTimer?.isRunning &&
+        globalTimer?.eventId &&
+        (formData.id === globalTimer.eventId || event?.id === globalTimer.eventId)
+      );
       
       console.log('🔍 [EventEditModalV2] Timer check:', {
-        isTimer: formData.isTimer,
         globalTimerIsRunning: globalTimer?.isRunning,
         globalTimerEventId: globalTimer?.eventId,
         formDataId: formData.id,
@@ -1156,6 +1215,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         eventId = generateEventId();
         console.log('🆕 [EventEditModalV2] Generated new eventId:', eventId);
       }
+
+      // ✅ Timer 子事件（timer-* 且有 parentEventId）：eventlog owner 是 parentEventId（Parent-only）
+      const shouldRouteEventlogToParent = shouldUseParentEventlog({ id: eventId, parentEventId: formData.parentEventId });
       
       // 🔧 Step 5: 确定 syncStatus
       // 🔧 v2.17.2: 智能判断 syncStatus
@@ -1231,14 +1293,13 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         'formData.allDay': formData.allDay
       });
       
-      const { isTask: _formIsTask, ...formDataWithoutIsTask } = formData;
+      const { isTask: _formIsTask, isTimer: _formIsTimer, ...formDataWithoutIsTask } = formData;
       const updatedEvent: Event = {
         ...(event || {}), // ✅ 如果event为null，使用空对象（新建事件）
         ...formDataWithoutIsTask,
         id: eventId, // 使用验证后的 ID
         title: finalTitle, // ✅ 直接传 Slate JSON 字符串，EventService.normalizeTitle 会统一处理
         tags: finalTags, // 🏷️ 使用自动映射后的标签
-        isTimer: formData.isTimer,
         parentEventId: formData.parentEventId,
         startTime: startTimeForStorage,
         endTime: endTimeForStorage,
@@ -1277,7 +1338,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         eventlogLength: currentEventlogJson.length,
         // 🔧 新增：子事件相关信息
         isParentMode,
-        isSystemChild: !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp),
+        isSystemChild: !isParentMode && EventService.isSubordinateEvent(updatedEvent),
         parentEventId: formData.parentEventId,
         '子事件配置(subEventConfig)': formData.subEventConfig,
       });
@@ -1308,7 +1369,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       const existingEvent = allEvents.find((e: Event) => e.id === eventId);
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
-      const isSystemChild = !isParentMode && (updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp);
+      const isSystemChild = !isParentMode && EventService.isSubordinateEvent(updatedEvent);
       
       let result;
       
@@ -1337,6 +1398,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           }
         } else {
           throw new Error(result.error || 'Failed to create event');
+        }
+
+        // ✅ Timer view：eventlog 写入父事件（计入 parent eventlog）
+        if (shouldRouteEventlogToParent) {
+          await EventHub.updateFields(formData.parentEventId!, {
+            eventlog: updatedEvent.eventlog,
+            description: updatedEvent.description,
+          }, {
+            source: 'EventEditModalV2-eventlog(timer->parent)-create'
+          });
         }
       } else {
         // ==================== 场景 2: 更新已存在事件 ====================
@@ -1371,11 +1442,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           console.log('[EventEditModalV2] 🔄 自动设置 Task(checkType!=none) (时间不完整)');
         }
         
-        result = await EventHub.updateFields(eventId, {
+        const updatePayload: any = {
           title: updatedEvent.title,
           tags: updatedEvent.tags,
           checkType: finalCheckType,
-          isTimer: updatedEvent.isTimer,
           parentEventId: updatedEvent.parentEventId,
           startTime: updatedEvent.startTime,
           endTime: updatedEvent.endTime,
@@ -1383,8 +1453,10 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           location: updatedEvent.location,
           organizer: updatedEvent.organizer,
           attendees: updatedEvent.attendees,
-          eventlog: updatedEvent.eventlog,
-          description: updatedEvent.description,
+          ...(shouldRouteEventlogToParent ? {} : {
+            eventlog: updatedEvent.eventlog,
+            description: updatedEvent.description,
+          }),
           syncStatus: updatedEvent.syncStatus, // 🔧 包含 Timer 的 local-only 状态
           // 🔧 日历同步配置字段（单一数据结构）
           calendarIds: updatedEvent.calendarIds,
@@ -1393,7 +1465,9 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           hasCustomSyncConfig: !isParentMode && !isSystemChild ? true : undefined,
           // 🔧 父事件专用：子事件配置模板（仅在父模式下保存）
           subEventConfig: isParentMode ? updatedEvent.subEventConfig : undefined,
-        }, {
+        };
+
+        result = await EventHub.updateFields(eventId, updatePayload, {
           source: 'EventEditModalV2' // 标记更新来源，用于调试
         });
         
@@ -1401,6 +1475,16 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           console.log('✅ [EventEditModalV2] Event updated via EventHub:', eventId);
         } else {
           throw new Error(result.error || 'Failed to update event');
+        }
+
+        // ✅ Timer view：eventlog 写入父事件（计入 parent eventlog）
+        if (shouldRouteEventlogToParent) {
+          await EventHub.updateFields(formData.parentEventId!, {
+            eventlog: updatedEvent.eventlog,
+            description: updatedEvent.description,
+          }, {
+            source: 'EventEditModalV2-eventlog(timer->parent)-update'
+          });
         }
       }
 
@@ -1481,20 +1565,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
           
           for (const childEvent of childrenToUpdate) {
             // 🔧 区分三类子事件：
-            // 1. 系统子事件（isTimer/isTimeLog/isOutsideApp）：始终更新
+            // 1. 系统子事件（isTimer/isTimeLog/isOutsideApp）：不跟随父事件「计划安排」配置（由 subEventConfig/系统逻辑控制）
             // 2. 手动子事件 + 已自定义配置（hasCustomSyncConfig=true）：跳过更新
             // 3. 手动子事件 + 默认继承（hasCustomSyncConfig=false/undefined）：更新配置
             const isSystemChild = EventService.isSubordinateEvent(childEvent);
             const hasCustomConfig = childEvent.hasCustomSyncConfig === true;
             
             if (isSystemChild) {
-              console.log('  🔹 [EventEditModalV2] 更新系统子事件:', childEvent.id);
-              await EventHub.updateFields(childEvent.id, {
-                calendarIds: updatedEvent.calendarIds,
-                syncMode: updatedEvent.syncMode,
-              }, {
-                source: 'EventEditModalV2-ParentToSystemChildren'
-              });
+              console.log('  ⏭️ [EventEditModalV2] 跳过系统子事件（不继承父事件计划同步配置）:', childEvent.id);
             } else if (!hasCustomConfig) {
               console.log('  🔹 [EventEditModalV2] 更新手动子事件（默认继承）:', childEvent.id);
               await EventHub.updateFields(childEvent.id, {
@@ -1517,7 +1595,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // 🔧 关键架构修正：只有手动子事件才同步到父事件
         // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 不同步到父事件主配置
         // - 手动子事件: 同步计划字段到父事件
-        const isSystemChild = updatedEvent.isTimer || updatedEvent.isTimeLog || updatedEvent.isOutsideApp;
+        const isSystemChild = EventService.isSubordinateEvent(updatedEvent);
         
         if (isSystemChild) {
           console.log('ℹ️ [EventEditModalV2] 系统子事件，跳过同步到父事件:', eventId);
@@ -1540,8 +1618,6 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
               isAllDay: updatedEvent.isAllDay,
               location: updatedEvent.location,
               attendees: updatedEvent.attendees,
-              calendarIds: updatedEvent.calendarIds,
-              syncMode: updatedEvent.syncMode,
             }, {
               source: 'EventEditModalV2-ChildToParent'
             });
@@ -1663,7 +1739,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
 
     // 1. Timer 子事件 - 递归获取父事件的来源
-    if (evt.isTimer && evt.parentEventId) {
+    if (EventService.isSubordinateEvent(evt) && evt.parentEventId) {
       const parentEvent = await EventService.getEventById(evt.parentEventId);
       if (parentEvent) {
         return getEventSourceInfo(parentEvent);
@@ -1671,12 +1747,14 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
 
     // 2. 外部日历事件
-    if (evt.source === 'outlook' || evt.source === 'google' || evt.source === 'icloud') {
+    const provider = evt.source?.split(':')[0];
+    if (provider === 'outlook' || provider === 'google' || provider === 'icloud' ||
+        evt.source === 'outlook' || evt.source === 'google' || evt.source === 'icloud') {
       const calendarId = evt.calendarIds?.[0];
       const calendar = calendarId ? availableCalendars.find(c => c.id === calendarId) : null;
       const calendarName = calendar ? calendar.name.replace(/^[\uD83C-\uDBFF\uDC00-\uDFFF]+\s*/, '') : '默认';
       
-      switch (evt.source) {
+      switch (provider || evt.source) {
         case 'outlook':
           return { emoji: null, name: `Outlook: ${calendarName}`, icon: '📧', color: '#0078d4' };
         case 'google':
@@ -1687,7 +1765,8 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
 
     // 3. 独立 Timer 事件（没有父事件的 Timer）
-    if (evt.isTimer && !evt.parentEventId) {
+    // Legacy: 过去依赖 isTimer；现在用 Timer 生成的 id 前缀作为判定口径。
+    if (evt.id.startsWith('timer-') && !evt.parentEventId) {
       return { emoji: '⏱️', name: '4DNote计时', icon: null, color: '#f59e0b' };
     }
 
@@ -3562,7 +3641,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                     
                                     const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
-                                      if (childEvent.isTimer) {
+                                      if (EventService.isSubordinateEvent(childEvent)) {
                                         await EventHub.updateFields(childEvent.id, {
                                           calendarIds: calendarIds,
                                         }, {
@@ -3681,7 +3760,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                       
                                       const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
-                                        if (childEvent.isTimer) {
+                                        if (EventService.isSubordinateEvent(childEvent)) {
                                           await EventHub.updateFields(childEvent.id, {
                                             calendarIds: allCalendarIds,
                                             syncMode: modeId,

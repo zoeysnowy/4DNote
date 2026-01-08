@@ -2536,16 +2536,20 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
     const { selection } = editor;
+
+    // IME 组字时，部分浏览器会先发 keyCode=229 / key='Process'
+    // 若此时做结构变更（例如 placeholder 转换），可能导致“第一个字被吃掉”
+    const isImeComposingKey = (event as any).keyCode === 229 || event.key === 'Process';
     
     // 🔍 记录所有键盘事件
-    if (!event.nativeEvent?.isComposing) {
+    if (!event.nativeEvent?.isComposing && !isImeComposingKey) {
       logKeyDown(event, editor);
     }
     
     if (!selection) return;
     
     // IME 组字中，不处理快捷键
-    if (event.nativeEvent?.isComposing) return;
+    if (event.nativeEvent?.isComposing || isImeComposingKey) return;
     
     // 🎯 空格键触发 Bullet 自动检测
     // 🔥 严谨修复：拦截式（不让空格上屏再“擦屁股”）
@@ -2674,6 +2678,11 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
         
         // 继续执行Tab缩进逻辑（不return）
       } else {
+        // 🔧 IME 组字的首个 keydown（229/Process）不做结构变更，避免吃首字
+        if (isImeComposingKey) {
+          return;
+        }
+
         // 其他按键：用户开始输入，将placeholder转换成真实事件
         const newEventId = generateEventId();
         
@@ -3731,14 +3740,14 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     // ✅ P0修复：使用editor.children代替value
     const currentChildren = editor.children as EventLineNode[];
     
-    // 🆕 v1.8: ArrowDown - 防止进入 placeholder 行
+    // 🆕 v1.8: ArrowDown - 处理 placeholder 行
     if (event.key === 'ArrowDown') {
       // 检查下一行是否是 placeholder
       if (currentPath[0] === currentChildren.length - 2) {
         const nextNode = currentChildren[currentPath[0] + 1];
         if (nextNode && ((nextNode.metadata as any)?.isPlaceholder || nextNode.eventId === '__placeholder__')) {
+          // 避免进入 placeholder，保持在当前行末尾
           event.preventDefault();
-          // 移动到当前行末尾
           const endPoint = Editor.end(editor, currentPath);
           Transforms.select(editor, endPoint);
           return;
@@ -3827,6 +3836,23 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
       );
       
       if (placeholderPath === -1) return;
+
+      // 🔧 防止重复创建空行：如果 placeholder 上方已经有一个空行，直接聚焦它
+      const prevIndex = placeholderPath - 1;
+      if (prevIndex >= 0) {
+        const prevNode = editor.children[prevIndex] as any;
+        const prevIsPlaceholder = (prevNode?.metadata as any)?.isPlaceholder || prevNode?.eventId === '__placeholder__';
+        if (!prevIsPlaceholder) {
+          const prevText = Node.string(prevNode as unknown as Node);
+          if (!prevText || prevText.trim() === '') {
+            requestAnimationFrame(() => {
+              safeFocusEditor(editor, [prevIndex, 0, 0]);
+            });
+            logOperation('Placeholder clicked - 复用上方空行（不创建新行）', { prevIndex });
+            return;
+          }
+        }
+      }
       
       // 在 placeholder 之前插入新行
       const newLine = createEmptyEventLine(0);

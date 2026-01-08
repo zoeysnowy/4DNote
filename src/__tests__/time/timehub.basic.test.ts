@@ -44,7 +44,7 @@ describe('TimeHub basic set/get/subscribe', () => {
     unsub();
   });
 
-  test('setTimerWindow updates locally and marks isTimer', async () => {
+  test('setTimerWindow updates locally without persisting legacy isTimer', async () => {
     const seeded = await EventService.createEvent({
       title: 'Timer Event',
       source: 'local:timelog',
@@ -67,6 +67,6 @@ describe('TimeHub basic set/get/subscribe', () => {
     expect(ev?.startTime).toBe(start);
     expect(ev?.endTime).toBe(end);
     expect((ev as any)?.timeSpec?.source).toBe('timer');
-    expect(ev?.isTimer).toBe(true);
+    expect((ev as any)?.isTimer).not.toBe(true);
   });
 });

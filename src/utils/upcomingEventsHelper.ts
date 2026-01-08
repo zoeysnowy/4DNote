@@ -1,4 +1,5 @@
 import { Event } from '@frontend/types';
+import { isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
 import { TagService } from '@backend/TagService';
 import { parseLocalTimeStringOrNull } from './timeUtils';
 
@@ -166,7 +167,7 @@ export function filterAndSortEvents(
   // 筛选事件（严格按顺序）：
   // 1. checkType !== 'none' && checkType !== undefined （保留有签到需求的事件）
   // 2. + 在时间范围内
-  // 3. - 排除系统事件（isTimer/isOutsideApp/isTimeLog === true）
+  // 3. - 排除系统性子事件/轨迹事件（timerSessionId 存在 或 source='local:timelog'）
   const filteredEvents = events.filter(event => {
     // 步骤1：checkType 过滤（排除 'none' 和 undefined）
     if (!event.checkType || event.checkType === 'none') {
@@ -179,13 +180,13 @@ export function filterAndSortEvents(
       return false;
     }
     
-    // 步骤3：排除明确标记为 true 的系统事件
-    if (event.isTimer === true || event.isOutsideApp === true || event.isTimeLog === true) {
+    // 步骤3：排除系统性子事件/轨迹事件
+    if (isSystemProgressSubEvent(event)) {
       console.log('🚫 [Panel] 过滤系统事件:', event.title?.simpleTitle || '', {
         checkType: event.checkType,
-        isTimer: event.isTimer,
-        isOutsideApp: event.isOutsideApp,
-        isTimeLog: event.isTimeLog,
+        source: event.source,
+        timerSessionId: (event as any).timerSessionId,
+        isTimerId: typeof event.id === 'string' ? event.id.startsWith('timer-') : false,
         startTime: event.startTime
       });
       return false;
