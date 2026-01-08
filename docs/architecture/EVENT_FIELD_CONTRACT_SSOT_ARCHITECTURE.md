@@ -395,6 +395,8 @@ type SignalStatus =
 
 > **设计原则**：embedding 属于典型 Derived/Cache（可重建、可丢弃），独立存储避免污染核心 signals 表。
 
+> **总则**：`RAGIndexService` 是 **所有 embeddings Derived Store** 的唯一 Owner（Single Writer）。不同实体类型（Signal/Event/MediaArtifact/Artifact/...）可以各自有独立的 embeddings 表，但写入/重建/迁移一律归口到 `RAGIndexService`（实现上可拆内部子模块/worker）。
+
 ```typescript
 /**
  * Signal RAG 向量索引（独立表）
@@ -494,6 +496,36 @@ await RAGIndexService.migrateAllEmbeddings({
   deleteOld: true // 完成后删除旧版本
 });
 ```
+
+### 0.4.2.2 Embeddings（跨实体统一命名与 AIChat 口径）
+
+**命名约定（推荐）**：统一使用 `<entity>_embeddings` 表名（复数）。
+
+- `signal_embeddings`：`signalId + modelVersion`（已定义）
+- `event_embeddings`：`eventId + modelVersion`
+- `media_artifact_embeddings`：`mediaArtifactId + modelVersion`
+- `artifact_embeddings`：`artifactId + modelVersion`
+
+**AIChat embeddings（推荐默认）**：AIChat 本质仍是 `Event` 的一种（通过 facets / conversationType / role 区分），因此默认落在 `event_embeddings`；在检索/排序时通过 Event 元数据对 user/assistant、sprout/root 等做差异化加权。
+
+**差异化加权（不增加 canonical 字段）**：
+- embedding 生成：用户写的 Event 与 AI 生成的 AIChat Event 都生成 embedding（同表 `event_embeddings`）。
+- 检索/排序：在 `RAGIndexService` 的 search/rerank 阶段基于 Event 的 facets 元数据做权重调节，而不是通过“拆 embedding 表”来区分。
+  - `role=user`：boost（更偏用户真实意图/日记主线）
+  - `role=assistant`：降权或在某些检索入口默认 exclude（避免 AI 复读污染召回）
+  - `conversationType=sprout`：可适度 boost（更偏问题/触发点）
+  - `conversationType=root`：可适度降权或按场景使用（更偏总结/结论）
+  - `source=local:ai_chat_card/local:ai_inline`：可作为次级特征（仅用于排序策略，不作为 canonical 分类）
+
+示例（伪代码，仅表达策略，不进入契约）：
+```ts
+// baseSim 来自向量相似度；其余是排序阶段的可调权重。
+score = baseSim
+  * (role === 'user' ? 1.25 : 0.85)
+  * (conversationType === 'sprout' ? 1.10 : 0.95);
+```
+
+仅当确实需要“对话级别”的稳定语义向量（按 `conversationId` 聚合整段对话、或 rolling-summary embedding）时，才引入额外的派生表（例如 `conversation_embeddings`），同样由 `RAGIndexService` 统一写入与维护。
 
 ### 0.4.3 与 Event 的协作规则（强制约束）
 
@@ -820,8 +852,9 @@ class EventSignalIndexService {
 }
 
 /**
- * SignalEmbeddingService（Derived Store 唯一写入者）
+ * SignalEmbeddingService（RAGIndexService 内部模块）
  * 职责：维护 signal_embeddings + 提供向量检索
+ * Owner/Single Writer：RAGIndexService（该类可视为其内部实现）
  * 注意：Embedding/RAG 属于派生索引能力，不属于 Signal 的权威字段
  */
 class SignalEmbeddingService {

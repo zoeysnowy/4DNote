@@ -2050,6 +2050,7 @@ CREATE TABLE event_log (
 
 Signals 的字段契约与存储细节以 SSOT 为准：
 - docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md（§0.4：`signals` / `signal_embeddings`）
+- docs/architecture/EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md（§0.4.2.2：AIChat embeddings 默认落 `event_embeddings`，并在检索/排序阶段对 user/assistant、sprout/root 做差异化加权）
 - docs/architecture/SIGNAL_ARCHITECTURE_PROPOSAL.md（Signal / AttentionSession 领域语义与示例）
 
 #### TakeawayCandidate Schema

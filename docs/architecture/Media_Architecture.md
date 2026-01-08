@@ -642,7 +642,7 @@ interface MediaArtifact {
  * MediaArtifactEmbedding（派生向量索引，Derived Store）
  *
  * 说明：embedding 属于典型 Derived/Cache（可重建、可丢弃），不进入 media_artifacts 核心表，避免污染核心实体。
- * Owner: MediaArtifactEmbeddingService（归属 RAGIndexService）
+ * Owner: RAGIndexService（单一写入者；实现上可拆 MediaArtifactEmbeddingService 作为内部模块）
  * Storage: media_artifact_embeddings 表（IndexedDB/SQLite）
  */
 interface MediaArtifactEmbedding {
@@ -1100,7 +1100,7 @@ class MediaArtifactService {
    * 1. 根据 Media 类型调用不同分析器
   * 2. 生成 succinctContext、fullText、structuredData
    * 3. 保存到 media_artifacts 表
-  * 4. 入队 embedding 任务（由 MediaArtifactEmbeddingService / RAGIndexService 写入派生表 + 可选向量库）
+  * 4. 入队 embedding 任务（由 RAGIndexService 写入派生表 + 可选向量库；实现上可拆内部模块）
    */
   async generateMediaArtifact(mediaId: string): Promise<MediaArtifact>;
   
@@ -1159,7 +1159,7 @@ class MediaArtifactService {
   
   // ===== 工具方法 =====
 
-  // embedding 生成与向量库写入由 MediaArtifactEmbeddingService / RAGIndexService 负责（Derived Store）
+  // embedding 生成与向量库写入由 RAGIndexService 负责（Derived Store；实现上可拆内部模块）
   
   /**
    * OCR 提取文字
@@ -1242,7 +1242,7 @@ sequenceDiagram
     participant M as Media 表
     participant Q as 任务队列
     participant MAS as MediaArtifactService
-    participant RAG as MediaArtifactEmbeddingService
+    participant RAG as RAGIndexService
     participant MA as MediaArtifact 表
     participant VS as VectorStore
     
@@ -1315,7 +1315,7 @@ graph LR
 ```mermaid
 stateDiagram-v2
     [*] --> Pending: Media 创建
-    Pending --> Processing: Signal 开始分析
+  Pending --> Processing: MediaArtifactService 开始分析
     
     Processing --> Completed: 成功
     Processing --> Failed: 失败
@@ -1329,6 +1329,59 @@ stateDiagram-v2
     
     Completed --> [*]
     Failed --> [*]: 记录错误日志
+
+  ### 6.4 实时录音 Chunk → 增量纪要（Session Brief）
+
+  > 目标：支持“每 1 分钟一个 audio chunk，每 3-5 个 chunk 生成一段增量纪要”。
+  >
+  > 核心边界：
+  > - **录音采集/分片**：RECNote 引擎
+  > - **会话生命周期/时间窗**：AttentionSessionService
+  > - **媒体理解（转写/摘要/结构化）**：MediaArtifactService
+  > - **信号权重输入（只读）**：SignalService 提供 signals/weights（不参与媒体管线写入）
+  > - **纪要产物**：SessionBriefService / ArtifactService（写入 artifacts）
+  > - **embedding 派生索引**：RAGIndexService（可选）
+
+  ```mermaid
+  sequenceDiagram
+    participant U as 用户
+    participant ATS as AttentionSessionService
+    participant REC as RECNoteEngine
+    participant MS as MediaService
+    participant MAS as MediaArtifactService
+    participant SIG as SignalService（只读）
+    participant SBS as SessionBriefService/ArtifactService
+    participant RAG as RAGIndexService
+
+    U->>ATS: startRecordingSession(eventId)
+    ATS->>REC: start(sessionId)
+
+    loop 每 60s
+      REC-->>ATS: onChunk(chunkStartMs, chunkEndMs, filePath)
+      ATS->>MS: upsertAudioChunk(mediaId, chunkMeta)
+    end
+
+    Note over MAS: 异步/节流：增量转写（可选）
+    MAS->>MS: readNewChunks(mediaId)
+    MAS->>MAS: transcribe(chunks) → transcripts
+
+    Note over SBS: 每累计 3-5 个 chunk 或每 N 分钟生成一次增量纪要
+    SBS->>SIG: getSignalsInTimeRange(sessionWindow)
+    SIG-->>SBS: signals + weights（基于 status/type/behaviorMeta）
+    SBS->>MAS: getMediaArtifactInputs(mediaId)
+    MAS-->>SBS: transcripts + structured hints
+    SBS->>SBS: generateIncrementalBrief()
+    SBS-->>SBS: upsert Artifact(scope='session', targetId=attentionSessionId)
+
+    opt 需要向量检索
+      SBS->>RAG: ensureEmbedding(artifactId)
+    end
+
+    U->>ATS: stopRecordingSession(sessionId)
+    ATS->>REC: stop()
+    ATS->>MAS: generateMediaArtifact(mediaId)
+    ATS->>SBS: finalizeSessionBrief(attentionSessionId)
+  ```
 ```
 
 ---
@@ -1885,7 +1938,7 @@ gantt
   - [ ] 文档大纲生成
 
 - [ ] **任务 2.5**: 实现向量索引（Derived Store）
-  - [ ] MediaArtifactEmbeddingService / RAGIndexService 生成 embedding（抽象 modelVersion）
+  - [ ] RAGIndexService 生成 embedding（抽象 modelVersion；可拆内部模块）
   - [ ] 可选上传到 VectorStore（Pinecone/Qdrant）
 
 #### ✅ Phase 3: SearchService（2 周）
