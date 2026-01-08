@@ -2,6 +2,19 @@
 
 **四维时间管理系统 - 集成 Plan/Actual/TimeLog/Timer 的智能生产力工具**
 
+---
+
+> ⚠️ **IMPORTANT NOTICE / 重要声明**
+> 
+> This repository is **temporarily public for DigiCert code signing certificate verification**.
+> After verification is completed, it will be switched back to **private** as soon as possible.
+> 
+> **All rights reserved. No license is granted** for use, modification, or distribution.
+> 本仓库仅为 **DigiCert 代码签名证书审核** 而临时公开；审核完成后将尽快恢复为私有。
+> **版权所有，未授权不得使用、修改或分发。**
+
+---
+
 [![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com/zoeysnowy/4DNote/releases)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)
 [![React](https://img.shields.io/badge/React-19.2.0-61dafb.svg)](https://reactjs.org/)
@@ -423,7 +436,9 @@ VITE_AMAP_KEY=your_actual_api_key_here
 
 ## 🤝 贡献
 
-欢迎提交 Issue 和 Pull Request！
+本项目为商业闭源软件。仓库临时公开期间（DigiCert 审核），不接受功能性 Pull Request 或代码贡献。
+
+如需沟通或反馈，请优先通过邮箱联系（见文末“联系方式”）；如仓库仍开放 Issues/Discussions，也欢迎用于审核相关沟通。
 
 ### 贡献流程
 1. **Fork 本仓库**
@@ -457,9 +472,11 @@ VITE_AMAP_KEY=your_actual_api_key_here
 
 **本项目为商业闭源软件，版权所有。**
 
-Copyright (C) 2024-2025 Zoey. All Rights Reserved.
+Copyright (C) 2024-2026 Zoey. All Rights Reserved.
 
 未经授权，严禁通过任何媒介复制、分发或修改本软件。本软件为专有和机密信息。
+
+⚠️ 本仓库临时公开仅用于 DigiCert 代码签名证书验证，不代表授予任何使用许可。
 
 查看 [LICENSE](./LICENSE) 文件了解详情。
 
@@ -480,7 +497,7 @@ Copyright (C) 2024-2025 Zoey. All Rights Reserved.
 
 - **GitHub Issues**: [提交问题](https://github.com/zoeysnowy/4DNote/issues)
 - **GitHub Discussions**: [参与讨论](https://github.com/zoeysnowy/4DNote/discussions)
-- **邮箱**: zoey@4dnote.app (计划中)
+- **邮箱**: zoeysnowy@126.com
 
 ---
 
