@@ -9,6 +9,7 @@ import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { resolveSyncTitle } from '@frontend/utils/TitleResolver';
 import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { SignatureUtils } from '@frontend/utils/signatureUtils';
+import { assertNamespacedEventSource, isLocalEventSource, isOutlookEventSource } from '@frontend/utils/eventSourceSSOT';
 import { SyncStatus } from '@backend/storage/types';
 import type { SyncQueueItem } from '@backend/storage/types';
 import { determineSyncTarget } from '@frontend/utils/syncRouter';
@@ -37,7 +38,7 @@ interface SyncAction {
   entityType: 'event' | 'task';
   entityId: string;
   timestamp: Date;
-  source: 'local' | 'outlook';
+  initiator: 'local' | 'outlook';
   data?: any;
   oldData?: any;
   originalData?: any;
@@ -466,7 +467,7 @@ export class ActionBasedSyncManager {
 
       // 0. 先推送本地未同步的更改（Local to Remote）
       const hasPendingLocalActions = this.actionQueue.some(
-        action => action.source === 'local' && !action.synchronized
+        action => action.initiator === 'local' && !action.synchronized
       );
       
       if (hasPendingLocalActions) {
@@ -739,7 +740,7 @@ export class ActionBasedSyncManager {
         entityType: item.entityType as 'event' | 'task',
         entityId: item.entityId,
         timestamp: parseLocalTimeStringOrNull(item.createdAt) ?? new Date(0),
-        source: 'local' as const,
+        initiator: 'local' as const,
         data: item.data,
         synchronized: item.status === SyncStatus.Synced,
         synchronizedAt: item.status === SyncStatus.Synced
@@ -869,24 +870,36 @@ export class ActionBasedSyncManager {
 
   private async loadConflictQueueAsync(): Promise<void> {
     try {
-      const stored = await storageManager.getMetadata<any>(STORAGE_KEYS.SYNC_CONFLICTS);
-
-      // One-time fallback import from legacy localStorage (then stop using it)
-      if (!stored) {
-        const legacy = localStorage.getItem(STORAGE_KEYS.SYNC_CONFLICTS);
-        if (legacy) {
-          try {
-            const parsed = JSON.parse(legacy);
-            await storageManager.setMetadata(STORAGE_KEYS.SYNC_CONFLICTS, parsed);
-            localStorage.removeItem(STORAGE_KEYS.SYNC_CONFLICTS);
-          } catch {
-            // ignore legacy parse errors
-          }
-        }
+      // Hard cleanup: never import legacy conflict data from localStorage.
+      try {
+        localStorage.removeItem(STORAGE_KEYS.SYNC_CONFLICTS);
+      } catch {
+        // ignore
       }
+
+      const stored = await storageManager.getMetadata<any>(STORAGE_KEYS.SYNC_CONFLICTS);
 
       const stored2 = stored ?? (await storageManager.getMetadata<any>(STORAGE_KEYS.SYNC_CONFLICTS));
       if (stored2) {
+        const hasLegacyShape = stored2.some((conflict: any) => {
+          const la = conflict?.localAction;
+          const ra = conflict?.remoteAction;
+          const legacyFieldPresent =
+            (la && typeof la === 'object' && 'source' in la) ||
+            (ra && typeof ra === 'object' && 'source' in ra);
+          const initiatorMissing =
+            !(la?.initiator === 'local' || la?.initiator === 'outlook') ||
+            !(ra?.initiator === 'local' || ra?.initiator === 'outlook');
+          return legacyFieldPresent || initiatorMissing;
+        });
+
+        if (hasLegacyShape) {
+          // Strict: do not migrate; just clear invalid persisted conflicts.
+          this.conflictQueue = [];
+          await storageManager.setMetadata(STORAGE_KEYS.SYNC_CONFLICTS, []);
+          return;
+        }
+
         this.conflictQueue = stored2.map((conflict: any) => ({
           ...conflict,
           localAction: {
@@ -902,6 +915,11 @@ export class ActionBasedSyncManager {
     } catch (error) {
       console.error('Failed to load conflict queue:', error);
       this.conflictQueue = [];
+      try {
+        await storageManager.setMetadata(STORAGE_KEYS.SYNC_CONFLICTS, []);
+      } catch {
+        // ignore cleanup failures
+      }
     }
   }
 
@@ -1417,7 +1435,7 @@ export class ActionBasedSyncManager {
       entityType,
       entityId,
       timestamp: new Date(),
-      source: 'local',
+      initiator: 'local',
       data,
       oldData,
       originalData: oldData,
@@ -1748,7 +1766,7 @@ export class ActionBasedSyncManager {
       // 🔧 [OPTIMIZED] 双向同步优化：先推送本地更改（快），再拉取远程更改（慢）
       // 这样可以避免在只有本地更改时触发不必要的全量拉取（429错误）
       const hasPendingLocalActions = this.actionQueue.some(
-        action => action.source === 'local' && !action.synchronized
+        action => action.initiator === 'local' && !action.synchronized
       );
       
       if (hasPendingLocalActions) {
@@ -2218,7 +2236,7 @@ export class ActionBasedSyncManager {
   private recordRemoteAction(type: 'create' | 'update' | 'delete', entityType: 'event' | 'task', entityId: string, data?: any, oldData?: any) {
     // 🔥 [CRITICAL FIX] 防止重复 action：检查是否已有相同的未同步 action
     const existingAction = this.actionQueue.find(a => 
-      a.source === 'outlook' &&
+      a.initiator === 'outlook' &&
       a.entityType === entityType &&
       a.entityId === entityId &&
       a.type === type &&
@@ -2241,7 +2259,7 @@ export class ActionBasedSyncManager {
       entityType,
       entityId,
       timestamp: new Date(),
-      source: 'outlook',
+      initiator: 'outlook',
       data,
       oldData,
       originalData: oldData,
@@ -2257,7 +2275,7 @@ export class ActionBasedSyncManager {
     this.localEventsCache = null;
     
     const pendingLocalActions = this.actionQueue.filter(
-      action => action.source === 'local' && !action.synchronized
+      action => action.initiator === 'local' && !action.synchronized
     );
     
     // 🚀 [PERFORMANCE FIX] 只查询需要的事件ID，避免全表扫描（1233 → ~100）
@@ -2354,7 +2372,7 @@ export class ActionBasedSyncManager {
 
   private async syncPendingRemoteActions() {
     const pendingRemoteActions = this.actionQueue.filter(
-      action => action.source === 'outlook' && !action.synchronized
+      action => action.initiator === 'outlook' && !action.synchronized
     );
     if (pendingRemoteActions.length === 0) {
       return;
@@ -2728,7 +2746,7 @@ export class ActionBasedSyncManager {
     action.lastAttemptTime = new Date();
 
     try {
-      if (action.source === 'local') {
+      if (action.initiator === 'local') {
         const result = await this.applyLocalActionToRemote(action, localEvents);
       } else {
         await this.applyRemoteActionToLocal(action);
@@ -2740,14 +2758,14 @@ export class ActionBasedSyncManager {
       action.userNotified = false; // 🔧 [NEW] 重置通知状态
       
       // 📊 更新统计信息
-      if (action.source === 'local') {
+      if (action.initiator === 'local') {
         if (action.type === 'create') {
           this.syncStats.calendarCreated++;
         } else if (action.type === 'update' || action.type === 'delete') {
           this.syncStats.syncSuccess++;
         }
       } else {
-      // console.log('📊 [Stats] Skipping - not a local action (source:', action.source + ')');
+      // console.log('📊 [Stats] Skipping - not a local action (initiator:', action.initiator + ')');
       }
       
       this.saveActionQueue();
@@ -2784,7 +2802,7 @@ export class ActionBasedSyncManager {
       action.retryCount = (action.retryCount || 0) + 1;
       
       // 📊 更新失败统计（仅针对本地到远程的同步）
-      if (action.source === 'local') {
+      if (action.initiator === 'local') {
         this.syncStats.syncFailed++;
       }
       
@@ -2819,7 +2837,7 @@ export class ActionBasedSyncManager {
         }
       }
       
-      if (action.source !== 'local') {
+      if (action.initiator !== 'local') {
         return false;
       }
       
@@ -2834,7 +2852,13 @@ export class ActionBasedSyncManager {
       switch (action.type) {
         case 'create':
           // 检查事件是否已经同步过（有externalId）或者是从远端同步回来的
-          if (action.data.externalId || action.data.fourDNoteSource === false) {
+          const src = (action.data as any).source as string | undefined;
+          const isRemoteCreated = (() => {
+            if (!src) return false;
+            assertNamespacedEventSource(src);
+            return isOutlookEventSource(src);
+          })();
+          if (action.data.externalId || isRemoteCreated) {
             return true; // 标记为成功，避免重试
           }
           
@@ -4232,7 +4256,10 @@ export class ActionBasedSyncManager {
         
         // 🎯 [STEP 2] 如果没找到，尝试通过 4DNote 创建签名匹配本地事件
         // 场景：本地事件刚同步到 Outlook，本地还没有 externalId，Outlook 返回时需要匹配本地事件
-        if (!existingEvent && newEvent.fourDNoteSource) {
+        const signatureCreator = SignatureUtils.extractCreator(newEvent.description || '');
+        const isFourDNoteCreatedBySignature = signatureCreator.creator === '4dnote';
+
+        if (!existingEvent && isFourDNoteCreatedBySignature) {
           const createTime = this.extractOriginalCreateTime(newEvent.description);
           
           if (createTime) {
@@ -4242,7 +4269,10 @@ export class ActionBasedSyncManager {
               typeof e.id === 'string' &&
               e.id.startsWith('timer-') &&    // ✅ Timer 事件（由 Timer 生成的 id 前缀）
               !e.externalId &&                // ✅ 还没有同步过(没有 externalId)
-              e.fourDNoteSource === true &&   // ✅ 4DNote 创建的
+              (() => {
+                assertNamespacedEventSource(e.source);
+                return isLocalEventSource(e.source);
+              })() &&   // ✅ 本地创建的（SSOT；不容忍 legacy）
               (() => {
                 const createdAt = parseLocalTimeStringOrNull(e.createdAt);
                 return createdAt ? Math.abs(createdAt.getTime() - createTime.getTime()) < 1000 : false;
@@ -4259,7 +4289,10 @@ export class ActionBasedSyncManager {
                 !e.deletedAt &&                 // 🛡️ 跳过已软删除的事件
                 !(typeof e.id === 'string' && e.id.startsWith('timer-')) && // ✅ 非 Timer 事件
                 !e.externalId &&                // ✅ 还没有同步过(没有 externalId)
-                (e.fourDNoteSource === true || e.id.startsWith('local-')) && // ✅ 4DNote 创建的或本地创建的
+                (((() => {
+                  assertNamespacedEventSource(e.source);
+                  return isLocalEventSource(e.source);
+                })()) || e.id.startsWith('local-')) && // ✅ 本地创建的（SSOT；不容忍 legacy）
                 e.title?.simpleTitle === newEvent.title?.simpleTitle &&   // ✅ 标题匹配
                 (() => {
                   const createdAt = parseLocalTimeStringOrNull(e.createdAt);
@@ -4324,7 +4357,7 @@ export class ActionBasedSyncManager {
         
         // 🔧 对于本地发起的远程更新回写，不检查编辑锁定
         // 只有真正的远程冲突更新才需要锁定保护
-        if (action.source === 'outlook' && this.isEditLocked(action.entityId)) {
+        if (action.initiator === 'outlook' && this.isEditLocked(action.entityId)) {
           return events; // 跳过此次更新
         }
         
@@ -4530,8 +4563,8 @@ export class ActionBasedSyncManager {
   }
 
   private async resolveConflicts() {
-    const localActions = this.actionQueue.filter(a => a.source === 'local' && !a.synchronized);
-    const remoteActions = this.actionQueue.filter(a => a.source === 'outlook' && !a.synchronized);
+    const localActions = this.actionQueue.filter(a => a.initiator === 'local' && !a.synchronized);
+    const remoteActions = this.actionQueue.filter(a => a.initiator === 'outlook' && !a.synchronized);
 
     for (const localAction of localActions) {
       const conflictingRemoteAction = remoteActions.find(

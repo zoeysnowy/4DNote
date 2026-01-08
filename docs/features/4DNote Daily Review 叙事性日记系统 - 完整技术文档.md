@@ -95,8 +95,9 @@ interface UserBehaviorData {
   activeViewTime: number;          // 活跃停留时长（排除挂机）
   revisitCount: number;            // 返回次数
   scrollDepth: number;             // 滚动深度（0-1）
-  mouseMovements: MouseEvent[];    // 鼠标移动记录
-  scrollEvents: ScrollEvent[];     // 滚动事件记录
+  // ⚠️ SSOT 约束：不在 signals/behaviorMeta 内持久化原始高频事件流。
+  // 如需保留明细，仅可选地写入独立的 session_details（并做 retention/prune）。
+  // Daily Review 主路径只依赖聚合结果（如 activeViewTime/scrollDepth/revisitCount）。
   
   // 3. 时间上下文
   accessTime: string;              // 访问时间
@@ -177,7 +178,7 @@ sequenceDiagram
     Tracker->>DB: 保存对话记录
     
     User->>UI: 停留在文档
-    UI->>Tracker: trackViewTime(eventId, duration, mouseMovements)
+    UI->>Tracker: trackViewTime(eventId, duration)
     Tracker->>Tracker: calculateActiveTime()
     Tracker->>DB: 保存活跃时长
     
@@ -192,6 +193,8 @@ sequenceDiagram
 /**
  * 计算活跃停留时间（排除挂机时间）
  * 规则：如果 5 分钟内没有鼠标移动或滚动，停止计时
+ * 注意：mouseMovements/scrollEvents 属于高频明细，本算法可在内存中使用；不写入 signals/behaviorMeta。
+ * 如需持久化明细，仅可选写入 session_details，并做 retention。
  */
 function calculateActiveTime(
   totalViewTime: number,

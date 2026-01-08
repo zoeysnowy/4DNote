@@ -1463,7 +1463,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           priority: 'medium',
           isCompleted: false,
           type: 'todo',
-          fourDNoteSource: true,
           // Field contract: 时间/全天字段保持可选，不默认注入
           startTime: undefined,
           endTime: undefined,
@@ -2302,7 +2301,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           description: descLine?.content || undefined,
           ...(Number.isFinite(position) ? { position } : {}),
           // 🆕 Plan 页面创建的 item 配置：
-          fourDNoteSource: true, // ✅ 标识事件来源（用于同步识别）
           checkType: 'once', // 🆕 默认单次签到（显示 checkbox）
           // ✅ 默认不设置时间，用户通过 FloatingBar 或 @chrono 自行定义
           startTime: undefined,
@@ -2420,7 +2418,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       syncStatus: calendarIds.length > 0 ? 'pending' : 'local-only', // 🆕 v1.8: 根据日历映射设置同步状态
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
-      fourDNoteSource: true,
       // 🆕 保留 eventlog 字段（EventEditModalV2 需要）
       eventlog: item.eventlog,
       // 🆕 保留日历同步配置（Plan vs Actual）
@@ -2524,7 +2521,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date()),
       checkType: item.checkType || 'once', // 🆕 Plan事件默认有checkbox
-      fourDNoteSource: true,
     };
 
     console.log('[syncToUnifiedTimeline] 准备保存事件到 EventService:', {
@@ -2701,7 +2697,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                   priority: 'medium',
                   isCompleted: false,
                   checkType: 'once',
-                  fourDNoteSource: true,
                   // Field contract: 时间/全天字段保持可选，不默认注入
                   startTime: undefined,
                   endTime: undefined,

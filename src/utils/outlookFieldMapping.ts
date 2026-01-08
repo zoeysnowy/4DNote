@@ -77,7 +77,6 @@ export const TODO_SUPPORTED_FIELDS = {
  */
 export const INTERNAL_ONLY_FIELDS = new Set([
   // 内部标识
-  'fourDNoteSource',
   'remarkableSource',
   'isPlan',
   'isTimeCalendar',

@@ -1363,11 +1363,15 @@ export class IndexedDBService {
         let errorCount = 0;
         
         batch.forEach((stats, index) => {
-          const request = store.add(stats);
+          // NOTE: Migration must be idempotent. Use put() (upsert) to avoid ConstraintError
+          // when React StrictMode / retries trigger this migration multiple times.
+          const request = store.put(stats);
           request.onsuccess = () => successCount++;
           request.onerror = (event) => {
             errorCount++;
             console.error(`[IndexedDB] Failed to add EventTreeIndex[${i + index}]:`, stats.id, request.error);
+            // Prevent a single-row error from aborting the whole transaction.
+            event.preventDefault();
             event.stopPropagation();
           };
         });

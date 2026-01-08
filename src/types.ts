@@ -373,7 +373,7 @@ export interface EventTitle {
   formatMap?: TextFormatSegment[];
 }
 
-// Phase 2.1 (SSOT Contract): source 字段扩展为命名空间格式（同时保留 legacy 值向后兼容）
+// Phase 2.1 (SSOT Contract): source 字段为命名空间格式（SSOT；运行时不容忍 legacy）
 export type EventSource =
   | 'local:plan'
   | 'local:timecalendar'
@@ -388,12 +388,7 @@ export type EventSource =
   | 'outlook:calendar'
   | 'outlook:todo'
   | 'google:calendar'
-  | 'icloud:calendar'
-  // legacy (backward compatibility)
-  | 'local'
-  | 'outlook'
-  | 'google'
-  | 'icloud';
+  | 'icloud:calendar';
 
 export interface Event {
   id: string;
@@ -420,7 +415,7 @@ export interface Event {
   };
   hasCustomSyncConfig?: boolean; // 🆕 标记用户是否手动修改过同步配置（用于手动子事件继承逻辑）
   todoListIds?: string[]; // 🆕 To Do List 分组支持（用于任务同步到 To Do）
-  source?: EventSource; // 🆕 事件来源（命名空间格式 + 向后兼容）
+  source: EventSource; // 🆕 事件来源（命名空间格式；SSOT）
 
   // 🆕 AI 相关字段（Field Contract Phase 3）
   // conversationType = 对话阶段维度（sprout/root），而“呈现形态”由 source 区分（local:ai_chat_card/local:ai_inline）
@@ -436,7 +431,6 @@ export interface Event {
   timerSessionId?: string;
   tags?: string[];       // 🆕 多标签支持
   category?: string;
-  fourDNoteSource?: boolean;
   localVersion?: number;
   // 🎯 事件类型标记（用于控制显示样式）
   // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代

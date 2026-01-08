@@ -16,6 +16,8 @@
  * - 抗修改能力：即使开头被大幅修改，仍能通过结尾+长度+拓扑位置保留ID
  */
 
+import type { EventSource } from '@frontend/types';
+
 export interface CompleteMeta {
   v: number;                    // 版本号（必填，V2为2）
   id: string;                   // Event的internal ID（必填，用于本地查询关系数据）
@@ -50,8 +52,8 @@ export interface CompleteMeta {
   signature?: {
     createdAt?: string;         // TimeSpec格式：'YYYY-MM-DD HH:mm:ss'
     updatedAt?: string;         // TimeSpec格式
-    fourDNoteSource?: boolean;  // true=4DNote创建，false=Outlook创建
-    source?: 'local' | 'outlook';
+    creator?: '4dnote' | 'outlook'; // 签名创建者（避免与 Event.source 混淆）
+    eventSource?: EventSource;      // SSOT: namespaced Event.source
     lastModifiedSource?: '4dnote' | 'outlook';
   };
   

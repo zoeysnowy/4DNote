@@ -63,10 +63,9 @@ export interface EventMetadata {
   calendarId?: string;
   calendarIds?: string[];
   todoListIds?: string[]; // 🆕 To Do List IDs
-  source?: string;
+  source?: import('@frontend/types').EventSource;
   syncStatus?: string;
   externalId?: string;
-  fourDNoteSource?: boolean;
   
   // 时间戳
   createdAt?: string;

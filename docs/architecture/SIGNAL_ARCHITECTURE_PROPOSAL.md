@@ -258,6 +258,10 @@ interface Signal {
   
   // 用户行为元数据（仅用于行为类型）
   behaviorMeta?: {
+    // ⚠️ SSOT 边界（强制）：Signal.behaviorMeta 只允许“聚合统计 + 少量小文本摘要缓存”。
+    // 不允许保存原始高频事件流（mouse/scroll/keystroke 等），也不允许保存可无限增长的明细列表。
+    // 若需要明细（如 dwellSessions / revisitTimes / deletedContent 等），只能写入独立的 session_details（并做 retention/prune）。
+
     // 操作统计
     actionCount?: number;           // 操作次数（如复制次数、编辑次数）
     lastActionTime?: string;        // 最近操作时间

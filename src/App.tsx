@@ -77,9 +77,16 @@ if (typeof window !== 'undefined') {
 function App() {
   // 🔧 确认组件渲染
   console.log('🔍 [App] Component rendering...');
+
+  // React 18 StrictMode (dev) runs effects twice on mount.
+  // Guard to avoid running app initialization twice.
+  const hasInitializedRef = useRef(false);
   
   // 🔧 初始化缓存管理和标签系统
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
+
     const initializeApp = async () => {
       console.log('🚀 [App] Initializing application...');
       
@@ -504,7 +511,6 @@ function App() {
           createdAt: existingEvent.createdAt,
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'pending' as const,
-          fourDNoteSource: true,
           // 继承其他元数据
           calendarIds: existingEvent.calendarIds,
           location: existingEvent.location,
@@ -603,7 +609,6 @@ function App() {
         createdAt: formatTimeForStorage(startDate),
         updatedAt: formatTimeForStorage(startDate),
         syncStatus: 'local-only', // ✅ 运行中不同步
-        fourDNoteSource: true,
         parentEventId
       };
       
@@ -890,7 +895,6 @@ function App() {
         organizer: currentParentEvent?.organizer,
         attendees: currentParentEvent?.attendees,
         isAllDay: false,
-        fourDNoteSource: true,
         syncStatus: 'pending' as const, // ✅ Timer 停止后改为 pending，触发同步
         parentEventId: globalTimer.parentEventId,
         createdAt: existingEvent?.createdAt || formatTimeForStorage(startTime),
@@ -953,7 +957,6 @@ function App() {
         description: '',
         isAllDay: false,
         source: 'local:timelog',
-        fourDNoteSource: true,
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date())
       };
@@ -994,7 +997,6 @@ function App() {
       location: existingEvent?.location || '', // 🔧 保留 location
       isAllDay: false,
       source: 'local:timelog',
-      fourDNoteSource: true,
       syncStatus: 'local-only', // 🔧 [BUG FIX] 运行中的 Timer 标记为 local-only
       createdAt: existingEvent?.createdAt || formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
@@ -1072,7 +1074,6 @@ function App() {
         updatedAt: formatTimeForStorage(confirmTime),
         syncStatus: 'local-only', // 运行中不同步
         source: 'local:timelog',
-        fourDNoteSource: true,
       };
 
       // 使用 EventService 创建事件（skipSync=true，运行中不同步）
@@ -1229,7 +1230,6 @@ function App() {
           updatedAt: formatTimeForStorage(new Date()),
           syncStatus: 'local-only', // ✅ 运行中保持 local-only，不触发同步
           source: 'local:timelog',
-          fourDNoteSource: true,
         };
 
         // ✅ 使用 EventService 更新事件（已迁移到 StorageManager，existingEvent 已在上面加载）
@@ -1351,7 +1351,6 @@ function App() {
             updatedAt: formatTimeForStorage(new Date()),
             syncStatus: 'local-only', // 🔧 [BUG FIX] 页面刷新时仍保持local-only，不同步运行中的Timer
             source: 'local:timelog',
-            fourDNoteSource: true
           };
 
           // ⚠️ beforeunload 不支持 async：用 localStorage 作为“待写入补丁队列”

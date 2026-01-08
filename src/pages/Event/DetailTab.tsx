@@ -51,7 +51,7 @@
  * 
  * Event（完整事件）:
  * - 继承 MockEvent 的所有字段
- * - 额外字段: createdAt, updatedAt, syncStatus, fourDNoteSource, calendarIds, todoListIds
+ * - 额外字段: createdAt, updatedAt, syncStatus, calendarIds, todoListIds
  * 
  * eventlog 字段格式兼容：
  * - 旧格式: 字符串（HTML）
@@ -85,6 +85,7 @@ import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
 import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { assertNamespacedEventSource, isLocalEventSource, sourceProviderOf } from '@frontend/utils/eventSourceSSOT';
 import { resolveEventlogOwnerId, shouldUseParentEventlog } from '@frontend/utils/EventlogResolver';
 import { ContactService } from '@backend/ContactService';
 import { EventHistoryService } from '@backend/EventHistoryService';
@@ -242,7 +243,6 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   // 🎬 调试：打印传入的 event 对象的关键字段
   console.log('🎬 [EventEditModalV2] 传入的 event 对象:', {
     id: event?.id,
-    fourDNoteSource: event?.fourDNoteSource,
     source: event?.source,
     syncMode: event?.syncMode,
     syncStatus: event?.syncStatus,
@@ -457,11 +457,10 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         syncMode: (() => {
           const originalSyncMode = event.syncMode;
           const finalSyncMode = event.syncMode || (() => {
-            const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
+            const isLocalEvent = isLocalEventSource(event.source);
             const defaultMode = isLocalEvent ? 'bidirectional-private' : 'receive-only';
-            console.log('🎬 [formData 初始化] 事件来源检测（降级逻辑）:', {
+            console.log('🎬 [formData 初始化] 事件来源检测（SSOT）:', {
               eventId: event.id,
-              fourDNoteSource: event.fourDNoteSource,
               source: event.source,
               isLocalEvent,
               eventSyncMode: event.syncMode,
@@ -626,7 +625,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       description: event.description || '',
       calendarIds: event.calendarIds || [],
       syncMode: event.syncMode || (() => {
-        const isLocalEvent = event.fourDNoteSource === true || event.source === 'local';
+        const isLocalEvent = isLocalEventSource(event.source);
         return isLocalEvent ? 'bidirectional-private' : 'receive-only';
       })(),
       subEventConfig: event.subEventConfig || { 
@@ -1310,8 +1309,9 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       };
 
       const computeDefaultSyncMode = (e: Event | null | undefined): string => {
-        const isLocalEvent = e?.fourDNoteSource === true || e?.source === 'local';
-        return isLocalEvent ? 'bidirectional-private' : 'receive-only';
+        if (!e) return 'bidirectional-private';
+        assertNamespacedEventSource(e.source);
+        return isLocalEventSource(e.source) ? 'bidirectional-private' : 'receive-only';
       };
 
       const buildContractSafeCreateEvent = (candidate: Event): Event => {
@@ -1757,14 +1757,13 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     }
 
     // 2. 外部日历事件
-    const provider = evt.source?.split(':')[0];
-    if (provider === 'outlook' || provider === 'google' || provider === 'icloud' ||
-        evt.source === 'outlook' || evt.source === 'google' || evt.source === 'icloud') {
+    const provider = sourceProviderOf(evt.source);
+    if (provider === 'outlook' || provider === 'google' || provider === 'icloud') {
       const calendarId = evt.calendarIds?.[0];
       const calendar = calendarId ? availableCalendars.find(c => c.id === calendarId) : null;
       const calendarName = calendar ? calendar.name.replace(/^[\uD83C-\uDBFF\uDC00-\uDFFF]+\s*/, '') : '默认';
       
-      switch (provider || evt.source) {
+      switch (provider) {
         case 'outlook':
           return { emoji: null, name: `Outlook: ${calendarName}`, icon: '📧', color: '#0078d4' };
         case 'google':
@@ -2987,7 +2986,12 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                         selectedTagIds={formData.tags}
                         onSelectionChange={(selectedIds) => {
                           // 🆕 v2.0.5 标签变更时，自动处理日历映射（使用新架构：syncMode + subEventConfig）
-                          const isLocalEvent = event?.fourDNoteSource === true || event?.source === 'local';
+                          const isLocalEvent = !event
+                            ? true
+                            : (() => {
+                                assertNamespacedEventSource((event as Event).source);
+                                return isLocalEventSource((event as Event).source);
+                              })();
                           
                           // 提取标签的日历映射
                           const mappedCalendars = selectedIds
@@ -3139,8 +3143,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                 title: newEvent.title,
                                 'title type': typeof newEvent.title,
                                 tags: newEvent.tags,
-                                source: newEvent.source,
-                                fourDNoteSource: newEvent.fourDNoteSource
+                                source: newEvent.source
                               });
                               
                               await EventService.createEvent(newEvent);

@@ -2,6 +2,7 @@ import * as React from 'react';
 import type { Event } from '@frontend/types';
 import type { MockEvent } from '@frontend/features/Event/components/EventEditModal/types';
 import { hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { isLocalEventSource } from '@frontend/utils/eventSourceSSOT';
 
 type LocationDisplayFn = (location: unknown) => string;
 
@@ -65,8 +66,7 @@ export function useEventEditDraft({
         syncMode:
           event.syncMode ||
           (() => {
-            const isLocalEvent = event.fourDNoteSource === true || (event as any).source === 'local';
-            return isLocalEvent ? 'bidirectional-private' : 'receive-only';
+            return isLocalEventSource(event.source) ? 'bidirectional-private' : 'receive-only';
           })(),
         subEventConfig: event.subEventConfig || {
           calendarIds: [],
@@ -170,8 +170,7 @@ export function useEventEditDraft({
       syncMode:
         event.syncMode ||
         (() => {
-          const isLocalEvent = event.fourDNoteSource === true || (event as any).source === 'local';
-          return isLocalEvent ? 'bidirectional-private' : 'receive-only';
+          return isLocalEventSource(event.source) ? 'bidirectional-private' : 'receive-only';
         })(),
       subEventConfig: event.subEventConfig || {
         calendarIds: [],

@@ -6,6 +6,11 @@
  */
 
 import { Event } from '@frontend/types';
+import {
+  assertNamespacedEventSource,
+  isExternalEventSource,
+  isLocalEventSource,
+} from '@frontend/utils/eventSourceSSOT';
 
 /**
  * 判断事件是否具有任务能力
@@ -47,11 +52,8 @@ export function shouldShowInPlan(event: Event): boolean {
 export function shouldShowInTimeCalendar(event: Event): boolean {
   // 规则 1: 本地创建或外部同步 + 有 calendar block
   if (hasCalendarFacet(event)) {
-    return event.source?.startsWith('local:') || 
-           event.source?.startsWith('outlook:') || 
-           event.source === 'local' ||  // 向后兼容
-           event.source === 'outlook' || // 向后兼容
-           false;
+    assertNamespacedEventSource(event.source);
+    return true;
   }
   
   // 规则 2: Task Bar（checkType 存在但无时间段）
@@ -64,9 +66,8 @@ export function shouldShowInTimeCalendar(event: Event): boolean {
  * @returns 是否为本地创建的事件
  */
 export function isLocalCreation(event: Event): boolean {
-  return event.source?.startsWith('local:') || 
-         event.source === 'local' || // 向后兼容
-         false;
+  assertNamespacedEventSource(event.source);
+  return isLocalEventSource(event.source);
 }
 
 /**
@@ -75,13 +76,8 @@ export function isLocalCreation(event: Event): boolean {
  * @returns 是否为外部同步的事件
  */
 export function isExternalSync(event: Event): boolean {
-  return event.source?.startsWith('outlook:') || 
-         event.source?.startsWith('google:') ||
-         event.source?.startsWith('icloud:') ||
-         event.source === 'outlook' ||  // 向后兼容
-         event.source === 'google' ||   // 向后兼容
-         event.source === 'icloud' ||   // 向后兼容
-         false;
+  assertNamespacedEventSource(event.source);
+  return isExternalEventSource(event.source);
 }
 
 /**
@@ -90,13 +86,8 @@ export function isExternalSync(event: Event): boolean {
  * @returns 标准化的 source 字符串
  */
 export function getCreationSource(event: Event): string {
-  // 向后兼容：旧格式转换为新格式
-  if (event.source === 'local') return 'local:unknown';
-  if (event.source === 'outlook') return 'outlook:calendar';
-  if (event.source === 'google') return 'google:calendar';
-  if (event.source === 'icloud') return 'icloud:calendar';
-  
-  return event.source || 'local:unknown';
+  assertNamespacedEventSource(event.source);
+  return event.source;
 }
 
 /**

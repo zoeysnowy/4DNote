@@ -98,7 +98,6 @@ export function planItemsToSlateNodes(items: any[]): EventLineNode[] {
       source: item.source,
       syncStatus: item.syncStatus,
       externalId: item.externalId,
-      fourDNoteSource: item.fourDNoteSource,
       
       // 时间戳
       createdAt: item.createdAt,
@@ -528,15 +527,9 @@ export function slateNodesToPlanItems(nodes: EventLineNode[]): any[] {
         
         calendarIds: metadata.calendarIds || [],
         todoListIds: metadata.todoListIds || [], // 🆕 To Do List IDs
-        source:
-          metadata.source === 'local'
-            ? 'local:plan'
-            : metadata.source === 'outlook'
-              ? 'outlook:calendar'
-              : (metadata.source || 'local:plan'),
+        source: metadata.source || 'local:plan',
         syncStatus: metadata.syncStatus || 'local-only',
         externalId: metadata.externalId,
-        fourDNoteSource: metadata.fourDNoteSource ?? true,
         
         createdAt: metadata.createdAt,
         updatedAt: metadata.updatedAt,

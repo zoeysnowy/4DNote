@@ -57,6 +57,7 @@ export async function testIndexedDBFix() {
       title: { simpleTitle: '测试事件 - IndexedDB 修复验证', fullTitle: undefined, colorTitle: undefined },
       description: '这是一个测试事件，用于验证 IndexedDB 清理后的双写功能',
       startTime: formatTimeForStorage(new Date()),
+      source: 'local:event_edit' as const,
       tags: ['test', 'indexeddb-fix'],
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())

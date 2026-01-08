@@ -23,6 +23,11 @@
 
 ## 1. 架构总览
 
+> 术语对齐（避免与 Enhanced PRD 冲突）：
+> - **MediaArtifact**：媒体理解层产物（转写/摘要/结构化），1:1 绑定 `Media`，Owner = `MediaArtifactService`。
+> - **Artifact（PRD）/SessionBrief/DailyNarrative**：回顾/纪要产物（写入 `artifacts`），面向时间窗与叙事输出，Owner = `SessionBriefService/ArtifactService`。
+> - 两者 **不合并**：生命周期、target 维度与生成触发不同；SessionBrief 可消费 MediaArtifact 的摘要/转写作为输入。
+
 ### 1.1 系统架构图
 
 ```mermaid
@@ -421,23 +426,23 @@ graph TB
 
 | 方案 | 优点 | 缺点 | 结论 |
 |------|------|------|------|
-| **A: 独立 MediaArtifact 表** | ✅ 符合 SSOT（派生数据独立）<br/>✅ Media 保持干净<br/>✅ 可以重新生成 Artifact | ⚠️ 需要 JOIN 查询 | ✅ 推荐 |
+| **A: 独立 MediaArtifact 表** | ✅ 符合 SSOT（派生数据独立）<br/>✅ Media 保持干净<br/>✅ 可以重新生成 MediaArtifact | ⚠️ 需要 JOIN 查询 | ✅ 推荐 |
 | **B: 存在 Media 表** | ⚠️ 查询方便 | ❌ 违反 SSOT<br/>❌ Media 表臃肿<br/>❌ 难以重新生成 | ❌ 不推荐 |
 | **C: 存在 AttentionSession** | - | ❌ 只适用录音<br/>❌ 图片/文档怎么办？ | ❌ 不合理 |
 
 **查询示例**：
 ```typescript
-// 查询 Media + Artifact（需要 JOIN）
+// 查询 Media + MediaArtifact（需要 JOIN）
 const media = await db.media.get(mediaId);
-const artifact = await db.media_artifacts.where('mediaId').equals(mediaId).first();
+const mediaArtifact = await db.media_artifacts.where('mediaId').equals(mediaId).first();
 
-// 搜索时直接查 Artifact
+// 搜索时直接查 MediaArtifact
 const results = await VectorStore.search(queryEmbedding);
 // results[0].id = "mediaArtifact_abc123"
 
 // 水合（Hydrate）完整对象
-const artifact = await db.media_artifacts.get(results[0].id);
-const media = await db.media.get(artifact.mediaId);
+const mediaArtifact = await db.media_artifacts.get(results[0].id);
+const media = await db.media.get(mediaArtifact.mediaId);
 ```
 
 ---
@@ -1086,14 +1091,14 @@ class MediaService {
  * 注意：这里的 MediaArtifactService 仅负责“媒体→摘要/结构化数据”的生成，
  * 不等同于 Signal 领域里的 SignalService（signals 的 Owner）。
  * 
- * 职责: 为 Media 生成 AI 可理解的 Artifact
+ * 职责: 为 Media 生成 AI 可理解的 MediaArtifact
  * 触发时机: Media 创建后自动触发
  */
 class MediaArtifactService {
   // ===== 核心方法 =====
   
   /**
-   * 为 Media 生成 Artifact
+  * 为 Media 生成 MediaArtifact
    * @param mediaId Media ID
    * @returns MediaArtifact 对象
    * @description 
@@ -1105,7 +1110,7 @@ class MediaArtifactService {
   async generateMediaArtifact(mediaId: string): Promise<MediaArtifact>;
   
   /**
-   * 批量重新生成 Artifact
+  * 批量重新生成 MediaArtifact
    * @param mediaIds Media ID 数组
    * @description 模型升级后批量重新生成
    */
@@ -1116,7 +1121,7 @@ class MediaArtifactService {
   /**
    * 分析图片
    * @param media Media 对象
-   * @returns Artifact 部分数据
+  * @returns MediaArtifact 部分数据
    * @description
    * 1. OCR 提取文字
    * 2. GPT-4V 分析图片内容
@@ -1127,7 +1132,7 @@ class MediaArtifactService {
   /**
    * 分析音频
    * @param media Media 对象
-   * @returns Artifact 部分数据
+  * @returns MediaArtifact 部分数据
    * @description
    * 1. Whisper 转写
    * 2. 保存 Transcripts
@@ -1374,7 +1379,7 @@ stateDiagram-v2
     SBS-->>SBS: upsert Artifact(scope='session', targetId=attentionSessionId)
 
     opt 需要向量检索
-      SBS->>RAG: ensureEmbedding(artifactId)
+      SBS->>RAG: ensureEmbedding(sessionBriefArtifactId)
     end
 
     U->>ATS: stopRecordingSession(sessionId)
@@ -1411,7 +1416,7 @@ sequenceDiagram
     
     loop 水合数据
         SS->>MA: 查询 MediaArtifact
-        MA-->>SS: Artifact 对象
+      MA-->>SS: MediaArtifact 对象
         SS->>M: 查询 Media
         M-->>SS: Media 对象
         SS->>E: 查询 Event
@@ -1529,7 +1534,7 @@ class SearchService {
 interface SearchResult {
   type: 'media';
   media: Media;
-  artifact: MediaArtifact;
+  mediaArtifact: MediaArtifact;
   event: Event;
   score: number;                       // 相关性分数（0-1）
   highlight: string;                   // 高亮匹配片段
@@ -1572,7 +1577,7 @@ interface UploadMediaResponse {
  */
 interface GetMediaResponse {
   media: Media;
-  artifact?: MediaArtifact;            // 如果已生成
+  mediaArtifact?: MediaArtifact;        // 如果已生成
   downloadUrl?: string;                // 文件下载 URL
 }
 
@@ -1600,88 +1605,36 @@ interface DeleteMediaResponse {
   deletedAt: string;
 }
 
-// ===== Artifact APIs =====
+// ===== MediaArtifact APIs（注意：这里是 MediaArtifact，不是 Enhanced PRD 的 Artifact/SessionBrief） =====
 
 /**
- * 上传文件
- * POST /api/media/upload
+ * 触发 MediaArtifact 生成（手动）
+ * POST /api/media/:mediaId/generate-media-artifact
  */
-interface UploadMediaRequest {
-  eventId: string;
-  file: File;
-  source?: MediaSource;
-  contentCreatedAt?: string;
-}
-
-interface UploadMediaResponse {
-  media: Media;
-  uploadUrl?: string;                  // 云端上传 URL（预签名）
-}
-
-/**
- * 获取 Media
- * GET /api/media/:mediaId
- */
-interface GetMediaResponse {
-  media: Media;
-  artifact?: MediaArtifact;            // 如果已生成
-  downloadUrl?: string;                // 文件下载 URL
-}
-
-/**
- * 获取 Event 的所有媒体
- * GET /api/events/:eventId/media
- */
-interface GetEventMediaRequest {
-  type?: MediaType;
-  sortBy?: 'contentCreatedAt' | 'uploadedAt';
-  order?: 'asc' | 'desc';
-}
-
-interface GetEventMediaResponse {
-  media: Media[];
-  total: number;
-}
-
-/**
- * 删除 Media
- * DELETE /api/media/:mediaId
- */
-interface DeleteMediaResponse {
-  success: boolean;
-  deletedAt: string;
-}
-
-// ===== Artifact APIs =====
-
-/**
- * 触发 Artifact 生成（手动）
- * POST /api/media/:mediaId/generate-artifact
- */
-interface GenerateArtifactResponse {
-  artifactId: string;
+interface GenerateMediaArtifactResponse {
+  mediaArtifactId: string;
   status: 'pending' | 'processing';
 }
 
 /**
- * 获取 Artifact 状态
- * GET /api/artifacts/:artifactId
+ * 获取 MediaArtifact
+ * GET /api/media-artifacts/:mediaArtifactId
  */
-interface GetArtifactResponse {
-  artifact: MediaArtifact;
+interface GetMediaArtifactResponse {
+  mediaArtifact: MediaArtifact;
   progress?: number;                   // 0-100（如果正在生成）
 }
 
 /**
- * 批量重新生成 Artifact
- * POST /api/artifacts/regenerate
+ * 批量重新生成 MediaArtifact
+ * POST /api/media-artifacts/regenerate
  */
-interface RegenerateArtifactsRequest {
+interface RegenerateMediaArtifactsRequest {
   mediaIds: string[];
   reason?: string;                     // "model_upgrade" | "manual"
 }
 
-interface RegenerateArtifactsResponse {
+interface RegenerateMediaArtifactsResponse {
   jobId: string;
   total: number;
 }

@@ -248,8 +248,8 @@ await SignalService.createSignal({
 4. **Phase 4（Phase 2）**: AI 推断与 RAG embedding
 
 **数据量约束**：
-- behaviorMeta **只存聚合结果**（总时长/次数），**不存原始事件流**
-- 但**必须存储**：选中的文字内容、node summary as chunk、article summary（用于 AI 生成 Daily Review）
+- behaviorMeta **只存聚合统计 + 少量（可选）摘要文本**，**不存原始高频事件流**（也不存可无限增长的明细列表）
+- **证据文本（如选中的文字/悬停文字/被标记片段）以 `Signal.content` 为准**；`nodeSummary/articleSummary` 允许作为小文本缓存写入 `behaviorMeta`（用于 Daily Review），但不得演化为原始事件流
 
 **Summary 生成策略**（参考 roots/sprout 关系）：
 - **系统主动生成**：daily/weekly/monthly/quarterly/yearly summary（定时触发）
@@ -275,7 +275,7 @@ interface Signal {
   id: string;                    // signal_${nanoid(21)}
   eventId: string;               // 外键 → events.id（强制，级联删除）
   type: SignalType;              // 信号类型（见下文）
-  content: string;               // 标记的文本内容（≤500 字符）
+  content: string;               // 标记/证据文本（建议 ≤500；可截断；以此为准）
   timestamp: string;             // 创建时间（本地格式 YYYY-MM-DD HH:mm:ss）
   createdBy: 'user' | 'ai' | 'system';
   status: SignalStatus;          // 状态（见下文）
@@ -293,10 +293,12 @@ interface Signal {
     actionCount?: number;        // 操作次数（复制/编辑）
     totalDwellTime?: number;     // 累计停留时长（毫秒）
     
-    // AI 生成所需的文本内容（必须存储）
-    selectedText?: string;       // 选中的文字内容
+    // （可选）AI/Daily Review 所需的轻量摘要（小文本缓存；非原始事件流）
     nodeSummary?: string;        // Node summary as chunk
     articleSummary?: string;     // Article summary
+
+    // （兼容字段，不建议写入）：过去曾将 selectedText 写入 behaviorMeta；现在以 Signal.content 为准
+    selectedText?: string;
     
     // 上下文关联
     relatedConversationId?: string; // 关联 AI 对话 ID
@@ -651,7 +653,6 @@ async function handleMarkAsHighlight(selectedText: string, slateNodePath: number
     createdBy: 'user',
     status: 'active',
     behaviorMeta: {
-      selectedText,
       extractedFrom: 'user'
     }
   });
@@ -700,19 +701,23 @@ await storageManager.db.signals.add({ ... });  // 禁止
 
 ✅ **必须存储**（用于 AI 生成 Daily Review）：
 ```typescript
+// 证据文本：以 Signal.content 为准（例如选中的文字/悬停文字/被标记片段）
+
 behaviorMeta: {
-  // 文本内容（RAG 检索 + AI 总结）
-  selectedText: string;       // 用户选中的文字
-  nodeSummary: string;        // Node summary as chunk
-  articleSummary: string;     // Article summary
-  
   // 聚合统计（不存原始事件流）
   actionCount: number;        // 总操作次数
   totalDwellTime: number;     // 总停留时长（毫秒）
-  
+
+  // （可选）小文本摘要缓存（用于 Daily Review；不得演化为原始事件流/明细列表）
+  nodeSummary?: string;       // Node summary as chunk
+  articleSummary?: string;    // Article summary
+
   // 关联 ID
   relatedConversationId?: string;
   relatedSessionId?: string;
+
+  // （兼容字段，不建议写入）：selectedText 以 Signal.content 为准
+  selectedText?: string;
 }
 ```
 

@@ -569,7 +569,7 @@ public async syncVisibleDateRangeFirst(visibleStart: Date, visibleEnd: Date) {
 
   // 0. 先推送本地未同步的更改（Local to Remote）
   const hasPendingLocalActions = this.actionQueue.some(
-    action => action.source === 'local' && !action.synchronized
+    action => action.initiator === 'local' && !action.synchronized
   );
   
   if (hasPendingLocalActions) {
@@ -2321,7 +2321,7 @@ this.saveLocalEvents(events, true); // rebuildIndex=true
 ```typescript
 private async syncPendingLocalActions() {
   const pendingLocalActions = this.actionQueue.filter(
-    action => action.source === 'local' && !action.synchronized
+    action => action.initiator === 'local' && !action.synchronized
   );
   
   // 🚀 合并同一个事件的多个 action
@@ -2810,7 +2810,7 @@ public async forceSync(): Promise<void> {
 public async syncVisibleDateRangeFirst(visibleStart: Date, visibleEnd: Date) {
   // 🆕 0. 先推送本地未同步的更改（Local to Remote）
   const hasPendingLocalActions = this.actionQueue.some(
-    action => action.source === 'local' && !action.synchronized
+    action => action.initiator === 'local' && !action.synchronized
   );
   
   if (hasPendingLocalActions) {

@@ -256,15 +256,16 @@ const MODEL_IMPL = {
 ✅ **必须存储**（用于 AI 生成 Daily Review）：
 ```typescript
 behaviorMeta: {
-  // 文本内容（RAG 检索 + AI 总结）
-  selectedText: string;       // 用户选中的文字
-  nodeSummary: string;        // Node summary as chunk
-  articleSummary: string;     // Article summary
-  
   // 聚合统计（只存总量）
   actionCount: number;
   totalDwellTime: number;     // 毫秒
+
+  // （可选）小文本摘要缓存（用于 Daily Review；不得演化为原始事件流/明细列表）
+  nodeSummary?: string;       // Node summary as chunk
+  articleSummary?: string;    // Article summary
 }
+
+// 证据文本：以 Signal.content 为准（例如选中的文字/悬停文字/被标记片段）
 ```
 
 ❌ **禁止存储**（避免数据膨胀）：
@@ -464,7 +465,8 @@ interface Signal {
   
   /**
    * 行为统计与上下文元数据
-   * 约束: 只存聚合统计 + AI 所需文本，不存原始事件流
+    * 约束: 只存聚合统计 + （可选）小文本摘要缓存，不存原始事件流/明细列表
+    * 证据文本（如选中的文字）以 Signal.content 为准，不建议在 behaviorMeta 重复存 selectedText
    */
   behaviorMeta?: {
     // ----- 统计聚合（只存总量，不存明细） -----
@@ -484,28 +486,26 @@ interface Signal {
      */
     totalDwellTime?: number;
     
-    // ----- AI 生成所需的文本内容（必须存储） -----
-    
-    /**
-     * 选中的文字内容
-     * 用途: 用户选中的文本片段，用于 Daily Review AI 生成时提供上下文
-     * 示例: 用户选中"重要发现"并标记为高亮 → selectedText = "重要发现"
-     */
-    selectedText?: string;
-    
+    // ----- （可选）Daily Review 所需的小文本摘要缓存 -----
+
     /**
      * Node summary as chunk
      * 用途: 节点级别的摘要文本，作为 RAG 检索的 chunk
-     * 示例: 某个段落的 AI 摘要
+     * 约束: 小文本缓存；不得演化为原始事件流/明细列表
      */
     nodeSummary?: string;
-    
+
     /**
      * Article summary
      * 用途: 文章级别的摘要文本
-     * 示例: 整篇笔记的 AI 摘要
+     * 约束: 小文本缓存；不得演化为原始事件流/明细列表
      */
     articleSummary?: string;
+
+    /**
+     * （兼容字段，不建议写入）：过去曾将 selectedText 写入 behaviorMeta；现在以 Signal.content 为准
+     */
+    selectedText?: string;
     
     // ----- 上下文关联 -----
     
@@ -2456,14 +2456,14 @@ class SnapshotManager {
   - [ ] `user_edit` - 编辑超过 N 次时创建
   - [ ] `user_question` - 提问 AI 时创建
 - [ ] `behaviorMeta` 存储：
-  - [ ] `selectedText` - 选中的文字
   - [ ] `nodeSummary` - Node summary as chunk
   - [ ] `articleSummary` - Article summary
   - [ ] `actionCount` / `totalDwellTime` - 聚合统计
+ - [ ] `Signal.content` - 证据文本（如选中的文字/被标记片段）
 
 **成功标准**
 - 用户复制/编辑/提问时自动创建对应 Signal
-- `behaviorMeta` 只存聚合数据 + 必需文本（不存原始事件流）
+- `behaviorMeta` 只存聚合数据 + （可选）小文本摘要缓存（不存原始事件流/明细列表；证据文本以 `Signal.content` 为准）
 - 活跃时间计算准确（5 分钟无交互停止计时）
 
 ### MVP-3：Session Brief 生成（Phase 1 核心功能，第 7-10 周）

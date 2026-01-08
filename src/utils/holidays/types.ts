@@ -96,7 +96,6 @@ export interface Event {
   timerSessionId?: string;
   tags?: string[];       // 🆕 多标签支持（已统一使用数组）
   category?: string;
-  fourDNoteSource?: boolean;
   localVersion?: number;
   // 🎯 事件类型标记（用于控制显示样式）
   // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代

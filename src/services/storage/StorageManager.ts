@@ -1581,34 +1581,50 @@ export class StorageManager {
     await this.ensureInitialized();
     
     const migrationKey = '4dnote-event-tree-index-migrated';
-    if (localStorage.getItem(migrationKey) === 'true') {
+    const state = localStorage.getItem(migrationKey);
+    if (state === 'true') {
       console.log('[StorageManager] EventTreeIndex migration already completed');
       return;
     }
 
-    console.log('[StorageManager] Starting EventTreeIndex migration...');
-    const startTime = performance.now();
-
-    // 🚀 直接从 IndexedDB 提取轻量级字段（避免读取完整 Event）
-    const statsList = await this.indexedDBService.extractEventTreeIndexFromEvents();
-    console.log(`[StorageManager] Migrating ${statsList.length} events...`);
-
-    if (statsList.length === 0) {
-      console.log('[StorageManager] ⚠️ No events to migrate, skipping EventTreeIndex creation');
-      localStorage.setItem(migrationKey, 'true');
+    // React 18 StrictMode (dev) and/or retries can invoke app initialization twice.
+    // Use a lightweight lock to avoid concurrent/double migrations.
+    if (state === 'in-progress') {
+      console.log('[StorageManager] EventTreeIndex migration already in progress');
       return;
     }
 
-    // 批量插入
-    console.log('[StorageManager] 🚀 Starting bulk insert...');
-    await this.bulkCreateEventTreeIndex(statsList);
-    console.log('[StorageManager] ✅ Bulk insert completed');
+    localStorage.setItem(migrationKey, 'in-progress');
 
-    const elapsed = performance.now() - startTime;
-    console.log(`[StorageManager] ✅ EventTreeIndex migration completed in ${elapsed.toFixed(0)}ms`);
-    
-    // 标记迁移完成
-    localStorage.setItem(migrationKey, 'true');
+    console.log('[StorageManager] Starting EventTreeIndex migration...');
+    const startTime = performance.now();
+
+    try {
+      // 🚀 直接从 IndexedDB 提取轻量级字段（避免读取完整 Event）
+      const statsList = await this.indexedDBService.extractEventTreeIndexFromEvents();
+      console.log(`[StorageManager] Migrating ${statsList.length} events...`);
+
+      if (statsList.length === 0) {
+        console.log('[StorageManager] ⚠️ No events to migrate, skipping EventTreeIndex creation');
+        localStorage.setItem(migrationKey, 'true');
+        return;
+      }
+
+      // 批量插入（idempotent/upsert in IndexedDB layer）
+      console.log('[StorageManager] 🚀 Starting bulk insert...');
+      await this.bulkCreateEventTreeIndex(statsList);
+      console.log('[StorageManager] ✅ Bulk insert completed');
+
+      const elapsed = performance.now() - startTime;
+      console.log(`[StorageManager] ✅ EventTreeIndex migration completed in ${elapsed.toFixed(0)}ms`);
+      
+      // 标记迁移完成
+      localStorage.setItem(migrationKey, 'true');
+    } catch (error) {
+      // Clear lock so the migration can retry next launch.
+      localStorage.removeItem(migrationKey);
+      throw error;
+    }
   }
 
   /**

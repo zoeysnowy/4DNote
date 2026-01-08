@@ -15,6 +15,8 @@
  */
 
 import { formatTimeForStorage, parseLocalTimeString } from './timeUtils';
+import type { EventSource } from '@frontend/types';
+import { isOutlookEventSource } from '@frontend/utils/eventSourceSSOT';
 
 export type SignatureSource = '4dnote' | 'outlook';
 export type SignatureEmoji = '🔮' | '📧';
@@ -22,8 +24,7 @@ export type SignatureEmoji = '🔮' | '📧';
 export interface SignatureInfo {
   createdAt?: string;           // 创建时间（TimeSpec 格式）
   updatedAt?: string;           // 最后修改时间（TimeSpec 格式）
-  fourDNoteSource?: boolean;    // 是否由 4DNote 创建
-  source?: 'local' | 'outlook'; // 来源类型
+  creator?: SignatureSource;    // 签名创建者（避免与 Event.source 混淆）
 }
 
 /**
@@ -173,21 +174,19 @@ export class SignatureUtils {
    * @param content - 包含签名的文本
    * @returns 创建者信息
    */
-  static extractCreator(content: string): Pick<SignatureInfo, 'fourDNoteSource' | 'source'> {
+  static extractCreator(content: string): Pick<SignatureInfo, 'creator'> {
     if (!content) return {};
 
-    const result: Pick<SignatureInfo, 'fourDNoteSource' | 'source'> = {};
+    const result: Pick<SignatureInfo, 'creator'> = {};
 
     const creatorMatch = content.match(this.CREATOR_PATTERN);
     if (creatorMatch && creatorMatch[1]) {
       const creator = creatorMatch[1].toLowerCase();
 
       if (creator === '4dnote') {
-        result.fourDNoteSource = true;
-        result.source = 'local';
+        result.creator = '4dnote';
       } else if (creator === 'outlook') {
-        result.fourDNoteSource = false;
-        result.source = 'outlook';
+        result.creator = 'outlook';
       }
     }
 
@@ -217,8 +216,8 @@ export class SignatureUtils {
     options: {
       createdAt?: string;
       updatedAt?: string;
-      fourDNoteSource?: boolean;
-      source?: 'local' | 'outlook';
+      // SSOT: namespaced Event.source (e.g. 'local:plan', 'outlook:calendar').
+      source: EventSource;
       lastModifiedSource?: SignatureSource;
       isVirtualTime?: boolean;  // 🆕 v2.19: 虚拟时间标记（note同步）
     }
@@ -238,7 +237,7 @@ export class SignatureUtils {
     lines.push('---');
 
     // 3. 确定创建来源和时间
-    const isLocalCreated = options.fourDNoteSource === true || options.source === 'local' || !options.source;
+    const isLocalCreated = !isOutlookEventSource(options.source);
     const createSource = isLocalCreated ? '🔮 4DNote' : '📧 Outlook';
     const createSourceKey: SignatureSource = isLocalCreated ? '4dnote' : 'outlook';
     const createTime = options.createdAt || formatTimeForStorage(new Date());
@@ -275,7 +274,7 @@ export class SignatureUtils {
   /**
    * 获取来源的 Emoji 图标
    */
-  static getSourceEmoji(source?: SignatureSource | 'local' | 'outlook'): SignatureEmoji {
+  static getSourceEmoji(source?: SignatureSource): SignatureEmoji {
     if (!source) return '🔮';
     return source === 'outlook' ? '📧' : '🔮';
   }
@@ -283,7 +282,7 @@ export class SignatureUtils {
   /**
    * 获取来源的显示名称
    */
-  static getSourceName(source?: SignatureSource | 'local' | 'outlook'): string {
+  static getSourceName(source?: SignatureSource): string {
     if (!source) return '4DNote';
     return source === 'outlook' ? 'Outlook' : '4DNote';
   }

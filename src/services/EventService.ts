@@ -37,7 +37,11 @@ import {
 import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
 import { updateSubtreeRootEventIdUsingTreeIndex, EventTreeAPI } from '@backend/eventTree'; // 🆕 EventTree Engine 集成
-import { migrateEventSource, needsSourceMigration } from '@frontend/utils/migrations/migrateSourceField';
+import {
+  assertNamespacedEventSource,
+  isLocalEventSource,
+  isOutlookEventSource,
+} from '@frontend/utils/eventSourceSSOT';
 
 type EventTreeNode = Event & { children: EventTreeNode[] };
 
@@ -242,45 +246,42 @@ export class EventService {
         // 🔧 自动规范化所有事件的 title 字段（处理旧数据中的 undefined）
         const convertedEvents = activeEvents.map(event => this.convertStorageEventToEvent(event));
 
-        // Phase 2.2: source 字段命名空间迁移（只做一次；并对返回值做内存级升级）
-        const migratedEvents = convertedEvents.map(migrateEventSource);
+        // Strict SSOT (no-migrate): legacy or missing Event.source must not be tolerated.
+        // Fail-fast: surface corrupted persisted data loudly so it can be cleared/corrected.
+        const validEvents: Event[] = [];
+        const invalidEventIds: string[] = [];
+        const invalidSourceSamples: Array<{ id: string; source: unknown }> = [];
 
-        // One-time writeback to persist migrated source values
-        try {
-          const MIGRATION_FLAG = '4dnote_migrated_source_namespace_v1';
-          const alreadyMigrated = typeof localStorage !== 'undefined' && localStorage.getItem(MIGRATION_FLAG) === 'true';
-
-          if (!alreadyMigrated) {
-            const toPersist: StorageEvent[] = [];
-
-            for (let i = 0; i < migratedEvents.length; i++) {
-              const before = convertedEvents[i];
-              const after = migratedEvents[i];
-              if (!after?.id) continue;
-
-              // Only write back if it was a legacy, non-namespaced value
-              if (needsSourceMigration(before) && after.source !== (before as any).source) {
-                toPersist.push(this.convertEventToStorageEvent(after));
+        for (const evt of convertedEvents) {
+          try {
+            assertNamespacedEventSource((evt as any).source);
+            validEvents.push(evt);
+          } catch {
+            if (evt.id) {
+              invalidEventIds.push(evt.id);
+              if (invalidSourceSamples.length < 5) {
+                invalidSourceSamples.push({ id: evt.id, source: (evt as any).source });
               }
             }
-
-            if (toPersist.length > 0) {
-              // Fire-and-forget to avoid blocking initial render
-              queueMicrotask(async () => {
-                try {
-                  await storageManager.batchUpdateEvents(toPersist);
-                  localStorage.setItem(MIGRATION_FLAG, 'true');
-                  eventLogger.log(`✅ [Migration] source namespace migrated: ${toPersist.length} events`);
-                } catch (e) {
-                  eventLogger.warn('⚠️ [Migration] source namespace writeback failed:', e);
-                }
-              });
-            } else {
-              localStorage.setItem(MIGRATION_FLAG, 'true');
-            }
           }
-        } catch (e) {
-          // Ignore migration failures; keep runtime behavior safe.
+        }
+
+        if (invalidEventIds.length > 0) {
+          const details = {
+            count: invalidEventIds.length,
+            samples: invalidSourceSamples.map(s => ({ id: s.id, source: s.source })),
+          };
+
+          // Strict SSOT: prefer failing loudly (no migration/compat, no quarantine).
+          eventLogger.error('[SSOT] Invalid/legacy Event.source detected (fail-fast)', details);
+          const samplePairs = invalidSourceSamples
+            .map(s => `${s.id}:${String(s.source)}`)
+            .join(', ');
+          throw new Error(
+            `[SSOT] Invalid/legacy Event.source detected (${invalidEventIds.length} events). ` +
+              `Clear/correct persisted data instead of migrating. ` +
+              (samplePairs ? `Samples: ${samplePairs}` : '')
+          );
         }
         
         // ✅ v2.21.1: 使用 queueMicrotask 清除 Promise，避免阻塞
@@ -288,11 +289,11 @@ export class EventService {
           this.getAllEventsPromise = null;
         });
         
-        return migratedEvents;
+        return validEvents;
       } catch (error) {
         eventLogger.error('❌ [EventService] Failed to load events:', error);
         this.getAllEventsPromise = null; // 查询失败，立即清除
-        return [];
+        throw error;
       }
     })();
     
@@ -360,6 +361,11 @@ export class EventService {
       const convertStart = performance.now();
       const events = activeEvents.map(event => this.convertStorageEventToEvent(event));
       const convertDuration = performance.now() - convertStart;
+
+      // Strict SSOT: never tolerate legacy/invalid Event.source in reads.
+      for (const evt of events) {
+        assertNamespacedEventSource((evt as any).source);
+      }
       
       const totalDuration = performance.now() - perfStart;
       eventLogger.log(`⚡ [Performance] getEventsByDateRange: total=${totalDuration.toFixed(1)}ms (query=${queryDuration.toFixed(1)}ms, filter=${filterDuration.toFixed(1)}ms, convert=${convertDuration.toFixed(1)}ms) → ${events.length} events`);
@@ -367,6 +373,9 @@ export class EventService {
       return events;
     } catch (error) {
       eventLogger.error('❌ [EventService] Failed to load events by date range:', error);
+      if (error instanceof Error && error.message.includes('[SSOT]')) {
+        throw error;
+      }
       return [];
     }
   }
@@ -419,6 +428,9 @@ export class EventService {
         // 直接使用数据库中的 eventlog，不做转换
         eventlog: storageEvent.eventlog
       };
+
+      // Strict SSOT: never tolerate legacy/invalid Event.source in reads.
+      assertNamespacedEventSource((normalizedEvent as any).source);
       
       // 🔍 调试：验证 syncMode 是否从数据库正确读取（已禁用，日志太多）
       // if (eventId.startsWith('outlook-')) {
@@ -451,6 +463,9 @@ export class EventService {
       return normalizedEvent as Event;
     } catch (error) {
       eventLogger.error('❌ [EventService] Failed to get event by ID:', error);
+      if (error instanceof Error && error.message.includes('[SSOT]')) {
+        throw error;
+      }
       return null;
     }
   }
@@ -698,7 +713,6 @@ export class EventService {
         ...normalizedEvent,
         createdAt: normalizedEvent.createdAt || now,  // ✅ 回退到当前时间
         updatedAt: normalizedEvent.updatedAt || now,  // ✅ 回退到当前时间
-        fourDNoteSource: true,
         syncStatus: skipSync ? 'local-only' : (event.syncStatus || 'pending'),
         // 🔥 v2.15: 添加临时ID标记
         _isTempId: isTempId,
@@ -1140,7 +1154,6 @@ export class EventService {
         'parentEventId',
         'linkedEventIds',
         'backlinks',
-        'fourDNoteSource'
       ]);
       
       // 🆕 [v2.18.9] 定义自动生成字段（不参与比对，从 eventlog 派生）
@@ -3201,8 +3214,7 @@ export class EventService {
       descriptionPreview: event.description?.slice(0, 100),
       createdAt: extractedTimestamps.createdAt,
       updatedAt: extractedTimestamps.updatedAt,
-      source: extractedCreator.source,
-      fourDNoteSource: extractedCreator.fourDNoteSource,
+      creator: extractedCreator.creator,
       lastModifiedSource: extractedCreator.lastModifiedSource  // 🆕 修改来源
     });
     
@@ -3363,7 +3375,6 @@ export class EventService {
         eventId: event.id,
         title: event.title,
         source: event.source,
-        fourDNoteSource: event.fourDNoteSource,
         使用默认值: now,
         堆栈: new Error().stack
       });
@@ -3377,53 +3388,9 @@ export class EventService {
       '使用默认值': createdAtCandidates.length === 0
     });
     
-    const finalFourDNoteSource = extractedCreator.fourDNoteSource !== undefined 
-      ? extractedCreator.fourDNoteSource 
-      : event.fourDNoteSource;
-
-    // Field contract: `Event.source` is namespaced (e.g. 'local:plan', 'outlook:calendar').
-    // Signature extraction may return legacy 'local'/'outlook'.
-    // If the event already carries a namespaced source, never downgrade it.
-    const hasNamespacedSource = typeof event.source === 'string' && event.source.includes(':');
-    const sourceCandidate = hasNamespacedSource ? event.source : (extractedCreator.source || event.source);
-
-    const isOutlookSource = (source?: string): boolean => {
-      return typeof source === 'string' && (source === 'outlook' || source.startsWith('outlook:'));
-    };
-
-    const legacySystemProgressHint =
-      (event as any).isTimeLog === true ||
-      (event as any).isTimer === true ||
-      (event as any).isOutsideApp === true ||
-      (typeof event.id === 'string' && event.id.startsWith('timer-')) ||
-      !!event.timerSessionId;
-
-    const normalizeNamespacedSource = (source: unknown): string | undefined => {
-      if (typeof source !== 'string') return undefined;
-      const trimmed = source.trim();
-      if (!trimmed) return undefined;
-      if (trimmed.includes(':')) return trimmed;
-      if (trimmed === 'outlook') return 'outlook:calendar';
-      if (trimmed === 'local') {
-        // Infer local subtype based on event semantics.
-        if (legacySystemProgressHint) return 'local:timelog';
-        // Task-like/Plan items
-        if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
-        // Calendar blocks
-        if (event.startTime && event.endTime) return 'local:timecalendar';
-        return 'local:event_edit';
-      }
-      return trimmed;
-    };
-
-    const inferLocalSource = (): string => {
-      if (legacySystemProgressHint) return 'local:timelog';
-      if (isTaskLikeEvent || normalizeCheckType((event as any).checkType) !== 'none') return 'local:plan';
-      if (event.startTime && event.endTime) return 'local:timecalendar';
-      return 'local:event_edit';
-    };
-
-    const finalSource = normalizeNamespacedSource(sourceCandidate) ?? inferLocalSource();
+    // Strict SSOT (no-migrate): normalizeEvent() is a persistence boundary; it must never emit legacy values.
+    assertNamespacedEventSource((event as any).source);
+    const finalSource = (event as any).source;
     
     // 🆕 [v2.19] Note 事件时间标准化：仅对「非任务」且无时间的事件派生虚拟时间
     // 重要：Task(hasTaskFacet=true) 允许无时间；不能被默认注入 startTime/endTime。
@@ -3437,10 +3404,10 @@ export class EventService {
     // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
     // Note: legacy call sites may set only some of these fields; check a small set of hints.
     const isTaskLikeEvent =
-      (event as Event).id && shouldShowInPlan(event as Event) ||
+      ((event as Event).id && shouldShowInPlan(event as Event)) ||
       event.type === 'todo' ||
       event.type === 'task' ||
-      (event as Event).id && hasTaskFacet(event as Event);
+      ((event as Event).id && hasTaskFacet(event as Event));
 
     // System time logs should have explicit time; if not, treat as data bug (do not inject).
     if (isTimeLogEvent && !hasAnyTime) {
@@ -3508,14 +3475,14 @@ export class EventService {
         updatedAt: finalUpdatedAt   // ✅ 使用提取的修改时间
       };
       // ✅ [v2.18.9] 智能识别修改来源：优先使用签名中提取的，回退到事件来源
-      const lastModifiedSource = extractedCreator.lastModifiedSource 
-        || (isOutlookSource(finalSource) ? 'outlook' : '4dnote');
+      assertNamespacedEventSource(finalSource);
+      const lastModifiedSource =
+        extractedCreator.lastModifiedSource ||
+        (isOutlookEventSource(finalSource) ? 'outlook' : '4dnote');
       normalizedDescription = SignatureUtils.addSignature(coreContent, {
         createdAt: finalCreatedAt,
         updatedAt: finalUpdatedAt,
-        fourDNoteSource: (event as any).fourDNoteSource,
-        // Keep signature `source` backward-compatible ('local'|'outlook') even if Event.source is namespaced.
-        source: isOutlookSource(finalSource) ? 'outlook' : 'local',
+        source: finalSource,
         lastModifiedSource,
         isVirtualTime  // 🆕 传递虚拟时间标记
       });
@@ -3539,11 +3506,10 @@ export class EventService {
       '🏆 finalCreatedAt': finalCreatedAt.slice(0, 19),
       '🏆 finalUpdatedAt': finalUpdatedAt.slice(0, 19),
       // 创建者信息
-      extractedCreator: extractedCreator.fourDNoteSource !== undefined 
-        ? (extractedCreator.fourDNoteSource ? '4DNote' : 'Outlook')
+      extractedCreator: extractedCreator.creator
+        ? (extractedCreator.creator === '4dnote' ? '4DNote' : 'Outlook')
         : undefined,
       extractedModifier: extractedCreator.lastModifiedSource,  // 🆕 修改者信息
-      finalFourDNoteSource,
       finalSource,
       // 签名处理
       preserveSignature: options?.preserveSignature
@@ -3582,8 +3548,7 @@ export class EventService {
       ...(event.attendees !== undefined ? { attendees: event.attendees || [] } : {}),
       location: normalizedLocation,
       
-      // 来源标识（优先使用从签名提取的值）
-      fourDNoteSource: finalFourDNoteSource,
+      // 来源标识（SSOT: namespaced Event.source）
       source: finalSource,
       isDeadline: event.isDeadline,
       
@@ -4311,7 +4276,12 @@ export class EventService {
     lines.push('---');
     
     // 3. 确定创建来源和时间
-    const isLocalCreated = event.fourDNoteSource === true || event.source === 'local' || !event.source;
+    const src = event.source;
+    if (!src) {
+      throw new Error('[SSOT] Missing Event.source while generating signature');
+    }
+    assertNamespacedEventSource(src);
+    const isLocalCreated = isLocalEventSource(src);
     const createSource = isLocalCreated ? '🔮 4DNote' : '📧 Outlook';
     const createSourceKey = isLocalCreated ? '4dnote' : 'outlook';
     const createTime = event.createdAt || formatTimeForStorage(new Date());
@@ -4423,18 +4393,16 @@ export class EventService {
   /**
    * 从 description 或 HTML 中提取签名创建者信息
    * @param content - description 或 HTML 内容（可能包含签名）
-   * @returns { fourDNoteSource?: boolean, source?: 'outlook' | 'local', lastModifiedSource?: '4dnote' | 'outlook' } - 提取的创建者和修改者信息
+   * @returns { creator?: '4dnote' | 'outlook', lastModifiedSource?: '4dnote' | 'outlook' } - 提取的创建者和修改者信息
    */
   private static extractCreatorFromSignature(content: string): { 
-    fourDNoteSource?: boolean; 
-    source?: 'outlook' | 'local';
+    creator?: '4dnote' | 'outlook';
     lastModifiedSource?: '4dnote' | 'outlook';
   } {
     if (!content) return {};
     
     const result: { 
-      fourDNoteSource?: boolean; 
-      source?: 'outlook' | 'local';
+      creator?: '4dnote' | 'outlook';
       lastModifiedSource?: '4dnote' | 'outlook';
     } = {};
     
@@ -4450,11 +4418,9 @@ export class EventService {
       const creator = creatorMatch[1].toLowerCase();
       
       if (creator === '4dnote') {
-        result.fourDNoteSource = true;
-        result.source = 'local';
+        result.creator = '4dnote';
       } else if (creator === 'outlook') {
-        result.fourDNoteSource = false;
-        result.source = 'outlook';
+        result.creator = 'outlook';
       }
     }
     
@@ -6516,13 +6482,24 @@ export class EventService {
           }).filter((node: any) => Object.keys(node).length > 0) // 移除空节点
         },
         
-        signature: {
-          createdAt: event.createdAt,
-          updatedAt: event.updatedAt,
-          fourDNoteSource: event.fourDNoteSource,
-          source: event.source
-          // lastModifiedSource 字段已废弃，不包含在 Event 类型中
-        }
+        signature: (() => {
+          // CompleteMeta V2 (SSOT): embed creator + namespaced Event.source; forbid legacy 'local'|'outlook'.
+          const extracted = this.extractCreatorFromSignature(event.description || '');
+          assertNamespacedEventSource(event.source);
+
+          const inferredCreator: '4dnote' | 'outlook' =
+            extracted.creator || (isOutlookEventSource(event.source) ? 'outlook' : '4dnote');
+
+          return {
+            createdAt: event.createdAt,
+            updatedAt: event.updatedAt,
+            creator: inferredCreator,
+            eventSource: event.source,
+            ...(extracted.lastModifiedSource
+              ? { lastModifiedSource: extracted.lastModifiedSource }
+              : {})
+          };
+        })()
       };
       
       // 3. Base64 编码 Meta

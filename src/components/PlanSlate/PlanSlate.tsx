@@ -1118,7 +1118,6 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
             source: updatedEvent.source,
             syncStatus: updatedEvent.syncStatus,
             externalId: updatedEvent.externalId,
-            fourDNoteSource: updatedEvent.fourDNoteSource,
             createdAt: updatedEvent.createdAt,
             updatedAt: updatedEvent.updatedAt,
           };

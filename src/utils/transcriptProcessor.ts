@@ -434,6 +434,7 @@ export function transcriptToEvents(
     endTime: formatTimeForStorage(eventEndTime),
     tags: [tagPrefix].filter(Boolean),
     eventlog: JSON.stringify(slateNodes),
+    source: 'local:library',
     createdAt: formatTimeForStorage(new Date()),
     updatedAt: formatTimeForStorage(new Date())
   } as Event;

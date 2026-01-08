@@ -1935,7 +1935,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
       createdAt,
       updatedAt: createdAt,
       syncStatus: 'local-only',
-      fourDNoteSource: true,
     };
 
     try {
@@ -1981,7 +1980,6 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
         createdAt,
         updatedAt: createdAt,
         syncStatus: 'local-only',
-        fourDNoteSource: true,
       };
       
       const result = await EventService.createEvent(newEvent);

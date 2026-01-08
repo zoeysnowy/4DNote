@@ -27,6 +27,7 @@ import { PersistentStorage, PERSISTENT_OPTIONS } from '@frontend/utils/persisten
 import { formatTimeForStorage, parseLocalTimeString, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { hasTaskFacet } from '@frontend/utils/eventFacets';
+import { isLocalEventSource } from '@frontend/utils/eventSourceSSOT';
 import { 
   convertToCalendarEvent, 
   convertFromCalendarEvent,
@@ -1537,8 +1538,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       createdAt: formatTimeForStorage(timerStartTime),
       updatedAt: formatTimeForStorage(now),
       syncStatus: 'local-only',
-      source: 'local:timelog',
-      fourDNoteSource: true
+      source: 'local:timelog'
     };
 
     console.log('🔄 [REALTIME TIMER] Generated realtime timer event:', {
@@ -1624,13 +1624,13 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
       // 日历分组筛选 - 当启用筛选时，匹配属于任一所选日历的事件
       if (hasCalendarFilter) {
         // ✅ 新逻辑：支持特殊日历选项
-        // "local-created" - 显示本地创建的事件（source=local或fourDNoteSource=true）
+        // "local-created" - 显示本地创建的事件（SSOT：event.source 为 local:*）
         // "not-synced" - 显示未同步至日历的事件（没有calendarIds或没有externalId）
         const hasLocalCreatedOption = visibleCalendars.includes('local-created');
         const hasNotSyncedOption = visibleCalendars.includes('not-synced');
         
-        // 判断事件是否为本地创建
-        const isLocalCreated = event.source === 'local' || event.fourDNoteSource === true;
+        // 判断事件是否为本地创建（SSOT）
+        const isLocalCreated = isLocalEventSource(event.source);
         
         // 判断事件是否未同步至日历
         const isNotSynced = !event.calendarIds?.length || !event.externalId;
@@ -1830,8 +1830,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
         createdAt: formatTimeForStorage(new Date()),
         updatedAt: formatTimeForStorage(new Date()),
         syncStatus: 'local-only', // 🔧 v2.17.2: 默认仅本地，用户添加标签后自动变为 'pending'
-        source: 'local:timecalendar',
-        fourDNoteSource: true
+        source: 'local:timecalendar'
       };
       
       // 🎯 立即保存到 EventService（通过 EventHub）
@@ -2547,8 +2546,7 @@ export const TimeCalendar: React.FC<TimeCalendarProps> = ({
                   createdAt: formatTimeForStorage(new Date()),
                   updatedAt: formatTimeForStorage(new Date()),
                   syncStatus: 'pending',
-                  source: 'local:timecalendar',
-                  fourDNoteSource: true // 🔧 标记为本地创建
+                  source: 'local:timecalendar'
                 };
                 
                 setEditingEvent(newEvent);

@@ -1257,6 +1257,19 @@ export class SQLiteService {
   private rowToEvent(row: any): StorageEvent {
     const legacyIsTimer = Boolean(row.is_timer);
 
+    const hasExternalHints =
+      typeof row.remote_id === 'string' ||
+      typeof row.source_account_id === 'string' ||
+      typeof row.source_calendar_id === 'string';
+
+    const inferredSource: import('@frontend/types').EventSource = legacyIsTimer
+      ? 'local:timelog'
+      : hasExternalHints
+        ? 'outlook:calendar'
+        : (row.start_time && row.end_time)
+          ? 'local:timecalendar'
+          : 'local:event_edit';
+
     return {
       id: row.id,
       title: {
@@ -1272,8 +1285,7 @@ export class SQLiteService {
       emoji: row.emoji,
       color: row.color,
       isCompleted: Boolean(row.is_completed),
-      // Read-time upgrade: legacy is_timer -> new SSOT signal via source.
-      ...(legacyIsTimer ? { source: 'local:timelog' } : {}),
+      source: inferredSource,
       tags: row.tags ? JSON.parse(row.tags) : undefined,
       eventlog: row.eventlog ? JSON.parse(row.eventlog) : undefined,
       sourceAccountId: row.source_account_id,

@@ -398,7 +398,7 @@ interface SyncAction {
   entityType: 'event' | 'task'; // 实体类型
   entityId: string;              // 事件/任务 ID
   timestamp: Date;               // 操作时间
-  source: 'local' | 'outlook';   // 操作来源
+  initiator: 'local' | 'outlook'; // 动作发起方（本地用户操作 / 远端回写）
   data?: any;                    // 新数据（create/update）
   oldData?: any;                 // 旧数据（update/delete）
   originalData?: any;            // 原始数据（用于冲突解决）

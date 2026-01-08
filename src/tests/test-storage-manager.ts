@@ -58,6 +58,7 @@ async function testStorageManager() {
       isCompleted: false,
       isTimer: false,
       isPlan: true,
+      source: 'local:plan' as const,
       tags: [],
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())
@@ -78,6 +79,7 @@ async function testStorageManager() {
       isCompleted: false,
       isTimer: false,
       isPlan: true,
+      source: 'local:plan' as const,
       tags: [],
       createdAt: formatTimeForStorage(new Date()),
       updatedAt: formatTimeForStorage(new Date())

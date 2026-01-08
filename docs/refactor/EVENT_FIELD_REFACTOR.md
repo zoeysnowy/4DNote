@@ -75,7 +75,9 @@
   - `dueDateTime`：截止时间（task 语义字段）。
 
 - **来源（统一）**
-  - `source: 'local' | 'outlook' | 'google' | 'icloud'`：来源系统。
+  - `source: string`：事件来源（SSOT，必须是 namespaced 形式，例如 `local:plan`、`outlook:calendar`）。
+
+  备注：同步动作发起方不使用 `Event.source` 表达，而是使用 `SyncAction.initiator: 'local' | 'outlook'`。
   - （目标）移除 `fourDNoteSource`。
 
 - **删除**

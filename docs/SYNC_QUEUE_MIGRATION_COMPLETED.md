@@ -228,7 +228,7 @@ interface SyncAction {
   entityType: 'event' | 'task';
   entityId: string;
   timestamp: Date;
-  source: 'local' | 'outlook';
+  initiator: 'local' | 'outlook';
   data?: any;
   oldData?: any;
   originalData?: any;

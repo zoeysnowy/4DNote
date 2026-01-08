@@ -17,6 +17,7 @@
 import { EventNode, CreateEventNodeInput, UpdateEventNodeInput, QueryEventNodesInput } from '@frontend/types/EventNode';
 import { Event, EventLog } from '@frontend/types';
 import { formatTimeForStorage } from '@frontend/utils/timeUtils';
+import { sourceProviderOf } from '@frontend/utils/eventSourceSSOT';
 
 /**
  * 临时内存存储（后续集成到 StorageManager）
@@ -91,7 +92,12 @@ export class EventNodeService {
           tags: event.tags,
           type: 'paragraph',
           blockId: para.blockId,
-          source: (event.source === 'icloud' ? 'local' : event.source) as '4dnote' | 'outlook' | 'google' | 'local'
+          source: (() => {
+            const provider = sourceProviderOf(event.source);
+            if (provider === 'local') return '4dnote';
+            if (provider === 'icloud') return 'local';
+            return provider;
+          })()
         });
         nodes.push(node);
       }
