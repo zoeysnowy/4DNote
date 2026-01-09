@@ -68,4 +68,73 @@ describe('EventService - Outlook import matrix', () => {
     const texts = extractParagraphTexts(eventlog.slateJson);
     expect(texts).toEqual(['A', 'B', 'C']);
   });
+
+  it('does not leak 4dnote-meta Base64 into imported paragraphs', () => {
+    const event: any = {
+      id: '00000000-0000-0000-0000-000000000001',
+      source: 'local:test',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      description: 'Hello',
+      eventlog: {
+        slateJson: JSON.stringify([
+          {
+            type: 'paragraph',
+            id: '00000000-0000-0000-0000-000000000002',
+            createdAt: 1735689600000,
+            updatedAt: 1735689600000,
+            children: [{ text: 'Hello' }]
+          }
+        ])
+      }
+    };
+
+    const html = (EventService as any).serializeEventDescription(event) as string;
+    const deserialized = (EventService as any).deserializeEventDescription(html, event.id) as {
+      eventlog: { slateJson: string };
+    };
+
+    const texts = extractParagraphTexts(deserialized.eventlog.slateJson);
+    expect(texts).toContain('Hello');
+
+    // Heuristic: a huge base64-looking token should never appear as a paragraph.
+    const hasBase64Like = texts.some(t => {
+      const compact = t.replace(/\s+/g, '');
+      return compact.length >= 200 && /^[A-Za-z0-9+/=]+$/.test(compact);
+    });
+    expect(hasBase64Like).toBe(false);
+  });
+
+  it('htmlToSlateJsonWithRecognition ignores 4dnote-meta payload', () => {
+    const event: any = {
+      id: '00000000-0000-0000-0000-000000000011',
+      source: 'local:test',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      description: 'Hello',
+      eventlog: {
+        slateJson: JSON.stringify([
+          {
+            type: 'paragraph',
+            id: '00000000-0000-0000-0000-000000000012',
+            createdAt: 1735689600000,
+            updatedAt: 1735689600000,
+            children: [{ text: 'Hello' }]
+          }
+        ])
+      }
+    };
+
+    const html = (EventService as any).serializeEventDescription(event) as string;
+    const slateJson = (EventService as any).htmlToSlateJsonWithRecognition(html) as string;
+    const texts = extractParagraphTexts(slateJson);
+
+    expect(texts).toContain('Hello');
+
+    const hasBase64Like = texts.some(t => {
+      const compact = t.replace(/\s+/g, '');
+      return compact.length >= 200 && /^[A-Za-z0-9+/=]+$/.test(compact);
+    });
+    expect(hasBase64Like).toBe(false);
+  });
 });

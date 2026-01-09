@@ -258,31 +258,45 @@ export function autoMigrate(nodes: any[]): any[] {
  * @returns 补全元数据后的节点数组
  */
 export function ensureBlockTimestamps(nodes: any[]): any[] {
-  const baseTimestamp = Date.now();
-  
+  return ensureBlockTimestampsWithBase(nodes);
+}
+
+/**
+ * 确保所有 paragraph 都有稳定的 blockId / 时间戳
+ * - 关键：不要在每次 normalize 时使用 Date.now() 生成新的 id（会导致往返同步后产生“脏变更”）
+ * - 仅补全缺失字段，不覆盖已有字段
+ */
+export function ensureBlockTimestampsWithBase(nodes: any[], baseTimestamp?: number): any[] {
+  const base = Number.isFinite(baseTimestamp as number) ? (baseTimestamp as number) : Date.now();
+
   return nodes.map((node, index) => {
-    if (node.type === 'paragraph') {
-      // ⚠️ 只为非空段落添加 Block-Level Timestamp
-      // 空段落（只有空文本）不应该显示时间戳
-      const isEmptyParagraph = !node.children || 
-        (node.children.length === 1 && (!node.children[0].text || node.children[0].text.trim() === ''));
-      
-      if (isEmptyParagraph) {
-        // 空段落：不添加 createdAt
-        return {
-          ...node,
-          id: node.id || generateBlockId(baseTimestamp + index),
-        };
-      }
-      
-      // 非空段落：添加 createdAt（如果没有的话）
+    if (node?.type !== 'paragraph') return node;
+
+    // ⚠️ 只为非空段落添加 Block-Level Timestamp
+    // 空段落（只有空文本）不应该显示时间戳
+    const isEmptyParagraph =
+      !node.children ||
+      (node.children.length === 1 && (!node.children[0].text || node.children[0].text.trim() === ''));
+
+    const stableSeed = (node.createdAt ?? (base + index)) as number;
+    const id = node.id || generateBlockId(stableSeed);
+
+    if (isEmptyParagraph) {
       return {
         ...node,
-        id: node.id || generateBlockId(baseTimestamp + index),
-        createdAt: node.createdAt || (baseTimestamp + index),
+        id,
       };
     }
-    return node;
+
+    const createdAt = node.createdAt ?? stableSeed;
+    const updatedAt = node.updatedAt ?? createdAt;
+
+    return {
+      ...node,
+      id,
+      createdAt,
+      updatedAt,
+    };
   });
 }
 
@@ -296,4 +310,5 @@ export default {
   needsMigration,
   autoMigrate,
   ensureBlockTimestamps,
+  ensureBlockTimestampsWithBase,
 };

@@ -1250,9 +1250,11 @@ export class ActionBasedSyncManager {
   }
 
   // 🔧 生成编辑备注
-  private generateEditNote(source: 'outlook' | '4dnote', baseText?: string): string {
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')} ${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+  private generateEditNote(source: 'outlook' | '4dnote', editTime?: Date | string, baseText?: string): string {
+    const timeToUse = editTime
+      ? (typeof editTime === 'string' ? (parseLocalTimeStringOrNull(editTime) ?? new Date()) : editTime)
+      : new Date();
+    const timeStr = `${timeToUse.getFullYear()}-${(timeToUse.getMonth() + 1).toString().padStart(2, '0')}-${timeToUse.getDate().toString().padStart(2, '0')} ${timeToUse.getHours().toString().padStart(2, '0')}:${timeToUse.getMinutes().toString().padStart(2, '0')}:${timeToUse.getSeconds().toString().padStart(2, '0')}`;
     const sourceIcon = source === 'outlook' ? '📧 Outlook' : '🔮 4DNote';
     
     // 检查基础文本是否已经以分隔线结尾
@@ -1348,13 +1350,38 @@ export class ActionBasedSyncManager {
     } else if (action === 'update') {
       // 更新操作：移除编辑备注，保留创建备注，添加新的编辑备注
       result = this.removeEditNotesOnly(cleanText);
-      result += this.generateEditNote('4dnote', result);
+      const editTime = eventData?.updatedAt || eventData?.lastModifiedDateTime || eventData?.modifiedAt;
+      result += this.generateEditNote('4dnote', editTime, result);
       // Removed old edit notes and added new edit note
     }
     
     // Description processing completed
     
     return result;
+  }
+
+  private buildOutlookBodyFromLocalCanonical(
+    localEvent: any,
+    actionData: any
+  ): { contentType: 'html' | 'text'; content: string } {
+    if (localEvent?.eventlog?.slateJson) {
+      try {
+        const html = EventService.serializeEventDescription({
+          ...localEvent,
+          ...actionData
+        });
+        return { contentType: 'html', content: html };
+      } catch (err) {
+        console.warn('[Sync] serializeEventDescription failed, falling back to text body', err);
+      }
+    }
+
+    const descriptionSource = actionData?.description || localEvent?.description || '';
+    const cleanedText = this.processEventDescription(descriptionSource, '4dnote', 'update', {
+      ...localEvent,
+      ...actionData
+    });
+    return { contentType: 'text', content: cleanedText };
   }
 
   // 🔧 改进的提取原始内容方法 - 智能处理分隔线
@@ -2973,20 +3000,8 @@ export class ActionBasedSyncManager {
           
           // 同步到 Outlook Calendar (createSyncRoute.target === 'calendar')
 
-          // ✅ [v2.18.1 架构优化] 单一数据源 - 直接使用 description
-          // 数据流：Event.description（含签名）→ processEventDescription（处理签名）→ Outlook
-          // 说明：description 字段已由 EventService.normalizeEvent 生成（包含签名）
-          //       processEventDescription 会智能处理：
-          //         - 移除旧签名
-          //         - 添加 4DNote 创建/编辑签名
-          const descriptionSource = action.data.description || '';
-          
-          const createDescription = this.processEventDescription(
-            descriptionSource,
-            '4dnote',
-            'create',
-            action.data
-          );
+          const createBody = this.buildOutlookBodyFromLocalCanonical(action.data, action.data);
+          const createDescription = createBody.content;
 
           // 构建事件对象
           let startDateTime = action.data.startTime;
@@ -3031,8 +3046,8 @@ export class ActionBasedSyncManager {
           const eventData = {
             subject: virtualTitle,
             body: { 
-              contentType: 'Text', 
-              content: createDescription
+              contentType: createBody.contentType,
+              content: createBody.content
             },
             start: {
               dateTime: this.safeFormatDateTime(startDateTime),
@@ -3308,16 +3323,11 @@ export class ActionBasedSyncManager {
             }
             // 🔍 [NEW] 构建事件描述，保持原有的创建时间记录
             const originalCreateTime = this.extractOriginalCreateTime(action.data.description || '');
-            const createDescription = this.processEventDescription(
-              action.data.description || '',
-              '4dnote',
-              'create',
-              {
-                ...action.data,
-                // 如果有原始创建时间，保持它；否则使用当前时间
-                preserveOriginalCreateTime: originalCreateTime
-              }
-            );
+            const createBody = this.buildOutlookBodyFromLocalCanonical(localEvent ?? action.data, {
+              ...action.data,
+              preserveOriginalCreateTime: originalCreateTime
+            });
+            const createDescription = createBody.content;
             
             // 构建事件对象
             let updateToCreateStartTime = action.data.startTime;
@@ -3380,8 +3390,8 @@ export class ActionBasedSyncManager {
             const eventData = {
               subject: virtualTitle,
               body: { 
-                contentType: 'text', 
-                content: createDescription
+                contentType: createBody.contentType,
+                content: createBody.content
               },
               start: {
                 dateTime: this.safeFormatDateTime(updateToCreateStartTime),
@@ -3474,14 +3484,8 @@ export class ActionBasedSyncManager {
               try {
                 // 在新日历中创建事件（相当于迁移）
                 // ✅ [v2.18.1] 使用 description 字段（已包含签名，由 normalizeEvent 生成）
-                const descriptionSource = action.data.description || '';
-                
-                const migrateDescription = this.processEventDescription(
-                  descriptionSource,
-                  '4dnote',
-                  'update',
-                  action.data
-                );
+                const migrateBody = this.buildOutlookBodyFromLocalCanonical(localEvent ?? action.data, action.data);
+                const migrateDescription = migrateBody.content;
                 
                 // 🆕 [v2.19] Note 事件虚拟时间处理
                 let migrateStartTime = action.data.startTime;
@@ -3509,8 +3513,8 @@ export class ActionBasedSyncManager {
                 const migrateEventData = {
                   subject: virtualTitle,
                   body: { 
-                    contentType: 'text', 
-                    content: migrateDescription
+                    contentType: migrateBody.contentType,
+                    content: migrateBody.content
                   },
                   start: {
                     dateTime: this.safeFormatDateTime(migrateStartTime),
@@ -3578,33 +3582,8 @@ export class ActionBasedSyncManager {
           
           // 描述处理：添加同步备注管理
           if (action.data.description !== undefined) {
-            // ✅ [v2.18.1] 单一数据源 - 直接使用 description（已包含签名）
-            let descriptionSource = action.data.description || '';
-            
-            // 🔥 [v2.21.0] 使用 CompleteMeta V2 序列化 description
-            // 如果事件有 eventlog.slateJson，则嵌入 Base64 Meta 到 HTML
-            if (localEvent?.eventlog?.slateJson) {
-              try {
-                descriptionSource = EventService.serializeEventDescription({
-                  ...localEvent,
-                  ...action.data
-                });
-                console.log('[UPDATE] ✅ CompleteMeta V2 序列化成功:', {
-                  eventId: action.entityId.slice(-10),
-                  hasMetaDiv: descriptionSource.includes('id="4dnote-meta"')
-                });
-              } catch (err) {
-                console.warn('[UPDATE] CompleteMeta 序列化失败，使用原始 description', err);
-              }
-            }
-            
-            const updateDescription = this.processEventDescription(
-              descriptionSource,
-              '4dnote',
-              'update',
-              action.data
-            );
-            updateData.body = { contentType: 'text', content: updateDescription };
+            const updateBody = this.buildOutlookBodyFromLocalCanonical(localEvent ?? action.data, action.data);
+            updateData.body = { contentType: updateBody.contentType, content: updateBody.content };
           }
           
           if (action.data.location !== undefined) {
@@ -3867,14 +3846,8 @@ export class ActionBasedSyncManager {
               
                 
                 // ✅ [v2.18.1] 单一数据源 - 使用 description
-                const descriptionSource = action.data.description || '';
-                
-                const recreateDescription = this.processEventDescription(
-                  descriptionSource,
-                  '4dnote',
-                  'create',
-                  action.data
-                );
+                const recreateBody = this.buildOutlookBodyFromLocalCanonical(localEvent ?? action.data, action.data);
+                const recreateDescription = recreateBody.content;
                 
                 let recreateStartTime = action.data.startTime;
                 let recreateEndTime = action.data.endTime;
@@ -3935,8 +3908,8 @@ export class ActionBasedSyncManager {
                 const recreateEventData = {
                   subject: virtualTitle,
                   body: { 
-                    contentType: 'text', 
-                    content: recreateDescription
+                    contentType: recreateBody.contentType,
+                    content: recreateBody.content
                   },
                   start: {
                     dateTime: this.safeFormatDateTime(recreateStartTime),
@@ -3985,10 +3958,10 @@ export class ActionBasedSyncManager {
               // 🔧 使用 simpleTitle（已去掉 tag 元素，保留 emoji）
               const minimalUpdate = {
                 subject: (action.data.title?.simpleTitle || this.extractTextFromColorTitle(action.data.title)) || 'Untitled Event',
-                body: { 
-                  contentType: 'text', 
-                  content: action.data.description || '📱 由 4DNote 更新'
-                }
+                  body: (() => {
+                    const minimalBody = this.buildOutlookBodyFromLocalCanonical(localEvent ?? action.data, action.data);
+                    return { contentType: minimalBody.contentType, content: minimalBody.content };
+                  })()
               };
               
               const minimalResult = await this.microsoftService.updateEvent(cleanExternalId, minimalUpdate);

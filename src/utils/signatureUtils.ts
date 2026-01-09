@@ -107,6 +107,8 @@ export class SignatureUtils {
     while (core !== previousCore && iterations < 10) {
       previousCore = core;
       core = core
+        // 0. 移除 4DNote 隐藏 Meta 区域（防止 Base64 被当作正文进入 EventLog）
+        .replace(/<div\b[^>]*\bid=(['"])4dnote-meta\1[^>]*>[\s\S]*?<\/div>/gi, '')
         // 1. 移除 HTML 注释
         .replace(/<!--[\s\S]*?-->/g, '')
         // 2. 移除所有 "---" 分隔符（包括前后的空白）

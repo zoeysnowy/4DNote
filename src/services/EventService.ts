@@ -1130,31 +1130,32 @@ export class EventService {
       }
       
       // 场景3: 初始化场景 - eventlog 为空但 description 有内容
-      if (!(originalEvent as any).eventlog && originalEvent.description && (updates as any).eventlog === undefined) {
-        const initialEventLog: EventLog = {
-          slateJson: JSON.stringify([{ 
-          type: 'paragraph',
-          id: `block-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          children: [{ text: originalEvent.description }]
-        }]),
-          html: originalEvent.description,
-          plainText: this.stripHtml(originalEvent.description),
-          attachments: [],
-          versions: [],
-          syncState: {
-            status: 'pending',
-            contentHash: this.hashContent(originalEvent.description),
-          },
-          createdAt: originalEvent.createdAt || formatTimeForStorage(new Date()),
-          updatedAt: formatTimeForStorage(new Date()),
-        };
-        (updatesWithSync as any).eventlog = initialEventLog;
-        
-        console.log('[EventService] 初始化 eventlog 从 description:', {
+      if (
+        !(originalEvent as any).eventlog &&
+        originalEvent.description &&
+        (updates as any).eventlog === undefined &&
+        (updatesWithSync as any).eventlog === undefined
+      ) {
+        const coreContent = SignatureUtils.extractCoreContent(originalEvent.description);
+
+        const eventCreatedAt = originalEvent.createdAt
+          ? new Date(originalEvent.createdAt).getTime()
+          : undefined;
+        const eventUpdatedAt = originalEvent.updatedAt
+          ? new Date(originalEvent.updatedAt).getTime()
+          : eventCreatedAt;
+
+        const normalizedEventLog = this.normalizeEventLog(
+          coreContent,
+          undefined,
+          eventCreatedAt,
+          eventUpdatedAt
+        );
+        (updatesWithSync as any).eventlog = normalizedEventLog;
+
+        console.log('[EventService] 初始化 eventlog 从 description（走 normalizeEventLog）:', {
           eventId,
-          description: originalEvent.description.substring(0, 50)
+          coreContentLength: coreContent.length
         });
       }
       
@@ -2242,7 +2243,15 @@ export class EventService {
    */
   private static stripHtml(html: string): string {
     if (!html) return '';
-    return html.replace(/<[^>]*>/g, '').trim();
+    // Defensive: remove hidden 4DNote meta payload (and potential leftover Base64) from any HTML-to-text extraction.
+    let cleaned = html;
+    cleaned = cleaned.replace(/<div\b[^>]*\bid=(['"])4dnote-meta\1[^>]*>[\s\S]*?<\/div>/gi, '');
+
+    const text = cleaned.replace(/<[^>]*>/g, '').trim();
+    // If any token is a Base64 string that decodes into 4DNote meta JSON, drop it.
+    const parts = text.split(/\s+/).filter(Boolean);
+    const filtered = parts.filter(p => !this.is4DNoteMetaBase64Text(p)).join(' ');
+    return filtered.trim();
   }
 
   /**
@@ -2850,13 +2859,13 @@ export class EventService {
               return this.convertSlateJsonToEventLog(JSON.stringify(newSlateNodes));
             } else {
               console.log('[normalizeEventLog] ⚠️ plainText 中未发现时间戳，使用 ensureBlockTimestamps 补全');
-              const ensuredNodes = ensureBlockTimestamps(slateNodes);
+              const ensuredNodes = ensureBlockTimestamps(slateNodes, eventCreatedAt || eventUpdatedAt);
               return this.convertSlateJsonToEventLog(JSON.stringify(ensuredNodes));
             }
           }
           
           // 🆕 确保所有 paragraph 都有 Block Timestamp 元数据
-          const ensuredNodes = ensureBlockTimestamps(slateNodes);
+          const ensuredNodes = ensureBlockTimestamps(slateNodes, eventCreatedAt || eventUpdatedAt);
           if (JSON.stringify(ensuredNodes) !== JSON.stringify(slateNodes)) {
             console.log('[EventService] 🔧 补全了缺失的 Block Timestamp 元数据');
             return this.convertSlateJsonToEventLog(JSON.stringify(ensuredNodes));
@@ -4482,6 +4491,9 @@ export class EventService {
    */
   private static cleanupOutlookHtml(html: string): string {
     let cleaned = html;
+
+    // 0️⃣ Remove hidden 4DNote meta container early (Outlook may keep it as visible text if tags are rewritten).
+    cleaned = cleaned.replace(/<div\b[^>]*\bid=(['"])4dnote-meta\1[^>]*>[\s\S]*?<\/div>/gi, '');
     
     // 1️⃣ 递归解码 HTML 实体（最多解码 10 层，防止无限循环）
     for (let i = 0; i < 10; i++) {
@@ -4541,6 +4553,35 @@ export class EventService {
       .replace(/<p[^>]*>\s*<\/p>/gi, '');
     
     return cleaned.trim();
+  }
+
+  /**
+   * Detect whether a (possibly whitespace-separated) Base64-looking token is actually 4DNote meta JSON.
+   * This is used to prevent hidden meta payload from becoming visible paragraphs after Outlook rewrites HTML.
+   */
+  private static is4DNoteMetaBase64Text(text: string): boolean {
+    if (!text) return false;
+    const compact = text.replace(/\s+/g, '');
+    if (compact.length < 200) return false;
+    if (!/^[A-Za-z0-9+/=]+$/.test(compact)) return false;
+
+    if (typeof (globalThis as any).atob !== 'function') return false;
+
+    try {
+      const json = decodeURIComponent(escape((globalThis as any).atob(compact)));
+      const parsed = JSON.parse(json);
+      if (!parsed || typeof parsed !== 'object') return false;
+
+      // Heuristic: meta contains some expected keys.
+      return (
+        'rootId' in parsed ||
+        'blocks' in parsed ||
+        'version' in parsed ||
+        'schemaVersion' in parsed
+      );
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -4625,14 +4666,24 @@ export class EventService {
    */
   private static parseHtmlNode(node: Node, slateNodes: any[]): void {
     if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent || '';
+      let text = node.textContent || '';
+
+      // Prevent Block-Level Timestamp prefixes from becoming visible paragraph content.
+      // Format: YYYY-MM-DD HH:mm:ss\n...
+      text = text.replace(/^(\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*\n)+/g, '');
       if (text.trim()) {
+        // Prevent hidden 4DNote meta Base64 payload from becoming visible text.
+        if (this.is4DNoteMetaBase64Text(text)) return;
+
         // 检查文本中是否包含 Tag 或 DateMention 模式
         const fragments = this.recognizeInlineElements(text);
         slateNodes.push(...fragments);
       }
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       const element = node as HTMLElement;
+
+      // Skip hidden meta container entirely.
+      if ((element.id || '').toLowerCase() === '4dnote-meta') return;
       
       // 1. 精确匹配：检查 data-* 属性
       const recognizedNode = this.recognizeByDataAttributes(element);
@@ -6573,33 +6624,101 @@ export class EventService {
    */
   static deserializeEventDescription(html: string, eventId: string): { eventlog: EventLog; signature?: any } | null {
     try {
-      // Step 1: 提取 Meta
-      const metaMatch = html.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
       let meta: any = null;
-      
-      if (metaMatch) {
+      let visibleHtml = html;
+      let doc: Document | null = null;
+
+      // 优先使用 DOM 解析（更可靠：先移除隐藏 meta，再提取段落，避免 Base64 泄漏到正文）
+      if (typeof DOMParser !== 'undefined') {
+        const parser = new DOMParser();
         try {
-          const metaBase64 = metaMatch[1].trim();
-          const metaJson = decodeURIComponent(escape(atob(metaBase64)));
-          meta = JSON.parse(metaJson);
-          
-          console.log('[deserializeEventDescription] Meta 解析成功:', {
-            eventId: eventId.slice(-10),
-            version: meta.v,
-            nodeCount: meta.slate?.nodes?.length || 0
-          });
+          doc = parser.parseFromString(html, 'text/html');
         } catch (err) {
-          console.warn('[deserializeEventDescription] Meta 解析失败，降级到纯 HTML 解析', err);
+          console.warn('[deserializeEventDescription] DOMParser 解析失败，降级到 htmlToSlateJsonWithRecognition', err);
+          doc = null;
         }
+
+        if (doc) {
+          const metaEl = doc.querySelector('#4dnote-meta');
+          if (metaEl) {
+            try {
+              const metaBase64 = (metaEl.textContent || '').replace(/\s+/g, '').trim();
+              if (metaBase64) {
+                const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+                meta = JSON.parse(metaJson);
+
+                console.log('[deserializeEventDescription] Meta 解析成功:', {
+                  eventId: eventId.slice(-10),
+                  version: meta.v,
+                  nodeCount: meta.slate?.nodes?.length || 0
+                });
+              }
+            } catch (err) {
+              console.warn('[deserializeEventDescription] Meta 解析失败，降级到纯 HTML 解析', err);
+            } finally {
+              // 无论 Meta 是否解析成功，都移除 meta 节点，避免进入正文
+              try {
+                metaEl.remove();
+              } catch {
+                // ignore DOM removal failures
+              }
+            }
+          }
+
+          visibleHtml = (doc.body?.innerHTML || '').trim();
+        }
+      } else {
+        // 兜底：无 DOMParser 环境（保留旧逻辑）
+        const metaMatch = html.match(/<div id="4dnote-meta"[^>]*>([\s\S]*?)<\/div>/);
+        if (metaMatch) {
+          try {
+            const metaBase64 = (metaMatch[1] || '').replace(/\s+/g, '').trim();
+            const metaJson = decodeURIComponent(escape(atob(metaBase64)));
+            meta = JSON.parse(metaJson);
+          } catch (err) {
+            console.warn('[deserializeEventDescription] Meta 解析失败，降级到纯 HTML 解析', err);
+          }
+        }
+        visibleHtml = html.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '').trim();
+        const parser = new DOMParser();
+        doc = parser.parseFromString(visibleHtml, 'text/html');
       }
-      
-      // Step 2: 提取可见 HTML（移除 Meta div）
-      const visibleHtml = html.replace(/<div id="4dnote-meta"[\s\S]*?<\/div>/, '').trim();
-      
+
+      // 如果 DOM 解析不可用/失败：使用更宽松的 HTML→Slate 兜底（仍能避免 meta payload 泄漏）
+      if (!doc) {
+        const slateJson = this.htmlToSlateJsonWithRecognition(visibleHtml || html);
+        return {
+          eventlog: {
+            slateJson,
+            html: visibleHtml || html
+          },
+          signature: meta?.signature
+        };
+      }
+
       // Step 3: 从 HTML 提取段落（使用 DOM 解析）
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(visibleHtml, 'text/html');
-      const paragraphs = Array.from(doc.body.querySelectorAll('p, h1, h2, h3, li'));
+      // 防御性过滤：Outlook 有时会“剥掉标签但保留文本”，导致 Base64 Meta payload 以纯文本形式出现在正文里。
+      const shouldFilterMetaNoise =
+        html.includes('4dnote') ||
+        html.includes('data-4dnote') ||
+        html.includes('4dnote-content-wrapper') ||
+        html.includes('data-4dnote-version');
+
+      const isBase64Like = (text: string): boolean => {
+        const compact = (text || '').replace(/\s+/g, '');
+        if (compact.length < 200) return false;
+        // Base64 alphabet + padding only
+        return /^[A-Za-z0-9+/=]+$/.test(compact);
+      };
+
+      const container = doc?.body ?? null;
+      const paragraphs = container
+        ? Array.from(container.querySelectorAll('p, h1, h2, h3, li')).filter(el => {
+            if (!shouldFilterMetaNoise) return true;
+            const text = (el.textContent || '').trim();
+            return !isBase64Like(text);
+          })
+        : [];
       
       const htmlNodes = paragraphs.map(p => {
         const text = p.textContent || '';
@@ -6631,7 +6750,17 @@ export class EventService {
       
     } catch (error) {
       console.error('[deserializeEventDescription] 反序列化失败:', error);
-      return null;
+      try {
+        const slateJson = this.htmlToSlateJsonWithRecognition(html);
+        return {
+          eventlog: {
+            slateJson,
+            html
+          }
+        };
+      } catch {
+        return null;
+      }
     }
   }
 

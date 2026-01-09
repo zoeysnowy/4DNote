@@ -78,7 +78,438 @@
 4) **语义分级**：元素的“原生还原/可编辑/统计”可以渐进增强，但不能影响 1~3。
 
 > 结论：我们需要一个“元素注册表 + 编解码管线 + unknown-block 安全阀”的体系，让新增元素不会把同步链路弄坏。
+---
 
+## Meta 存储策略：Simplified Hybrid（本地/云端主存 + Outlook 最小锚点）
+
+### 核心设计决策（2026-01-09）
+
+**问题背景**：
+- 当前 Full Meta 方案将完整元数据存储在 Outlook description（10-30KB/事件），接近 32KB 限制
+- 复杂事件（100+ 段落 + 自定义字段）可能超限，且隐私暴露风险高
+- 同步性能受体积影响，且无法支持未来的无限自定义字段扩展
+
+**选定方案**：**Simplified Hybrid Storage**
+
+- **Outlook 存储**：仅存储 `rootId`（事件根节点 ID）
+- **本地/云端存储**：完整的 block-level metadata（IndexedDB + Cloud Backend）
+- **HTML 锚点**：多层级 fallback 策略（data-4d-id + id + class + HTML comment）
+
+---
+
+### 存储分层架构
+
+```typescript
+// 1. Outlook Event.description (HTML)
+const outlookHtml = `
+  <div data-4d-root="${eventId}">
+    <p data-4d-id="${block1Id}" id="b-${block1Id}" class="p-${block1Id}">
+      第一段落
+      <!--4d:${block1Id}-->
+    </p>
+    <h2 data-4d-id="${block2Id}" id="b-${block2Id}" class="h2-${block2Id}">
+      标题
+      <!--4d:${block2Id}-->
+    </h2>
+  </div>
+`;
+
+// 2. 本地/云端存储 (IndexedDB + Cloud)
+interface EventBlockStore {
+  eventId: string;
+  blocks: {
+    [blockId: string]: {
+      id: string;
+      type: string;              // paragraph/heading/code-block/property...
+      value?: any;               // 结构化字段的值
+      bulletLevel?: number;
+      level?: number;            // heading level
+      createdAt: number;
+      updatedAt: number;
+      syncedAt?: number;         // 最后同步到云端的时间
+      needsCloudSync: boolean;   // 是否需要同步到云端
+    };
+  };
+}
+
+// 3. 云端同步格式（简化）
+interface CloudEventMeta {
+  eventId: string;
+  rootId: string;
+  blocks: EventBlockStore['blocks'];
+  lastModified: number;
+  deviceId: string;              // 用于冲突检测
+}
+```
+
+---
+
+### 多锚点 Fallback 策略（应对 Outlook 改写）
+
+**现实约束**：Outlook 不同客户端对 `data-4d-id` 的保留率差异巨大：
+
+| 客户端 | data-4d-id 保留率 | id 属性保留率 | class 属性保留率 | HTML 注释保留率 |
+|--------|-------------------|---------------|------------------|-----------------|
+| Outlook Desktop | 20-40% | 60-70% | 80-90% | 50-60% |
+| Outlook Web | 70-80% | 85-90% | 90-95% | 70-80% |
+| Outlook Mobile | 10-20% | 40-50% | 60-70% | 30-40% |
+
+**四层 Fallback 机制**：
+
+```typescript
+class BlockIdExtractor {
+  extract(htmlElement: HTMLElement): string | null {
+    // Layer 1: data-4d-id (最标准，但保留率低)
+    const dataId = htmlElement.getAttribute('data-4d-id');
+    if (dataId && this.validateUUID(dataId)) return dataId;
+    
+    // Layer 2: id 属性 (去除前缀)
+    const idAttr = htmlElement.getAttribute('id');
+    if (idAttr?.startsWith('b-')) {
+      const extracted = idAttr.substring(2);
+      if (this.validateUUID(extracted)) return extracted;
+    }
+    
+    // Layer 3: class 属性 (去除类型前缀)
+    const classAttr = htmlElement.getAttribute('class');
+    const match = classAttr?.match(/(?:p|h\d|code|prop)-([a-f0-9-]{36})/);
+    if (match && this.validateUUID(match[1])) return match[1];
+    
+    // Layer 4: HTML 注释 (扫描子节点)
+    const comment = this.findCommentWithId(htmlElement);
+    if (comment && this.validateUUID(comment)) return comment;
+    
+    // Layer 5: 无法提取 → 模糊匹配
+    return null;
+  }
+  
+  findCommentWithId(element: HTMLElement): string | null {
+    for (const node of element.childNodes) {
+      if (node.nodeType === Node.COMMENT_NODE) {
+        const match = node.textContent?.match(/^4d:([a-f0-9-]{36})$/);
+        if (match) return match[1];
+      }
+    }
+    return null;
+  }
+}
+```
+
+**预期成功率**（综合四层）：
+- Outlook Desktop: 85-90% (vs 单层 20-40%)
+- Outlook Web: 95%+ (vs 单层 70-80%)
+- Outlook Mobile: 75-85% (vs 单层 10-20%)
+
+---
+
+### 五层匹配策略（整合四层 Fallback + 模糊匹配）
+
+```typescript
+class HybridMatcher {
+  match(htmlBlocks: HTMLElement[], localBlocks: EventBlockStore['blocks']): MatchResult[] {
+    const results: MatchResult[] = [];
+    
+    for (const htmlBlock of htmlBlocks) {
+      // Layer 1: 多锚点 ID 提取 (data-4d-id/id/class/comment)
+      const extractedId = this.extractor.extract(htmlBlock);
+      if (extractedId && localBlocks[extractedId]) {
+        results.push({ 
+          htmlBlock, 
+          localBlock: localBlocks[extractedId], 
+          confidence: 1.0,
+          method: 'multi-anchor-exact'
+        });
+        continue;
+      }
+      
+      // Layer 2: 文本锚点精确匹配 (prefix/suffix/length)
+      const textAnchor = this.getTextAnchor(htmlBlock);
+      const exactMatch = this.findByAnchor(textAnchor, localBlocks, 'exact');
+      if (exactMatch) {
+        results.push({ 
+          htmlBlock, 
+          localBlock: exactMatch, 
+          confidence: 0.95,
+          method: 'anchor-exact'
+        });
+        continue;
+      }
+      
+      // Layer 3: 文本锚点模糊匹配 (Levenshtein similarity > 0.85)
+      const fuzzyMatch = this.findByAnchor(textAnchor, localBlocks, 'fuzzy');
+      if (fuzzyMatch) {
+        results.push({ 
+          htmlBlock, 
+          localBlock: fuzzyMatch, 
+          confidence: 0.80,
+          method: 'anchor-fuzzy'
+        });
+        continue;
+      }
+      
+      // Layer 4: HTML 结构匹配 (标签语义)
+      const structureMatch = this.findByStructure(htmlBlock, localBlocks);
+      if (structureMatch) {
+        results.push({ 
+          htmlBlock, 
+          localBlock: structureMatch, 
+          confidence: 0.60,
+          method: 'structure'
+        });
+        continue;
+      }
+      
+      // Layer 5: Fallback (unknown-block)
+      results.push({ 
+        htmlBlock, 
+        localBlock: null, 
+        confidence: 0.0,
+        method: 'unknown-block'
+      });
+    }
+    
+    return results;
+  }
+}
+```
+
+---
+
+### Cloud 同步策略：Last-Write-Wins + Debounce
+
+```typescript
+class CloudSyncService {
+  private debounceMap = new Map<string, NodeJS.Timeout>();
+  
+  // 1. 本地编辑 → 标记需要同步
+  markForSync(eventId: string, blockId: string) {
+    const block = this.localStore.getBlock(eventId, blockId);
+    block.needsCloudSync = true;
+    block.updatedAt = Date.now();
+    
+    // Debounce: 3秒内无新编辑才同步
+    this.scheduleSync(eventId, 3000);
+  }
+  
+  // 2. 上传到云端
+  async syncToCloud(eventId: string) {
+    const localMeta = this.localStore.getEventMeta(eventId);
+    const cloudMeta = await this.cloudApi.get(eventId);
+    
+    // Last-Write-Wins: 比较 lastModified
+    if (cloudMeta && cloudMeta.lastModified > localMeta.lastModified) {
+      // 云端更新 → 提示用户冲突
+      return this.handleConflict(localMeta, cloudMeta);
+    }
+    
+    // 本地更新 → 上传
+    await this.cloudApi.put(eventId, {
+      ...localMeta,
+      lastModified: Date.now(),
+      deviceId: this.deviceId,
+    });
+    
+    // 清除同步标记
+    this.clearSyncFlags(eventId);
+  }
+  
+  // 3. 冲突处理
+  handleConflict(local: CloudEventMeta, cloud: CloudEventMeta) {
+    // 策略 A: 自动合并（block-level Last-Write-Wins）
+    const merged = this.mergeBlocks(local.blocks, cloud.blocks);
+    
+    // 策略 B: 提示用户选择
+    // this.showConflictDialog(local, cloud);
+    
+    return merged;
+  }
+  
+  mergeBlocks(localBlocks: any, cloudBlocks: any) {
+    const merged = { ...cloudBlocks };
+    
+    for (const [blockId, localBlock] of Object.entries(localBlocks)) {
+      const cloudBlock = cloudBlocks[blockId];
+      
+      // 本地更新 OR 新增
+      if (!cloudBlock || localBlock.updatedAt > cloudBlock.updatedAt) {
+        merged[blockId] = localBlock;
+      }
+    }
+    
+    return merged;
+  }
+}
+```
+
+**同步时机**：
+- 编辑完成 3 秒后（debounce）
+- 切换事件时
+- App 进入后台时
+- 定期同步（每 5 分钟）
+
+**冲突检测**：
+- 比较 `lastModified` 和 `deviceId`
+- Block-level Last-Write-Wins（按 `updatedAt` 合并）
+- 可选：提示用户手动解决
+
+---
+
+### 体积对比（100 段落事件）
+
+| 方案 | Outlook Meta 体积 | 本地存储体积 | 云端存储体积 | 隐私风险 | 扩展性 |
+|------|-------------------|--------------|--------------|----------|--------|
+| **Full Meta (当前)** | ~45 KB | - | - | 高（完全暴露） | 受限（32KB 上限） |
+| **Simplified Hybrid (新)** | ~0.5 KB | ~30 KB | ~30 KB | 低（仅 ID） | 无限（本地无上限） |
+
+**节省**：~44 KB / 事件（98% 体积减少）
+
+---
+
+### 实施优先级与风险
+
+**优势**：
+- ✅ 解决 32KB 体积限制（Outlook 仅存 rootId）
+- ✅ 支持无限自定义字段扩展
+- ✅ 隐私保护（Meta 不暴露给 Outlook 分享）
+- ✅ 同步性能提升（体积减少 98%）
+- ✅ 多设备协同（云端同步 Last-Write-Wins）
+
+**风险**：
+- ⚠️ **依赖多锚点提取成功率**（Outlook Desktop 仅 85-90%）
+- ⚠️ **云端依赖**（离线场景下无法完整恢复结构化字段）
+- ⚠️ **迁移复杂度**（需要将现有 Meta 迁移到本地/云端存储）
+- ⚠️ **新增端到端测试**（多客户端改写场景）
+
+**缓解措施**：
+- 多锚点 Fallback（data-4d-id + id + class + comment）
+- 模糊匹配兜底（Layer 3: Levenshtein similarity）
+- 离线模式：允许降级为纯文本（保留 HTML）
+- 分阶段迁移：先支持新事件，再逐步迁移旧事件
+
+---
+### 双向编辑策略与冲突解决
+
+#### 核心原则
+
+4DNote 与 Outlook 的双向同步必须明确"谁拥有编辑权"，否则会导致：
+- 用户数据丢失（覆盖了用户在某一端的编辑）
+- 冲突频发（两端都改了同一内容，不知道保留哪个）
+- 体验混乱（用户不知道在哪里编辑什么）
+
+#### 内容分类（Content Classification）
+
+将事件内容分为两类，明确编辑权：
+
+**1. 结构化字段（Structured Fields）**
+
+**定义**：具有特定语义和格式的字段，需要精确保存其结构化信息。
+
+**示例**：
+- 自定义属性（金额、公里数、时长等）
+- Tag / Contact mention
+- DateMention
+- 代码块的语言标记
+- heading 的 level
+
+**编辑权**：
+- ✅ **4DNote 独占编辑权**
+- ❌ **Outlook 只读**（或允许查看但不保存编辑）
+
+**理由**：
+- Outlook 无法理解这些字段的语义（例如"¥12.50"可能被改成"$12.50"）
+- 保存结构化信息需要 Meta，而 Outlook 编辑会破坏 Meta
+- 双向编辑会导致冲突难以解决（例如 4DNote 改成 15km，Outlook 改成 10km）
+
+**同步策略**：
+- Encode（4DNote → Outlook）：渲染为带"只读提示"的 HTML
+  ```html
+  <div data-4d-type="property" data-4d-readonly="true" style="background: #f5f5f5; padding: 4px;">
+    <span>距离：5 km</span>
+    <span style="color: #999; font-size: 0.9em;">（在 4DNote 中编辑）</span>
+  </div>
+  ```
+- Decode（Outlook → 4DNote）：**完全忽略 HTML 中的值，只用 Meta**
+  - Meta 存在 → 精确恢复
+  - Meta 丢失 → 降级为 unknown-block（保留 raw HTML）
+
+**2. 自由文本（Free Text）**
+
+**定义**：纯文本内容，用户可以在任何地方编辑。
+
+**示例**：
+- paragraph 的文本内容
+- heading 的标题文字（但不包括 level）
+- list-item 的文本（但不包括 bulletLevel）
+
+**编辑权**：
+- ✅ **允许在 Outlook 编辑**
+- ✅ **4DNote 也可以编辑**
+
+**冲突解决**：
+- 最后写入者获胜（Last Write Wins）
+- 通过 `updatedAt` 时间戳判断
+- 可选：检测冲突时提示用户
+
+**同步策略**：
+- Decode（Outlook → 4DNote）：**以 HTML 文本为准**（允许 Outlook 编辑）
+  - 文本内容从 HTML 提取
+  - Meta 仅用于结构信息（id/ts/bulletLevel 等）
+
+#### Meta vs HTML 优先级矩阵
+
+| 字段类型 | 写入（4DNote → Outlook） | 读取（Outlook → 4DNote） | 冲突解决 |
+|---|---|---|---|
+| **结构化字段** | | | |
+| - 字段值 | Meta（必须） | Meta 为准，忽略 HTML | Meta wins |
+| - 字段类型 | Meta（必须） | Meta 为准 | Meta wins |
+| **自由文本** | | | |
+| - 文本内容 | HTML（可读） | HTML 为准，Meta 仅用于 id/ts | HTML wins |
+| - 段落结构 | HTML（可读） | HTML + Meta（结合） | 结构用 Meta，内容用 HTML |
+| **元素类型** | | | |
+| - type/level/bulletLevel | Meta（推荐） | Meta 优先，HTML 兜底 | Meta wins（降级时用 HTML） |
+| **时间戳** | | | |
+| - createdAt | Meta（必须） | Meta 为准 | Meta wins |
+| - updatedAt | Meta（推荐） | 比较 Meta 和实际编辑时间 | 最新的 wins |
+
+#### 实施要点
+
+```typescript
+// Decode 时的优先级判断
+function decodeNode(html: string, meta: MetaNode): Node {
+  const nodeType = meta?.t || inferTypeFromHtml(html);
+  
+  // 结构化字段：Meta 为准
+  if (isStructuredField(nodeType)) {
+    if (!meta || !meta.val) {
+      return createUnknownBlock(html, meta);  // Meta 丢失 → 降级
+    }
+    return createNodeFromMeta(meta);  // ✅ 完全忽略 HTML 值
+  }
+  
+  // 自由文本：HTML 为准
+  if (isFreeText(nodeType)) {
+    const textContent = extractTextFromHtml(html);
+    return {
+      type: nodeType,
+      id: meta?.id || generateId(),
+      bulletLevel: meta?.bullet || 0,  // 结构信息用 Meta
+      children: [{ text: textContent }],  // ← 文本内容用 HTML
+    };
+  }
+  
+  return createUnknownBlock(html, meta);
+}
+
+function isStructuredField(type: string): boolean {
+  return ['property', 'metric', 'mention', 'code-block'].includes(type);
+}
+
+function isFreeText(type: string): boolean {
+  return ['paragraph', 'heading', 'list-item'].includes(type);
+}
+```
+
+---
 ### 2026-01-01：Outlook 多行内容丢失问题（已修复 + 后续计划）
 
 近期线上问题（你反馈的典型现象）：
@@ -97,6 +528,59 @@
 - **搜索/预览**：以 `event.eventlog.plainText` 为缓存（不可逆，但性能友好）
 
 > 解释：写入/同步入库时做一次 canonicalize（生成三层、清理签名等）；读取/渲染尽量只消费 canonical 字段，不在读路径做重型 HTML 清洗/解析。
+
+---
+
+### 2026-01-09：Outlook 往返污染（“HTML 当 text 写入”）根因闭环 + 白纸重建策略
+
+你提供的截图现象可归纳为四类“越滚越长”的污染：
+
+1) **Slate JSON 串**（如 `[{"type":"paragraph"...}]`）被当作正文
+2) **CompleteMeta Base64 串**被当作正文（长英文/数字串）
+3) **签名/备注重复叠加**（多次出现“由 🔮 4DNote 最后编辑于 …”）
+4) **签名里的 updatedAt 语义错误**：显示为“同步时间”而非“真实编辑时间”
+
+#### 根因（必须写死为硬约束）
+
+- **写出时 contentType 不匹配**：把一段“包含 HTML（甚至包含 hidden meta payload）”的内容，用 Graph `body.contentType = 'text'` 写到 Outlook。
+  - 结果：Outlook/Word 引擎把标签当普通字符展示/重写，hidden 失效 → Base64/JSON 直接变成可见文本。
+- **在旧污染内容上做增量追加**：下次同步又在“已经被重写且包含脏段落”的正文上继续追加签名/备注，导致文本只增不减。
+- **签名更新时间用 sync time**：如果生成“最后编辑于”的时间戳使用 `now()`（同步时刻），会出现“无编辑也被标记为刚编辑”，并进一步触发重复写入。
+
+#### 写出硬契约（Outlook Write Path）
+
+1) **永远从 canonical 白纸重建**（White-paper rebuild）
+   - 当本地存在 `event.eventlog.slateJson` 时：
+     - Outlook body 必须由 `slateJson` 编码生成（HTML/文本均可，但必须是“从结构化源重建”的结果）
+     - 禁止从“上一次 Outlook 回读的 description/htmlText”做拼接或增量修补后再发出
+2) **contentType 与 content 必须一致**
+   - 写 HTML → `body.contentType = 'html'`
+   - 写纯文本 → `body.contentType = 'text'`
+   - **禁止**：`contentType='text'` 但 content 实际是 HTML 字符串（这是截图污染的核心触发条件）
+3) **签名幂等**
+   - 若仍保留可见签名：必须 “strip → append” 或在重建时一次性渲染
+   - 不允许在已含签名的正文上继续 append
+4) **签名时间戳语义**
+   - 签名中的 `updatedAt` 必须使用“真实编辑时间”（`Event.updatedAt` / 用户保存时间）
+   - 同步过程的时间（sync timestamp）只能用于日志/同步元信息，不得进入用户可见签名
+
+#### 入库前/入库后自检与自动清洗（非脚本，运行时闭环）
+
+这部分是“防线没挡住时的保险丝”，目标是：**任何一次入库完成后，本地必须回到干净 canonical 状态**，下次发出从白纸重建。
+
+- **Pre-ingest sanitize（入库前清洗）**：Outlook → App 时，在生成/更新 `eventlog` 前先做清洗：
+  - 移除 `#4dnote-meta`（无论其以 DOM 存在还是被剥标签后以文本泄漏）
+  - 过滤可解码为 4DNote meta JSON 的 Base64 token（避免进入 paragraph）
+  - 移除/识别并剥离历史签名块，提取 core content
+- **Post-ingest verify/repair（入库后自检/修复）**：落库后做一次轻量检测：
+  - 若发现 `plainText/html` 中出现“Base64 meta / Slate JSON 串 / 重复签名模式”，则：
+    - 重建派生字段（`eventlog.html/plainText`）
+    - 必要时标记事件进入 Repair 队列（可控地触发一次“重写 Outlook”以覆盖旧污染）
+
+#### 验收口径（与 5 次同步循环对齐）
+
+- 同一事件连续 5 次：本地 `eventlog` 不应发生无意义变化（id/ts 不漂移；plainText 不增长）
+- Outlook 正文：不出现 Base64/Slate JSON 作为可见正文；签名最多一份；签名时间与真实编辑时间一致
 
 #### 后续工作拆分（按优先级）
 
@@ -121,8 +605,9 @@
 **P1（短期，2-5 天）：解决“回写 Outlook 后退化成 PlainText div”**
 
 1) **梳理 MicrosoftCalendarService 的 body 写入策略**
-  - 对外写入时明确 `contentType`，并优先写 `eventlog.html`
-  - 避免写了不完整 HTML 或写成 text 导致 Outlook/Exchange 强制规范化为 `.PlainText` div 列表
+  - 对外写入时明确 `contentType`，并优先写 `eventlog.html`（来自 `eventlog.slateJson` 的白纸重建）
+  - 禁止 HTML 当 text 写入；否则会触发“标签剥离 + Base64/JSON 变可见正文 + 签名重复堆叠”
+  - 避免写了不完整 HTML 导致 Outlook/Exchange 强制规范化为 `.PlainText` div 列表
 
 2) **建立“回写对称性”基准**
   - App → Outlook：写 `eventlog.html`（含 data-*）
@@ -363,7 +848,137 @@ export interface CompleteMetaV2Node {
   };
 }
 ```
+**Meta 分级策略（体积控制）**
 
+> ⚠️ **架构变更提醒**（2026-01-09）：随着 Simplified Hybrid Storage 的引入，Meta 分级策略的意义已发生变化：
+> - **Outlook Meta**：仅存储 `rootId`（~0.5 KB），无需分级压缩
+> - **本地/云端 Meta**：无体积限制，可存储完整元数据
+> - 以下策略仅适用于过渡期（Full Meta → Hybrid 迁移过程中）
+
+为避免 Meta 超过 32KB 限制（Outlook 同步时），需要对 Meta 字段进行分级：
+
+```typescript
+// Meta 分级策略
+const metaTiers = {
+  // Tier 1: 锚点必需字段（总是保存）
+  tier1_Anchor: {
+    fields: ['id', 's', 'e', 'l'],
+    maxSize: '~50 bytes/block',
+    reason: '三层匹配必需，缺失会导致对齐失败',
+    policy: {
+      localOnly: '总是保存',
+      needSync: '总是保存',
+    },
+  },
+  
+  // Tier 2: 类型恢复字段（通常必需）⚠️ 不能随便丢
+  tier2_Recovery: {
+    fields: ['t', 'lvl', 'bullet', 'ts', 'ut'],
+    maxSize: '~30 bytes/block',
+    reason: '元素类型恢复必需，丢失会导致 heading → paragraph 等降级',
+    policy: {
+      localOnly: '总是保存',
+      needSync: '总是保存（除非体积极端紧张）',
+    },
+    note: 'HTML 可能被 Outlook 改写，不能依赖 HTML 推断类型',
+  },
+  
+  // Tier 3: 增强字段（可选）
+  tier3_Enhancement: {
+    fields: ['mention.targetId', 'property.payload', 'hints'],
+    maxSize: '~100-200 bytes/block',
+    reason: '增强体验，但可从 HTML 模糊推断或降级',
+    policy: {
+      localOnly: '总是保存',
+      needSync: '根据剩余空间决定',
+    },
+    compression: [
+      '如果接近 32KB，先丢弃 Tier 3',
+      '如果还不够，压缩 s/e（5字符 → 3字符）',
+      '如果还不够，报错提示用户简化内容',
+    ],
+  },
+};
+
+// 动态压缩实现
+class MetaEncoder {
+  encode(slateJson: Node[], syncStatus: string): string {
+    const meta = this.buildMeta(slateJson, syncStatus);
+    const metaStr = JSON.stringify(meta);
+    
+    // local-only 事件无限制
+    if (syncStatus === 'local-only' || metaStr.length <= 32 * 1024) {
+      return metaStr;
+    }
+    
+    // 需要同步且接近上限 → 启动压缩
+    return this.compressMeta(meta);
+  }
+  
+  compressMeta(meta: CompleteMetaV2): string {
+    // 1. 丢弃 Tier 3（增强字段）
+    const tier2Meta = this.dropTier3(meta);
+    if (JSON.stringify(tier2Meta).length < 32 * 1024) {
+      console.warn('Meta 接近上限，已丢弃增强字段（mention payload 等）');
+      return JSON.stringify(tier2Meta);
+    }
+    
+    // 2. 压缩锚点（5字符 → 3字符）
+    const compressedMeta = this.compressAnchors(tier2Meta);
+    if (JSON.stringify(compressedMeta).length < 32 * 1024) {
+      console.warn('Meta 接近上限，已压缩锚点长度');
+      return JSON.stringify(compressedMeta);
+    }
+    
+    // 3. 仍然超限 → 报错
+    throw new Error(
+      'Event 内容过于复杂，Meta 超过 32KB 限制。建议拆分为多个事件或减少段落数。'
+    );
+  }
+  
+  dropTier3(meta: CompleteMetaV2): CompleteMetaV2 {
+    return {
+      ...meta,
+      slate: {
+        nodes: meta.slate.nodes.map(node => ({
+          id: node.id,
+          s: node.s,
+          e: node.e,
+          l: node.l,
+          ts: node.ts,
+          ut: node.ut,
+          lvl: node.lvl,
+          bullet: node.bullet,
+          // ❌ 丢弃 mention、property.payload 等 Tier 3 字段
+        })),
+      },
+    };
+  }
+  
+  compressAnchors(meta: CompleteMetaV2): CompleteMetaV2 {
+    return {
+      ...meta,
+      slate: {
+        nodes: meta.slate.nodes.map(node => ({
+          ...node,
+          s: node.s?.substring(0, 3),  // 5 → 3 字符
+          e: node.e?.substring(0, 3),
+        })),
+      },
+    };
+  }
+}
+```
+
+**体积估算**：
+- 普通事件（20 段落）：Tier 1 + Tier 2 ≈ 1.6 KB（安全）
+- 复杂事件（50 段落 + 自定义字段）：Tier 1 + Tier 2 ≈ 4 KB，Tier 3 可能 +10 KB（需要压缩）
+- 极端事件（100+ 段落）：可能需要拆分事件
+
+**策略总结**：
+- ✅ Tier 1（锚点）：永远保留
+- ⚠️ Tier 2（类型）：通常保留，极端情况可考虑丢弃部分时间戳
+- 🔄 Tier 3（增强）：根据剩余空间动态决定
 #### 2) “推荐抽象字段”到“当前实现字段”的映射
 
 | 推荐抽象字段（文档口径） | 当前实现字段（代码口径） | 备注 |
@@ -377,10 +992,109 @@ export interface CompleteMetaV2Node {
 | `t`（block type） | （缺失） | ⚠️ 当前 metaNode 不存 type；回读端默认生成 `paragraph` |
 | 其他元素 payload | （缺失） | ⚠️ 富元素要落地需扩展 meta schema |
 
-#### 3) 这些字段如何进入“三层匹配”与 merge（当前实现）
+#### 3) 三层匹配策略增强（加入模糊匹配层）
 
-- **Layer 1/2/3 的匹配输入**：只依赖 `s/e/l`（用 HTML 段落的 `textContent` 计算出 `htmlStart/htmlEnd/htmlLength` 去比对/打分）。
-- **匹配成功后的 merge 输出**：`applyMatchResults()` 会把 `id/ts/ut/lvl/bullet/mention` 合并回最终 Slate 节点：
+**当前实现的三层匹配**：
+- Layer 1: Meta 精确匹配（`s/e/l` 完全相同）
+- Layer 2: HTML 结构匹配（基于标签语义）
+- Layer 3: fallback 降级
+
+**问题**：Outlook 会改写 HTML，导致锚点失效
+
+常见改写场景：
+- 段落合并：`<p>第一段</p><p>第二段</p>` → `<div class="PlainText">第一段<br>第二段</div>`
+- 空行插入：`<p>内容</p>` → `<p>&nbsp;</p><p>内容</p><p>&nbsp;</p>`
+- 列表改写：`<ul><li>项目</li></ul>` → `<p style="mso-list:...">• 项目</p>`
+- 实体化：`¥12.50` → `&yen;12.50`
+
+这些改写会导致 Layer 1 精确匹配失败，成功率可能只有 60-70%。
+
+**改进方案**：引入模糊匹配层（五层匹配）⭐
+
+> ⚠️ **架构对齐**（2026-01-09）：此五层匹配策略与 Simplified Hybrid Storage 的五层匹配策略互补：
+> - **此处的四层**：Layer 1 精确 → Layer 2 模糊 → Layer 3 结构 → Layer 4 兜底（基于文本锚点的传统方案）
+> - **Hybrid 的五层**：Layer 1 多锚点ID → Layer 2 文本精确 → Layer 3 文本模糊 → Layer 4 结构 → Layer 5 兜底（优先 ID，文本兜底）
+> - 最终实施时应统一为 Hybrid 方案的五层匹配
+
+```typescript
+// 改进后的四层匹配
+const improvedMatching = {
+  layer1_Exact: {
+    condition: 'prefix/suffix/length 完全匹配',
+    confidence: 1.0,
+    successRate: '60-70%（Outlook 改写频繁）',
+  },
+  
+  layer2_Fuzzy: {  // ⭐ 新增
+    condition: '文本相似度 > 0.85（容忍 Outlook 改写）',
+    confidence: 0.8,
+    successRate: '85-95%（大幅提升）',
+    
+    algorithm: {
+      step1: '去除噪音（空白、&nbsp;、HTML 实体等）',
+      step2: '计算 Levenshtein 编辑距离',
+      step3: '相似度 = 1 - (距离 / max(len1, len2))',
+      step4: '相似度 > 0.85 认为匹配成功',
+    },
+  },
+  
+  layer3_Structure: {
+    condition: 'HTML 标签语义匹配',
+    confidence: 0.6,
+    successRate: '95%+（HTML 标签通常保留）',
+  },
+  
+  layer4_Fallback: {
+    condition: 'unknown-block 兜底',
+    confidence: 0.0,
+    successRate: '100%（必定成功）',
+  },
+};
+
+// 实现示例
+class FuzzyMatcher {
+  match(metaNode: MetaNode, htmlText: string): number {
+    // 1. 清洗文本
+    const metaText = this.cleanText(metaNode.s + metaNode.e);
+    const cleanHtml = this.cleanText(htmlText);
+    
+    // 2. 计算相似度
+    const similarity = this.levenshteinSimilarity(metaText, cleanHtml);
+    
+    return similarity > 0.85 ? similarity : 0;
+  }
+  
+  cleanText(text: string): string {
+    return text
+      .replace(/\s+/g, '')  // 去除所有空白
+      .replace(/&nbsp;/gi, '')
+      .replace(/&yen;/gi, '¥')
+      .replace(/&amp;/gi, '&')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .toLowerCase();
+  }
+  
+  levenshteinSimilarity(a: string, b: string): number {
+    const distance = this.levenshteinDistance(a, b);
+    const maxLen = Math.max(a.length, b.length);
+    return maxLen === 0 ? 1 : (1 - distance / maxLen);
+  }
+  
+  levenshteinDistance(a: string, b: string): number {
+    // 标准 Levenshtein 算法实现（略）
+    // 参考：https://en.wikipedia.org/wiki/Levenshtein_distance
+  }
+}
+```
+
+**预期效果**：
+- Layer 1 精确匹配：60-70% 成功率
+- Layer 1 + Layer 2 模糊匹配：85-95% 成功率（提升 15-25%）
+- Layer 3 结构匹配：95%+ 成功率
+- Layer 4 兜底：100% 成功率（降级为 unknown-block）
+
+**匹配成功后的 merge 输出**：`applyMatchResults()` 会把 `id/ts/ut/lvl/bullet/mention` 合并回最终 Slate 节点：
   - `id -> node.id`
   - `ts -> node.createdAt`
   - `ut -> node.updatedAt`
@@ -503,14 +1217,18 @@ export interface MetaNodeV2 {
 3) 以最小改动保持现有数据格式兼容（Slate JSON 仍可作为主存）。4) **架构对齐**：
    - ⚠️ normalize 仅在 Write Path 调用（saveEvent/syncToOutlook），**禁止在编辑器 onChange 中调用**
    - 与 EventHub 订阅模式集成（触发 `eventlogNormalized` 事件，UI 通过 `useEventlogVersion()` 订阅）
-### Phase 2：抽离 EventLogCodec + HtmlAdapter（P1）
+### Phase 2：抽离 EventLogCodec + HtmlAdapter + LocalBlockStore（P1）
 
 1) 从 `EventService` 抽 `EventLogHtmlAdapter`（DOM 清洗、Outlook 特化）。
-2) 抽 `EventLogCodec`（encode/decode、三层匹配、锚点对齐）。
-3) `EventService` 仅编排：写入前调用 codec/normalizer，存储与广播不直接处理 DOM。
-4) **架构对齐**：
+2) 抽 `EventLogCodec`（encode/decode、五层匹配、锚点对齐）。
+3) **新增 `LocalBlockStore`**（IndexedDB 存储 block-level metadata）。
+4) **新增 `CloudSyncService`**（云端同步、Last-Write-Wins、冲突检测）。
+5) `EventService` 仅编排：写入前调用 codec/normalizer/blockStore，存储与广播不直接处理 DOM。
+6) **架构对齐**：
    - ⚠️ IR 仅在 codec 内部使用，**不暴露为全局状态层**
-   - encode 时根据 `syncStatus` 决定 Meta 策略（local-only 无限制，需同步受 32KB 约束）
+   - encode 时根据 `syncStatus` 决定 Meta 策略：
+     - **local-only**：完整 Meta 存本地，Outlook 仅 rootId
+     - **needSync**：Outlook 仅 rootId，本地完整 Meta + 云端同步
    - 对外接口仍然是 Slate JSON（与现有架构无缝对接）
 
 ### Phase 3：契约测试与 fuzz（P1）
@@ -520,37 +1238,70 @@ export interface MetaNodeV2 {
   2) `decode(encode(x)) ~= x`（允许版本迁移差异）
   3) Meta 缺失/破损时：仍能 decode 成合法树（unknown-block）
 - Outlook 噪音注入 fuzz：模拟 MsoList、空行、样式污染、段落删除/插入/乱序。
+- **多锚点提取测试**：
+  - 模拟 Outlook Desktop/Web/Mobile 的 data-4d-id 丢失场景
+  - 验证 id/class/comment fallback 机制
+  - 验证五层匹配的成功率（目标：Desktop 85%+, Web 95%+, Mobile 75%+）
+- **云端同步测试**：
+  - 多设备并发编辑 → Last-Write-Wins 合并
+  - 离线编辑 → 重新联网后同步
+  - 冲突检测与解决
 
-### Phase 4：新增 Notion 级元素（P2）
+### Phase 4：数据迁移与兼容（P1）
+
+- **迁移策略**：渐进式，先支持新事件，再迁移旧事件
+  1) **新事件**：直接使用 Simplified Hybrid Storage
+  2) **旧事件（首次回读）**：
+     - 从 Outlook Meta 提取 block metadata → 存入 LocalBlockStore
+     - 下次同步时改用 Simplified Hybrid 格式
+  3) **批量迁移工具**（可选）：后台逐步迁移历史事件
+- **回退机制**：保留 Full Meta 读取能力（兼容旧格式）
+- **验证**：确保迁移前后事件内容一致（文本/结构/metadata）
+
+### Phase 5：新增 Notion 级元素（P2）
 
 按 Tier A→B 顺序实现：
-- **Week 1**: heading（目录可由派生视图生成，不必写回 storage）
-- **Week 2**: code-block
-- **Week 3**: property/metric（用户自定义字段）
-- **Week 4**: table（先只读或有限编辑，保证可回读）
+- **Week 1-2**: heading（目录可由派生视图生成，不必写回 storage）
+- **Week 3-4**: code-block
+- **Week 5-6**: property/metric（用户自定义字段）
+- **Week 7-8**: table（先只读或有限编辑，保证可回读）
 
 每个元素都需要：
 - 实现 `normalize + encodeToHtml + decodeFromHtml + fallbackDecode`
+- block metadata 定义（存入 LocalBlockStore）
 - 通过契约测试
 - 不破坏现有同步功能
 
 ---
 
-## 里程碑时间线（小步迭代）
+## 里程碑时间线（小步迭代，调整为现实预期）
+
+> ⚠️ **时间线调整说明**（2026-01-09）：
+> - 原计划 6-7 周（过于乐观）
+> - 调整为 **12-14 周**（考虑 LocalBlockStore/CloudSync 实现 + 数据迁移 + 多端测试）
 
 | Phase | 目标 | 时长 | 验收标准 |
 |---|---|---|---|
 | Phase 0 | 永不崩底座 | 1 周 | Outlook 回读不崩、unknown-block 机制 |
-| Phase 1 | 元素注册机制 | 1 周 | registry 驱动 normalize、EventHub 集成 |
-| Phase 2 | 解耦 Codec | 1 周 | DOM 清洗抽离、分级 Meta 支持 |
-| Phase 3 | 契约测试 | 1 周 | 幂等性、encode/decode 往返、fuzz 测试 |
-| Phase 4 | 富元素扩展 | 2-3 周 | heading/code/property/table 逐步上线 |
+| Phase 1 | 元素注册机制 | 1-2 周 | registry 驱动 normalize、EventHub 集成 |
+| Phase 2 | Hybrid Storage 实现 | 3-4 周 | LocalBlockStore/CloudSync/五层匹配/多锚点提取 |
+| Phase 3 | 契约测试 + 多端验证 | 2 周 | 幂等性、encode/decode 往返、fuzz 测试、多客户端测试 |
+| Phase 4 | 数据迁移与兼容 | 1-2 周 | 新旧格式兼容、渐进式迁移、回退机制 |
+| Phase 5 | 富元素扩展 | 4-5 周 | heading/code/property/table 逐步上线 |
 
-**总时长**：6-7 周（每周一个可验证里程碑）
+**总时长**：**12-14 周**（每 1-2 周一个可验证里程碑）
+
+**关键里程碑**：
+- Week 4: LocalBlockStore + 多锚点提取可用
+- Week 8: CloudSync + 五层匹配可用
+- Week 10: 数据迁移完成，新旧格式兼容
+- Week 14: 所有 Tier A 元素（heading/code/property）上线
 
 ---
 
-## 验收标准（v2 增补）
+## 验收标准（v2 增补 + Hybrid Storage）
+
+### 基础能力（Hard Requirements）
 
 1) 任意 Outlook 回读内容都能生成合法文档树（不崩、不丢）。
 2) 未识别元素统一落为 `unknown-block` 并保留 raw 信息，可再次同步。
@@ -558,8 +1309,49 @@ export interface MetaNodeV2 {
 4) 重型 DOM 清洗不在 `EventService` 内部直接发生（通过 adapter）。
 5) 读路径不触发重型迁移（迁移只在写入或 repair 显式触发）。
 
+### Hybrid Storage 能力（Simplified Hybrid）
+
+6) **多锚点提取成功率**：
+   - Outlook Desktop: ≥ 85%
+   - Outlook Web: ≥ 95%
+   - Outlook Mobile: ≥ 75%
+   - 测试方法：模拟 data-4d-id 丢失，验证 id/class/comment fallback
+
+7) **五层匹配成功率**：
+   - Layer 1（多锚点ID）+ Layer 2（文本精确）：≥ 90%
+   - Layer 1-3（含文本模糊）：≥ 95%
+   - Layer 1-4（含结构匹配）：≥ 98%
+   - Layer 5（unknown-block）：100%（必定成功）
+
+8) **云端同步可靠性**：
+   - 多设备并发编辑：block-level Last-Write-Wins 正确合并
+   - 离线编辑后联网：3 秒内完成同步（debounce）
+   - 冲突检测：提示用户或自动合并（无数据丢失）
+
+9) **数据迁移完整性**：
+   - 新旧格式兼容：Full Meta 事件可正常读取
+   - 迁移后一致性：文本/结构/metadata 与迁移前完全一致
+   - 回退能力：可回退到 Full Meta 方案（不丢数据）
+
+10) **体积与性能**：
+    - Outlook Meta 体积：≤ 1 KB / 事件（vs 当前 10-30 KB）
+    - 同步性能提升：≥ 3x（体积减少 98%）
+    - 本地存储：无上限（支持无限自定义字段）
+
 ---
 
-## 给 Copilot 的一句话指令（v2）
+## 给 Copilot 的一句话指令（v2 + Hybrid Storage）
 
-请不要在 `EventService.normalizeEvent/normalizeEventLog` 中继续堆 `if/else` 来支持新元素。优先实现：`ElementRegistry + DocumentNormalizer + EventLogCodec + UnknownBlockHandler`，并将 Outlook 的 DOM 清洗抽到 `EventLogHtmlAdapter`。所有新元素必须提供 `decode + fallbackDecode`，保证回读永不崩且不丢。
+请不要在 `EventService.normalizeEvent/normalizeEventLog` 中继续堆 `if/else` 来支持新元素。优先实现：
+
+1. **架构重构**：`ElementRegistry + DocumentNormalizer + EventLogCodec + UnknownBlockHandler`
+2. **Hybrid Storage**：`LocalBlockStore + CloudSyncService + MultiAnchorExtractor + HybridMatcher`
+3. **Outlook 适配**：将 DOM 清洗抽到 `EventLogHtmlAdapter`
+4. **安全保障**：所有新元素必须提供 `decode + fallbackDecode`，保证回读永不崩且不丢
+
+**核心原则**：
+- Outlook 仅存 `rootId`（~0.5 KB）
+- 本地/云端存完整 block metadata（无限制）
+- 多锚点 fallback（data-4d-id → id → class → comment）
+- 五层匹配策略（ID 精确 → 文本精确 → 文本模糊 → 结构 → unknown-block）
+- Last-Write-Wins 云端同步（block-level 合并）
