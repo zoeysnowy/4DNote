@@ -12,6 +12,40 @@ function extractParagraphTexts(slateJson: string): string[] {
 }
 
 describe('EventService - Outlook import matrix', () => {
+  it('does not emit per-block meta nodes for effectively empty content', () => {
+    const now = 1735689600000;
+    const event: any = {
+      id: '00000000-0000-0000-0000-000000000031',
+      source: 'local:test',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      description: '',
+      eventlog: {
+        slateJson: JSON.stringify([
+          {
+            type: 'paragraph',
+            id: '00000000-0000-0000-0000-000000000032',
+            createdAt: now,
+            updatedAt: now,
+            children: [{ text: '' }]
+          }
+        ])
+      }
+    };
+
+    const html = (EventService as any).serializeEventDescription(event) as string;
+    const base64 = (html.match(/id=['\"]4dnote-meta['\"][^>]*>([^<]+)</i)?.[1] || '').trim();
+    expect(base64.length).toBeGreaterThan(50);
+
+    const metaJson = decodeURIComponent(escape(atob(base64)));
+    const meta = JSON.parse(metaJson);
+
+    expect(meta.v).toBe(2);
+    expect(meta.id).toBe(event.id);
+    expect(Array.isArray(meta.slate?.nodes)).toBe(true);
+    expect(meta.slate.nodes).toEqual([]);
+  });
+
   it('keeps all .PlainText div lines (multiple divs)', () => {
     const outlookHtml = `
 <html>

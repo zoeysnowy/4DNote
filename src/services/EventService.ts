@@ -6587,6 +6587,7 @@ export class EventService {
         slate: {
           nodes: slateNodes.map((node: any) => {
             const textContent = this.extractNodeText(node);
+            const hasMeaningfulText = !!textContent && textContent.trim().length > 0;
             
             // V2 增强 hint：开头 + 结尾 + 长度
             const len = textContent.length;
@@ -6612,9 +6613,11 @@ export class EventService {
             if (node.bulletLevel !== undefined) metaNode.bullet = node.bulletLevel;
             
             // Mention 信息
+            let hasMention = false;
             if (node.children) {
               for (const child of node.children) {
-                if (child.mention) {
+                if (child?.mention) {
+                  hasMention = true;
                   metaNode.mention = {
                     type: child.mention.type,
                     ...(child.mention.targetId && { targetId: child.mention.targetId }),
@@ -6626,6 +6629,10 @@ export class EventService {
                 }
               }
             }
+
+            // If this block is effectively empty and has no semantic content,
+            // don't emit per-block metadata (ids/timestamps). This reduces leak surface.
+            if (!hasMeaningfulText && !hasMention) return {};
             
             return metaNode;
           }).filter((node: any) => Object.keys(node).length > 0) // 移除空节点

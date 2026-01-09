@@ -1,13 +1,26 @@
 # RAG Embedding Architecture - 4DNote 检索增强生成架构
 
-**版本**: v1.0  
+**版本**: v1.1  
 **日期**: 2026-01-09  
-**状态**: ✅ 架构设计完成，待实施  
+**状态**: ✅ 架构设计完成，已整合 Anthropic 最佳实践，待实施  
+
+**版本历史**:
+- v1.1 (2026-01-09): 整合 Anthropic Contextual Retrieval Guide 的最佳实践
+  - ✨ 增强 Contextual Embeddings 实现（LLM 生成语义上下文 + Prompt Caching）
+  - ✨ 添加 Contextual BM25 详细设计（双字段索引）
+  - ✨ 添加 Pass@k 评估框架和性能提升路径图
+  - ✨ 细化 Reranking 策略（10x over-retrieve）
+  - ✨ 详细化成本分析（Prompt Caching 节省 82% 成本）
+  - ✅ 添加 SSOT 合规性检查清单
+- v1.0 (2026-01-08): 初始架构设计
+
 **相关文档**: 
 - [SSOT Architecture](./EVENT_FIELD_CONTRACT_SSOT_ARCHITECTURE.md) - Embedding 权威定义与边界
 - [Signal Architecture](./SIGNAL_ARCHITECTURE_PROPOSAL.md) - Signal embedding 策略
 - [Media Architecture](./Media_Architecture.md) - MediaArtifact embedding 策略
 - [AI Enhanced Methodology](./AI_Enhanced_methodology) - Contextual Retrieval 理论基础
+- [Anthropic Contextual Retrieval Guide](./Enhancing%20RAG%20with%20contextual%20retrieval_Anthropic.md) - 本次优化的主要参考
+- [RAG Architecture Improvement Analysis](./RAG_ARCHITECTURE_IMPROVEMENT_ANALYSIS.md) - 详细对比分析报告
 
 ---
 
@@ -20,8 +33,16 @@
 5. [Embedding 存储架构](#embedding-存储架构)
 6. [检索策略](#检索策略)
 7. [上下文增强（Contextual Retrieval）](#上下文增强contextual-retrieval)
-8. [成本与性能优化](#成本与性能优化)
-9. [实施路线](#实施路线)
+8. [Contextual BM25（混合检索优化）](#contextual-bm25混合检索优化)
+9. [成本与性能优化](#成本与性能优化)
+10. [多地域部署策略](#多地域部署策略)
+11. [实施路线](#实施路线)
+12. [附录](#附录)
+    - A. 关键代码位置
+    - B. 参考文档
+    - C. 术语表
+    - D. SSOT 合规性检查清单
+    - E. 性能基准与监控指标
 
 ---
 
@@ -730,16 +751,92 @@ class HybridRetrievalService {
   
   /**
    * Rerank（用 LLM 重新排序）
+   * 
+   * 参考: Anthropic Reranking - 将 Pass@10 从 92% 提升至 95%
+   * 策略: 10x over-retrieve（检索 10 倍候选，精细排序）
+   * 成本: ~$0.002/query（Cohere Rerank API）
+   * 延迟: +100-200ms
    */
   private async rerank(
     query: string,
     candidates: SearchCandidate[],
     topK: number,
+    config?: RerankConfig,
   ): Promise<SearchCandidate[]> {
-    // 可选：用 LLM 判断相关性
-    // 这里简化为保留 vector search 结果
-    return candidates.slice(0, topK);
+    // 如果禁用 Rerank，直接返回
+    if (!config?.enabled) {
+      return candidates.slice(0, topK);
+    }
+    
+    // 使用 Cohere Rerank API
+    const documents = candidates.map(c => ({
+      text: c.chunk.text,
+      // 也可以包含 contextualized content
+      contextualizedText: c.chunk.metadata.contextualizedContent,
+    }));
+    
+    const response = await this.cohereClient.rerank({
+      model: config.model || 'rerank-multilingual-v3.0',  // 支持中文
+      query,
+      documents: documents.map(d => `${d.contextualizedText}\n\n${d.text}`),
+      top_n: topK,
+    });
+    
+    // 根据 Rerank 分数重新排序
+    const reranked = response.results.map(r => ({
+      ...candidates[r.index],
+      rerankScore: r.relevance_score,
+    }));
+    
+    return reranked;
   }
+}
+
+/**
+ * Reranking 配置
+ */
+interface RerankConfig {
+  enabled: boolean;                    // 是否启用
+  model: string;                       // 'rerank-multilingual-v3.0' 或 'rerank-english-v3.0'
+  overRetrieveMultiplier: number;      // 过度检索倍数（默认 10x）
+  costPerQuery: number;                // 成本 ~$0.002
+  expectedLatencyMs: number;           // 预期延迟 100-200ms
+}
+
+/**
+ * 使用示例：根据场景选择策略
+ */
+const scenarios = {
+  // 场景 1: 高并发搜索（用户实时搜索）
+  highConcurrency: {
+    strategy: 'Contextual Embeddings + BM25',
+    rerank: { enabled: false },
+    passAt10: 0.93,
+    costPerQuery: 0,
+    latencyMs: 80,
+  },
+  
+  // 场景 2: AI Agent 知识检索（精度优先）
+  aiAgent: {
+    strategy: 'Full Stack (Embeddings + BM25 + Rerank)',
+    rerank: { 
+      enabled: true, 
+      overRetrieveMultiplier: 10,  // 需要 10 个结果，先检索 100 个
+    },
+    passAt10: 0.95,
+    costPerQuery: 0.002,
+    latencyMs: 200,
+  },
+  
+  // 场景 3: 离线批处理（成本优先）
+  batchProcessing: {
+    strategy: 'Semantic Chunking Only',
+    rerank: { enabled: false },
+    passAt10: 0.87,
+    costPerQuery: 0,
+    latencyMs: 50,
+  },
+};
   
   /**
    * 上下文增强：返回前后 TimeNode
@@ -800,28 +897,97 @@ interface SearchResult extends SearchCandidate {
  * 
  * 目标：在生成 embedding 前，为 chunk.text 添加上下文说明
  * 效果：检索失败率降低 49%-67%（参考 AI_Enhanced_methodology）
+ * 参考：Anthropic Contextual Retrieval Guide
+ * 
+ * 两层上下文增强：
+ * 1. 元数据注入（快速标识）：Event 信息、标签、参与者、Signal
+ * 2. LLM 生成语义说明（深度理解）：chunk 在整个 Event 中的位置和作用
  */
 class ContextualRetrievalService {
+  private anthropicClient: Anthropic;
+  
   /**
-   * 为 chunk 添加上下文
+   * 为 chunk 生成语义上下文（用 Claude + Prompt Caching）
+   * 
+   * 参考: Anthropic Contextual Retrieval - 将 Pass@10 从 87% 提升至 92%
+   * 成本优化: 使用 Prompt Caching，后续 chunks 成本降低 90%
    */
-  async enhanceChunk(chunk: RAGChunk): Promise<string> {
-    // 1. 获取 Event 信息
-    const event = await this.storageManager.getEvent(chunk.metadata.eventId!);
-    if (!event) return chunk.text;
+  async generateChunkContext(
+    event: Event,
+    chunk: RAGChunk,
+  ): Promise<string> {
+    // 1. 获取完整 Event 内容（作为 document context）
+    const fullEventText = this.eventToFullText(event);
     
-    // 2. 获取关联的 Signal（如果有）
-    const signals = await this.getRelatedSignals(chunk.metadata.eventId!);
+    // 2. 使用 Claude 生成上下文说明
+    const response = await this.anthropicClient.messages.create({
+      model: 'claude-3-haiku-20240307',
+      max_tokens: 100,
+      temperature: 0,
+      messages: [{
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `<document>${fullEventText}</document>`,
+            cache_control: { type: 'ephemeral' },  // ⭐ 缓存整个文档（90% 折扣）
+          },
+          {
+            type: 'text',
+            text: `<chunk>${chunk.text}</chunk>\n\n请用一句话（20-50字）说明这个 chunk 在整个 Event 中的位置和作用。\n只返回说明，不要解释。`,
+          },
+        ],
+      }],
+      extra_headers: { 'anthropic-beta': 'prompt-caching-2024-07-31' },
+    });
     
-    // 3. 构建上下文前缀
-    const contextPrefix = this.buildContextPrefix(event, signals, chunk);
-    
-    // 4. 返回增强后的文本
-    return `${contextPrefix}\n\n${chunk.text}`;
+    return response.content[0].text;
   }
   
   /**
-   * 构建上下文前缀
+   * Event 转完整文本（用于 Prompt Caching）
+   */
+  private eventToFullText(event: Event): string {
+    const parts: string[] = [];
+    
+    parts.push(`# ${event.title}`);
+    if (event.startTime) parts.push(`时间: ${event.startTime}`);
+    if (event.tags) parts.push(`标签: ${event.tags.join(', ')}`);
+    if (event.attendees) parts.push(`参与者: ${event.attendees.join(', ')}`);
+    parts.push('\n--- 内容 ---\n');
+    
+    // 所有 TimeNode 的文本
+    const timeNodes = event.timeNodes || [];
+    for (const node of timeNodes) {
+      const text = node.blocks.map(b => this.blockToPlainText(b)).join('\n');
+      parts.push(text);
+    }
+    
+    return parts.join('\n');
+  }
+  
+  /**
+   * 最终的上下文增强（元数据 + LLM 语义说明）
+   */
+  async enhanceChunk(chunk: RAGChunk): Promise<string> {
+    const event = await this.storageManager.getEvent(chunk.metadata.eventId!);
+    if (!event) return chunk.text;
+    
+    // 获取关联的 Signal
+    const signals = await this.getRelatedSignals(chunk.metadata.eventId!);
+    
+    // A. 元数据前缀（快速标识）
+    const metadataPrefix = this.buildContextPrefix(event, signals, chunk);
+    
+    // B. LLM 生成的语义说明（深度理解）
+    const semanticContext = await this.generateChunkContext(event, chunk);
+    
+    // C. 组合：元数据 + 语义说明 + 原始内容
+    return `${metadataPrefix}\n【说明: ${semanticContext}】\n\n${chunk.text}`;
+  }
+  
+  /**
+   * 构建元数据前缀（结构化信息）
    */
   private buildContextPrefix(
     event: Event,
@@ -872,20 +1038,315 @@ const enhanced = await contextualRetrievalService.enhanceChunk(chunk);
 // "讨论了数据库索引优化方案"
 
 // 增强后的 enhanced:
-// "【Event: 技术评审会议】【时间: 2025-12-06 14:30】【参与者: @张三 @李四】【Signal: 高注意力 | 停留 120000ms】【主题: 数据库优化】
+// "【Event: 技术评审会议】【时间: 2025-12-06 14:30】【参与者: @张三 @李四】
+// 【说明: 这段文字讨论了数据库索引优化的三个具体方案，是会议核心决策部分】
 //
 // 讨论了数据库索引优化方案"
 
 // 效果：
 // 1. 检索"技术评审会议的数据库方案"时，匹配度更高
 // 2. 检索"张三参与的讨论"时，也能召回这个 chunk
+// 3. 语义说明提供了 chunk 在 Event 中的定位，提升检索精度
+```
+
+---
+
+## Contextual BM25（混合检索优化）
+
+参考 Anthropic Contextual Retrieval Guide，BM25 索引同时包含 **original content** 和 **contextualized content**，将 Pass@10 从 92% 提升至 93%。
+
+### 架构设计
+
+```typescript
+/**
+ * Elasticsearch BM25 Service（支持 Contextual BM25）
+ * 
+ * 参考: Anthropic Contextual BM25 - 双字段索引策略
+ * 性能: Pass@10 提升 ~1%（92.34% → 93.21%）
+ * 
+ * 关键设计:
+ * 1. 索引 content（原始内容）+ contextualizedContent（上下文增强内容）
+ * 2. 搜索时同时在两个字段中匹配（multi_match）
+ * 3. 权重分配：content^1.5（主要）, contextualizedContent^1.0（辅助）
+ */
+class ElasticsearchBM25Service {
+  private client: Elasticsearch;
+  
+  /**
+   * 创建索引（双字段设计）
+   */
+  async createIndex(): Promise<void> {
+    await this.client.indices.create({
+      index: 'rag_chunks',
+      settings: {
+        analysis: {
+          analyzer: {
+            default: { type: 'english' },
+            chinese: { 
+              type: 'icu_analyzer',  // 支持中文分词
+              tokenizer: 'icu_tokenizer',
+            },
+          },
+        },
+        similarity: {
+          default: { type: 'BM25' },  // 使用 BM25 算法
+        },
+      },
+      mappings: {
+        properties: {
+          // ⭐ 原始内容（用户编写的）
+          content: {
+            type: 'text',
+            analyzer: 'chinese',
+          },
+          
+          // ⭐ 上下文增强内容（LLM 生成的元数据 + 语义说明）
+          contextualizedContent: {
+            type: 'text',
+            analyzer: 'chinese',
+          },
+          
+          // 元数据（用于过滤）
+          chunkId: { type: 'keyword' },
+          eventId: { type: 'keyword' },
+          tags: { type: 'keyword' },
+          createdAt: { type: 'date' },
+        },
+      },
+    });
+  }
+  
+  /**
+   * 索引 chunk（包含 contextualized content）
+   */
+  async indexChunk(
+    chunkId: string,
+    originalText: string,
+    contextualizedText: string,
+    metadata: ChunkMetadata,
+  ): Promise<void> {
+    await this.client.index({
+      index: 'rag_chunks',
+      id: chunkId,
+      document: {
+        content: originalText,  // 原始内容
+        contextualizedContent: contextualizedText,  // ⭐ 上下文增强内容
+        chunkId,
+        eventId: metadata.eventId,
+        tags: metadata.tags,
+        createdAt: metadata.createdAt,
+      },
+    });
+  }
+  
+  /**
+   * Contextual BM25 搜索（在两个字段中同时匹配）
+   */
+  async search(query: string, k: number = 20): Promise<BM25Result[]> {
+    const response = await this.client.search({
+      index: 'rag_chunks',
+      query: {
+        multi_match: {
+          query,
+          fields: [
+            'content^1.5',                // 原始内容权重 1.5（主要）
+            'contextualizedContent^1.0',  // 上下文内容权重 1.0（辅助）
+          ],
+        },
+      },
+      size: k,
+    });
+    
+    return response.hits.hits.map(hit => ({
+      chunkId: hit._id,
+      score: hit._score!,
+      content: hit._source.content,
+    }));
+  }
+}
+
+interface BM25Result {
+  chunkId: string;
+  score: number;
+  content: string;
+}
+```
+
+### Hybrid Retrieval 整合（Vector + BM25）
+
+```typescript
+/**
+ * 混合检索 Service（Vector Search + Contextual BM25）
+ * 
+ * 参考: Anthropic Hybrid Search
+ * 策略: Reciprocal Rank Fusion (RRF)
+ * 权重: Vector 80% + BM25 20%（可调）
+ */
+class HybridRetrievalService {
+  private vectorDB: ContextualVectorDB;
+  private bm25Service: ElasticsearchBM25Service;
+  
+  async search(
+    query: string,
+    k: number = 20,
+    weights: { vector: number; bm25: number } = { vector: 0.8, bm25: 0.2 },
+  ): Promise<HybridResult[]> {
+    // 1. 并行检索（召回 150 个候选）
+    const candidateCount = 150;
+    const [vectorResults, bm25Results] = await Promise.all([
+      this.vectorDB.search(query, candidateCount),
+      this.bm25Service.search(query, candidateCount),
+    ]);
+    
+    // 2. Reciprocal Rank Fusion (RRF)
+    const chunkScores = new Map<string, number>();
+    
+    // Vector Search 贡献
+    vectorResults.forEach((result, index) => {
+      const score = weights.vector * (1 / (index + 1));  // 1/n 权重
+      chunkScores.set(result.chunkId, (chunkScores.get(result.chunkId) || 0) + score);
+    });
+    
+    // BM25 贡献
+    bm25Results.forEach((result, index) => {
+      const score = weights.bm25 * (1 / (index + 1));
+      chunkScores.set(result.chunkId, (chunkScores.get(result.chunkId) || 0) + score);
+    });
+    
+    // 3. 按融合分数排序
+    const sorted = Array.from(chunkScores.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, k);
+    
+    // 4. 加载完整 chunk
+    const results: HybridResult[] = [];
+    for (const [chunkId, score] of sorted) {
+      const chunk = await this.loadChunk(chunkId);
+      if (chunk) {
+        results.push({ chunk, score });
+      }
+    }
+    
+    return results;
+  }
+}
+
+interface HybridResult {
+  chunk: RAGChunk;
+  score: number;
+}
 ```
 
 ---
 
 ## 成本与性能优化
 
+### 性能评估框架（Pass@k Metric）
+
+参考 Anthropic Contextual Retrieval Guide 的评估方法：
+
+```typescript
+/**
+ * Pass@k 评估器
+ * 
+ * Pass@k: 检查 golden chunk 是否在前 k 个检索结果中
+ * 参考: Anthropic 使用此指标验证 Contextual Embeddings 的性能提升
+ */
+class PassAtKEvaluator {
+  /**
+   * 运行评估
+   */
+  async evaluate(
+    queries: EvaluationQuery[],
+    retrievalFn: (query: string, k: number) => Promise<SearchResult[]>,
+    kValues: number[] = [5, 10, 20],
+  ): Promise<EvaluationReport> {
+    const results: Record<number, number> = {};
+    
+    for (const k of kValues) {
+      let successCount = 0;
+      
+      for (const query of queries) {
+        const retrieved = await retrievalFn(query.query, k);
+        const goldenChunkIds = query.goldenChunkIds;
+        
+        // 检查 golden chunk 是否在前 k 个结果中
+        const found = retrieved
+          .slice(0, k)
+          .some(result => goldenChunkIds.includes(result.chunkId));
+        
+        if (found) successCount++;
+      }
+      
+      results[k] = (successCount / queries.length) * 100;
+    }
+    
+    return {
+      totalQueries: queries.length,
+      passAtK: results,
+    };
+  }
+}
+
+interface EvaluationQuery {
+  query: string;
+  goldenChunkIds: string[];  // 正确答案（可能有多个）
+}
+
+interface EvaluationReport {
+  totalQueries: number;
+  passAtK: Record<number, number>;  // { 5: 88.12, 10: 92.34, 20: 94.29 }
+}
+```
+
+**评估数据集准备**：
+
+```typescript
+// 构建测试数据集（100-200 queries）
+const testQueries: EvaluationQuery[] = [
+  {
+    query: '代码签名的解决方案',
+    goldenChunkIds: ['chunk_abc123'],
+  },
+  {
+    query: '@张三 参与的数据库优化讨论',
+    goldenChunkIds: ['chunk_def456', 'chunk_ghi789'],
+  },
+  // ... 更多测试 queries
+];
+```
+
+### 性能提升路径图（基于 Anthropic 数据）
+
+```
+📊 预期性能提升路径：
+
+Baseline RAG (TimeNode-Level chunks)
+  Pass@10: ~85%
+  ↓ +2%
++ Semantic Chunking (AI-driven aggregation)
+  Pass@10: ~87%
+  ↓ +5% ⭐ 最大提升
++ Contextual Embeddings (LLM-generated context)
+  Pass@10: ~92%  
+  成本: Prompt Caching 降低 82% 成本
+  ↓ +1%
++ Contextual BM25 (dual-field search)
+  Pass@10: ~93%
+  额外成本: Elasticsearch 服务器
+  ↓ +2-3%
++ Reranking (Cohere, 10x over-retrieve)
+  Pass@10: ~95%
+  成本: ~$0.002/query
+  延迟: +100-200ms
+
+总提升: 85% → 95% 
+（检索失败率从 15% 降至 5%，降低 67%）
+```
+
 ### 成本对比（10K 用户，每人 1000 TimeNode）
+
+#### Chunking 策略成本
 
 | 方案 | Chunk 数量 | Embedding 成本 | 存储成本 | 检索 Token 消耗 | 总成本/月 |
 |-----|-----------|---------------|---------|---------------|----------|
@@ -894,6 +1355,42 @@ const enhanced = await contextualRetrievalService.enhanceChunk(chunk);
 | **Semantic-Level** ⭐ | 3M chunks | $18 | $1.84 | $9 | $28.84 |
 
 **洞察**：Semantic-Level 成本降低 73%，且检索质量更高
+
+#### Contextual Embeddings 成本详细分析
+
+**场景**: 为 10K 用户的 3M semantic chunks 生成 contextualized embeddings
+
+**参数**:
+- Chunk 平均长度: 800 tokens
+- Event 平均长度: 8,000 tokens
+- 每个 Event 包含 ~20 chunks
+
+**成本计算（使用 Prompt Caching）**:
+
+| 项目 | Token 数量 | 单价 | 成本 |
+|-----|-----------|------|-----|
+| **首个 chunk（写缓存）** | 8,000 tokens | $0.30 / 1M × 1.25 | $0.003 |
+| **后续 19 chunks（读缓存）** | 8,000 × 19 = 152K tokens | $0.30 / 1M × 0.1 | $0.00456 |
+| **生成的上下文** | 50 × 20 = 1K tokens | $1.25 / 1M | $0.00125 |
+| **总成本（每个 Event）** | - | - | $0.00881 |
+
+**总成本（10K 用户）**:
+- Event 数量: 10K users × 100 events = 1M events
+- 总成本: $0.00881 × 1M = **$8,810/次**（一次性）
+
+**对比无缓存**:
+- 无缓存成本: 8,000 tokens × 20 chunks × 1M events × $0.30 / 1M = **$48,000**
+- **节省**: $48,000 - $8,810 = **$39,190 (82% 节省)**
+
+**结论**: Prompt Caching 将 Contextual Embeddings 成本从不可承受（$48K）降至可接受（$8.8K）
+
+#### Reranking 成本-性能权衡
+
+| 配置 | Pass@10 | 成本/query | 延迟 | 适用场景 |
+|-----|---------|-----------|------|--------|
+| **Contextual Embeddings Only** | 92% | $0 | 50ms | 高并发场景 |
+| **+ Contextual BM25** | 93% | $0 | 80ms | 平衡方案 ⭐ |
+| **+ Reranking (10x over-retrieve)** | 95% | $0.002 | 200ms | 精度优先场景 |
 
 ### 性能优化策略
 
@@ -1375,8 +1872,70 @@ const phase4Tasks = [
 - **Derived Store**: 派生存储（RAG Index），可从 SSOT 重建
 - **Semantic Chunking**: 语义分块，按语义连贯性动态聚合 TimeNode
 - **Contextual Retrieval**: 上下文检索，为 chunk 注入 Event/Signal 上下文
-- **Hybrid Retrieval**: 混合检索，BM25 + Embedding + Rerank
+- **Contextual Embeddings**: 为 chunk 添加文档级上下文后再 embedding（Anthropic 技术）
+- **Contextual BM25**: BM25 索引包含 original + contextualized content（Anthropic 技术）
+- **Hybrid Retrieval**: 混合检索，Vector + BM25 + Rerank
+- **Pass@k**: 评估指标，检查 golden chunk 是否在前 k 个结果中
+- **Reranking**: 用 LLM 对候选结果重新排序（10x over-retrieve）
+- **Prompt Caching**: Claude 功能，缓存系统提示词降低 90% 成本
 - **RAGIndexService**: 统一 embedding Writer（符合 SSOT §5.1）
+
+### D. SSOT 合规性检查清单
+
+在实施 RAG Embedding 架构时，确保符合 SSOT 原则：
+
+**✅ SSOT 不可变性**
+- [ ] TimeNode 结构保持不变（Block-Level Timestamp 设计）
+- [ ] 不修改 Event/Signal/MediaArtifact 的 SSOT 字段
+- [ ] Chunk 生成过程只读取 SSOT，不写入
+
+**✅ 单一 Writer 原则（SSOT §5.1）**
+- [ ] RAGIndexService 是所有 embedding 的唯一 Writer
+- [ ] 其他 Service 只能通过 RAGIndexService 创建/更新 embedding
+- [ ] 禁止直接操作 eventEmbeddings/signalEmbeddings 表
+
+**✅ Derived Store 可重建性**
+- [ ] 所有 RAGChunk 可从 TimeNode 完全重建
+- [ ] 所有 embedding 可从 RAGChunk 重新生成
+- [ ] 模型版本升级时，支持批量迁移（migrateEmbeddings）
+
+**✅ 事件驱动更新**
+- [ ] TimeNode 变化时，自动触发 RAGIndexService.onTimeNodeChange()
+- [ ] 增量更新：只重建受影响的 chunks
+- [ ] 避免全量重建（除非模型版本升级）
+
+**✅ 上下文增强合规性**
+- [ ] Contextual Embeddings 只在 Derived Store 层实现
+- [ ] 不修改 TimeNode.blocks 的原始内容
+- [ ] Contextualized content 存储在 RAGChunk 表，不污染 SSOT
+
+**✅ 多模型版本共存**
+- [ ] 使用 EmbeddingModelVersion 抽象（v1/v2/v3）
+- [ ] 支持同时存在多个版本的 embedding
+- [ ] 查询时指定 modelVersion 过滤
+
+**✅ 性能优化不破坏 SSOT**
+- [ ] Prompt Caching 只用于 LLM 调用，不缓存 SSOT 数据
+- [ ] Elasticsearch BM25 索引是 Derived Store 的副本
+- [ ] Reranking 不修改原始检索结果，只调整排序
+
+### E. 性能基准与监控指标
+
+**关键指标（参考 Anthropic 数据）**：
+
+| 指标 | Baseline | 目标（+ Contextual Embeddings） | 目标（+ Full Stack） |
+|------|---------|-------------------------------|---------------------|
+| **Pass@5** | 81% | 88% (+7%) | 92% (+11%) |
+| **Pass@10** | 87% | 92% (+5%) | 95% (+8%) |
+| **Pass@20** | 90% | 94% (+4%) | 97% (+7%) |
+| **平均检索延迟** | 50ms | 80ms | 200ms |
+| **成本/1K queries** | $0 | ~$0 | ~$2 |
+
+**监控建议**：
+- 每周运行 Pass@k 评估（使用测试数据集）
+- 追踪 Prompt Caching 命中率（目标 >60%）
+- 监控 Elasticsearch BM25 查询延迟（目标 <100ms）
+- 追踪 Reranking API 成本（设置预算告警）
 
 ---
 
