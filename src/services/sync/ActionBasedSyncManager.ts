@@ -69,6 +69,15 @@ function getExternalIdIndexKeys(externalId: unknown): string[] {
   return Array.from(keys);
 }
 
+function stripOutlookEventIdPrefix(id: unknown): string {
+  const asString = typeof id === 'string' ? id : String(id ?? '');
+  if (!asString) return '';
+  if (!asString.startsWith('outlook-')) return asString;
+  let rest = asString.slice('outlook-'.length);
+  while (rest.startsWith('-')) rest = rest.slice(1);
+  return rest;
+}
+
 interface SyncAction {
   id: string;
   type: 'create' | 'update' | 'delete';
@@ -570,9 +579,15 @@ export class ActionBasedSyncManager {
         
         if (isDeleted) continue;
 
-        // 检查是否已存在
-        const pureOutlookId = event.id.replace(/^outlook-/, '');
-        const existingLocal = this.eventIndexMap.get(pureOutlookId);
+        // 检查是否已存在（优先 canonical externalId；兼容用 id 推导）
+        const derivedRemoteId = stripOutlookEventIdPrefix(event.id);
+        const lookupKey =
+          canonicalizeExternalIdOrUndefined(String(event.externalId ?? derivedRemoteId), {
+            defaultProvider: 'outlook',
+            defaultResource: 'calendar'
+          }) ??
+          String(event.externalId ?? derivedRemoteId);
+        const existingLocal = this.eventIndexMap.get(lookupKey);
 
         if (!existingLocal) {
           // 创建新事件
@@ -1994,11 +2009,15 @@ export class ActionBasedSyncManager {
           return;
         }
 
-        // 🚀 [SIMPLIFIED] 直接用纯 Outlook ID 查找 externalId
-        // Outlook 返回的 event.id 是 'outlook-AAMkAD...'
-        // 去掉前缀后得到纯 Outlook ID，这就是 externalId
-        const pureOutlookId = event.id.replace(/^outlook-/, '');
-        const existingLocal = this.eventIndexMap.get(pureOutlookId);
+        // 🚀 使用 canonical externalId 查找（必要时从 outlook-<id> 推导）
+        const derivedRemoteId = stripOutlookEventIdPrefix(event.id);
+        const lookupKey =
+          canonicalizeExternalIdOrUndefined(String(event.externalId ?? derivedRemoteId), {
+            defaultProvider: 'outlook',
+            defaultResource: 'calendar'
+          }) ??
+          String(event.externalId ?? derivedRemoteId);
+        const existingLocal = this.eventIndexMap.get(lookupKey);
 
         if (!existingLocal) {
           // Creating new local event from remote
@@ -5155,7 +5174,7 @@ export class ActionBasedSyncManager {
     
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
     // 不要重复添加前缀！同时 externalId 采用 SSOT canonical 格式: outlook:calendar:<id>
-    const pureOutlookId = String(remoteEvent.id).replace(/^outlook-+/, '');
+    const pureOutlookId = stripOutlookEventIdPrefix(remoteEvent.id);
 
     const startValue = remoteEvent.start?.dateTime || remoteEvent.start;
     const endValue = remoteEvent.end?.dateTime || remoteEvent.end;

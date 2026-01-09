@@ -3,6 +3,12 @@ export type ExternalIdResource = 'calendar' | 'todo';
 
 export type CanonicalExternalId = `${ExternalIdProvider}:${ExternalIdResource}:${string}`;
 
+function stripLegacyPrefixAndDashes(input: string, prefix: 'outlook-' | 'todo-'): string {
+  let rest = input.slice(prefix.length);
+  while (rest.startsWith('-')) rest = rest.slice(1);
+  return rest;
+}
+
 export function buildExternalId(
   provider: ExternalIdProvider,
   resource: ExternalIdResource,
@@ -55,10 +61,10 @@ export function canonicalizeExternalIdOrUndefined(
 
   // Legacy: outlook-<id> and todo-<id>
   if (trimmed.startsWith('outlook-')) {
-    return buildExternalId('outlook', 'calendar', trimmed.replace(/^outlook-+/, ''));
+    return buildExternalId('outlook', 'calendar', stripLegacyPrefixAndDashes(trimmed, 'outlook-'));
   }
   if (trimmed.startsWith('todo-')) {
-    return buildExternalId('outlook', 'todo', trimmed.replace(/^todo-+/, ''));
+    return buildExternalId('outlook', 'todo', stripLegacyPrefixAndDashes(trimmed, 'todo-'));
   }
 
   const provider = options?.defaultProvider ?? 'outlook';
@@ -76,7 +82,7 @@ export function getOutlookCalendarEventIdFromExternalId(externalId: string): str
   }
 
   // Legacy raw or outlook- prefixed
-  if (externalId.startsWith('outlook-')) return externalId.replace(/^outlook-+/, '');
+  if (externalId.startsWith('outlook-')) return stripLegacyPrefixAndDashes(externalId, 'outlook-');
   return externalId;
 }
 
