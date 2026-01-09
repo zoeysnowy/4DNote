@@ -16,9 +16,10 @@ import { storageManager } from '@backend/storage/StorageManager';
 import type { StorageEvent } from '@backend/storage/types';
 import { logger } from '@frontend/utils/logger';
 import { validateEventTime } from '@frontend/utils/eventValidation';
+import { canonicalizeExternalIdOrUndefined } from '@frontend/utils/externalIdSSOT';
 
 import { ContactService } from '@backend/ContactService';
-import { shouldShowInPlan, hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, hasTaskFacet, isLegacyActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 事件历史记录
 import { jsonToSlateNodes, slateNodesToHtml } from '@frontend/components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '@frontend/utils/idGenerator'; // 🆕 UUID ID 生成
@@ -500,7 +501,7 @@ export class EventService {
         // 1. 排除附属事件（系统生成的事件）
         // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
         // Behavioral filtering must use SSOT-derived signals.
-        if (event.id?.startsWith('timer-') || isSystemProgressSubEvent(event)) {
+        if (event.id?.startsWith('timer-') || isLegacyActivityTraceEvent(event)) {
           // eventLogger.log('🔽 [EventService] 过滤附属事件:', {
           //   id: event.id,
           //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
@@ -3187,17 +3188,20 @@ export class EventService {
       : event.subEventConfig;
 
     // ✅ SSOT 归一化：externalId
-    // - 去空格
-    // - 兼容历史前缀 outlook-（统一存储为裸 ID）
-    // - 空字符串视为缺失
-    let normalizedExternalId: string | undefined =
-      typeof event.externalId === 'string' ? event.externalId.trim() : undefined;
-    if (normalizedExternalId?.startsWith('outlook-')) {
-      normalizedExternalId = normalizedExternalId.replace(/^outlook-/, '');
-    }
-    if (normalizedExternalId !== undefined && normalizedExternalId.trim().length === 0) {
-      normalizedExternalId = undefined;
-    }
+    // Canonical: `<provider>:<resource>:<remoteId>`
+    // - trim(); empty -> undefined
+    // - legacy `outlook-...` / `todo-...` will be upgraded to canonical on write
+    // - bare IDs are treated as provider/resource default (best-effort)
+    const defaultResource =
+      event.type === 'todo' ||
+      event.type === 'task' ||
+      (Array.isArray((event as any).todoListIds) && (event as any).todoListIds.length > 0)
+        ? 'todo'
+        : 'calendar';
+    const normalizedExternalId: string | undefined = canonicalizeExternalIdOrUndefined(
+      (event as any).externalId,
+      { defaultProvider: 'outlook', defaultResource }
+    );
     
     // 🔥 Title 规范化（支持字符串或对象输入 + tags 同步）
     const normalizedTitle = this.normalizeTitle(event.title, event.tags);
@@ -3398,7 +3402,7 @@ export class EventService {
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
 
-    const isTimeLogEvent = isSystemProgressSubEvent({ ...(event as any), source: finalSource } as Event);
+    const isTimeLogEvent = isLegacyActivityTraceEvent({ ...(event as any), source: finalSource } as Event);
     const hasAnyTime = !!event.startTime || !!event.endTime;
 
     // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
@@ -5734,7 +5738,7 @@ export class EventService {
     // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
     // Canonical rule: system progress/subordinate is derived from timerSessionId or source='local:timelog'.
     if (event.id?.startsWith('timer-')) return 'Timer';
-    if (isSystemProgressSubEvent(event)) return 'SystemProgress';
+    if (isLegacyActivityTraceEvent(event)) return 'LegacyActivityTrace';
     if (shouldShowInPlan(event)) return 'UserSubTask';
     return 'Event';
   }
@@ -5834,15 +5838,15 @@ export class EventService {
   /**
    * 判断是否为附属事件（系统自动生成，无独立 Plan 状态）
    */
-  static isSubordinateEvent(event: Event): boolean {
-    return isSystemProgressSubEvent(event);
+  static isLegacyActivityTraceEvent(event: Event): boolean {
+    return isLegacyActivityTraceEvent(event);
   }
 
   /**
    * 判断是否为用户子事件（用户主动创建，有完整 Plan 状态）
    */
   static isUserSubEvent(event: Event): boolean {
-    return !!(shouldShowInPlan(event) && event.parentEventId && !this.isSubordinateEvent(event));
+    return !!(shouldShowInPlan(event) && event.parentEventId && !this.isLegacyActivityTraceEvent(event));
   }
 
   /**
@@ -5881,9 +5885,9 @@ export class EventService {
   /**
    * 获取附属事件（Timer/TimeLog/OutsideApp）
    */
-  static async getSubordinateEvents(parentId: string): Promise<Event[]> {
+  static async getLegacyActivityTraceEvents(parentId: string): Promise<Event[]> {
     const children = await this.getChildEvents(parentId);
-    return children.filter(e => this.isSubordinateEvent(e));
+    return children.filter(e => this.isLegacyActivityTraceEvent(e));
   }
 
   /**
@@ -6042,7 +6046,7 @@ export class EventService {
    * 计算事件总时长（包括所有附属事件的实际时长）
    */
   static async getTotalDuration(parentId: string): Promise<number> {
-    const children = await this.getSubordinateEvents(parentId);
+    const children = await this.getLegacyActivityTraceEvents(parentId);
     return children.reduce((sum, child) => {
       if (child.startTime && child.endTime) {
         const start = new Date(child.startTime).getTime();
@@ -6361,7 +6365,7 @@ export class EventService {
    */
   static shouldShowInEventTree(event: Event): boolean {
     // 排除系统性子事件/轨迹事件
-    if (isSystemProgressSubEvent(event)) return false;
+    if (isLegacyActivityTraceEvent(event)) return false;
     
     // 显示所有用户创建的事件
     return true; // Task、文档、Plan 事件、TimeCalendar 事件等

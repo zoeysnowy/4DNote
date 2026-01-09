@@ -10,6 +10,13 @@ import { resolveSyncTitle } from '@frontend/utils/TitleResolver';
 import { hasTaskFacet } from '@frontend/utils/eventFacets';
 import { SignatureUtils } from '@frontend/utils/signatureUtils';
 import { assertNamespacedEventSource, isLocalEventSource, isOutlookEventSource } from '@frontend/utils/eventSourceSSOT';
+import {
+  buildExternalId,
+  canonicalizeExternalIdOrUndefined,
+  getOutlookCalendarEventIdFromExternalId,
+  isTodoExternalId,
+  parseExternalId
+} from '@frontend/utils/externalIdSSOT';
 import { SyncStatus } from '@backend/storage/types';
 import type { SyncQueueItem } from '@backend/storage/types';
 import { determineSyncTarget } from '@frontend/utils/syncRouter';
@@ -30,6 +37,36 @@ function normalizeSyncMode(mode: unknown): CanonicalSyncMode {
   }
   // Legacy values like 'receive-only'/'bidirectional-private' collapse to canonical.
   return 'bidirectional';
+}
+
+function getExternalIdIndexKeys(externalId: unknown): string[] {
+  if (typeof externalId !== 'string') return [];
+  const trimmed = externalId.trim();
+  if (!trimmed) return [];
+
+  const keys = new Set<string>();
+  keys.add(trimmed);
+
+  const canonical = canonicalizeExternalIdOrUndefined(trimmed, {
+    defaultProvider: 'outlook',
+    defaultResource: isTodoExternalId(trimmed) ? 'todo' : 'calendar'
+  });
+
+  if (canonical) {
+    keys.add(canonical);
+    const parsed = parseExternalId(canonical);
+    if (parsed) {
+      keys.add(parsed.remoteId);
+      if (parsed.provider === 'outlook') {
+        keys.add(`outlook-${parsed.remoteId}`);
+      }
+      if (parsed.resource === 'todo') {
+        keys.add(`todo-${parsed.remoteId}`);
+      }
+    }
+  }
+
+  return Array.from(keys);
 }
 
 interface SyncAction {
@@ -2030,31 +2067,43 @@ export class ActionBasedSyncManager {
       // ⚠️ 重要：只在获取了完整事件列表时才检查删除
       // 如果使用时间窗口过滤的事件列表，会误判所有窗口外的事件为"已删除"
       
-      // 🔧 从远程事件中提取原始的Outlook ID（去掉outlook-前缀）
-      const remoteEventIds = new Set(combinedEvents.map((event: any) => {
-        // MicrosoftCalendarService返回的ID格式是 "outlook-{原始ID}"
-        const rawId = event.id.startsWith('outlook-') ? event.id.replace('outlook-', '') : event.id;
-        return rawId;
-      }));
+      // 🔧 从远程事件中提取 canonical externalId（SSOT: <provider>:<resource>:<remoteId>）
+      const remoteEventIds = new Set(
+        combinedEvents
+          .map((event: any) =>
+            canonicalizeExternalIdOrUndefined(event.externalId, {
+              defaultProvider: 'outlook',
+              defaultResource: 'calendar'
+            })
+          )
+          .filter(Boolean)
+      );
       
-      const localEventsWithExternalId = localEvents.filter((localEvent: any) => 
-        localEvent.externalId && localEvent.externalId.trim() !== ''
+      const localEventsWithExternalId = localEvents.filter(
+        (localEvent: any) => localEvent.externalId && String(localEvent.externalId).trim() !== ''
+      );
+
+      const localCalendarEventsWithExternalId = localEventsWithExternalId.filter(
+        (localEvent: any) => !isTodoExternalId(String(localEvent.externalId))
       );
 
       // 🔍 [DEBUG] 检查是否有重复的 externalId
       const externalIdCounts = new Map<string, number>();
       const externalIdToEvents = new Map<string, any[]>();
       
-      localEventsWithExternalId.forEach((event: any) => {
-        const cleanId = event.externalId.startsWith('outlook-') 
-          ? event.externalId.replace('outlook-', '') 
-          : event.externalId;
-        externalIdCounts.set(cleanId, (externalIdCounts.get(cleanId) || 0) + 1);
+      localCalendarEventsWithExternalId.forEach((event: any) => {
+        const canonicalId =
+          canonicalizeExternalIdOrUndefined(event.externalId, {
+            defaultProvider: 'outlook',
+            defaultResource: 'calendar'
+          }) ?? String(event.externalId).trim();
+
+        externalIdCounts.set(canonicalId, (externalIdCounts.get(canonicalId) || 0) + 1);
         
         // 记录每个 externalId 对应的事件列表
-        const events = externalIdToEvents.get(cleanId) || [];
+        const events = externalIdToEvents.get(canonicalId) || [];
         events.push(event);
-        externalIdToEvents.set(cleanId, events);
+        externalIdToEvents.set(canonicalId, events);
       });
       
       const duplicates = Array.from(externalIdCounts.entries()).filter(([_, count]) => count > 1);
@@ -2098,10 +2147,13 @@ export class ActionBasedSyncManager {
         let deletionCandidateCount = 0;
         let deletionConfirmedCount = 0;
       
-      localEventsWithExternalId.forEach((localEvent: any) => {
-        const cleanExternalId = localEvent.externalId.startsWith('outlook-') 
-          ? localEvent.externalId.replace('outlook-', '')
-          : localEvent.externalId;
+      localCalendarEventsWithExternalId.forEach((localEvent: any) => {
+        const canonicalExternalId = canonicalizeExternalIdOrUndefined(String(localEvent.externalId), {
+          defaultProvider: 'outlook',
+          defaultResource: 'calendar'
+        });
+
+        if (!canonicalExternalId) return;
         
         // 🔧 检查本地事件是否在当前同步的时间窗口内
         const localEventTime =
@@ -2114,7 +2166,7 @@ export class ActionBasedSyncManager {
         
         // 检查条件：在同步窗口内 OR 已在候选列表中
         if (isInSyncWindow || isInCandidateList) {
-          const isFoundInRemote = remoteEventIds.has(cleanExternalId);
+          const isFoundInRemote = remoteEventIds.has(canonicalExternalId);
           
           if (isFoundInRemote) {
             // ✅ 找到了，从候选列表中移除
@@ -2147,7 +2199,7 @@ export class ActionBasedSyncManager {
             if (!existingCandidate) {
               // 🆕 第一次未找到，加入候选列表
               this.deletionCandidates.set(localEvent.id, {
-                externalId: cleanExternalId,
+                externalId: canonicalExternalId,
                 title: localEvent.title?.simpleTitle || '',
                 firstMissingRound: this.syncRoundCounter,
                 firstMissingTime: now,
@@ -2888,7 +2940,7 @@ export class ActionBasedSyncManager {
               
               if (createdTask && createdTask.id) {
                 await EventService.updateEvent(action.entityId, {
-                  externalId: `todo-${createdTask.id}`,
+                  externalId: buildExternalId('outlook', 'todo', createdTask.id),
                   syncStatus: 'synced'
                 }, true);
               }
@@ -3083,10 +3135,10 @@ export class ActionBasedSyncManager {
           const newEventId = await this.microsoftService.syncEventToCalendar(eventData, syncTargetCalendarId);
           
           if (newEventId) {
-            // ✅ SSOT: externalId 存储为裸 Outlook ID（不带 outlook- 前缀）
-            // 兼容：上游若返回带前缀的值，入库前统一剥离
-            const normalizedExternalId = newEventId.replace(/^outlook-/, '');
-            await this.updateLocalEventExternalId(action.entityId, normalizedExternalId, createDescription);
+            // ✅ SSOT: externalId 存储为 canonical 命名空间格式
+            // `<provider>:<resource>:<remoteId>`
+            const canonicalExternalId = buildExternalId('outlook', 'calendar', newEventId);
+            await this.updateLocalEventExternalId(action.entityId, canonicalExternalId, createDescription);
             return true;
           }
           break;
@@ -3166,9 +3218,15 @@ export class ActionBasedSyncManager {
           let cleanExternalId = action.data.externalId || 
                                action.originalData?.externalId || 
                                currentLocalEvent?.externalId; // 🔧 从本地事件获取externalId
-          
-          if (cleanExternalId && cleanExternalId.startsWith('outlook-')) {
-            cleanExternalId = cleanExternalId.replace('outlook-', '');
+
+          if (cleanExternalId) {
+            const asString = String(cleanExternalId);
+            cleanExternalId =
+              canonicalizeExternalIdOrUndefined(asString, {
+                defaultProvider: 'outlook',
+                defaultResource: isTodoExternalId(asString) ? 'todo' : 'calendar'
+              }) ??
+              asString;
           }
           // 🔄 如果没有 externalId，转为 CREATE 操作（首次同步）
           if (!cleanExternalId) {
@@ -3182,8 +3240,12 @@ export class ActionBasedSyncManager {
             if (action.originalData?.externalId) {
               const rawOldExternalId = String(action.originalData.externalId);
               // todo- is handled by a different API; never attempt calendar delete here.
-              if (!rawOldExternalId.startsWith('todo-')) {
-                oldExternalIdToDelete = rawOldExternalId.replace(/^outlook-/, '');
+              if (!isTodoExternalId(rawOldExternalId)) {
+                oldExternalIdToDelete =
+                  canonicalizeExternalIdOrUndefined(rawOldExternalId, {
+                    defaultProvider: 'outlook',
+                    defaultResource: 'calendar'
+                  }) ?? rawOldExternalId;
               }
             }
             
@@ -3326,7 +3388,11 @@ export class ActionBasedSyncManager {
             const newEventId = await this.microsoftService.syncEventToCalendar(eventData, syncTargetCalendarId);
             
             if (newEventId) {
-              await this.updateLocalEventExternalId(action.entityId, newEventId, createDescription);
+              await this.updateLocalEventExternalId(
+                action.entityId,
+                buildExternalId('outlook', 'calendar', newEventId),
+                createDescription
+              );
               if (syncTargetCalendarId) {
                 await this.updateLocalEventCalendarId(action.entityId, syncTargetCalendarId);
               }
@@ -3441,9 +3507,9 @@ export class ActionBasedSyncManager {
                 const newEventId = await this.microsoftService.syncEventToCalendar(migrateEventData, syncTargetCalendarId);
                 
                 if (newEventId) {
-                  // ✅ SSOT: externalId 存储为裸 Outlook ID（不带 outlook- 前缀）
-                  const normalizedExternalId = newEventId.replace(/^outlook-/, '');
-                  await this.updateLocalEventExternalId(action.entityId, normalizedExternalId, migrateDescription);
+                  // ✅ SSOT: externalId 存储为 canonical 命名空间格式
+                  const canonicalExternalId = buildExternalId('outlook', 'calendar', newEventId);
+                  await this.updateLocalEventExternalId(action.entityId, canonicalExternalId, migrateDescription);
                   await this.updateLocalEventCalendarId(action.entityId, syncTargetCalendarId);
 
                   // Best-effort: delete old remote event only after successful create, and only if 4DNote-managed.
@@ -3561,15 +3627,14 @@ export class ActionBasedSyncManager {
           }
           
           const currentExternalId = action.data.externalId || localEvent?.externalId;
-          const wasInTodo = !!currentExternalId && currentExternalId.startsWith('todo-');
-          // ✅ 兼容：历史数据可能是 outlook-xxx；新数据是裸 Outlook ID
+          const wasInTodo = !!currentExternalId && isTodoExternalId(String(currentExternalId));
           const wasInCalendar = !!currentExternalId && !wasInTodo;
           
           // 需要迁移：从 Calendar 到 To Do
           if (updateSyncRoute.target === 'todo' && wasInCalendar) {
             console.log(`🔄 [Migration] Moving from Calendar to To Do`);
 
-            const cleanExternalId = currentExternalId.replace(/^outlook-/, '');
+            const calendarGraphId = getOutlookCalendarEventIdFromExternalId(String(currentExternalId));
 
             // 1. 先创建到 To Do（避免先删后建导致数据丢失）
             try {
@@ -3587,19 +3652,19 @@ export class ActionBasedSyncManager {
               
               if (createdTask && createdTask.id) {
                 await EventService.updateEvent(action.entityId, {
-                  externalId: `todo-${createdTask.id}`,
+                  externalId: buildExternalId('outlook', 'todo', createdTask.id),
                   syncStatus: 'synced'
                 }, true);
 
                 // 2. Best-effort: delete old calendar event only after successful To Do create.
                 try {
-                  const deleted = await this.microsoftService.safeDeleteEvent(cleanExternalId, {
+                  const deleted = await this.microsoftService.safeDeleteEvent(String(currentExternalId), {
                     reason: 'ActionBasedSyncManager migration Calendar→ToDo cleanup'
                   });
                   if (deleted) {
-                    console.log(`✅ [Migration] Deleted from Calendar:`, cleanExternalId);
+                    console.log(`✅ [Migration] Deleted from Calendar:`, calendarGraphId);
                   } else {
-                    console.warn(`🛑 [Migration] Skipped Calendar delete (safety protection):`, cleanExternalId);
+                    console.warn(`🛑 [Migration] Skipped Calendar delete (safety protection):`, calendarGraphId);
                   }
                 } catch (error) {
                   console.warn(`⚠️ [Migration] Failed to delete from Calendar:`, error);
@@ -3637,7 +3702,7 @@ export class ActionBasedSyncManager {
               
               if (createdTask && createdTask.id) {
                 await EventService.updateEvent(action.entityId, {
-                  externalId: `todo-${createdTask.id}`,
+                  externalId: buildExternalId('outlook', 'todo', createdTask.id),
                   syncStatus: 'synced'
                 }, true);
               }
@@ -4188,12 +4253,28 @@ export class ActionBasedSyncManager {
     switch (action.type) {
       case 'create':
         const newEvent = this.convertRemoteEventToLocal(action.data);
+        const newEventExternalId = String(newEvent.externalId || '').trim();
+        const newEventCanonicalExternalId =
+          canonicalizeExternalIdOrUndefined(newEventExternalId, {
+            defaultProvider: 'outlook',
+            defaultResource: 'calendar'
+          }) ??
+          newEventExternalId;
+        const newEventRawCalendarId = (() => {
+          try {
+            return getOutlookCalendarEventIdFromExternalId(newEventCanonicalExternalId);
+          } catch {
+            return null;
+          }
+        })();
         
         // 🔧 [FIX] 检查是否是已删除的事件，如果是则跳过创建
         const cleanNewEventId = newEvent.id.startsWith('outlook-') ? newEvent.id.replace('outlook-', '') : newEvent.id;
         const isDeletedEvent = this.deletedEventIds.has(cleanNewEventId) || 
                                this.deletedEventIds.has(newEvent.id) ||
-                               (newEvent.externalId && this.deletedEventIds.has(newEvent.externalId));
+                               (newEventExternalId && this.deletedEventIds.has(newEventExternalId)) ||
+                               (newEventCanonicalExternalId && this.deletedEventIds.has(newEventCanonicalExternalId)) ||
+                               (newEventRawCalendarId && this.deletedEventIds.has(newEventRawCalendarId));
         
         if (isDeletedEvent) {
           console.log(`⏭️ [Sync] 跳过创建已删除的事件: ${newEvent.title}`);
@@ -4201,16 +4282,34 @@ export class ActionBasedSyncManager {
         }
         
         // 📝 [STEP 1] 优先通过 externalId 查找现有事件（从 IndexMap）
-        // newEvent.externalId 是纯 Outlook ID（没有 outlook- 前缀）
-        let existingEvent = this.eventIndexMap.get(newEvent.externalId);
+        // newEvent.externalId 采用 canonical 格式: outlook:calendar:<id>
+        let existingEvent = this.eventIndexMap.get(newEventCanonicalExternalId);
         
         // 🔧 [CRITICAL FIX] 如果 IndexMap 没找到，再检查 events 数组（防止 IndexMap 失效）
-        if (!existingEvent && newEvent.externalId) {
+        if (!existingEvent && newEventCanonicalExternalId) {
           existingEvent = events.find((e: any) => 
             !e.deletedAt &&  // 🛡️ 跳过已软删除的事件
-            (e.externalId === newEvent.externalId || 
-            e.externalId === `outlook-${newEvent.externalId}` ||
-            `outlook-${e.externalId}` === newEvent.externalId)
+            (() => {
+              const candidate = typeof e.externalId === 'string' ? e.externalId.trim() : '';
+              if (!candidate) return false;
+
+              if (candidate === newEventCanonicalExternalId) return true;
+
+              const candidateCanonical =
+                canonicalizeExternalIdOrUndefined(candidate, {
+                  defaultProvider: 'outlook',
+                  defaultResource: 'calendar'
+                }) ??
+                candidate;
+              if (candidateCanonical === newEventCanonicalExternalId) return true;
+
+              if (newEventRawCalendarId) {
+                if (candidate === newEventRawCalendarId) return true;
+                if (candidate === `outlook-${newEventRawCalendarId}`) return true;
+              }
+
+              return false;
+            })()
           );
           
           if (existingEvent) {
@@ -4220,7 +4319,7 @@ export class ActionBasedSyncManager {
             // 🔧 减少日志噪音：只记录前 3 次和每 50 次
             this.indexMapMismatchCount = (this.indexMapMismatchCount || 0) + 1;
             if (this.indexMapMismatchCount <= 3 || this.indexMapMismatchCount % 50 === 0) {
-              console.warn(`⚠️ [IndexMap Mismatch #${this.indexMapMismatchCount}] Found via array search: ${newEvent.externalId.substring(0, 20)}... (fixed)`);
+              console.warn(`⚠️ [IndexMap Mismatch #${this.indexMapMismatchCount}] Found via array search: ${newEventCanonicalExternalId.substring(0, 20)}... (fixed)`);
             }
           }
         }
@@ -4228,22 +4327,57 @@ export class ActionBasedSyncManager {
         // 🆕 v2.0.5 [MULTI-CALENDAR SYNC] 检查多日历同步的 externalId
         // 核心：本地一个 event，远程多个日历可能有多个 externalId
         // 防止创建重复事件
-        if (!existingEvent && newEvent.externalId) {
+        if (!existingEvent && newEventCanonicalExternalId) {
           existingEvent = events.find((e: any) => {
             if (e.deletedAt) return false;  // 🛡️ 跳过已软删除的事件
+            const newRawId = newEventRawCalendarId;
             
             // 检查 Plan 日历映射
             const inPlanCalendars = e.syncedPlanCalendars?.some((cal: any) => 
-              cal.remoteEventId === newEvent.externalId ||
-              cal.remoteEventId === `outlook-${newEvent.externalId}` ||
-              `outlook-${cal.remoteEventId}` === newEvent.externalId
+              (() => {
+                const remoteEventId = typeof cal.remoteEventId === 'string' ? cal.remoteEventId.trim() : '';
+                if (!remoteEventId) return false;
+
+                if (remoteEventId === newEventCanonicalExternalId) return true;
+                const remoteCanonical =
+                  canonicalizeExternalIdOrUndefined(remoteEventId, {
+                    defaultProvider: 'outlook',
+                    defaultResource: 'calendar'
+                  }) ??
+                  remoteEventId;
+                if (remoteCanonical === newEventCanonicalExternalId) return true;
+
+                if (newRawId) {
+                  if (remoteEventId === newRawId) return true;
+                  if (remoteEventId === `outlook-${newRawId}`) return true;
+                }
+
+                return false;
+              })()
             );
             
             // 检查 Actual 日历映射
             const inActualCalendars = e.syncedActualCalendars?.some((cal: any) => 
-              cal.remoteEventId === newEvent.externalId ||
-              cal.remoteEventId === `outlook-${newEvent.externalId}` ||
-              `outlook-${cal.remoteEventId}` === newEvent.externalId
+              (() => {
+                const remoteEventId = typeof cal.remoteEventId === 'string' ? cal.remoteEventId.trim() : '';
+                if (!remoteEventId) return false;
+
+                if (remoteEventId === newEventCanonicalExternalId) return true;
+                const remoteCanonical =
+                  canonicalizeExternalIdOrUndefined(remoteEventId, {
+                    defaultProvider: 'outlook',
+                    defaultResource: 'calendar'
+                  }) ??
+                  remoteEventId;
+                if (remoteCanonical === newEventCanonicalExternalId) return true;
+
+                if (newRawId) {
+                  if (remoteEventId === newRawId) return true;
+                  if (remoteEventId === `outlook-${newRawId}`) return true;
+                }
+
+                return false;
+              })()
             );
             
             return inPlanCalendars || inActualCalendars;
@@ -4838,7 +4972,9 @@ export class ActionBasedSyncManager {
       if (event.externalId) {
         const existing = this.eventIndexMap.get(event.externalId);
         if (!existing || event.id.startsWith('timer-')) {
-          this.eventIndexMap.set(event.externalId, event);
+          for (const key of getExternalIdIndexKeys(event.externalId)) {
+            this.eventIndexMap.set(key, event);
+          }
         }
       }
     });
@@ -4852,11 +4988,9 @@ export class ActionBasedSyncManager {
         this.eventIndexMap.delete(oldEvent.id);
       }
       if (oldEvent.externalId) {
-        // 🔧 同时移除 "outlook-" 前缀和纯 ID 两种格式
-        const cleanId = oldEvent.externalId.replace(/^outlook-/, '');
-        this.eventIndexMap.delete(oldEvent.externalId);
-        this.eventIndexMap.delete(cleanId);
-        this.eventIndexMap.delete(`outlook-${cleanId}`);
+        for (const key of getExternalIdIndexKeys(oldEvent.externalId)) {
+          this.eventIndexMap.delete(key);
+        }
       }
     }
     
@@ -4866,11 +5000,9 @@ export class ActionBasedSyncManager {
         this.eventIndexMap.set(event.id, event);
       }
       if (event.externalId) {
-        // 🔧 同时存储 "outlook-" 前缀和纯 ID 两种格式，确保查询成功
-        const cleanId = event.externalId.replace(/^outlook-/, '');
-        this.eventIndexMap.set(event.externalId, event);
-        this.eventIndexMap.set(cleanId, event);
-        this.eventIndexMap.set(`outlook-${cleanId}`, event);
+        for (const key of getExternalIdIndexKeys(event.externalId)) {
+          this.eventIndexMap.set(key, event);
+        }
       }
     }
     
@@ -4884,11 +5016,9 @@ export class ActionBasedSyncManager {
       this.eventIndexMap.delete(event.id);
     }
     if (event.externalId) {
-      // 🔧 同时移除 "outlook-" 前缀和纯 ID 两种格式
-      const cleanId = event.externalId.replace(/^outlook-/, '');
-      this.eventIndexMap.delete(event.externalId);
-      this.eventIndexMap.delete(cleanId);
-      this.eventIndexMap.delete(`outlook-${cleanId}`);
+      for (const key of getExternalIdIndexKeys(event.externalId)) {
+        this.eventIndexMap.delete(key);
+      }
     }
     
     // 🗺️ 不再触发保存，避免 localStorage 配额不足
@@ -5024,8 +5154,8 @@ export class ActionBasedSyncManager {
     }
     
     // 🔧 [FIX] remoteEvent.id 已经带有 'outlook-' 前缀（来自 MicrosoftCalendarService）
-    // 不要重复添加前缀！同时 externalId 应该是纯 Outlook ID（不带前缀）
-    const pureOutlookId = remoteEvent.id.replace(/^outlook-/, '');
+    // 不要重复添加前缀！同时 externalId 采用 SSOT canonical 格式: outlook:calendar:<id>
+    const pureOutlookId = String(remoteEvent.id).replace(/^outlook-+/, '');
 
     const startValue = remoteEvent.start?.dateTime || remoteEvent.start;
     const endValue = remoteEvent.end?.dateTime || remoteEvent.end;
@@ -5041,7 +5171,7 @@ export class ActionBasedSyncManager {
       reminder: 0,
       createdAt: this.safeFormatDateTime(remoteEvent.createdDateTime || startValue || new Date()),
       updatedAt: this.safeFormatDateTime(remoteEvent.lastModifiedDateTime || endValue || new Date()),
-      externalId: pureOutlookId,
+      externalId: buildExternalId('outlook', 'calendar', pureOutlookId),
       calendarIds: remoteEvent.calendarIds || ['microsoft'],
       source: 'outlook:calendar' as const,
       syncStatus: 'synced' as const,

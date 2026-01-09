@@ -4,6 +4,7 @@ import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 import { STORAGE_KEYS } from '@frontend/constants/storage';
 import { StorageManager } from '@backend/storage/StorageManager';
 import type { Contact } from '@frontend/types';
+import { buildExternalId, getOutlookCalendarEventIdFromExternalId } from '@frontend/utils/externalIdSSOT';
 
 import { logger } from '@frontend/utils/logger';
 
@@ -1590,7 +1591,7 @@ export class MicrosoftCalendarService {
           attendees: attendees,
           isAllDay: outlookEvent.isAllDay || false,
           reminder: 0,
-          externalId: outlookEvent.id,
+          externalId: buildExternalId('outlook', 'calendar', outlookEvent.id),
           calendarIds: ['microsoft'], // 🔧 使用数组格式，与类型定义保持一致
           source: 'outlook:calendar',
           syncStatus: 'synced'
@@ -1813,7 +1814,7 @@ export class MicrosoftCalendarService {
           attendees: attendees,
           isAllDay: outlookEvent.isAllDay || false,
           reminder: 0,
-          externalId: outlookEvent.id,
+          externalId: buildExternalId('outlook', 'calendar', outlookEvent.id),
           calendarIds: [calendarId], // 🔧 使用数组格式，与类型定义保持一致
           source: 'outlook:calendar',
           syncStatus: 'synced'
@@ -1926,7 +1927,8 @@ export class MicrosoftCalendarService {
           }));
       }
       
-      const eventResponse = await this.callGraphAPI(`/me/events/${eventId}`, 'PATCH', outlookEventData);
+      const graphEventId = getOutlookCalendarEventIdFromExternalId(eventId);
+      const eventResponse = await this.callGraphAPI(`/me/events/${graphEventId}`, 'PATCH', outlookEventData);
       return eventResponse;
       
     } catch (error) {
@@ -1964,7 +1966,8 @@ export class MicrosoftCalendarService {
         throw new Error('No access token available');
       }
       
-      await this.callGraphAPI(`/me/events/${eventId}`, 'DELETE');
+      const graphEventId = getOutlookCalendarEventIdFromExternalId(eventId);
+      await this.callGraphAPI(`/me/events/${graphEventId}`, 'DELETE');
       
     } catch (error) {
       // 🔧 如果事件已经不存在（404），认为删除成功
@@ -1996,8 +1999,9 @@ export class MicrosoftCalendarService {
 
     try {
       // Fetch minimal fields to validate ownership.
+      const graphEventId = getOutlookCalendarEventIdFromExternalId(eventId);
       const remote = await this.callGraphAPI(
-        `/me/events/${eventId}?$select=id,subject,body,bodyPreview`,
+        `/me/events/${graphEventId}?$select=id,subject,body,bodyPreview`,
         'GET'
       );
 
@@ -2016,7 +2020,7 @@ export class MicrosoftCalendarService {
         return false;
       }
 
-      await this.deleteEvent(eventId);
+      await this.deleteEvent(graphEventId);
       return true;
     } catch (error) {
       // 404 -> treat as already deleted
