@@ -873,6 +873,179 @@ class SignalEmbeddingService {
 
 ---
 
+## 0.5 UserManner 与 AI Agents 的衔接约定
+
+> **背景**：UserManner 是自进化用户意图学习系统，从 Signal 自动挖掘用户行为模式，为各 AI Agent 提供个性化权重，并通过反馈闭环持续优化。本节明确 UserManner 的 SSOT 定位、Single Writer 边界与数据流向。
+
+**完整 UserManner 设计**：[docs/PRD/AI_UserManner_PRD.md](../PRD/AI_UserManner_PRD.md)
+
+### 核心架构约束（SSOT 定位）
+
+| 模块 | SSOT 定位 | 与 UserManner 关系 | Owner/Writer | Readers | 重建能力 |
+|------|-----------|-------------------|--------------|---------|---------|
+| **Signal** | **SSOT（真相源）** | UserManner 的数据来源 | `SignalService` | `UserMannerAgent`（read only） | - |
+| **UserManner** | **Derived（派生数据）** | 可从 Signal 完全重建 | `UserMannerService` | 各 AI Agent（read only） | ✅ 完全可重建 |
+| **UserMannerAgent** | **Derived Builder** | 唯一创建 UserManner 的 AI | - | - | - |
+| **ChatFlowAgent** | **Reader** | 读取 UserManner 权重，应用于 RAG 检索 | - | - | - |
+| **TaskManagerAgent** | **Reader** | 读取权重，决定自动提取 vs 预览确认 | - | - | - |
+| **NotesManagerAgent** | **Reader** | 读取权重，智能选择插入目标 | - | - | - |
+| **MediaManagerAgent** | **Reader** | 读取权重，个性化图片质量评分 | - | - | - |
+
+### Single Writer 原则验证
+
+**严格约束**（违反即 Bug）：
+
+1. **Signal 写入唯一性**：
+   - ✅ 允许：`SignalService.createSignal()` / `updateSignal()` / `deleteSignal()`
+   - ❌ 禁止：UserManner/AI Agent 直接写入 `signals` 表
+
+2. **UserManner 写入唯一性**：
+   - ✅ 允许：`UserMannerService.createManner()` / `updateWeight()` / `deleteManner()`
+   - ✅ 调用路径：`UserMannerAgent` → `UserMannerService.createManner()`（AI 不直接写库）
+   - ❌ 禁止：ChatFlow/Task/Notes/Media Agent 直接写入 `user_manners` 表
+
+3. **权重更新唯一性**：
+   - ✅ 允许：`UserMannerEvaluator.updateWeight(mannerId, newScore)`（唯一写入 `decisionWeight`）
+   - ✅ 触发路径：隐式反馈事件 → `UserMannerEvaluator.handleFeedback()` → `UserMannerService.updateWeight()`
+   - ❌ 禁止：AI Agent 自行调整权重（只读取，不修改）
+
+4. **AI Agent 只读约束**：
+   - ✅ 允许：`ChatFlowAgent.getMannersByCategory('search_pattern')` → 读取权重
+   - ✅ 允许：`TaskManagerAgent.applyManner(mannerId, context)` → 记录应用日志（写入 `manner_applications`，非修改 UserManner）
+   - ❌ 禁止：任何 Agent 调用 `UserMannerService.updateWeight()` / `updateManner()`
+
+### 数据流向（Signal → UserManner → AI Decision）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 1: Signal 采集（真相源）                              │
+│  ┌──────────────┐                                           │
+│  │ 用户操作/AI推断│ → SignalService.createSignal()           │
+│  └──────────────┘     ↓ 存储到 signals 表（SSOT）           │
+│                       ↓ eventId, type, content, timestamp   │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 2: UserManner 挖掘（派生数据）                        │
+│  ┌──────────────────┐                                       │
+│  │ UserMannerAgent  │ → SignalService.getSignals(30d, 100+) │
+│  │ (LLM Pattern     │ → LLM 分析 → 识别 3-5 个模式           │
+│  │  Recognition)    │ → UserMannerService.createManner()    │
+│  └──────────────────┘   ↓ 存储到 user_manners 表（Derived） │
+│                         ↓ category, triggerPattern, weight  │
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 3: AI Agent 应用（只读权重）                          │
+│  ┌────────────────┐                                         │
+│  │ ChatFlowAgent  │ → UserMannerService.getManners()        │
+│  │ TaskManager    │ → 读取 decisionWeight (0-1)             │
+│  │ NotesManager   │ → 应用到决策逻辑（如 RAG 分数调整）     │
+│  │ MediaManager   │ → 不修改 UserManner                     │
+│  └────────────────┘   ↓ 记录 manner_applications（应用日志）│
+└─────────────────────────────────────────────────────────────┘
+                        ↓
+┌─────────────────────────────────────────────────────────────┐
+│  Phase 4: 反馈闭环（权重自动调整）                           │
+│  ┌──────────────────┐                                       │
+│  │ 用户隐式反馈      │ → event:deleted / ai:suggestion:accept│
+│  │ (EventEmitter)   │ → UserMannerEvaluator.handleFeedback()│
+│  └──────────────────┘   ↓ 计算 Score (accept=1.0, reject=0.0)│
+│                         ↓ EMA 公式：W_new = W × 0.8 + S × 0.2│
+│                         ↓ UserMannerService.updateWeight()  │
+│                         ↓ 更新 user_manners.decisionWeight  │
+└─────────────────────────────────────────────────────────────┘
+                        ↓ 循环迭代（持续学习）
+```
+
+### 重建策略（Derived 证明）
+
+**UserManner 完全可重建**（满足 Derived 定义）：
+
+```typescript
+/**
+ * 从 Signal 完全重建 UserManner
+ * 证明：UserManner 是 Derived，Signal 是 SSOT
+ */
+class UserMannerRebuilder {
+  static async rebuildAllManners(userId: string): Promise<void> {
+    // 1. 清空现有 UserManner（保留应用日志）
+    await UserMannerService.deleteAllManners(userId);
+    
+    // 2. 从 Signal 聚合数据（30天，最少100条）
+    const signals = await SignalService.getSignals({
+      userId,
+      startDate: subtractDays(new Date(), 30),
+      minCount: 100,
+    });
+    
+    // 3. 重新运行 AI 模式挖掘
+    const patterns = await UserMannerAgent.analyzePatterns(signals);
+    
+    // 4. 创建新的 UserManner
+    for (const pattern of patterns) {
+      await UserMannerService.createManner({
+        userId,
+        category: pattern.category,
+        triggerPattern: pattern.trigger,
+        decisionWeight: 0.5, // 初始权重
+        confidence: pattern.confidence,
+        createdBy: 'ai',
+      });
+    }
+    
+    // 5. 从应用日志恢复权重（可选）
+    const applications = await UserMannerService.getApplicationHistory(userId);
+    for (const app of applications) {
+      await UserMannerEvaluator.replayFeedback(app.mannerId, app.score);
+    }
+  }
+}
+```
+
+**重建触发场景**：
+- 用户删除所有 UserManner 后重新学习
+- 数据迁移/升级（Schema 变更）
+- 隐私清理后重建（保留 Signal，重建 UserManner）
+
+### Sync 边界
+
+| 数据类型 | 同步策略 | 原因 |
+|---------|---------|------|
+| **Signal** | ❌ 本地专属，不同步 | 用户行为敏感数据 |
+| **UserManner** | ❌ 本地专属，不同步 | AI 推断的个性化模式 |
+| **manner_applications** | ❌ 本地专属，不同步 | 应用日志（用于权重调整） |
+| **Event** | ✅ 同步（遵循现有规则） | 用户核心数据 |
+
+**原因**：
+- UserManner 包含 AI 推断的用户偏好模式，属于隐私敏感数据
+- 不同设备的使用习惯可能不同（桌面 vs 移动），需要独立学习
+- Signal 已经是本地专属，UserManner 作为其派生数据同样不同步
+
+### 实施约束（与 AI_UserManner_PRD 对齐）
+
+**Phase 优先级**（严格按序实施）：
+1. **Phase 0.5（2周）**: `user_manners` 表 + UserMannerService CRUD + 隐式反馈采集
+2. **Phase 2（3周）**: ChatFlow 集成（RAG 权重调整）
+3. **Phase 3（2周）**: UserMannerEvaluator 自动评估
+4. **Phase 3D（4周）**: UserMannerAgent AI 模式挖掘（LLM-driven）
+5. **Phase 3D（4周）**: 扩展到其他服务（Task/Notes/Media）
+6. **Phase 6（2周）**: 用户管理界面（查看/编辑/删除 UserManner）
+
+**数据量约束**：
+- `user_manners` 表：每用户 ≤50 条（LLM 每次挖掘 3-5 条，定期清理低置信度/低权重模式）
+- `manner_applications` 日志：保留最近 90 天（用于权重调整，可定期清理）
+- AI 推断触发条件：Signal 数量 ≥100 且时间跨度 ≥30 天（避免冷启动）
+
+**LLM Cost 控制**：
+- 模式挖掘频率：每 30 天最多 1 次（用户可手动触发）
+- 输入 Token：500 Signal × 50 tokens/signal ≈ 25,000 tokens
+- 输出 Token：5 patterns × 200 tokens/pattern ≈ 1,000 tokens
+- 单次成本：~$0.10（GPT-4）
+- 年成本：~$1.20/用户（可接受）
+
+---
+
 ## 1. Canonical Types（权威类型）
 
 - `Event` 与 `EventTitle`：src/types.ts
@@ -1290,6 +1463,8 @@ async function deleteEvent(eventId: string): Promise<void> {
 | `lib_store`（建议新增） | Library 精选事件引用表 | UI Local | Library 模块（独立 store，不写 Event） | `eventId`、`createdAt`、`order` | `eventId` | 本地为主；多端一致另案 |
 | `workspace_store`（建议新增） | Workspace 侧边栏快捷入口引用表 | UI Local | Workspace 模块（独立 store，不写 Event） | `eventId`、`order`、`group` | `eventId` | 本地为主；多端一致另案 |
 | `sky_store`（建议新增） | Sky Pin 全局顶部快捷入口引用表 | UI Local | Sky 模块（独立 store，不写 Event） | `eventId`、`pinnedAt`、`position` | `eventId`、`pinnedAt` | 本地为主；多端一致另案 |
+| **`user_manners`（AI Phase 3-4）** | **用户行为模式学习表** | **Derived/AI** | **`UserMannerService`（唯一写入方）**<br>← `UserMannerAgent`（唯一 Builder） | `id`、`userId`、`name`、`category`、`triggerPattern`、`decisionWeight`、`confidence`、`status`、`createdBy` | `[userId+status]`、`category`、`decisionWeight` | **完全可重建**（从 `signals` 聚合） |
+| **`manner_applications`（AI Phase 3-4）** | **UserManner 应用日志表** | **Derived/AI** | **`UserMannerService`（日志写入）** | `id`、`mannerId`、`appliedTo`、`service`、`action`、`userFeedback`、`score`、`timestamp` | `[mannerId]`、`timestamp` | 可清理（仅用于权重调整） |
 
 #### 4.4.2 Store Spec：`events`
 
