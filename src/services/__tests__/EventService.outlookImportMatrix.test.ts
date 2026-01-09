@@ -137,4 +137,44 @@ describe('EventService - Outlook import matrix', () => {
     });
     expect(hasBase64Like).toBe(false);
   });
+
+  it('drops leaked CompleteMetaV2 Base64 token when it becomes visible text', () => {
+    const event: any = {
+      id: '00000000-0000-0000-0000-000000000021',
+      source: 'local:test',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      description: 'Hello',
+      eventlog: {
+        slateJson: JSON.stringify([
+          {
+            type: 'paragraph',
+            id: '00000000-0000-0000-0000-000000000022',
+            createdAt: 1735689600000,
+            updatedAt: 1735689600000,
+            children: [{ text: 'Hello' }]
+          }
+        ])
+      }
+    };
+
+    const serialized = (EventService as any).serializeEventDescription(event) as string;
+    const base64 = (serialized.match(/id=['\"]4dnote-meta['\"][^>]*>([^<]+)</i)?.[1] || '').trim();
+    expect(base64.length).toBeGreaterThan(200);
+
+    const pollutedHtml = `<html><body><div class="PlainText">${base64}</div></body></html>`;
+    const slateJson = (EventService as any).htmlToSlateJsonWithRecognition(pollutedHtml) as string;
+    const texts = extractParagraphTexts(slateJson);
+
+    expect(texts).toEqual([]);
+  });
+
+  it('drops leaked empty Slate-JSON string artifact when it becomes visible text', () => {
+    const leaked = '"[{\\"type\\":\\"paragraph\\",\\"children\\":[{\\"text\\":\\"\\"}],\\"id\\":\\"block_1767690283449_xg6oct\\"}]"';
+    const pollutedHtml = `<html><body><div class="PlainText">${leaked}</div></body></html>`;
+    const slateJson = (EventService as any).htmlToSlateJsonWithRecognition(pollutedHtml) as string;
+    const texts = extractParagraphTexts(slateJson);
+
+    expect(texts).toEqual([]);
+  });
 });

@@ -4573,15 +4573,81 @@ export class EventService {
       if (!parsed || typeof parsed !== 'object') return false;
 
       // Heuristic: meta contains some expected keys.
-      return (
-        'rootId' in parsed ||
-        'blocks' in parsed ||
-        'version' in parsed ||
-        'schemaVersion' in parsed
-      );
+      // - Hybrid meta (future): rootId/blocks/version/schemaVersion
+      // - CompleteMeta V2 (current): { v:2, id, slate:{nodes:[...]}, signature? }
+      const maybeAny: any = parsed;
+      const looksLikeHybridMeta =
+        'rootId' in maybeAny ||
+        'blocks' in maybeAny ||
+        'version' in maybeAny ||
+        'schemaVersion' in maybeAny;
+
+      const looksLikeCompleteMetaV2 =
+        maybeAny?.v === 2 &&
+        typeof maybeAny?.id === 'string' &&
+        !!maybeAny?.slate &&
+        Array.isArray(maybeAny?.slate?.nodes);
+
+      return looksLikeHybridMeta || looksLikeCompleteMetaV2;
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Detect a leaked Slate JSON string (typically produced when HTML was written as text)
+   * and Outlook rewrote the original hidden payload into visible paragraphs.
+   *
+   * Safety rule: only drop it when it represents an *effectively empty* Slate document,
+   * to avoid deleting legitimate user-entered JSON-like content.
+   */
+  private static isLeakedEmptySlateJsonText(text: string): boolean {
+    if (!text) return false;
+
+    const raw = text.trim();
+    if (!raw) return false;
+
+    const tryParseSlate = (candidate: string): any[] | null => {
+      try {
+        const parsed = JSON.parse(candidate);
+        if (Array.isArray(parsed)) return parsed;
+
+        // Sometimes we receive a JSON string that itself contains the Slate JSON.
+        if (typeof parsed === 'string') {
+          const nested = JSON.parse(parsed);
+          if (Array.isArray(nested)) return nested;
+        }
+      } catch {
+        // ignore
+      }
+      return null;
+    };
+
+    // Fast prefilter (avoid JSON.parse for most text)
+    if (!(raw.startsWith('[') || raw.startsWith('"'))) return false;
+    // Accept both normal and escaped-quote forms (e.g. \"type\").
+    if (!raw.toLowerCase().includes('type') || !raw.toLowerCase().includes('children')) return false;
+
+    const slate = tryParseSlate(raw);
+    if (!slate) return false;
+
+    // Validate shape + determine whether it is effectively empty.
+    let hasAnyText = false;
+    for (const node of slate) {
+      if (!node || typeof node !== 'object') return false;
+      if (typeof (node as any).type !== 'string') return false;
+      if (!Array.isArray((node as any).children)) return false;
+
+      for (const child of (node as any).children) {
+        if (child && typeof child === 'object' && typeof (child as any).text === 'string') {
+          if ((child as any).text.trim()) {
+            hasAnyText = true;
+          }
+        }
+      }
+    }
+
+    return !hasAnyText;
   }
 
   /**
@@ -4674,6 +4740,9 @@ export class EventService {
       if (text.trim()) {
         // Prevent hidden 4DNote meta Base64 payload from becoming visible text.
         if (this.is4DNoteMetaBase64Text(text)) return;
+
+        // Prevent leaked empty Slate JSON payload from becoming visible text.
+        if (this.isLeakedEmptySlateJsonText(text)) return;
 
         // 检查文本中是否包含 Tag 或 DateMention 模式
         const fragments = this.recognizeInlineElements(text);
