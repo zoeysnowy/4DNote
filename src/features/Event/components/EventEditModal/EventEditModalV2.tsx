@@ -83,7 +83,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
-import { shouldShowInPlan, shouldShowInTimeCalendar, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, shouldShowInTimeCalendar, isActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { isLocalEventSource, sourceProviderOf } from '@frontend/utils/eventSourceSSOT';
 import { useEventHubCache, useEventSubscription } from '@frontend/hooks/useEventHubSubscription'; // ✅ P0修复：订阅EventHub更新
 import { ContactService } from '@backend/ContactService';
@@ -405,7 +405,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
 
-      const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+      const isDerivedTimer = event.id.startsWith('timer-') || isActivityTraceEvent(event);
 
       const hasCompleteTime = !!(event.startTime && event.endTime);
       const derivedDefaultCheckType: 'none' | 'once' = hasCompleteTime ? 'none' : 'once';
@@ -557,7 +557,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
 
-    const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+    const isDerivedTimer = event.id.startsWith('timer-') || isActivityTraceEvent(event);
 
     const hasCompleteTime = !!(event.startTime && event.endTime);
     const derivedDefaultCheckType: 'none' | 'once' = hasCompleteTime ? 'none' : 'once';
@@ -792,7 +792,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // 🔧 子模式：区分系统子事件和手动子事件
       // - 系统子事件：优先使用父事件 subEventConfig（实际进展模板），fallback 到父事件计划配置
       // - 手动子事件：优先使用自己的配置；若为空则继承父事件计划配置（不使用 subEventConfig）
-      const isSystemChild = !!event && EventService.isSubordinateEvent(event);
+      const isSystemChild = !!event && isActivityTraceEvent(event);
       if (isSystemChild) {
         return parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || [];
       }
@@ -830,7 +830,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     const current = syncCalendarIds;
     if (Array.isArray(current) && current.length > 0) return;
 
-    const isSystemChild = EventService.isSubordinateEvent(event);
+    const isSystemChild = isActivityTraceEvent(event);
     const ownCalendarIds = event.calendarIds;
 
     // 仅在「自身无配置」时才从父继承，避免覆盖用户已修改的子事件
@@ -1011,7 +1011,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // 🔧 子事件模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.syncMode
       // - 手动子事件: 使用自己的 syncMode（如果为空，则从 parent.subEventConfig 继承）
-      if (event && EventService.isSubordinateEvent(event)) {
+      if (event && isActivityTraceEvent(event)) {
         mode = parentEvent?.subEventConfig?.syncMode || 'bidirectional-private';
         console.log('🎬 [syncSyncMode 初始化] 系统子事件模式，使用 parentEvent.subEventConfig.syncMode =', mode);
       } else {
@@ -1343,7 +1343,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         eventlogLength: currentEventlogJson.length,
         // 🔧 新增：子事件相关信息
         isParentMode,
-        isSystemChild: !isParentMode && EventService.isSubordinateEvent(updatedEvent),
+        isSystemChild: !isParentMode && isActivityTraceEvent(updatedEvent),
         parentEventId: formData.parentEventId,
         '子事件配置(subEventConfig)': formData.subEventConfig,
       });
@@ -1372,9 +1372,27 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
       // 原因：EventHub 可能缓存了 TimeCalendar 传入的临时对象
       const allEvents = await EventService.getAllEvents();
       const existingEvent = allEvents.find((e: Event) => e.id === eventId);
+
+      // SSOT: 数组字段默认保留 undefined；只有用户显式清空时才写入 []。
+      // 这里不改变 UX（UI 仍用 [] 作为空状态），只在持久化 payload 上做归一化。
+      const normalizeOptionalArray = <T,>(
+        next: T[] | undefined,
+        prev: T[] | undefined
+      ): T[] | undefined => {
+        if (!Array.isArray(next)) return next;
+        if (next.length > 0) return next;
+        // next=[] 且之前未设置 -> 视为未设置（undefined）
+        if (!Array.isArray(prev)) return undefined;
+        // 之前存在（包括 []） -> 允许写回 []（代表显式清空）
+        return next;
+      };
+
+      const prevSnapshot = (existingEvent as any) || (event as any);
+      (updatedEvent as any).tags = normalizeOptionalArray((updatedEvent as any).tags, prevSnapshot?.tags);
+      (updatedEvent as any).attendees = normalizeOptionalArray((updatedEvent as any).attendees, prevSnapshot?.attendees);
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
-      const isSystemChild = !isParentMode && EventService.isSubordinateEvent(updatedEvent);
+      const isSystemChild = !isParentMode && isActivityTraceEvent(updatedEvent);
       
       let result;
       
@@ -1529,7 +1547,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         
         // 🔧 批量更新父事件的所有系统子事件（保持一致性）
         // parentEvent 已在上面声明，直接使用
-        const allSiblings = await EventService.getSubordinateEvents(formData.parentEventId);
+        const allSiblings = await EventService.getActivityTraceEvents(formData.parentEventId);
         
         console.log('🔗 [EventEditModalV2] 批量更新所有兄弟系统子事件:', {
           parentId: formData.parentEventId,
@@ -1575,7 +1593,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
             // 1. 系统子事件（isTimer/isTimeLog/isOutsideApp）：不跟随父事件「计划安排」配置（由 subEventConfig/系统逻辑控制）
             // 2. 手动子事件 + 已自定义配置（hasCustomSyncConfig=true）：跳过更新
             // 3. 手动子事件 + 默认继承（hasCustomSyncConfig=false/undefined）：更新配置
-            const isSystemChild = EventService.isSubordinateEvent(childEvent);
+            const isSystemChild = isActivityTraceEvent(childEvent);
             const hasCustomConfig = childEvent.hasCustomSyncConfig === true;
             
             if (isSystemChild) {
@@ -1602,7 +1620,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
         // 🔧 关键架构修正：只有手动子事件才同步到父事件
         // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 不同步到父事件主配置
         // - 手动子事件: 同步计划字段到父事件
-        const isSystemChild = EventService.isSubordinateEvent(updatedEvent);
+        const isSystemChild = isActivityTraceEvent(updatedEvent);
         
         if (isSystemChild) {
           console.log('ℹ️ [EventEditModalV2] 系统子事件，跳过同步到父事件:', eventId);
@@ -1746,7 +1764,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
     }
 
     // 1. Timer 子事件 - 递归获取父事件的来源
-    if (EventService.isSubordinateEvent(evt) && evt.parentEventId) {
+    if (isActivityTraceEvent(evt) && evt.parentEventId) {
       const parentEvent = await EventService.getEventById(evt.parentEventId);
       if (parentEvent) {
         return getEventSourceInfo(parentEvent);
@@ -3652,7 +3670,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                     
                                     const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
-                                      if (EventService.isSubordinateEvent(childEvent)) {
+                                      if (isActivityTraceEvent(childEvent)) {
                                         await EventHub.updateFields(childEvent.id, {
                                           calendarIds: calendarIds,
                                         }, {
@@ -3771,7 +3789,7 @@ const EventEditModalV2Component: React.FC<EventEditModalV2Props> = ({
                                       
                                       const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
-                                        if (EventService.isSubordinateEvent(childEvent)) {
+                                        if (isActivityTraceEvent(childEvent)) {
                                           await EventHub.updateFields(childEvent.id, {
                                             calendarIds: allCalendarIds,
                                             syncMode: modeId,

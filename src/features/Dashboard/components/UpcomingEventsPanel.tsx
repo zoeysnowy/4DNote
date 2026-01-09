@@ -10,7 +10,7 @@ import {
 import { shouldShowCheckbox } from '@frontend/utils/eventHelpers';
 import { resolveCheckState } from '@frontend/utils/TimeResolver';
 import { EventService } from '@backend/EventService';
-import { shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
+import { isActivityTraceEvent, shouldShowInPlan, shouldShowInTimeCalendar } from '@frontend/utils/eventFacets';
 import { TagService } from '@backend/TagService';
 import { formatRelativeDate, formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
 import { formatTimeForStorage, parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
@@ -76,7 +76,7 @@ const UpcomingEventsPanel: React.FC<UpcomingEventsPanelProps> = ({
       if (!matchesInclusionCriteria) return false;
       
       // 2. 排除系统事件
-      if (EventService.isSubordinateEvent(event)) {
+      if (isActivityTraceEvent(event)) {
         return false;
       }
       

@@ -84,7 +84,7 @@ import data from '@emoji-mart/data';
 import { TagService } from '@backend/TagService';
 import { EventService } from '@backend/EventService';
 import { EventHub } from '@backend/EventHub';
-import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet, isActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { assertNamespacedEventSource, isLocalEventSource, sourceProviderOf } from '@frontend/utils/eventSourceSSOT';
 import { resolveEventlogOwnerId, shouldUseParentEventlog } from '@frontend/utils/EventlogResolver';
 import { ContactService } from '@backend/ContactService';
@@ -231,7 +231,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
   // 🔧 模式检测：判断是父事件模式还是子事件模式
   const isParentMode = !event?.parentEventId;
 
-  const isDerivedTimer = event ? (event.id.startsWith('timer-') || isSystemProgressSubEvent(event)) : false;
+  const isDerivedTimer = event ? (event.id.startsWith('timer-') || isActivityTraceEvent(event)) : false;
   
   console.log('🔍 [EventEditModalV2] 模式检测:', {
     isParentMode,
@@ -390,7 +390,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         id: event.id,
         title: titleText,
         tags: event.tags || [],
-        isTimer: event.id.startsWith('timer-') || isSystemProgressSubEvent(event),
+        isTimer: event.id.startsWith('timer-') || isActivityTraceEvent(event),
         parentEventId: event.parentEventId || null,
         linkedEventIds,
         backlinks,
@@ -569,7 +569,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       id: event.id,
       title: titleText,
       tags: event.tags || [],
-      isTimer: event.id.startsWith('timer-') || isSystemProgressSubEvent(event),
+      isTimer: event.id.startsWith('timer-') || isActivityTraceEvent(event),
       parentEventId: event.parentEventId || null,
       linkedEventIds,
       backlinks,
@@ -804,7 +804,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       // 🔧 子模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.calendarIds
       // - 手动子事件: 使用自己的 calendarIds（如果为空，则从 parent.calendarIds 继承）
-      if (event && EventService.isSubordinateEvent(event)) {
+      if (event && isActivityTraceEvent(event)) {
         return parentEvent?.subEventConfig?.calendarIds || parentEvent?.calendarIds || [];
       } else {
         // 手动子事件：优先使用自己的配置，如果为空则继承父配置
@@ -996,7 +996,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       // 🔧 子事件模式：区分系统子事件和手动子事件
       // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 读取父事件的 subEventConfig.syncMode
       // - 手动子事件: 使用自己的 syncMode（如果为空，则从 parent.syncMode 继承）
-      if (event && EventService.isSubordinateEvent(event)) {
+      if (event && isActivityTraceEvent(event)) {
         mode = parentEvent?.subEventConfig?.syncMode || parentEvent?.syncMode || 'bidirectional-private';
         console.log('🎬 [syncSyncMode 初始化] 系统子事件模式，使用 parentEvent.subEventConfig.syncMode =', mode);
       } else {
@@ -1418,7 +1418,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
       };
       
       // 🔧 提前计算 isSystemChild（用于后续逻辑，避免作用域问题）
-      const isSystemChild = !isParentMode && EventService.isSubordinateEvent(updatedEvent);
+      const isSystemChild = !isParentMode && isActivityTraceEvent(updatedEvent);
       
       let result;
       
@@ -1526,7 +1526,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         
         // 🔧 批量更新父事件的所有系统子事件（保持一致性）
         const parentEvent = await EventService.getEventById(formData.parentEventId);
-        const allSiblings = await EventService.getSubordinateEvents(formData.parentEventId);
+        const allSiblings = await EventService.getActivityTraceEvents(formData.parentEventId);
         
         console.log('🔗 [EventEditModalV2] 批量更新所有兄弟系统子事件:', {
           parentId: formData.parentEventId,
@@ -1572,7 +1572,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
             // 1. 系统子事件（isTimer/isTimeLog/isOutsideApp）：始终更新
             // 2. 手动子事件 + 已自定义配置（hasCustomSyncConfig=true）：跳过更新
             // 3. 手动子事件 + 默认继承（hasCustomSyncConfig=false/undefined）：更新配置
-            const isSystemChild = EventService.isSubordinateEvent(childEvent);
+            const isSystemChild = isActivityTraceEvent(childEvent);
             const hasCustomConfig = childEvent.hasCustomSyncConfig === true;
             
             if (isSystemChild) {
@@ -1605,7 +1605,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
         // 🔧 关键架构修正：只有手动子事件才同步到父事件
         // - 系统子事件 (isTimer/isTimeLog/isOutsideApp): 不同步到父事件主配置
         // - 手动子事件: 同步计划字段到父事件
-        const isSystemChild = EventService.isSubordinateEvent(updatedEvent);
+        const isSystemChild = isActivityTraceEvent(updatedEvent);
         
         if (isSystemChild) {
           console.log('ℹ️ [EventEditModalV2] 系统子事件，跳过同步到父事件:', eventId);
@@ -1749,7 +1749,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
     }
 
     // 1. Timer 子事件 - 递归获取父事件的来源
-    if (EventService.isSubordinateEvent(evt) && evt.parentEventId) {
+    if (isActivityTraceEvent(evt) && evt.parentEventId) {
       const parentEvent = await EventService.getEventById(evt.parentEventId);
       if (parentEvent) {
         return getEventSourceInfo(parentEvent);
@@ -3758,7 +3758,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                     
                                     const { EventHub } = await import('@backend/EventHub');
                                     for (const childEvent of childEvents) {
-                                      if (EventService.isSubordinateEvent(childEvent)) {
+                                      if (isActivityTraceEvent(childEvent)) {
                                         await EventHub.updateFields(childEvent.id, {
                                           calendarIds: calendarIds,
                                         }, {
@@ -3877,7 +3877,7 @@ const LogTabComponent: React.FC<LogTabProps> = ({
                                       
                                       const { EventHub } = await import('@backend/EventHub');
                                       for (const childEvent of childEvents) {
-                                        if (EventService.isSubordinateEvent(childEvent)) {
+                                        if (isActivityTraceEvent(childEvent)) {
                                           await EventHub.updateFields(childEvent.id, {
                                             calendarIds: allCalendarIds,
                                             syncMode: modeId,

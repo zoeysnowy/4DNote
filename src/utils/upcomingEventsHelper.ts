@@ -1,5 +1,5 @@
 import { Event } from '@frontend/types';
-import { isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { isActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { TagService } from '@backend/TagService';
 import { parseLocalTimeStringOrNull } from './timeUtils';
 
@@ -181,7 +181,7 @@ export function filterAndSortEvents(
     }
     
     // 步骤3：排除系统性子事件/轨迹事件
-    if (isSystemProgressSubEvent(event)) {
+    if (isActivityTraceEvent(event)) {
       console.log('🚫 [Panel] 过滤系统事件:', event.title?.simpleTitle || '', {
         checkType: event.checkType,
         source: event.source,

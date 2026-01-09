@@ -33,7 +33,7 @@ import { useEventHubSnapshot } from '@frontend/hooks/useEventHubSnapshot';
 import type { Event } from '@frontend/types';
 import './TimeLog.css';
 import { resolveTimelineAnchor } from '@frontend/utils/TimeResolver';
-import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { isActivityTraceEvent, shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 
 // 导入图标
 import ExportIconSvg from '@frontend/assets/icons/export.svg';
@@ -1050,7 +1050,7 @@ const TimeLog: React.FC<TimeLogProps> = ({ isPanelVisible = true, onPanelVisibil
 
     const isTimelineEvent = (event: Event): boolean => {
       // Keep consistent with EventService.getTimelineEvents
-      if (EventService.isSubordinateEvent(event)) {
+      if (isActivityTraceEvent(event)) {
         return false;
       }
 

@@ -91,25 +91,13 @@ export function getCreationSource(event: Event): string {
 }
 
 /**
- * 判断事件是否为“系统性子事件 / 实际进展链路事件”
+ * 判断事件是否为“Activity Trace / 实际进展链路事件”（系统生成，无独立计划状态）
  * @param event - 事件对象
  * @returns 是否为系统链路控制的子事件（例如 Timer / TimeLog / OutsideApp）
- * 
- * 说明：
- * - 这是一条“硬口径”，用于统一替代散落的 isTimer/isTimeLog/isOutsideApp 判定分支。
- * - Timer 子事件：优先用 timerSessionId（审计字段，Timer 系统写入）。
- * - 兼容：旧数据通过 source 迁移/读时升级，最终不再依赖 isTimer/isTimeLog/isOutsideApp。
  */
-export function isSystemProgressSubEvent(event: Event): boolean {
+export function isActivityTraceEvent(event: Event): boolean {
   if (event.timerSessionId) return true;
   if (getCreationSource(event) === 'local:timelog') return true;
 
   return false;
-}
-
-/**
- * @deprecated 请使用 isSystemProgressSubEvent
- */
-export function isSubordinateEvent(event: Event): boolean {
-  return isSystemProgressSubEvent(event);
 }

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import type { Event } from '@frontend/types';
 import type { MockEvent } from '@frontend/features/Event/components/EventEditModal/types';
-import { hasTaskFacet, isSystemProgressSubEvent } from '@frontend/utils/eventFacets';
+import { hasTaskFacet, isActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { isLocalEventSource } from '@frontend/utils/eventSourceSSOT';
 
 type LocationDisplayFn = (location: unknown) => string;
@@ -43,7 +43,7 @@ export function useEventEditDraft({
       const linkedEventIds = (event as any).linkedEventIds || [];
       const backlinks = (event as any).backlinks || [];
 
-      const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+      const isDerivedTimer = event.id.startsWith('timer-') || isActivityTraceEvent(event);
 
       return {
         id: event.id,
@@ -147,7 +147,7 @@ export function useEventEditDraft({
     const linkedEventIds = (event as any).linkedEventIds || [];
     const backlinks = (event as any).backlinks || [];
 
-    const isDerivedTimer = event.id.startsWith('timer-') || isSystemProgressSubEvent(event);
+    const isDerivedTimer = event.id.startsWith('timer-') || isActivityTraceEvent(event);
 
     setFormData({
       id: event.id,

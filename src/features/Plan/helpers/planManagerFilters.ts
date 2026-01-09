@@ -8,10 +8,9 @@
  */
 
 import type { Event } from '@frontend/types';
-import { EventService } from '@backend/EventService';
 import { resolveCalendarDateRange } from '@frontend/utils/TimeResolver';
 import { parseLocalTimeStringOrNull } from '@frontend/utils/timeUtils';
-import { shouldShowInPlan } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, isActivityTraceEvent } from '@frontend/utils/eventFacets';
 
 /**
  * 检查事件是否应该显示在PlanManager中
@@ -33,7 +32,7 @@ export function shouldShowInPlanManager(
   if (!matchesInclusionCriteria) return false;
 
   // 步骤2: 排除系统事件
-  if (EventService.isSubordinateEvent(event)) return false;
+  if (isActivityTraceEvent(event)) return false;
 
   // 步骤3: 过期/完成处理
   if (options.mode === 'normal') {

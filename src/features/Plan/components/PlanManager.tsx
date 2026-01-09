@@ -8,7 +8,7 @@ import type { Event } from '@frontend/types';
 import { PlanSlate } from '@frontend/components/PlanSlate/PlanSlate';
 import { insertTag, insertEmoji, insertDateMention, insertEventMention, applyTextFormat, extractTagsFromLine } from '@frontend/components/PlanSlate/helpers';
 import { StatusLineContainer, StatusLineSegment } from '@frontend/components/shared/StatusLineContainer';
-import { shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { isActivityTraceEvent, shouldShowInPlan, hasTaskFacet } from '@frontend/utils/eventFacets';
 import { useFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/useFloatingToolbar';
 import { HeadlessFloatingToolbar } from '@frontend/components/shared/FloatingToolbar/HeadlessFloatingToolbar';
 import { ToolbarConfig } from '@frontend/components/shared/FloatingToolbar/types';
@@ -626,7 +626,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       if (!matchesInclusionCriteria) return false;
       
       // 步骤 2: 排除系统事件
-      if (EventService.isSubordinateEvent(event)) return false;
+      if (isActivityTraceEvent(event)) return false;
       
       // 步骤 2.5: 过滤空白事件
       const titleObj = event.title;
@@ -1824,7 +1824,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         }
         
         // 🎯 步骤 3: 系统事件过滤（使用 EventService 辅助方法）
-        if (log.before && log.before.id && EventService.isSubordinateEvent(log.before as Event)) {
+        if (log.before && log.before.id && isActivityTraceEvent(log.before as Event)) {
           console.log('[PlanManager] ⏭️ 跳过系统事件 ghost:', log.eventId.slice(-8));
           return;
         }

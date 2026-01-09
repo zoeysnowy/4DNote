@@ -19,7 +19,7 @@ import { validateEventTime } from '@frontend/utils/eventValidation';
 import { canonicalizeExternalIdOrUndefined } from '@frontend/utils/externalIdSSOT';
 
 import { ContactService } from '@backend/ContactService';
-import { shouldShowInPlan, hasTaskFacet, isLegacyActivityTraceEvent } from '@frontend/utils/eventFacets';
+import { shouldShowInPlan, hasTaskFacet, isActivityTraceEvent } from '@frontend/utils/eventFacets';
 import { EventHistoryService } from '@backend/EventHistoryService'; // 🆕 事件历史记录
 import { jsonToSlateNodes, slateNodesToHtml } from '@frontend/components/ModalSlate/serialization'; // 🆕 Slate 转换
 import { generateEventId, isValidId } from '@frontend/utils/idGenerator'; // 🆕 UUID ID 生成
@@ -501,7 +501,7 @@ export class EventService {
         // 1. 排除附属事件（系统生成的事件）
         // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
         // Behavioral filtering must use SSOT-derived signals.
-        if (event.id?.startsWith('timer-') || isLegacyActivityTraceEvent(event)) {
+        if (event.id?.startsWith('timer-') || isActivityTraceEvent(event)) {
           // eventLogger.log('🔽 [EventService] 过滤附属事件:', {
           //   id: event.id,
           //   title: typeof event.title === 'object' ? event.title.simpleTitle : event.title,
@@ -659,6 +659,15 @@ export class EventService {
   ): Promise<{ success: boolean; event?: Event; error?: string }> {
     try {
       eventLogger.log('🆕 [EventService] Creating new event:', event.id);
+
+      // SSOT: 数组字段默认应保留 undefined；避免 UI 默认 [] 注入到持久化层。
+      // 这里保持行为保守：仅处理 Context 数组（tags/attendees），不触碰 sync-intent 数组（calendarIds/todoListIds）。
+      if (Array.isArray((event as any).tags) && (event as any).tags.length === 0) {
+        (event as any).tags = undefined;
+      }
+      if (Array.isArray((event as any).attendees) && (event as any).attendees.length === 0) {
+        (event as any).attendees = undefined;
+      }
 
       // ✅ v1.8: 验证时间字段（区分 Task 和 Calendar 事件）
       const validation = validateEventTime(event);
@@ -1147,6 +1156,18 @@ export class EventService {
       // 🔧 v2.9: 但对于时间字段，允许显式设为 undefined 以清除
       // 🔧 v2.17.2: 保护本地专属字段，防止被远程同步覆盖
       const filteredUpdates: Partial<Event> = {};
+
+      // SSOT: 数组字段默认应保留 undefined；避免把 UI 默认 [] 当作真实变更写入。
+      // 规则：如果原值为 undefined，而传入值为 []，则视为“未设置”并删除该字段。
+      // 保守策略：仅处理 tags/attendees（Context），避免影响 calendarIds/todoListIds 的同步意图语义。
+      (['tags', 'attendees'] as const).forEach((k) => {
+        if (!Object.prototype.hasOwnProperty.call(updatesWithSync, k)) return;
+        const next = (updatesWithSync as any)[k];
+        const prev = (originalEvent as any)[k];
+        if (Array.isArray(next) && next.length === 0 && prev === undefined) {
+          delete (updatesWithSync as any)[k];
+        }
+      });
       
       // 🛡️ 定义本地专属字段列表（不应被远程同步覆盖）
       const localOnlyFields = new Set([
@@ -3402,7 +3423,7 @@ export class EventService {
     let syncStartTime = event.startTime;
     let syncEndTime = event.endTime;
 
-    const isTimeLogEvent = isLegacyActivityTraceEvent({ ...(event as any), source: finalSource } as Event);
+    const isTimeLogEvent = isActivityTraceEvent({ ...(event as any), source: finalSource } as Event);
     const hasAnyTime = !!event.startTime || !!event.endTime;
 
     // Field contract: treat Plan/Task-like as time-optional and never inject defaults.
@@ -5736,9 +5757,9 @@ export class EventService {
    */
   static getEventType(event: Event): string {
     // Legacy flags (isTimer/isTimeLog/isOutsideApp) are compatibility-only.
-    // Canonical rule: system progress/subordinate is derived from timerSessionId or source='local:timelog'.
+    // Canonical rule: activity trace is derived from timerSessionId or source='local:timelog'.
     if (event.id?.startsWith('timer-')) return 'Timer';
-    if (isLegacyActivityTraceEvent(event)) return 'LegacyActivityTrace';
+    if (isActivityTraceEvent(event)) return 'LegacyActivityTrace';
     if (shouldShowInPlan(event)) return 'UserSubTask';
     return 'Event';
   }
@@ -5836,17 +5857,10 @@ export class EventService {
   }
 
   /**
-   * 判断是否为附属事件（系统自动生成，无独立 Plan 状态）
-   */
-  static isLegacyActivityTraceEvent(event: Event): boolean {
-    return isLegacyActivityTraceEvent(event);
-  }
-
-  /**
    * 判断是否为用户子事件（用户主动创建，有完整 Plan 状态）
    */
   static isUserSubEvent(event: Event): boolean {
-    return !!(shouldShowInPlan(event) && event.parentEventId && !this.isLegacyActivityTraceEvent(event));
+    return !!(shouldShowInPlan(event) && event.parentEventId && !isActivityTraceEvent(event));
   }
 
   /**
@@ -5885,9 +5899,9 @@ export class EventService {
   /**
    * 获取附属事件（Timer/TimeLog/OutsideApp）
    */
-  static async getLegacyActivityTraceEvents(parentId: string): Promise<Event[]> {
+  static async getActivityTraceEvents(parentId: string): Promise<Event[]> {
     const children = await this.getChildEvents(parentId);
-    return children.filter(e => this.isLegacyActivityTraceEvent(e));
+    return children.filter(e => isActivityTraceEvent(e));
   }
 
   /**
@@ -6046,7 +6060,7 @@ export class EventService {
    * 计算事件总时长（包括所有附属事件的实际时长）
    */
   static async getTotalDuration(parentId: string): Promise<number> {
-    const children = await this.getLegacyActivityTraceEvents(parentId);
+    const children = await this.getActivityTraceEvents(parentId);
     return children.reduce((sum, child) => {
       if (child.startTime && child.endTime) {
         const start = new Date(child.startTime).getTime();
@@ -6365,7 +6379,7 @@ export class EventService {
    */
   static shouldShowInEventTree(event: Event): boolean {
     // 排除系统性子事件/轨迹事件
-    if (isLegacyActivityTraceEvent(event)) return false;
+    if (isActivityTraceEvent(event)) return false;
     
     // 显示所有用户创建的事件
     return true; // Task、文档、Plan 事件、TimeCalendar 事件等
