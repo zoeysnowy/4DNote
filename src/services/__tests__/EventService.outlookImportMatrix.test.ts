@@ -11,6 +11,11 @@ function extractParagraphTexts(slateJson: string): string[] {
     .filter(Boolean);
 }
 
+function extractParagraphNodes(slateJson: string): any[] {
+  const nodes = JSON.parse(slateJson) as any[];
+  return nodes.filter(n => n && n.type === 'paragraph');
+}
+
 describe('EventService - Outlook import matrix', () => {
   it('does not emit per-block meta nodes for effectively empty content', () => {
     const now = 1735689600000;
@@ -44,6 +49,45 @@ describe('EventService - Outlook import matrix', () => {
     expect(meta.id).toBe(event.id);
     expect(Array.isArray(meta.slate?.nodes)).toBe(true);
     expect(meta.slate.nodes).toEqual([]);
+  });
+
+  it('does not emit visible block timestamp prefix text in serialized HTML', () => {
+    const ts = 1735689600000;
+    const event: any = {
+      id: '00000000-0000-0000-0000-000000000041',
+      source: 'local:test',
+      createdAt: '2026-01-01 00:00:00',
+      updatedAt: '2026-01-01 00:00:00',
+      description: 'Hello',
+      eventlog: {
+        slateJson: JSON.stringify([
+          {
+            type: 'paragraph',
+            id: '00000000-0000-0000-0000-000000000042',
+            createdAt: ts,
+            updatedAt: ts,
+            children: [{ text: 'Hello' }]
+          }
+        ])
+      }
+    };
+
+    const html = (EventService as any).serializeEventDescription(event) as string;
+    // Should not leak any YYYY-MM-DD HH:mm:ss style timestamps into visible HTML text.
+    expect(html).not.toMatch(/\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}/);
+    // Should carry timestamps in data attributes for roundtrip.
+    expect(html).toMatch(/data-4d-ts="\d+"/);
+  });
+
+  it('restores paragraph.createdAt from data-4d-ts when importing HTML', () => {
+    const ts = 1735689600000;
+    const html = `<html><body><p data-4d-ts="${ts}">Hello</p></body></html>`;
+    const slateJson = (EventService as any).htmlToSlateJsonWithRecognition(html) as string;
+    const paragraphs = extractParagraphNodes(slateJson);
+
+    expect(paragraphs.length).toBeGreaterThan(0);
+    expect(paragraphs[0].createdAt).toBe(ts);
+    expect(extractParagraphTexts(slateJson)).toContain('Hello');
   });
 
   it('keeps all .PlainText div lines (multiple divs)', () => {

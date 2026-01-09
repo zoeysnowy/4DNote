@@ -4762,7 +4762,35 @@ export class EventService {
       }
       
       // 2. 块级元素：段落、列表等
+      if (element.tagName === 'DIV') {
+        // Many Outlook/Word HTML structures use DIV as containers.
+        // Only treat a DIV as a paragraph when it is effectively a "PlainText line".
+        const className = (element.getAttribute('class') || '').toLowerCase();
+        const isPlainTextDiv = className.includes('plaintext');
+        const hasBlockLevelChild = Array.from(element.childNodes).some(child => {
+          if (child.nodeType !== Node.ELEMENT_NODE) return false;
+          const tag = (child as HTMLElement).tagName;
+          return ['DIV', 'P', 'UL', 'OL', 'LI', 'TABLE', 'TR', 'TD', 'H1', 'H2', 'H3'].includes(tag);
+        });
+
+        if (!isPlainTextDiv && hasBlockLevelChild) {
+          element.childNodes.forEach(child => this.parseHtmlNode(child, slateNodes));
+          return;
+        }
+      }
+
       if (element.tagName === 'P' || element.tagName === 'DIV') {
+        const blockTs = (() => {
+          const tsRaw = element.getAttribute('data-4d-ts');
+          const utRaw = element.getAttribute('data-4d-ut');
+          const ts = tsRaw !== null ? Number(tsRaw) : NaN;
+          const ut = utRaw !== null ? Number(utRaw) : NaN;
+          return {
+            ...(Number.isFinite(ts) ? { createdAt: ts } : {}),
+            ...(Number.isFinite(ut) ? { updatedAt: ut } : {})
+          };
+        })();
+
         // 🔧 检查是否包含 <br> 标签，如果有则按 <br> 分割成多个段落
         const hasBr = Array.from(element.childNodes).some(
           child => child.nodeType === Node.ELEMENT_NODE && (child as HTMLElement).tagName === 'BR'
@@ -4778,7 +4806,8 @@ export class EventService {
               if (currentParagraphChildren.length > 0) {
                 slateNodes.push({
                   type: 'paragraph',
-                  children: currentParagraphChildren
+                  children: currentParagraphChildren,
+                  ...blockTs
                 });
                 currentParagraphChildren = [];
               }
@@ -4792,7 +4821,8 @@ export class EventService {
           if (currentParagraphChildren.length > 0) {
             slateNodes.push({
               type: 'paragraph',
-              children: currentParagraphChildren
+              children: currentParagraphChildren,
+              ...blockTs
             });
           }
         } else {
@@ -4809,7 +4839,8 @@ export class EventService {
             
             const paragraphNode: any = {
               type: 'paragraph',
-              children: paragraphChildren
+              children: paragraphChildren,
+              ...blockTs
             };
             
             if (bullet && bulletLevel !== null) {

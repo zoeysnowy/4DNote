@@ -152,44 +152,38 @@ export function slateNodesToHtml(
           case 'paragraph':
             const text = extractTextFromNode(node);
             const paraNode = node as any;
-            
-            // 🆕 [v2.21.0] 条件保留 Block-Level Timestamp（格式：YYYY-MM-DD HH:mm:ss）
-            // ✅ 本地 description: includeTimestamps=false → 不包含时间戳（避免与签名重复）
-            // ✅ Outlook 同步: includeTimestamps=true → 包含时间戳（供往返解析）
-            let timestampPrefix = '';
-            if (includeTimestamps && paraNode.createdAt) {
-              const timestampMs = typeof paraNode.createdAt === 'number'
-                ? paraNode.createdAt
-                : (parseLocalTimeStringOrNull(paraNode.createdAt)?.getTime() ?? NaN);
 
-              const date = Number.isNaN(timestampMs)
-                ? new Date(paraNode.createdAt)
-                : new Date(timestampMs);
-
-              if (!Number.isNaN(date.getTime())) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-                const seconds = String(date.getSeconds()).padStart(2, '0');
-                timestampPrefix = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}\n`;
+            // Block-Level Timestamp roundtrip:
+            // - includeTimestamps=false: local description (no extra attrs)
+            // - includeTimestamps=true: Outlook sync (attach timestamps as data attributes; never visible text)
+            const tsAttrs: string[] = [];
+            const toTimestampMs = (value: any): number | null => {
+              if (typeof value === 'number' && Number.isFinite(value)) return value;
+              if (typeof value === 'string') {
+                const parsedLocal = parseLocalTimeStringOrNull(value);
+                if (parsedLocal) return parsedLocal.getTime();
+                const ms = Date.parse(value);
+                if (!Number.isNaN(ms)) return ms;
               }
+              return null;
+            };
+
+            if (includeTimestamps) {
+              const ts = toTimestampMs(paraNode.createdAt);
+              const ut = toTimestampMs(paraNode.updatedAt);
+              if (ts !== null) tsAttrs.push(`data-4d-ts="${ts}"`);
+              if (ut !== null) tsAttrs.push(`data-4d-ut="${ut}"`);
             }
             
             // 🆕 保留 bullet 属性
             if (paraNode.bullet && paraNode.bulletLevel !== undefined) {
-              const attrs = `data-bullet="true" data-bullet-level="${paraNode.bulletLevel}"`;
-              return `<p ${attrs}>${timestampPrefix}${text}</p>`;
+              const attrs = [`data-bullet="true"`, `data-bullet-level="${paraNode.bulletLevel}"`, ...tsAttrs].join(' ');
+              return text ? `<p ${attrs}>${text}</p>` : '';
             }
-            
-            // 普通段落：如果有 timestamp，单独成行；如果有文本，添加段落
-            if (timestampPrefix && text) {
-              return `${timestampPrefix}${text}`;
-            } else if (timestampPrefix) {
-              return timestampPrefix.trim(); // 只有时间戳，去掉末尾换行
-            } else if (text) {
-              return `<p>${text}</p>`;
+
+            const attrs = tsAttrs.join(' ');
+            if (text) {
+              return attrs ? `<p ${attrs}>${text}</p>` : `<p>${text}</p>`;
             }
             return '';
           
