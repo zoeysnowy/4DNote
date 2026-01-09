@@ -42,4 +42,17 @@ describe('EventService - Outlook PlainText HTML import', () => {
     // Signature line should be cleaned by cleanupOutlookHtml.
     expect(texts.some(t => t.includes('由') && t.includes('创建于'))).toBe(false);
   });
+
+  it('plain text normalization should not treat punctuation as line breaks', () => {
+    const text = '第一句，第二句。第三句、第四句';
+    const eventlog = (EventService as any).normalizeEventLog(text) as { slateJson: string };
+    const nodes = JSON.parse(eventlog.slateJson) as any[];
+    const paragraphs = nodes.filter(n => n && n.type === 'paragraph');
+    const texts = paragraphs
+      .map(p => (Array.isArray(p.children) ? p.children.map((c: any) => c?.text ?? '').join('') : ''))
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    expect(texts).toEqual([text]);
+  });
 });
