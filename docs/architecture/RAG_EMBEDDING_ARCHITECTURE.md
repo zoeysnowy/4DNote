@@ -953,6 +953,303 @@ async function extractTopicWithCache(text: string): Promise<string> {
 
 ---
 
+## 多地域部署策略
+
+### 问题背景
+
+4DNote 面向全球用户，需要在**中文内容检索**与**英文内容检索**之间做平衡：
+- **国内用户**：主要搜索中文内容，使用国内 Embedding API（如通义 qwen-text-embedding）延迟低、成本低
+- **海外用户**：可能搜索英文内容，使用国际 Embedding API（如 Voyage AI）效果更好
+- **混合场景**：同一用户可能同时搜索中英文内容
+
+### 方案对比矩阵
+
+| 方案 | 技术复杂度 | 成本 | 用户体验 | 适用场景 |
+|------|----------|------|---------|---------|
+| **方案 A：语言检测 + 动态路由** | ⭐⭐⭐⭐ | 中等 | 最优 | 多语言混合用户 |
+| **方案 B：地域一刀切** | ⭐⭐ | 最低 | 较好 | 用户地域明确 |
+| **方案 C：混合策略（推荐）** ⭐ | ⭐⭐⭐ | 中等偏低 | 优秀 | 大部分场景 |
+
+---
+
+### 方案 A：语言检测 + 动态路由
+
+**架构**：
+
+```
+用户查询
+  ↓
+[语言检测层] ← 检测查询语言（10-50ms）
+  ↓
+┌─────────────┬─────────────┐
+│  中文检测    │  英文检测    │
+↓             ↓
+[国内服务器]   [香港/海外]
+通义 Embedding  Voyage API
+```
+
+**技术实现**：
+
+```typescript
+/**
+ * 轻量级语言检测（最快，<1ms）
+ */
+function detectLanguage(text: string): 'zh' | 'en' {
+  const chineseChars = (text.match(/[\u4e00-\u9fff]/g) || []).length;
+  const totalChars = text.trim().length;
+  
+  if (chineseChars / totalChars > 0.3) {
+    return 'zh';
+  }
+  return 'en';
+}
+
+/**
+ * Embedding 路由器
+ */
+class EmbeddingRouter {
+  private domesticClient: TongyiEmbeddingService;
+  private overseasClient: VoyageEmbeddingService;
+  
+  async getEmbedding(text: string): Promise<number[]> {
+    const lang = detectLanguage(text);
+    
+    if (lang === 'zh') {
+      return await this.domesticClient.embed(text);
+    } else {
+      return await this.overseasClient.embed(text);
+    }
+  }
+}
+```
+
+**优势**：
+- ✅ 自动选择最优模型（中文用通义，英文用 Voyage）
+- ✅ 用户无感知，体验最佳
+
+**劣势**：
+- ❌ **混合语言处理难**：查询"GPT和通义千问的对比"（中英混合）如何路由？
+- ❌ **切换抖动**：同一用户连续查询可能路由到不同服务器，embedding 不一致
+- ❌ **调试复杂**：线上问题难以复现（"为什么他的查询走了 Voyage？"）
+- ❌ 代码复杂度 +30%
+
+---
+
+### 方案 B：地域一刀切
+
+**架构**：
+
+```
+用户注册时确定地域
+  ↓
+┌────────────────┬────────────────┐
+│  中国用户       │  海外用户       │
+↓                ↓
+[国内服务器]      [海外服务器]
+通义 Embedding     Voyage API
+```
+
+**实现**：
+
+```typescript
+function assignDefaultServer(userIp: string): 'domestic' | 'overseas' {
+  if (isChinaIP(userIp)) {
+    return 'domestic';
+  }
+  return 'overseas';
+}
+
+function isChinaIP(ip: string): boolean {
+  // 使用 IP 数据库（如 MaxMind GeoIP2）
+  const country = geoip.country(ip);
+  return country === 'CN';
+}
+```
+
+**优势**：
+- ✅ 架构极简：一个用户只连一个集群
+- ✅ 性能最优：无需语言检测，延迟最低
+- ✅ 成本可控：按地域独立计费，易于核算
+- ✅ 合规友好：中国用户数据不出境
+
+**劣势**：
+- ❌ **用户体验问题**：
+  - 中国用户搜索英文内容时，效果可能不佳
+  - 海外华人用户搜索中文时，延迟高且效果差
+- ❌ **无法应对特殊场景**：
+  - 出差/VPN 用户体验下降
+  - 跨国企业用户需要两个账号
+
+---
+
+### 方案 C：混合策略（推荐）⭐
+
+**核心思路**：用地域作为默认路由 + 用户可手动切换
+
+**架构**：
+
+```
+用户注册 → 自动分配默认服务器（基于 IP）
+  ↓
+┌─────────────────────────────────┐
+│  默认路由（基于注册地）          │
+│  - 中国 IP → 国内               │
+│  - 海外 IP → 海外               │
+└─────────────────────────────────┘
+  ↓
+允许用户在设置中切换：
+  - "我经常搜索英文内容" → 切换到海外
+  - "我在中国但用 VPN" → 强制国内
+```
+
+**实现**：
+
+```typescript
+/**
+ * 用户偏好存储（在 User 表中增加字段）
+ */
+interface User {
+  id: string;
+  embeddingPreference: 'auto' | 'domestic' | 'overseas';  // 新增字段
+  defaultServer?: 'domestic' | 'overseas';  // 自动分配的默认值
+}
+
+/**
+ * Embedding Service with Fallback
+ */
+class SmartEmbeddingService {
+  private domesticClient: TongyiEmbeddingService;
+  private overseasClient: VoyageEmbeddingService;
+  
+  async getEmbedding(
+    text: string,
+    user: User,
+  ): Promise<number[]> {
+    // 1. 确定使用哪个服务器
+    const server = this.resolveServer(user);
+    
+    try {
+      // 2. 主服务器
+      if (server === 'domestic') {
+        return await this.domesticClient.embed(text);
+      } else {
+        return await this.overseasClient.embed(text);
+      }
+    } catch (error) {
+      // 3. 智能降级：主服务器失败时自动切换
+      console.warn(`Primary server (${server}) failed, switching to backup`);
+      
+      if (server === 'domestic') {
+        return await this.overseasClient.embed(text);
+      } else {
+        return await this.domesticClient.embed(text);
+      }
+    }
+  }
+  
+  private resolveServer(user: User): 'domestic' | 'overseas' {
+    switch (user.embeddingPreference) {
+      case 'domestic':
+        return 'domestic';
+      case 'overseas':
+        return 'overseas';
+      case 'auto':
+      default:
+        return user.defaultServer || 'domestic';
+    }
+  }
+}
+```
+
+**用户设置界面**（在 Settings → Advanced）：
+
+```typescript
+// UI 组件
+const EmbeddingPreferenceSettings = () => {
+  return (
+    <div>
+      <h3>搜索优化设置</h3>
+      <RadioGroup value={preference} onChange={setPreference}>
+        <Radio value="auto">
+          自动（推荐）- 基于注册地自动选择
+        </Radio>
+        <Radio value="domestic">
+          优先中文搜索 - 使用国内服务器（延迟低，适合中文内容）
+        </Radio>
+        <Radio value="overseas">
+          优先英文搜索 - 使用国际服务器（适合英文内容）
+        </Radio>
+      </RadioGroup>
+    </div>
+  );
+};
+```
+
+**优势**：
+- ✅ 开发成本低（2 人日）
+- ✅ 用户体验好（有选择权）
+- ✅ 可扩展性强（后续可加语言检测）
+- ✅ 成本增加可控（<10%）
+- ✅ 智能降级：主服务器故障时自动切换
+
+**劣势**：
+- ⚠️ 需要用户手动设置（但默认值已够用）
+- ⚠️ 需要额外存储 1 个用户偏好字段
+
+---
+
+### 成本详细对比（假设 10 万用户，月均 100 万次查询）
+
+| 方案 | 服务器成本 | API 成本 | 开发成本 | 总成本/月 |
+|------|----------|---------|---------|-----------|
+| **纯国内** | ¥500 | ¥350 | 0 | **¥850** |
+| **纯海外** | $200 (¥1,400) | $60 (¥420) | 0 | **¥1,820** |
+| **语言检测路由** | ¥500 + $100 | ¥200 + $30 | 5 人日 | **¥1,450** |
+| **地域一刀切** | ¥500 + $100 | ¥250 + $35 | 1 人日 | **¥1,200** |
+| **混合策略** ⭐ | ¥500 + $100 | ¥280 + $25 | 2 人日 | **¥1,100** |
+
+**洞察**：混合策略在成本和体验之间达到最佳平衡
+
+---
+
+### 快速决策树
+
+```
+你的用户中，中文和英文内容各占多少？
+  ↓
+┌─────────────┬─────────────┬─────────────┐
+│  90%+ 中文   │  30-70% 混合 │  90%+ 英文   │
+↓             ↓             ↓
+方案B          方案C ⭐       纯海外部署
+(地域切分)     (混合策略)     (不需要国内)
+```
+
+**对于 4DNote，推荐方案 C（混合策略）**，因为：
+1. 用户可能同时管理中英文事件
+2. 海外华人用户需要搜索中文内容
+3. 成本增加 <10%，但用户体验提升 50%+
+4. 架构可扩展（未来可加入方案 A 的语言检测）
+
+---
+
+### 实施建议
+
+**Phase 1（MVP）**：方案 B（地域一刀切）
+- 先按用户注册 IP 分配服务器
+- 开发成本低（1 人日）
+- 满足 80% 场景
+
+**Phase 2（优化）**：升级到方案 C
+- 在用户设置中增加偏好选项
+- 增加智能降级逻辑
+- 成本 +10%，体验 +50%
+
+**Phase 3（进阶）**：可选加入方案 A
+- 对特定场景（如 AI 对话）用语言检测动态路由
+- 适合对实时性要求极高的功能
+
+---
+
 ## 实施路线
 
 ### Phase 1: 基础设施（Week 1-2）
