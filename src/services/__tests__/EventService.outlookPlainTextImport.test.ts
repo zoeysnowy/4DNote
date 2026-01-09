@@ -55,4 +55,26 @@ describe('EventService - Outlook PlainText HTML import', () => {
 
     expect(texts).toEqual([text]);
   });
+
+  it('drops stacked timestamp-only lines in PlainText pollution', () => {
+    const outlookHtml = `
+<html>
+<body>
+<div class="PlainText">2026-01-08 01:00:30</div>
+<div class="PlainText">2025-12-29 20:16:08</div>
+<div class="PlainText">健身：深蹲</div>
+<div class="PlainText">2026-01-02 15:00:00</div>
+</body>
+</html>`;
+
+    const slateJson = (EventService as any).htmlToSlateJsonWithRecognition(outlookHtml) as string;
+    const nodes = JSON.parse(slateJson) as any[];
+    const paragraphs = nodes.filter(n => n && n.type === 'paragraph');
+    const texts = paragraphs
+      .map(p => (Array.isArray(p.children) ? p.children.map((c: any) => c?.text ?? '').join('') : ''))
+      .map(t => t.trim())
+      .filter(Boolean);
+
+    expect(texts).toEqual(['健身：深蹲']);
+  });
 });

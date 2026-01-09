@@ -4734,9 +4734,22 @@ export class EventService {
     if (node.nodeType === Node.TEXT_NODE) {
       let text = node.textContent || '';
 
+      const parentEl = node.parentNode && (node.parentNode as any).nodeType === Node.ELEMENT_NODE
+        ? (node.parentNode as HTMLElement)
+        : null;
+      const parentClass = (parentEl?.getAttribute?.('class') || '').toLowerCase();
+      const isInPlainTextBlock = parentClass.includes('plaintext');
+
       // Prevent Block-Level Timestamp prefixes from becoming visible paragraph content.
       // Format: YYYY-MM-DD HH:mm:ss\n...
       text = text.replace(/^(\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*\n)+/g, '');
+
+      // Legacy pollution cleanup: when timestamps were emitted as visible text into Outlook,
+      // they can stack as standalone lines. Drop timestamp-only lines.
+      // (Seconds are required to keep the rule conservative.)
+      if (/^\s*\d{4}[-\/]\d{1,2}[-\/]\d{1,2}\s+\d{2}:\d{2}:\d{2}\s*$/.test(text)) {
+        return;
+      }
       if (text.trim()) {
         // Prevent hidden 4DNote meta Base64 payload from becoming visible text.
         if (this.is4DNoteMetaBase64Text(text)) return;
@@ -5022,8 +5035,8 @@ export class EventService {
     // DateMention 模式1: "11/29 10:00" or "11/29 10:00 - 12:00"
     const pattern1 = /(\d{1,2}\/\d{1,2}\s+\d{1,2}:\d{2}(?:\s*-\s*\d{1,2}:\d{2})?)/g;
     
-    // DateMention 模式2: "2025-11-29 10:00" or "2025-11-29 10:00 - 12:00"
-    const pattern2 = /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?:\s*-\s*\d{2}:\d{2})?)/g;
+    // DateMention 模式2: "2025-11-29 10:00" / "2025-11-29 10:00:30" / ranges
+    const pattern2 = /(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}(?::\d{2})?(?:\s*-\s*\d{2}:\d{2}(?::\d{2})?)?)/g;
     
     // DateMention 模式3: "今天下午3点" or "明天上午9点"
     const pattern3 = /(今天|明天|后天|下周[一二三四五六日])(?:\s*(上午|下午|晚上))?(?:\s*(\d{1,2})点)?/g;
@@ -5083,16 +5096,16 @@ export class EventService {
       return formatTimeForStorage(date);
     }
     
-    // 模式2: "2025-11-29 10:00"
-    const pattern2Match = dateText.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+    // 模式2: "2025-11-29 10:00" (optional :ss)
+    const pattern2Match = dateText.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
     if (pattern2Match) {
       const year = parseInt(pattern2Match[1], 10);
       const month = parseInt(pattern2Match[2], 10) - 1;
       const day = parseInt(pattern2Match[3], 10);
       const hour = parseInt(pattern2Match[4], 10);
       const minute = parseInt(pattern2Match[5], 10);
-      
-      const date = new Date(year, month, day, hour, minute);
+      const second = pattern2Match[6] ? parseInt(pattern2Match[6], 10) : 0;
+      const date = new Date(year, month, day, hour, minute, second);
       return formatTimeForStorage(date);
     }
     
