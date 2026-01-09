@@ -1,0 +1,201 @@
+#!/usr/bin/env node
+/**
+ * Git Pre-commit Hook - SSOT架构检查
+ * 
+ * 在提交前自动检查代码是否符合SSOT规范
+ * 
+ * 安装方法：
+ *   npm run setup-git-hooks
+ * 
+ * 或手动复制到 .git/hooks/pre-commit
+ * 
+ * @created 2026-01-09
+ * @version 1.0.0
+ */
+
+const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// ANSI颜色
+const colors = {
+  reset: '\x1b[0m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  cyan: '\x1b[36m',
+};
+
+function log(color, ...args) {
+  console.log(color, ...args, colors.reset);
+}
+
+function getStagedFiles() {
+  try {
+    const output = execSync('git diff --cached --name-only --diff-filter=ACM', {
+      encoding: 'utf-8',
+    });
+    return output
+      .trim()
+      .split('\n')
+      .filter(file => file.endsWith('.ts') || file.endsWith('.tsx'))
+      .filter(file => !file.includes('__tests__') && !file.includes('.test.'));
+  } catch (error) {
+    return [];
+  }
+}
+
+function checkDeprecatedFields(files) {
+  const violations = [];
+  
+  const deprecatedPatterns = [
+    { pattern: /\.isTask\b/, message: 'Use hasTaskFacet(event) instead of event.isTask' },
+    { pattern: /\.isPlan\b/, message: 'Use shouldShowInPlan(event) instead of event.isPlan' },
+    { pattern: /\.isTimeCalendar\b/, message: 'Use shouldShowInTimeCalendar(event) instead' },
+    { pattern: /\.content\b(?!\s*[:=])/, message: 'Use resolveDisplayTitle(event) instead of event.content' },
+    { pattern: /\.isTimer\b/, message: 'Use event.id.startsWith("timer-") instead' },
+    { pattern: /\.isTimeLog\b/, message: 'Use event.source === "local:timelog" instead' },
+    { pattern: /\.toISOString\(\)/, message: 'Use formatTimeForStorage() instead of toISOString()' },
+    { pattern: /\.toJSON\(\)/, message: 'Use formatTimeForStorage() instead of toJSON()' },
+  ];
+  
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    
+    const content = fs.readFileSync(file, 'utf-8');
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      for (const { pattern, message } of deprecatedPatterns) {
+        if (pattern.test(line)) {
+          violations.push({
+            file,
+            line: i + 1,
+            content: line.trim(),
+            message,
+          });
+        }
+      }
+    }
+  }
+  
+  return violations;
+}
+
+function checkForbiddenSignalFields(files) {
+  const violations = [];
+  
+  const forbiddenFields = [
+    'isHighlight',
+    'hasQuestions',
+    'signalCount',
+    'importanceLevel',
+    'isImportant',
+    'hasDoubt',
+    'needsAction',
+  ];
+  
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    
+    const content = fs.readFileSync(file, 'utf-8');
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      for (const field of forbiddenFields) {
+        const pattern = new RegExp(`\\b${field}\\b`);
+        if (pattern.test(line)) {
+          violations.push({
+            file,
+            line: i + 1,
+            content: line.trim(),
+            message: `Forbidden Signal field: ${field}. Use SignalService instead.`,
+          });
+        }
+      }
+    }
+  }
+  
+  return violations;
+}
+
+function checkISOTimeFormat(files) {
+  const violations = [];
+  
+  // 匹配ISO时间格式的字符串字面量
+  const isoPattern = /['"`](\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^'"`]*?)['"`]/g;
+  
+  for (const file of files) {
+    if (!fs.existsSync(file)) continue;
+    
+    const content = fs.readFileSync(file, 'utf-8');
+    const lines = content.split('\n');
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      
+      if (isoPattern.test(line)) {
+        violations.push({
+          file,
+          line: i + 1,
+          content: line.trim(),
+          message: 'ISO time format detected. Use local format (YYYY-MM-DD HH:mm:ss)',
+        });
+      }
+    }
+  }
+  
+  return violations;
+}
+
+function main() {
+  log(colors.cyan, '\n🔍 SSOT架构检查中...\n');
+  
+  const stagedFiles = getStagedFiles();
+  
+  if (stagedFiles.length === 0) {
+    log(colors.green, '✅ 没有需要检查的TypeScript文件\n');
+    process.exit(0);
+  }
+  
+  log(colors.blue, `📂 检查 ${stagedFiles.length} 个文件...\n`);
+  
+  const deprecatedViolations = checkDeprecatedFields(stagedFiles);
+  const signalViolations = checkForbiddenSignalFields(stagedFiles);
+  const timeFormatViolations = checkISOTimeFormat(stagedFiles);
+  
+  const allViolations = [
+    ...deprecatedViolations,
+    ...signalViolations,
+    ...timeFormatViolations,
+  ];
+  
+  if (allViolations.length === 0) {
+    log(colors.green, '✅ 所有文件符合SSOT规范！\n');
+    process.exit(0);
+  }
+  
+  // 报告违规
+  log(colors.red, `\n❌ 发现 ${allViolations.length} 个SSOT违规：\n`);
+  
+  for (const violation of allViolations) {
+    log(colors.yellow, `  ${violation.file}:${violation.line}`);
+    log(colors.reset, `    ${violation.content}`);
+    log(colors.cyan, `    💡 ${violation.message}\n`);
+  }
+  
+  log(colors.red, '❌ 提交被阻止。请修复上述问题后重试。\n');
+  log(colors.cyan, '💡 提示：');
+  log(colors.reset, '   1. 运行 node scripts/clean-deprecated-fields.js --fix 自动修复');
+  log(colors.reset, '   2. 参考 docs/SSOT_LINTER_README.md 了解迁移指南');
+  log(colors.reset, '   3. 使用 git commit --no-verify 跳过检查（不推荐）\n');
+  
+  process.exit(1);
+}
+
+main();

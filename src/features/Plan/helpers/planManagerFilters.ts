@@ -135,7 +135,6 @@ export function isEmptyEvent(event: Event): boolean {
 
   const isEmpty =
     !hasRealTitle &&
-    !event.content?.trim() &&
     !event.description?.trim() &&
     !hasEventlog &&
     (!event.tags || event.tags.length === 0);

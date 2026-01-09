@@ -216,7 +216,7 @@ export class EventNodeService {
       console.log('[EventNodeService] 转换时间戳:', {
         原始值: timestamp,
         类型: 'number',
-        Date对象: new Date(timestamp).toISOString(),
+        Date对象: formatTimeForStorage(new Date(timestamp)),
         转换后: converted
       });
       return converted;

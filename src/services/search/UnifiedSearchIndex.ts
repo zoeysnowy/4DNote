@@ -24,6 +24,7 @@ import { TagService, FlatTag } from '@backend/TagService';
 import { parseNaturalLanguage } from '@frontend/utils/naturalLanguageTimeDictionary';
 import { parseLocalTimeString } from '@frontend/utils/timeUtils';
 import { shouldShowInPlan, shouldShowInTimeCalendar, hasTaskFacet } from '@frontend/utils/eventFacets';
+import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
 
 // SVG 图标路径（直接使用路径字符串避免 Vite 转换为 data URL）
 const ICON_PATHS = {
@@ -390,7 +391,7 @@ class UnifiedSearchIndex {
 
     return results.map(result => {
       const event = result.item;
-      const title = event.title?.simpleTitle || event.title?.fullTitle || event.content || '无标题';
+      const title = resolveDisplayTitle(event, undefined, { fallback: '无标题', maxLength: 60 });
       
       return {
         id: event.id,

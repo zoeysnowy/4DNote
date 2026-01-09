@@ -433,9 +433,22 @@ export interface Event {
   category?: string;
   localVersion?: number;
   // 🎯 事件类型标记（用于控制显示样式）
-  // ❌ [DEPRECATED] isTimer/isTimeLog/isOutsideApp - 使用 source='local:timelog' + timerSessionId + id 前缀派生替代
+  // ❗ [DEPRECATED - DO NOT USE IN NEW CODE]
+  // These flags are compatibility-only for migration/read-upgrade paths.
+  // ❌ FORBIDDEN in create/update operations (SSOT violation)
+  // ✅ Use instead:
+  //    - isTimer: event.id.startsWith('timer-')
+  //    - isTimeLog/isOutsideApp: event.source === 'local:timelog'
+  // Will be removed in future version after migration is complete.
   isDeadline?: boolean; // 🆕 添加：标记为截止日期事件
-  // ❌ [DEPRECATED] isPlan/isTimeCalendar/isTask - 使用 facet 推导替代
+  // ❗ [DEPRECATED - DO NOT USE IN NEW CODE]
+  // ❌ FORBIDDEN: Do not use these boolean flags (SSOT violation)
+  // ✅ Use facet/resolver instead:
+  //    - isTask: hasTaskFacet(event)
+  //    - isPlan: shouldShowInPlan(event)
+  //    - isTimeCalendar: shouldShowInTimeCalendar(event)
+  // See: @frontend/utils/eventFacets
+  // Will be removed after all code is migrated to use facets.
   // isTask?: boolean;      // ❌ 已废弃 v2.19.2 - 用 hasTaskFacet(event) 替代
   // isPlan?: boolean;      // ❌ 已废弃 v2.19.2 - 用 shouldShowInPlan(event) 替代
   // isTimeCalendar?: boolean; // ❌ 已废弃 v2.19.2 - 用 shouldShowInTimeCalendar(event) 替代
@@ -457,7 +470,10 @@ export interface Event {
   _originalTempId?: string; // 保存原始临时ID，用于EventHistory追踪和父子关系替换
   
   // 🔧 Plan 相关字段（从 PlanItem 合并）
-  // ⚠️ DEPRECATED: content 字段已废弃，使用 fullTitle 代替
+  // ❗ [DEPRECATED] content字段已废弃
+  // ❌ DO NOT USE: event.content
+  // ✅ Use instead: event.title.fullTitle or resolveDisplayTitle(event)
+  // Will be removed after migration.
   content?: string;      // 废弃：请使用 fullTitle
   emoji?: string;        // emoji 图标
   color?: string;        // 自定义颜色

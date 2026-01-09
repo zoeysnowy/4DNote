@@ -31,6 +31,7 @@ import { icons } from '@frontend/assets/icons';
 import { useEventTime } from '@frontend/hooks/useEventTime';
 import { TimeHub } from '@backend/TimeHub';
 import { getEventTime, setEventTime, isTask as isTaskByTime } from '@frontend/utils/timeManager'; // 🆕 统一时间管理
+import { resolveDisplayTitle } from '@frontend/utils/TitleResolver';
 import './PlanManager.css';
 import { dbg, warn, error } from '@frontend/utils/debugLogger';
 import { formatRelativeTimeDisplay } from '@frontend/utils/relativeDateFormatter';
@@ -628,37 +629,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       // 步骤 2: 排除系统事件
       if (isActivityTraceEvent(event)) return false;
       
-      // 步骤 2.5: 过滤空白事件
-      const titleObj = event.title;
-      const hasTitle = event.content || 
-                      (typeof titleObj === 'string' ? titleObj : 
-                       (titleObj && (titleObj.simpleTitle || titleObj.fullTitle || titleObj.colorTitle)));
-      
-      const eventlogField = (event as any).eventlog;
-      let hasEventlog = false;
-      if (eventlogField) {
-        if (typeof eventlogField === 'string') {
-          hasEventlog = eventlogField.trim().length > 0;
-        } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-          // 检查slateJson是否有实际文本内容
-          if (eventlogField.slateJson) {
-            try {
-              const slateNodes = JSON.parse(eventlogField.slateJson);
-              hasEventlog = slateNodes.some((node: any) => {
-                const children = node.children || [];
-                return children.some((child: any) => child.text && child.text.trim() !== '');
-              });
-            } catch (e) {
-              hasEventlog = false;
-            }
-          }
-          // 如果slateJson没有内容，检查plainText
-          if (!hasEventlog && eventlogField.plainText) {
-            hasEventlog = !!eventlogField.plainText.trim();
-          }
-        }
-      }
-      if (!hasTitle && !hasEventlog) return false;
+      // 步骤 2.5: 过滤空白事件（统一逻辑）
+      if (isEmptyEvent(event)) return false;
       
       // 步骤 3: 过期/完成事件处理
       // Plan 页面只显示 task-like；过期规则由任务完成/日期逻辑处理即可
@@ -1054,7 +1026,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       items: updatedItems.map(item => ({
         id: item.id?.slice(-8),
         fullId: item.id,
-        title: item.title?.simpleTitle?.substring(0, 20) || item.content?.substring(0, 20),
+        title: resolveDisplayTitle(item, undefined, { fallback: '', maxLength: 20 }),
         _isDeleted: item._isDeleted || false
       }))
     });
@@ -1369,7 +1341,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
               parentEventId: (item as any).parentEventId,
               bulletLevel: (item as any).bulletLevel,
               position: (item as any).position,
-              hasContent: !!item.content,
+              hasContent: resolveDisplayTitle(item, undefined, { fallback: '' }).trim().length > 0,
               hasDescription: !!item.description
             });
             
@@ -1455,7 +1427,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         const newPendingItem: Event = {
           id: updatedItem.id,
           title: '',
-          content: updatedItem.content || '',
+          content: '',
           description: updatedItem.description || '',
           eventlog: updatedItem.eventlog, // 🆕 v1.8: 保留富文本描述
           tags: updatedItem.tags || [],
@@ -1647,7 +1619,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
       result = result.filter(item => 
         item.title?.simpleTitle?.toLowerCase().includes(query) ||
         item.description?.toLowerCase().includes(query) ||
-        item.content?.toLowerCase().includes(query)
+        resolveDisplayTitle(item, undefined, { fallback: '' }).toLowerCase().includes(query)
       );
     }
     
@@ -1669,7 +1641,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         console.error('[PlanManager] 🚨 filteredItems 中发现', ghostsInFiltered.length, '个 ghost 事件！', 
           ghostsInFiltered.map((item: any) => ({
             id: item.id?.slice(-8),
-            title: item.title?.simpleTitle?.substring(0, 20) || item.content?.substring(0, 20),
+            title: resolveDisplayTitle(item, undefined, { fallback: '', maxLength: 20 }),
             _isDeleted: item._isDeleted,
             _deletedAt: item._deletedAt
               ? (parseLocalTimeStringOrNull(item._deletedAt)?.toLocaleString() ?? item._deletedAt)
@@ -1717,40 +1689,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         const inRange = existingAtStart.has(item.id) || createdInRange.has(item.id);
         if (!inRange) return false;
         
-        // 🆕 额外检查：过滤掉空白事件（标题和 eventlog 都为空）
-        const titleObj = item.title;
-        const hasTitle = item.content || 
-                        (typeof titleObj === 'string' ? titleObj : 
-                         (titleObj && (titleObj.simpleTitle || titleObj.fullTitle || titleObj.colorTitle)));
-        
-        const eventlogField = (item as any).eventlog;
-        let hasEventlog = false;
-        
-        if (eventlogField) {
-          if (typeof eventlogField === 'string') {
-            hasEventlog = eventlogField.trim().length > 0;
-          } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-            // 检查slateJson是否有实际文本内容
-            if (eventlogField.slateJson) {
-              try {
-                const slateNodes = JSON.parse(eventlogField.slateJson);
-                hasEventlog = slateNodes.some((node: any) => {
-                  const children = node.children || [];
-                  return children.some((child: any) => child.text && child.text.trim() !== '');
-                });
-              } catch (e) {
-                hasEventlog = false;
-              }
-            }
-            // 如果slateJson没有内容，检查plainText
-            if (!hasEventlog && eventlogField.plainText) {
-              hasEventlog = !!eventlogField.plainText.trim();
-            }
-          }
-        }
-        
-        // 标题和 eventlog 都为空时过滤掉
-        if (!hasTitle && !hasEventlog) {
+        // 🆕 额外检查：过滤掉空白事件（统一逻辑）
+        if (isEmptyEvent(item)) {
           console.log('[PlanManager] ⏭️ Snapshot 模式跳过空白事件:', item.id.slice(-8));
           return false;
         }
@@ -1782,43 +1722,8 @@ const PlanManager: React.FC<PlanManagerProps> = ({
           return;
         }
         
-        // 🎯 步骤 2: 业务类型过滤（空白事件 - 标题和eventlog都为空）
-        // 2.1 检查标题内容
-        const titleObj = log.before.title;
-        const hasTitle = log.before.content || 
-                        (typeof titleObj === 'string' ? titleObj : 
-                         (titleObj && (titleObj.simpleTitle || titleObj.fullTitle)));
-        
-        // 2.2 检查 eventlog 内容
-        const eventlogField = log.before.eventlog;
-        let hasEventlog = false;
-        
-        if (eventlogField) {
-          if (typeof eventlogField === 'string') {
-            // 字符串格式：去除空白后检查是否有内容
-            hasEventlog = eventlogField.trim().length > 0;
-          } else if (typeof eventlogField === 'object' && eventlogField !== null) {
-            // EventLog 对象格式：检查 slateJson 是否有实际文本内容
-            if (eventlogField.slateJson) {
-              try {
-                const slateNodes = JSON.parse(eventlogField.slateJson);
-                hasEventlog = slateNodes.some((node: any) => {
-                  const children = node.children || [];
-                  return children.some((child: any) => child.text && child.text.trim() !== '');
-                });
-              } catch (e) {
-                hasEventlog = false;
-              }
-            }
-            // 如果slateJson没有内容，检查plainText
-            if (!hasEventlog && eventlogField.plainText) {
-              hasEventlog = !!eventlogField.plainText.trim();
-            }
-          }
-        }
-        
-        // 只有标题和eventlog都为空时才跳过
-        if (!hasTitle && !hasEventlog) {
+        // 🎯 步骤 2: 业务类型过滤（空白事件）
+        if (isEmptyEvent(log.before as any)) {
           console.log('[PlanManager] ⏭️ 跳过完全空白 ghost (无标题且无eventlog):', log.eventId.slice(-8));
           return;
         }
@@ -1841,8 +1746,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         console.log('[PlanManager] 👻 添加 ghost:', {
           eventId: log.eventId.slice(-8),
           title: log.before.title,
-          hasTitle,
-          hasEventlog,
           eventlogType: typeof log.before.eventlog,
           删除于: parseLocalTimeString(log.timestamp).toLocaleString()
         });
@@ -2253,7 +2156,6 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         const existingItem = itemsMap[itemId];
         const isContentChanged = !existingItem || 
           existingItem.title !== updatedItem.title ||
-          existingItem.content !== updatedItem.content ||
           existingItem.description !== updatedItem.description ||
           existingItem.mode !== updatedItem.mode ||
           JSON.stringify(existingItem.tags) !== JSON.stringify(updatedItem.tags);
@@ -2406,7 +2308,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
     return {
       id: item.id || generateEventId(),
       title: item.title,
-      description: item.notes || sanitize(item.description || item.content || ''),
+      description: item.notes || sanitize(item.description || resolveDisplayTitle(item, undefined, { fallback: '', maxLength: 200 })),
       startTime: item.startTime || item.dueDateTime || '', // 🔧 没有时间的任务保持为空字符串
       endTime: item.endTime || item.dueDateTime || '', // 🔧 没有时间的任务保持为空字符串
       location: '', // Event 没有 location 字段，保留空值
@@ -2496,7 +2398,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
         return { simpleTitle: fullTitle, fullTitle: undefined, colorTitle: undefined };
       })(),
       // 避免在描述中出现一堆 HTML，将其清洗为纯文本
-      description: sanitizeHtmlToPlainText(item.description || item.content || item.notes || ''),
+      description: sanitizeHtmlToPlainText(item.description || item.notes || resolveDisplayTitle(item, undefined, { fallback: '', maxLength: 200 })),
       // ✅ v1.8: 修复空字符串处理 - 转换为 undefined
       startTime: finalStartTime || undefined,
       endTime: finalEndTime || undefined,
@@ -3093,7 +2995,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                       isAllDay: timeSnapshot?.timeSpec?.allDay ?? item.isAllDay,
                       ...(isDescriptionMode
                         ? { description: editableElement?.innerHTML || item.description }
-                        : { content: editableElement?.innerHTML || item.content }
+                        : (editableElement?.innerHTML ? { content: editableElement.innerHTML } : {})
                       ),
                     };
                     
@@ -3113,7 +3015,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                       const updates: any = {
                         ...(isDescriptionMode
                           ? { description: editableElement?.innerHTML || item.description }
-                          : { content: editableElement?.innerHTML || item.content }
+                          : (editableElement?.innerHTML ? { content: editableElement.innerHTML } : {})
                         ),
                       };
 
@@ -3248,7 +3150,7 @@ const PlanManager: React.FC<PlanManagerProps> = ({
                           try {
                             const updates: any = {
                               title: updatedItem.title,
-                              content: updatedItem.content,
+                              content: updatedContent,
                             };
 
                             // Optional arrays: 不要把 [] 写回 undefined；但允许从非空显式清空

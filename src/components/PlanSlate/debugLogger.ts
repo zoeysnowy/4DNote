@@ -12,9 +12,10 @@
 
 import { Editor, Node, Range, Point, Path } from 'slate';
 import { EventLineNode } from './types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 // 时间戳格式化
-const getTimestamp = () => new Date().toISOString().split('T')[1].slice(0, 12);
+const getTimestamp = () => formatTimeForStorage(new Date()).split(' ')[1].slice(0, 12);
 
 // 检查是否启用调试
 export const isDebugEnabled = () => {

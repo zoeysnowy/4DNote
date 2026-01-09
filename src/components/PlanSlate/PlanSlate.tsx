@@ -633,7 +633,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   // 🔍 组件挂载日志
   React.useEffect(() => {
     if (isDebugEnabled()) {
-      const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+      const timestamp = formatTimeForStorage(new Date()).split(' ')[1].slice(0, 12);
       window.console.log(`%c[🚀 ${timestamp}] PlanSlate - 调试模式已开启`, 
         'background: #4CAF50; color: white; padding: 4px 8px; border-radius: 3px; font-weight: bold;');
       window.console.log(`%c关闭调试: localStorage.removeItem('SLATE_DEBUG') 然后刷新`, 
@@ -647,7 +647,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
     
     return () => {
       if (isDebugEnabled()) {
-        window.console.log(`%c[👋 ${new Date().toISOString().split('T')[1].slice(0, 12)}] PlanSlate unmounted`, 
+        window.console.log(`%c[👋 ${formatTimeForStorage(new Date()).split(' ')[1].slice(0, 12)}] PlanSlate unmounted`, 
           'background: #f44336; color: white; padding: 4px 8px; border-radius: 3px;');
       }
     };
@@ -1245,7 +1245,7 @@ export const PlanSlate: React.FC<PlanSlateProps> = ({
   }, [editor]);
   
   const handleEditorChange = useCallback((newValue: Descendant[]) => {
-    const timestamp = new Date().toISOString().split('T')[1].slice(0, 12);
+    const timestamp = formatTimeForStorage(new Date()).split(' ')[1].slice(0, 12);
     
     // 🔥 调试：记录每次 onChange 的选区状态
     // console.log('%c[🔄 onChange]', 'background: #2196F3; color: white; padding: 2px 6px;', {

@@ -43,6 +43,7 @@ import {
   isLocalEventSource,
   isOutlookEventSource,
 } from '@frontend/utils/eventSourceSSOT';
+import { validateEventAgainstSSOT } from '@frontend/utils/ssotLinter'; // 🆕 SSOT运行时检查
 
 type EventTreeNode = Event & { children: EventTreeNode[] };
 
@@ -704,6 +705,11 @@ export class EventService {
       // 🔥 v2.15: 中枢化架构 - 使用 normalizeEvent 统一处理所有字段
       const normalizedEvent = this.normalizeEvent(event);
       
+      // 🆕 SSOT验证（开发/测试环境）
+      validateEventAgainstSSOT(normalizedEvent, 'create', {
+        allowMigration: options?.source === 'external-sync'
+      });
+      
       // 🔥 v2.15: 临时ID追踪系统
       const isTempId = event.id.startsWith('line-');
       const originalTempId = isTempId ? event.id : undefined;
@@ -1240,6 +1246,11 @@ export class EventService {
         eventLogger.error('❌ [EventService] Update validation failed:', validation.error);
         return { success: false, error: validation.error };
       }
+      
+      // 🆕 SSOT验证（开发/测试环境）
+      validateEventAgainstSSOT(updates, 'update', {
+        allowMigration: options?.source === 'external-sync'
+      });
       
       // 步骤2: 规范化处理（重新生成 description 签名、处理 eventlog 等）
       // 使用 preserveSignature 选项，避免每次都重新生成签名导致变更

@@ -12,6 +12,7 @@ import { buildEventTree, recomputeSiblings, computeReparentEffect } from './Tree
 import { EventTreeAPI } from './TreeAPI';
 import type { Event } from '@frontend/types';
 import type { EventNode } from './types';
+import { formatTimeForStorage } from '@frontend/utils/timeUtils';
 
 // 辅助函数：创建测试事件
 function createTestEvent(
@@ -19,13 +20,14 @@ function createTestEvent(
   parentId?: string,
   position?: number
 ): Event {
+  const now = formatTimeForStorage(new Date());
   return {
     id,
     title: { simpleTitle: `Event ${id}` },
     parentEventId: parentId,
     position,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: now,
+    updatedAt: now,
   } as Event;
 }
 
