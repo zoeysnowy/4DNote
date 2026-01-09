@@ -51,6 +51,7 @@
   - 允许描述用户价值、流程、MVP，但不应成为字段的权威来源。
 - **Signal 设计提案（需服从 SSOT）**：`docs/architecture/SIGNAL_ARCHITECTURE_PROPOSAL.md`
 - **Media 体系（术语与产物边界）**：`docs/architecture/Media_Architecture.md`
+- **AI Enhanced Methodology（检索增强/上下文化检索笔记）**：`docs/architecture/AI_Enhanced_methodology`
 
 关键不变量（写代码/写文档都以此为准）：
 
